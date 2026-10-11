@@ -189,6 +189,65 @@ test.describe('Salir sin servidor', () => {
     }
   });
 
+  test('AC-126 (e) / H-16: con el servidor parado, 3 clics en "Salir" a 120 ms no lanzan más de 10 peticiones, no navegan y el aviso sale a los 2,0 ± 0,3 s del primer clic', async ({ page }) => {
+    test.setTimeout(90_000);
+    const proxy = await tcpProxy(server.port);
+    try {
+      await toFailed(page, proxy);
+      const sent = await probes(page, new URL(proxy.url).origin);
+      const urls = navigations(page);
+      const exit = await watchExit(page);
+      for (let i = 0; i < 3; i++) {
+        await page.getByTestId('btn-exit').click({ force: true });
+        await page.waitForTimeout(120);
+      }
+      await page.waitForTimeout(PROBE_MS + 1000);
+      const { click, shown } = await exit();
+      const c = cadence(sent, click, click + PROBE_MS + 1000);
+      console.log(`AC-126 / H-16 (3 clics): ${c.text} · aviso a los ${shown === undefined ? 'nunca' : `${Math.round(shown - click)} ms`}`);
+      expect(c.count, '≤ 10 peticiones con 3 clics').toBeLessThanOrEqual(PROBE_MAX);
+      expect(urls.filter((u) => u.at >= click).map((u) => u.url), 'sin navegar').toEqual([]);
+      expect(shown, 'aparece el aviso').toBeDefined();
+      // El segundo y el tercer clic no reinician el sondeo: el aviso cuenta desde el primero
+      expect(Math.abs(shown! - click - PROBE_MS), 'el aviso, a los 2,0 ± 0,3 s del primer clic').toBeLessThanOrEqual(TOLERANCE_MS);
+    } finally {
+      await proxy.set('closed');
+    }
+  });
+
+  test('AC-126 (e) / H-16: con el servidor de vuelta 1 s después del primer clic, 3 clics en "Salir" a 120 ms dan una sola navegación a la landing', async ({ page }) => {
+    test.setTimeout(90_000);
+    const proxy = await tcpProxy(server.port);
+    try {
+      await toFailed(page, proxy);
+      const sent = await probes(page, new URL(proxy.url).origin);
+      const urls = navigations(page);
+      const exit = await watchExit(page);
+      for (let i = 0; i < 3; i++) {
+        await page.getByTestId('btn-exit').click({ force: true });
+        await page.waitForTimeout(120);
+      }
+      const { click } = await exit();
+      await page.waitForTimeout(Math.max(0, click + 1000 - Date.now()));
+      await proxy.set('open');
+      const back = Date.now() - click;
+      const isLanding = (url: string) => new URL(url).origin === new URL(proxy.url).origin && new URL(url).pathname === '/';
+      await page.waitForURL((u) => isLanding(u.href), { timeout: 5000 }).catch(() => {});
+      // Margen para que una segunda navegación (la de un sondeo duplicado) tenga tiempo de llegar
+      await page.waitForTimeout(PROBE_MS);
+      const after = urls.filter((u) => u.at >= click);
+      const c = cadence(sent, click, click + PROBE_MS + TOLERANCE_MS);
+      console.log(`AC-126 (e, 3 clics, vuelve a los ${back} ms): navegaciones ${JSON.stringify(after.map((u) => `${u.url} a los ${u.at - click} ms`))} · ${c.text}`);
+      expect(after.filter((u) => u.url.startsWith('chrome-error://')), 'sin página de error').toEqual([]);
+      expect(after.filter((u) => isLanding(u.url)).length, 'una sola navegación a la landing').toBe(1);
+      expect(after.map((u) => u.url), 'ninguna otra navegación').toEqual(after.filter((u) => isLanding(u.url)).map((u) => u.url));
+      await expect(page.getByTestId('cta-guest')).toBeVisible();
+      expect.soft(c.count, '≤ 10 peticiones').toBeLessThanOrEqual(PROBE_MAX);
+    } finally {
+      await proxy.set('closed');
+    }
+  });
+
   test('AC-126 (b): con el servidor de vuelta 1 s después del clic, "Salir" navega a la landing en ≤ 2,5 s sin página de error', async ({ page }) => {
     test.setTimeout(90_000);
     const proxy = await tcpProxy(server.port);

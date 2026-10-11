@@ -80,6 +80,7 @@ export function ConnectionOverlay({ actions }: { actions: HudActions }) {
   }, [connection]);
   if (connection === 'connected' || connection === 'connecting' || connection === 'full') return null;
   const onExit = async () => {
+    if (exit === 'probing') return; // H-16: un solo sondeo en curso
     setExit('probing');
     setExit((await actions.exit()) ? 'idle' : 'unreachable');
   };

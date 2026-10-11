@@ -42,3 +42,13 @@ export function probeServer(url: string, fetchFn: typeof fetch = fetch): Promise
     timers.push(setTimeout(() => finish(false), EXIT_PROBE_MS));
   });
 }
+
+// H-16: pulsar Salir otra vez mientras sondea no lanza otro sondeo: se devuelve el que está en curso (≤ 10 peticiones en
+// total con 1, 2 o 3 clics) y, al terminar, el siguiente clic vuelve a sondear
+let inflight: Promise<boolean> | null = null;
+export function probeServerOnce(url: string, fetchFn: typeof fetch = fetch): Promise<boolean> {
+  inflight ??= probeServer(url, fetchFn).finally(() => {
+    inflight = null;
+  });
+  return inflight;
+}

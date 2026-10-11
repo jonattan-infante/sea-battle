@@ -1,6 +1,6 @@
 // AC-126 (DT-03): sondeo de "Salir" con fetch simulado y reloj falso. Los casos (a)–(d) del AC más la respuesta lenta
 // pero válida; en todos, al terminar no queda ninguna petición pendiente.
-import { EXIT_PROBE_EVERY_MS, EXIT_PROBE_MAX, EXIT_PROBE_MS, probeServer } from '../exit-probe';
+import { EXIT_PROBE_EVERY_MS, EXIT_PROBE_MAX, EXIT_PROBE_MS, probeServer, probeServerOnce } from '../exit-probe';
 
 type Mode = (at: number) => 'refused' | 'hung' | { okAfter: number };
 
@@ -93,5 +93,24 @@ describe('AC-126: sondeo al pulsar Salir', () => {
     expect(r.result).toBe(true);
     expect(r.at).toBe(1700);
     expect(r.pending()).toBe(0);
+  });
+
+  test('H-16: 3 clics seguidos en Salir reutilizan el sondeo en curso (≤ 10 peticiones); terminado, otro clic vuelve a sondear', async () => {
+    const server = fakeServer(() => 'refused');
+    const t0 = Date.now();
+    const first = probeServerOnce('/healthz', server.fetchFn);
+    await jest.advanceTimersByTimeAsync(120);
+    const second = probeServerOnce('/healthz', server.fetchFn);
+    await jest.advanceTimersByTimeAsync(120);
+    const third = probeServerOnce('/healthz', server.fetchFn);
+    expect(second).toBe(first);
+    expect(third).toBe(first);
+    await jest.advanceTimersByTimeAsync(EXIT_PROBE_MS);
+    expect(await first).toBe(false);
+    expect(server.calls.filter((c) => c.at - t0 <= EXIT_PROBE_MS).length).toBeLessThanOrEqual(EXIT_PROBE_MAX);
+    const before = server.calls.length;
+    void probeServerOnce('/healthz', server.fetchFn);
+    await jest.advanceTimersByTimeAsync(EXIT_PROBE_MS + 100);
+    expect(server.calls.length).toBe(before + EXIT_PROBE_MAX);
   });
 });
