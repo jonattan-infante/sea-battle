@@ -1,7 +1,7 @@
 'use client';
 // HUD (ART-DIRECTION §12). React solo pinta cuando cambian los datos del store; lo que avanza con el reloj
 // (recarga, protección, cuenta atrás) se actualiza por ref desde un único requestAnimationFrame.
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useRef } from 'react';
 import { LOW_HP_WARNING, REPAIR_RATE, REPAIR_RATE_UNDER_FIRE } from '../../game/constants';
 import type { GameClient } from '../../client/game-client';
 import { HINTS } from '../../client/hints';
@@ -350,7 +350,8 @@ function MobileButtons({ actions }: { actions: HudActions }) {
 
 // AC-105: la pista no tapa la placa propia, la del objetivo ni los toasts. Tiene dos ranuras, bajo el barco y sobre él
 // (CSS `.is-alt`), y cambia de ranura cuando se cruza con uno de esos elementos; si las dos se cruzan, se oculta
-// (`.is-hidden`) mientras dure el cruce. Por ref a ≤ 10 Hz y solo mientras hay pista: sin commits de React.
+// (`.is-hidden`) mientras dure el cruce. Las placas se mueven con el barco: se revisa por ref a ≤ 10 Hz y solo mientras
+// hay pista. Los toasts entran de golpe: además se recoloca en el mismo commit en el que aparecen (O-1, QA-4).
 const overlaps = (a: DOMRect, b: DOMRect) => a.width > 0 && b.width > 0 && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
 
 function hintObstacles(): HTMLElement[] {
@@ -360,8 +361,24 @@ function hintObstacles(): HTMLElement[] {
   return els;
 }
 
+function placeHint(el: HTMLElement) {
+  const obstacles = hintObstacles().map((o) => o.getBoundingClientRect());
+  const covers = () => obstacles.some((o) => overlaps(el.getBoundingClientRect(), o));
+  let hidden = false;
+  if (covers()) {
+    el.classList.toggle('is-alt');
+    if (covers()) {
+      el.classList.toggle('is-alt');
+      hidden = true;
+    }
+  }
+  el.classList.toggle('is-hidden', hidden);
+}
+
 function Hint() {
   const hint = useHud((s) => s.hint);
+  // Cambia solo cuando entra o sale un toast (o una línea del feed, que en móvil es un toast): pocas veces por minuto
+  const toastKey = useHud((s) => `${s.toasts.map((t) => t.id).join()}|${s.feed.map((f) => f.id).join()}|${s.me?.inSafeZone && s.me.state === 'alive'}`);
   const ref = useRef<HTMLDivElement>(null);
   const visible = hint !== null && hint < HINTS.length;
 
@@ -371,21 +388,14 @@ function Hint() {
     return addTicker((now) => {
       if (now - last < 100) return;
       last = now;
-      const el = ref.current;
-      if (!el) return;
-      const obstacles = hintObstacles().map((o) => o.getBoundingClientRect());
-      const covers = () => obstacles.some((o) => overlaps(el.getBoundingClientRect(), o));
-      let hidden = false;
-      if (covers()) {
-        el.classList.toggle('is-alt');
-        if (covers()) {
-          el.classList.toggle('is-alt');
-          hidden = true;
-        }
-      }
-      el.classList.toggle('is-hidden', hidden);
+      if (ref.current) placeHint(ref.current);
     });
   }, [visible]);
+
+  // El toast nuevo ya está en el DOM (mismo commit) y aún no se ha pintado: la pista no lo pisa ni un frame
+  useLayoutEffect(() => {
+    if (visible && ref.current) placeHint(ref.current);
+  }, [visible, toastKey]);
 
   if (!visible) return null;
   return (

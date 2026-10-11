@@ -222,6 +222,38 @@ async function expectToastsClear(page: Page, label: string, count: number) {
   }
 }
 
+// O-1 (QA-4): desde el frame en que entra un aviso, la pista visible no lo pisa en ningún frame. Se muestrea en cada
+// requestAnimationFrame durante 600 ms, que es lo que se va a pintar en ese frame
+type HintOverlapProbe = { frames: number; overlapped: number };
+async function sampleHintOverToasts(page: Page) {
+  await page.evaluate(() => {
+    const w = window as unknown as { __hintOverlap: HintOverlapProbe };
+    w.__hintOverlap = { frames: 0, overlapped: 0 };
+    const t0 = performance.now();
+    const tick = () => {
+      const hint = document.querySelector<HTMLElement>('[data-testid="hint"]');
+      const toasts = Array.from(document.querySelectorAll<HTMLElement>('[data-testid="toasts"] > .toast')).filter((t) => t.offsetParent !== null);
+      if (hint && !hint.classList.contains('is-hidden') && toasts.length > 0) {
+        w.__hintOverlap.frames++;
+        const h = hint.getBoundingClientRect();
+        const hit = toasts.some((t) => {
+          const b = t.getBoundingClientRect();
+          return h.left < b.right && b.left < h.right && h.top < b.bottom && b.top < h.bottom;
+        });
+        if (hit) w.__hintOverlap.overlapped++;
+      }
+      if (performance.now() - t0 < 600) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+}
+async function expectNoHintOverToastFrames(page: Page, label: string) {
+  await page.waitForTimeout(250); // hasta cerrar los 600 ms de muestreo (expectHintClear ya esperó 400 ms)
+  const probe = await page.evaluate(() => (window as unknown as { __hintOverlap: HintOverlapProbe }).__hintOverlap);
+  console.log(`O-1 ${label}: ${probe.overlapped} de ${probe.frames} frames con la pista visible sobre un aviso`);
+  expect(probe.overlapped, `${label}: frames con la pista visible sobre un aviso`).toBe(0);
+}
+
 // AC-110 (ART-DIRECTION §12.3): en horizontal la ranura alta queda entre la columna izquierda (jugador y objetivo) y el
 // oro, que la esquiva dinámica no cuenta como obstáculos. Cada una de las pistas, en las dos ranuras, cabe sin pisar
 // ningún panel ni botón. Se pinta cada texto en la pista y se mide en el mismo tick (el ticker de la pista no puede
@@ -320,10 +352,12 @@ async function expectHintAndToastsInSize(browser: Browser, viewport: { width: nu
       // tapa, y los avisos se leen enteros sin pisar los paneles ni el minimapa (H-11). La ranura sobre el barco queda
       // bajo el primer aviso: con uno la pista sigue visible; con dos, si la otra ranura está ocupada, se oculta
       for (const count of [1, 2]) {
+        await sampleHintOverToasts(page);
         await page.keyboard.press('KeyP');
         await expect(page.getByTestId('toasts').locator('.toast:visible')).toHaveCount(count);
         seen.add(await expectHintClear(page, `${label} con ${count} toasts`, merchant!.id));
         await expectToastsClear(page, `${label} con ${count} toasts`, count);
+        await expectNoHintOverToastFrames(page, `${label} con ${count} toasts`);
       }
     } finally {
       await ctx.close();
