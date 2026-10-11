@@ -15,6 +15,10 @@ import {
   MAX_UPGRADE_LEVEL,
   MERCHANT_FLEE_TIME,
   MERCHANT_RING,
+  navClearance,
+  PIVOT_MIN_ANGLE,
+  PIVOT_SPEED,
+  PIVOT_ZONE,
   MERCHANT_ROUTE_POINTS,
   NAV_LIMIT,
   NPC_POPULATION,
@@ -161,14 +165,15 @@ function farFromPlayers(world: World, pos: Vec2): boolean {
   return true;
 }
 
-function navigableFor(pos: Vec2, radius: number): boolean {
+// Punto válido para aparecer o planificar: dentro del límite y fuera del margen de navegación (§6)
+function navigableFor(pos: Vec2, clearance: number): boolean {
   if (Math.abs(pos.x) > NAV_LIMIT || Math.abs(pos.z) > NAV_LIMIT) return false;
-  return ISLANDS.every((i) => Math.hypot(pos.x - i.x, pos.z - i.z) >= i.radius + radius + 4);
+  return ISLANDS.every((i) => Math.hypot(pos.x - i.x, pos.z - i.z) >= i.radius + clearance);
 }
 
 function pirateSpot(world: World, sector: number, checkPlayers: boolean): Vec2 {
   const { sx, sz } = PIRATE_SECTORS[sector];
-  const radius = SHIP_CLASSES.pirate.radius;
+  const radius = navClearance('pirate');
   let fallback: Vec2 | null = null;
   for (let attempt = 0; attempt < 120; attempt++) {
     const a = rand(world, 0.12, Math.PI / 2 - 0.12);
@@ -219,7 +224,7 @@ export function spawnPirate(world: World, sector: number): Ship {
 }
 
 function merchantRoute(world: World): Vec2[] {
-  const radius = SHIP_CLASSES.merchant.radius;
+  const radius = navClearance('merchant');
   for (let attempt = 0; attempt < 60; attempt++) {
     const count = MERCHANT_ROUTE_POINTS.min + Math.floor(world.rng() * (MERCHANT_ROUTE_POINTS.max - MERCHANT_ROUTE_POINTS.min + 1));
     const base = rand(world, 0, Math.PI * 2);
@@ -248,12 +253,12 @@ export function spawnMerchant(world: World): Ship {
 
 // ---------- Jugadores ----------
 
-function respawnPoint(world: World, radius: number): { pos: Vec2; heading: number } {
+function respawnPoint(world: World, clearance: number): { pos: Vec2; heading: number } {
   for (let attempt = 0; attempt < 50; attempt++) {
     const a = rand(world, 0, Math.PI * 2);
     const r = rand(world, RESPAWN_RING.min, RESPAWN_RING.max);
     const pos = { x: PORT_POSITION.x + Math.sin(a) * r, z: PORT_POSITION.z + Math.cos(a) * r };
-    if (navigableFor(pos, radius)) return { pos, heading: a };
+    if (navigableFor(pos, clearance)) return { pos, heading: a };
   }
   return { pos: { x: 0, z: 75 }, heading: 0 };
 }
@@ -284,7 +289,7 @@ export function addPlayer(world: World, id: string, name: string): Player {
   player.name = name;
   player.death = null;
   world.players.set(id, player);
-  const spot = respawnPoint(world, SHIP_CLASSES[player.activeShip].radius);
+  const spot = respawnPoint(world, navClearance(player.activeShip));
   const ship = newShip(world, player.activeShip, name, id, spot.pos, spot.heading);
   ship.maxHp = maxHpFor(player.activeShip, player);
   ship.hp = ship.maxHp;
@@ -326,9 +331,10 @@ export type ActionResult = { ok: true } | { ok: false; reason: string };
 const fail = (reason: string): ActionResult => ({ ok: false, reason });
 
 function setDestination(ship: Ship, target: Vec2): void {
-  const dest = navigator.nearestNavigable(target, classOf(ship).radius);
+  const clearance = navClearance(ship.classId);
+  const dest = navigator.nearestNavigable(target, clearance);
   ship.destination = dest;
-  ship.path = navigator.findPath(ship.pos, dest, classOf(ship).radius);
+  ship.path = navigator.findPath(ship.pos, dest, clearance);
 }
 
 export function moveTo(world: World, playerId: string, target: Vec2): ActionResult {
@@ -387,7 +393,7 @@ export function respawn(world: World, playerId: string): ActionResult {
   if (!player || !ship) return fail('Jugador desconocido');
   if (ship.state === 'alive') return fail('Tu barco está a flote');
   if (!player.death || world.time - player.death.at < DEATH_COUNTDOWN - EPS) return fail('Aún no puedes zarpar');
-  const spot = respawnPoint(world, classOf(ship).radius);
+  const spot = respawnPoint(world, navClearance(ship.classId));
   ship.state = 'alive';
   ship.stateTimer = 0;
   ship.pos = spot.pos;
@@ -416,7 +422,7 @@ function switchClass(world: World, ship: Ship, player: Player, classId: PlayerSh
   player.activeShip = classId;
   ship.maxHp = maxHpFor(classId, player);
   ship.hp = keepRatio ? Math.round(ship.maxHp * ratio) : ship.maxHp;
-  ship.pos = navigator.nearestNavigable(ship.pos, SHIP_CLASSES[classId].radius);
+  ship.pos = navigator.nearestNavigable(ship.pos, navClearance(classId));
   ship.destination = null;
   ship.path = [];
 }
@@ -521,12 +527,17 @@ function moveShip(world: World, ship: Ship, dt: number): void {
   let arrived = false;
 
   if (ship.destination) {
-    if (ship.path.length === 0) ship.path = navigator.findPath(ship.pos, ship.destination, stats.radius);
+    if (ship.path.length === 0) ship.path = navigator.findPath(ship.pos, ship.destination, navClearance(ship.classId));
     // Waypoints intermedios: pasar al siguiente al acercarse
-    while (ship.path.length > 1 && distance(ship.pos, ship.path[0]) < Math.max(4, stats.radius)) ship.path.shift();
+    const skipRadius = Math.max(4, stats.radius);
+    while (ship.path.length > 1 && distance(ship.pos, ship.path[0]) < skipRadius) ship.path.shift();
     const wp = ship.path[0];
     const dist = distance(ship.pos, wp);
     const final = ship.path.length === 1;
+    // Distancia que queda por recorrer en toda la ruta: el frenado la usa para no pasarse del destino
+    // cuando el último waypoint intermedio queda pegado a él (AC-20)
+    let remaining = dist;
+    for (let i = 1; i < ship.path.length; i++) remaining += distance(ship.path[i - 1], ship.path[i]);
 
     // Llegada: frena dentro de los 2 m; el destino se cumple cuando la velocidad llega a 0 (AC-15)
     arrived = final && dist <= ARRIVE_DISTANCE;
@@ -536,9 +547,20 @@ function moveShip(world: World, ship: Ship, dt: number): void {
       const maxTurn = stats.turnRate * dt;
       ship.heading = normalizeAngle(ship.heading + Math.max(-maxTurn, Math.min(maxTurn, delta)));
       desired = speedCapOf(world, ship) * turnFactor(Math.abs(delta));
+      // Frena a tiempo para detenerse en el destino (v² = 2·frenado·d), con la distancia restante de la ruta
+      desired = Math.min(desired, Math.sqrt(2 * stats.brake * Math.max(0, remaining - 0.5)));
+      // Esquina cerrada en el siguiente waypoint: llegar al punto de salto a velocidad de pivote
+      if (!final) {
+        const corner = Math.abs(angleDelta(headingTo(ship.pos, wp), headingTo(wp, ship.path[1])));
+        if (corner > PIVOT_MIN_ANGLE) {
+          desired = Math.min(desired, Math.sqrt(PIVOT_SPEED * PIVOT_SPEED + 2 * stats.brake * Math.max(0, dist - skipRadius)));
+        }
+      }
+      // Junto a una isla, los giros grandes se hacen casi en el sitio para que el casco no barra la costa (AC-20)
+      if (Math.abs(delta) > PIVOT_MIN_ANGLE && navigator.edgeClearance(ship.pos) < navClearance(ship.classId) + PIVOT_ZONE) {
+        desired = Math.min(desired, PIVOT_SPEED);
+      }
       if (final) {
-        // Frena a tiempo para detenerse en el destino (v² = 2·frenado·d)
-        desired = Math.min(desired, Math.sqrt(2 * stats.brake * Math.max(0, dist - 0.5)));
         // Destino muy cerca y a la espalda: girar casi en el sitio en vez de orbitarlo
         const turnRadius = ship.speed / stats.turnRate;
         if (Math.abs(delta) > Math.PI / 2 && dist < turnRadius * 2 + ARRIVE_DISTANCE) desired = Math.min(desired, 1.5);
@@ -875,10 +897,10 @@ function pickPirateTarget(world: World, ship: Ship): Ship | null {
 }
 
 function steerTo(ship: Ship, p: Vec2): void {
-  const radius = classOf(ship).radius;
-  const dest = navigator.nearestNavigable(p, radius);
+  const clearance = navClearance(ship.classId);
+  const dest = navigator.nearestNavigable(p, clearance);
   ship.destination = dest;
-  ship.path = navigator.segmentClear(ship.pos, dest, radius) ? [dest] : navigator.findPath(ship.pos, dest, radius);
+  ship.path = navigator.findPath(ship.pos, dest, clearance);
 }
 
 function updatePirate(world: World, ship: Ship, dt: number): void {
@@ -938,7 +960,7 @@ function updatePirate(world: World, ship: Ship, dt: number): void {
         const a = rand(world, 0, Math.PI * 2);
         const r = rand(world, 15, PIRATE_PATROL_RADIUS);
         const p = pirateDestination({ x: ai.origin.x + Math.cos(a) * r, z: ai.origin.z + Math.sin(a) * r });
-        if (navigableFor(p, classOf(ship).radius)) {
+        if (navigableFor(p, navClearance(ship.classId))) {
           steerTo(ship, p);
           break;
         }

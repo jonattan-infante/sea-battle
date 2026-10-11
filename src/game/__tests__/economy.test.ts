@@ -35,7 +35,7 @@ function lootOf(events: GameEvent[], playerId: string, source?: string): number[
 }
 
 describe('E4 — Botín (§10)', () => {
-  test('AC-56: pirata dañado 60 % por A y 40 % por B → 72 y 48 de oro, una sola vez', () => {
+  test('AC-56: pirata dañado 60 % por A y 40 % por B → 63 y 42 de oro (suma 105), una sola vez', () => {
     const world = emptyWorld();
     const a = placePlayer(world, 'A', 300, 300);
     const b = placePlayer(world, 'B', 330, 330);
@@ -48,36 +48,33 @@ describe('E4 — Botín (§10)', () => {
     const goldA = world.players.get('A')!.gold;
     const goldB = world.players.get('B')!.gold;
     const events = run(world, 3);
-    expect(lootOf(events, 'A', 'kill')).toEqual([72]);
-    expect(lootOf(events, 'B', 'kill')).toEqual([48]);
-    expect(world.players.get('A')!.gold - goldA).toBe(72);
-    expect(world.players.get('B')!.gold - goldB).toBe(48);
+    expect(lootOf(events, 'A', 'kill')).toEqual([63]);
+    expect(lootOf(events, 'B', 'kill')).toEqual([42]);
+    expect(world.players.get('A')!.gold - goldA).toBe(63);
+    expect(world.players.get('B')!.gold - goldB).toBe(42);
   });
 
-  test('AC-57: mercante (70) dañado a partes iguales por A, B y C → 24, 23 y 23', () => {
+  test('AC-57: pirata (105) dañado a partes iguales por A y B, con A primero → 53 y 52 (el resto va a quien dañó primero)', () => {
     expect([...splitReward([
-      { playerId: 'A', amount: 100, firstAt: 1 },
-      { playerId: 'B', amount: 100, firstAt: 2 },
-      { playerId: 'C', amount: 100, firstAt: 3 }
-    ], 70)]).toEqual([['A', 24], ['B', 23], ['C', 23]]);
+      { playerId: 'A', amount: 225, firstAt: 1 },
+      { playerId: 'B', amount: 225, firstAt: 2 }
+    ], 105)]).toEqual([['A', 53], ['B', 52]]);
 
     const world = emptyWorld();
     const a = placePlayer(world, 'A', 300, 300);
-    const b = placePlayer(world, 'B', 310, 300);
-    const c = placePlayer(world, 'C', 320, 300);
-    const merchant = dummy(world, 300, 340, 300);
-    merchant.classId = 'merchant';
-    seedDamage(merchant, [[a, 100, 0.1], [b, 100, 0.2], [c, 70, 0.3]]);
-    merchant.hp = 30;
-    scriptedRng(world, [0, 0.999, 0.999, 0.999]);
-    attack(world, 'C', merchant.id);
+    const b = placePlayer(world, 'B', 330, 300);
+    const pirate = placePirate(world, 300, 340);
+    pirate.ai = null;
+    seedDamage(pirate, [[a, 225, 0.1], [b, 195, 0.2]]);
+    pirate.hp = 30;
+    scriptedRng(world, [0, 0.999, 0.999, 0.999]); // B acierta 1 bala de 30 → 225 / 225
+    attack(world, 'B', pirate.id);
     const events = run(world, 3);
-    expect(lootOf(events, 'A', 'kill')).toEqual([24]);
-    expect(lootOf(events, 'B', 'kill')).toEqual([23]);
-    expect(lootOf(events, 'C', 'kill')).toEqual([23]);
+    expect(lootOf(events, 'A', 'kill')).toEqual([53]);
+    expect(lootOf(events, 'B', 'kill')).toEqual([52]);
   });
 
-  test.each([['pirate', 30], ['merchant', 20]])('AC-59: un %s hundido deja una caja de %d; la recoge el más cercano a ≤ 8 m y caduca a los 30 s', (kind, gold) => {
+  test.each([['pirate', 25], ['merchant', 15]])('AC-59: un %s hundido deja una caja de %d; la recoge el más cercano a ≤ 8 m y caduca a los 30 s', (kind, gold) => {
     const world = emptyWorld();
     const victim = kind === 'pirate' ? placePirate(world, 300, 300) : placeMerchant(world, 300, 300);
     victim.ai = null;
@@ -343,6 +340,7 @@ describe('E4 — Curva económica (§10)', () => {
     let t500 = Infinity;
     let tBrig = Infinity;
     let tAll = Infinity;
+    let earnedAtBrig = 0;
     for (let tick = 1; tick <= 90 * 60 * TICK_RATE && tAll === Infinity; tick++) {
       const t = tick * DT;
       if (tick % 10 === 0) {
@@ -354,7 +352,10 @@ describe('E4 — Curva económica (§10)', () => {
           else if (item && p.gold >= itemPrice(item)) {
             if (isInSafeZone(s.pos)) {
               buy(world, 'g', item);
-              if (item.kind === 'ship' && item.classId === 'brig') tBrig = t;
+              if (item.kind === 'ship' && item.classId === 'brig') {
+                tBrig = t;
+                earnedAtBrig = earned;
+              }
               if (!nextItem(p)) tAll = t;
             } else {
               s.attackTargetId = null;
@@ -378,7 +379,7 @@ describe('E4 — Curva económica (§10)', () => {
       }
       if (t500 === Infinity && earned >= 500) t500 = t;
     }
-    return { t500, tBrig, tAll, deaths: p.deaths };
+    return { t500, tBrig, tAll, deaths: p.deaths, n1PerMin: earnedAtBrig / (tBrig / 60) };
   }
 
   test('AC-60: con el bot "barco primero", la mediana de las semillas 1–5 cumple 500 de oro ≤ 4 min, Bergantín ≤ 20 min y todo en 45–70 min', () => {
@@ -387,7 +388,7 @@ describe('E4 — Curva económica (§10)', () => {
     const t500 = median(runs.map((r) => r.t500));
     const tBrig = median(runs.map((r) => r.tBrig));
     const tAll = median(runs.map((r) => r.tAll));
-    console.log(`AC-60 por semilla (min): ${runs.map((r, i) => `s${i + 1} ${min(r.t500)}/${min(r.tBrig)}/${min(r.tAll)} (${r.deaths} muertes)`).join(' · ')} → mediana ${min(t500)}/${min(tBrig)}/${min(tAll)}`);
+    console.log(`AC-60 por semilla (min): ${runs.map((r, i) => `s${i + 1} ${min(r.t500)}/${min(r.tBrig)}/${min(r.tAll)} (${r.deaths} muertes, N1 ${r.n1PerMin.toFixed(0)} oro/min)`).join(' · ')} → mediana ${min(t500)}/${min(tBrig)}/${min(tAll)}; N1 mediana ${median(runs.map((r) => r.n1PerMin)).toFixed(0)} oro/min`);
     expect(t500).toBeLessThanOrEqual(4 * 60);
     expect(tBrig).toBeLessThanOrEqual(20 * 60);
     expect(tAll).toBeGreaterThanOrEqual(45 * 60);

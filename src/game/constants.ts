@@ -51,7 +51,15 @@ export const PIRATE_SECTORS = [
 
 // ---- Navegación (§6) ----
 export const ARRIVE_DISTANCE = 2;
-export const NAV_MARGIN = 3; // margen extra sobre radio de isla + radio del barco
+// Margen de navegación (§6): media eslora + 2 m desde el borde de la isla, para que el casco visible
+// nunca entre en una isla. El radio de colisión sigue siendo el límite físico de último recurso.
+export const NAV_CLEARANCE_EXTRA = 2;
+export const NAV_NODE_SLACK = 1; // holgura de los nodos del grafo de rutas sobre el margen
+// Giro casi en el sitio junto a una isla: con un error de rumbo > 45° el barco avanzaría mientras gira y el
+// arco metería el casco en la costa. A ≤ 1 m/s el radio de giro es ~1 m y cabe en los 2 m extra del margen.
+export const PIVOT_MIN_ANGLE = Math.PI / 4;
+export const PIVOT_SPEED = 1;
+export const PIVOT_ZONE = 8; // m por encima del margen de navegación
 export const TURN_FACTORS = [
   { maxAngle: 45 * deg, factor: 1 },
   { maxAngle: 90 * deg, factor: 0.6 },
@@ -108,14 +116,18 @@ export const SHIP_CLASSES: Record<string, ShipClassStats> = {
   pirate: {
     id: 'pirate', label: 'Pirata', kind: 'pirate', length: 20, radius: 6, maxHp: 450,
     patrolSpeed: 6, maxSpeed: 11, accel: 3, brake: 5, turnRate: 70 * deg, cannonsPerSide: 4, price: 0,
-    cannon: { damage: 22, accuracy: 0.6, range: 55, reload: 4.5 }, reward: 120, wreck: 30, respawnTime: 30
+    cannon: { damage: 22, accuracy: 0.6, range: 55, reload: 4.5 }, reward: 105, wreck: 25, respawnTime: 30
   },
   merchant: {
     id: 'merchant', label: 'Mercante', kind: 'merchant', length: 22, radius: 7, maxHp: 300,
     patrolSpeed: 7, maxSpeed: 9, accel: 2.5, brake: 4, turnRate: 50 * deg, cannonsPerSide: 0, price: 0,
-    cannon: null, reward: 70, wreck: 20, respawnTime: 20
+    cannon: null, reward: 60, wreck: 15, respawnTime: 20
   }
 };
+
+export function navClearance(classId: string): number {
+  return SHIP_CLASSES[classId].length / 2 + NAV_CLEARANCE_EXTRA;
+}
 
 export const PLAYER_SHIP_ORDER = ['sloop', 'brig', 'frigate'] as const;
 export type PlayerShipClass = (typeof PLAYER_SHIP_ORDER)[number];

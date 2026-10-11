@@ -1,4 +1,5 @@
-import { ISLANDS, NAV_LIMIT, SHIP_CLASSES } from '../constants';
+import { ISLANDS, NAV_LIMIT, PIVOT_MIN_ANGLE, PIVOT_SPEED, SHIP_CLASSES, navClearance } from '../constants';
+import { segmentPointDistance } from '../nav';
 import { createRng, distance } from '../vec';
 import { moveTo, navigator, stop } from '../world';
 import { DT, emptyWorld, percentile, placePlayer, run, runUntil } from './helpers';
@@ -61,41 +62,87 @@ describe('E1 — Navegación', () => {
     expect(ship.speed).toBe(0);
   });
 
-  test('AC-20: 1 000 rutas aleatorias nunca entran en islas y llegan a ≤ 2 m', () => {
-    const rng = createRng(2026);
-    const radius = SHIP_CLASSES.sloop.radius;
-    let arrived = 0;
-    for (let i = 0; i < 1000; i++) {
-      const world = emptyWorld(i);
-      const from = navigator.nearestNavigable({ x: (rng() * 2 - 1) * 480, z: (rng() * 2 - 1) * 480 }, radius);
-      const to = navigator.nearestNavigable({ x: (rng() * 2 - 1) * 480, z: (rng() * 2 - 1) * 480 }, radius);
-      const ship = placePlayer(world, 'a', from.x, from.z, rng() * Math.PI * 2);
-      moveTo(world, 'a', to);
-      const target = ship.destination!;
-      let violated = false;
-      const t = runUntil(world, 240, () => {
-        for (const isl of ISLANDS) if (Math.hypot(ship.pos.x - isl.x, ship.pos.z - isl.z) < isl.radius + radius - 1e-6) violated = true;
-        return ship.destination === null && ship.speed === 0;
-      });
-      expect(violated).toBe(false);
-      if (t !== Infinity && distance(ship.pos, target) <= 2) arrived++;
+  // Segmento del casco (proa a popa, longitud L, sin bauprés) frente a cada isla
+  function hullTouchesIsland(x: number, z: number, heading: number, length: number): boolean {
+    const fx = Math.sin(heading) * (length / 2);
+    const fz = Math.cos(heading) * (length / 2);
+    const bow = { x: x + fx, z: z + fz };
+    const stern = { x: x - fx, z: z - fz };
+    return ISLANDS.some((isl) => segmentPointDistance(bow, stern, { x: isl.x, z: isl.z }) < isl.radius - 1e-6);
+  }
+
+  test.each(['sloop', 'brig', 'frigate', 'pirate', 'merchant'])(
+    'AC-20: %s — 1 000 rutas aleatorias: el casco nunca toca una isla y el 100 %% llega a ≤ 2 m',
+    (classId) => {
+      const rng = createRng(2026);
+      const clearance = navClearance(classId);
+      const length = SHIP_CLASSES[classId].length;
+      let arrived = 0;
+      let touched = 0;
+      for (let i = 0; i < 1000; i++) {
+        const world = emptyWorld(i);
+        const from = navigator.nearestNavigable({ x: (rng() * 2 - 1) * 480, z: (rng() * 2 - 1) * 480 }, clearance);
+        const to = navigator.nearestNavigable({ x: (rng() * 2 - 1) * 480, z: (rng() * 2 - 1) * 480 }, clearance);
+        const ship = placePlayer(world, 'a', from.x, from.z, rng() * Math.PI * 2);
+        ship.classId = classId;
+        moveTo(world, 'a', to);
+        const target = ship.destination!;
+        let violated = false;
+        const t = runUntil(world, 300, () => {
+          if (!violated && hullTouchesIsland(ship.pos.x, ship.pos.z, ship.heading, length)) violated = true;
+          return ship.destination === null && ship.speed === 0;
+        });
+        if (violated) touched++;
+        if (t !== Infinity && distance(ship.pos, target) <= 2) arrived++;
+      }
+      expect({ classId, touched }).toEqual({ classId, touched: 0 });
+      expect({ classId, arrived }).toEqual({ classId, arrived: 1000 });
+    },
+    120_000
+  );
+
+  test.each(['sloop', 'brig', 'frigate', 'pirate', 'merchant'])('AC-21: %s — un clic dentro de una isla lleva a L/2 + 2 ±1 m del borde', (classId) => {
+    const margin = SHIP_CLASSES[classId].length / 2 + 2;
+    for (const isl of ISLANDS) {
+      const p = navigator.nearestNavigable({ x: isl.x + 3, z: isl.z - 2 }, navClearance(classId));
+      const fromEdge = Math.hypot(p.x - isl.x, p.z - isl.z) - isl.radius;
+      expect(Math.abs(fromEdge - margin)).toBeLessThanOrEqual(1);
     }
-    expect(arrived).toBe(1000);
   });
 
-  test('AC-21: un clic dentro de una isla lleva a ≤ 1 m del borde navegable', () => {
-    const radius = SHIP_CLASSES.sloop.radius;
-    for (const isl of ISLANDS) {
-      const p = navigator.nearestNavigable({ x: isl.x + 3, z: isl.z - 2 }, radius);
-      const d = Math.hypot(p.x - isl.x, p.z - isl.z);
-      expect(d).toBeGreaterThanOrEqual(isl.radius + radius);
-      expect(d - (isl.radius + radius)).toBeLessThanOrEqual(1);
-    }
+  test('AC-100: en mar abierto un giro de 90° no baja de 0,6 × vel. máx.; junto a una isla, un giro > 45° baja a ≤ 1 m/s', () => {
+    // Mar abierto: a más de margen + 8 m de toda isla
+    const world = emptyWorld();
+    const ship = placePlayer(world, 'a', -100, -100, Math.PI / 2);
+    ship.speed = SHIP_CLASSES.sloop.maxSpeed;
+    expect(navigator.edgeClearance(ship.pos)).toBeGreaterThan(navClearance('sloop') + 8);
+    moveTo(world, 'a', { x: -100, z: 300 }); // destino a 90° del rumbo
+    let minSpeed = Infinity;
+    runUntil(world, 5, () => {
+      const err = Math.abs(Math.atan2(Math.sin(0 - ship.heading), Math.cos(0 - ship.heading)));
+      minSpeed = Math.min(minSpeed, ship.speed);
+      return err < (2 * Math.PI) / 180;
+    });
+    expect(minSpeed).toBeGreaterThanOrEqual(0.6 * SHIP_CLASSES.sloop.maxSpeed - 0.1);
+
+    // Junto a la isla I1 (260, 200; r 45), a margen + 3 m del borde, con media vuelta (giro de 180°)
+    const w2 = emptyWorld();
+    const near = placePlayer(w2, 'a', 260, 200 + 45 + navClearance('sloop') + 3, Math.PI / 2);
+    near.speed = 6;
+    expect(navigator.edgeClearance(near.pos)).toBeLessThan(navClearance('sloop') + 8);
+    moveTo(w2, 'a', { x: 60, z: 258 });
+    let minNear = Infinity;
+    runUntil(w2, 6, () => {
+      minNear = Math.min(minNear, near.speed);
+      const target = -Math.PI / 2; // hacia −X
+      return Math.abs(Math.atan2(Math.sin(target - near.heading), Math.cos(target - near.heading))) < PIVOT_MIN_ANGLE;
+    });
+    expect(minNear).toBeLessThanOrEqual(PIVOT_SPEED + 1e-9);
   });
 
   test('AC-22: el p99 del cálculo de ruta es ≤ 2 ms', () => {
     const rng = createRng(7);
-    const radius = SHIP_CLASSES.frigate.radius;
+    const radius = navClearance('frigate');
     navigator.findPath({ x: -480, z: -480 }, { x: 480, z: 480 }, radius); // precalienta el grafo
     const times: number[] = [];
     for (let i = 0; i < 1000; i++) {

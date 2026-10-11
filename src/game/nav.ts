@@ -1,6 +1,7 @@
 // Rutas que esquivan islas (§6): grafo de visibilidad con nodos en anillos alrededor de cada isla,
-// inflados por el radio del barco + margen, y A* sobre ese grafo (~100 nodos frente a 40 000 celdas de rejilla).
-import { IslandDef, NAV_LIMIT, NAV_MARGIN } from './constants';
+// inflados por el margen de navegación del barco (`clearance` = L/2 + 2, desde el borde de la isla),
+// y A* sobre ese grafo (~100 nodos frente a 40 000 celdas de rejilla).
+import { IslandDef, NAV_LIMIT, NAV_NODE_SLACK } from './constants';
 import { Vec2, distance } from './vec';
 
 const NODES_PER_ISLAND = 16;
@@ -34,13 +35,20 @@ export class Navigator {
     return true;
   }
 
+  // Distancia del punto al borde de la isla más cercana
+  edgeClearance(p: Vec2): number {
+    let min = Infinity;
+    for (const island of this.islands) min = Math.min(min, Math.hypot(p.x - island.x, p.z - island.z) - island.radius);
+    return min;
+  }
+
   // Punto navegable más cercano: fuera de las islas infladas y dentro del límite (§4, AC-18, AC-21)
-  nearestNavigable(p: Vec2, shipRadius: number): Vec2 {
+  nearestNavigable(p: Vec2, clearance: number): Vec2 {
     let x = Math.max(-NAV_LIMIT, Math.min(NAV_LIMIT, p.x));
     let z = Math.max(-NAV_LIMIT, Math.min(NAV_LIMIT, p.z));
     for (let pass = 0; pass < 3; pass++) {
       for (const island of this.islands) {
-        const min = island.radius + shipRadius;
+        const min = island.radius + clearance;
         const d = Math.hypot(x - island.x, z - island.z);
         if (d < min) {
           const nx = d > EPS ? (x - island.x) / d : 1;
@@ -55,38 +63,42 @@ export class Navigator {
     return { x, z };
   }
 
-  private graphFor(shipRadius: number): Graph {
-    let graph = this.graphs.get(shipRadius);
+  private graphFor(clearance: number): Graph {
+    let graph = this.graphs.get(clearance);
     if (graph) return graph;
     const nodes: Vec2[] = [];
     for (const island of this.islands) {
-      const r = (island.radius + shipRadius + NAV_MARGIN) / Math.cos(Math.PI / NODES_PER_ISLAND);
+      // El polígono inscrito de nodos deja sus lados a ≥ radio + margen + holgura del centro
+      const r = (island.radius + clearance + NAV_NODE_SLACK) / Math.cos(Math.PI / NODES_PER_ISLAND);
       for (let i = 0; i < NODES_PER_ISLAND; i++) {
         const a = (i / NODES_PER_ISLAND) * Math.PI * 2;
         const n = { x: island.x + Math.cos(a) * r, z: island.z + Math.sin(a) * r };
         if (Math.abs(n.x) > NAV_LIMIT || Math.abs(n.z) > NAV_LIMIT) continue;
-        if (!this.islands.every((o) => Math.hypot(n.x - o.x, n.z - o.z) >= o.radius + shipRadius)) continue;
+        if (!this.islands.every((o) => Math.hypot(n.x - o.x, n.z - o.z) >= o.radius + clearance)) continue;
         nodes.push(n);
       }
     }
     const edges: number[][] = nodes.map(() => []);
     for (let i = 0; i < nodes.length; i++) {
       for (let j = i + 1; j < nodes.length; j++) {
-        if (this.segmentClear(nodes[i], nodes[j], shipRadius)) {
+        if (this.segmentClear(nodes[i], nodes[j], clearance)) {
           edges[i].push(j);
           edges[j].push(i);
         }
       }
     }
     graph = { nodes, edges };
-    this.graphs.set(shipRadius, graph);
+    this.graphs.set(clearance, graph);
     return graph;
   }
 
   // Waypoints desde `from` (excluido) hasta `to` (incluido)
-  findPath(from: Vec2, to: Vec2, shipRadius: number): Vec2[] {
-    if (this.segmentClear(from, to, shipRadius)) return [to];
-    const { nodes, edges } = this.graphFor(shipRadius);
+  findPath(from: Vec2, to: Vec2, clearance: number): Vec2[] {
+    // Si el barco ya está dentro de la zona inflada (p. ej., tras un empuje físico), los tramos desde el
+    // origen solo pueden mantener o aumentar su distancia actual a la isla, nunca acercarse más
+    const startClear = Math.min(clearance, Math.max(0, this.edgeClearance(from) - EPS));
+    if (this.segmentClear(from, to, startClear)) return [to];
+    const { nodes, edges } = this.graphFor(clearance);
     const n = nodes.length;
     const START = n;
     const GOAL = n + 1;
@@ -94,8 +106,8 @@ export class Navigator {
     const startLinks: number[] = [];
     const goalLinks = new Set<number>();
     for (let i = 0; i < n; i++) {
-      if (this.segmentClear(from, nodes[i], shipRadius)) startLinks.push(i);
-      if (this.segmentClear(nodes[i], to, shipRadius)) goalLinks.add(i);
+      if (this.segmentClear(from, nodes[i], startClear)) startLinks.push(i);
+      if (this.segmentClear(nodes[i], to, clearance)) goalLinks.add(i);
     }
 
     const g = new Float64Array(n + 2).fill(Infinity);

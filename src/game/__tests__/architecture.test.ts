@@ -124,11 +124,11 @@ describe('E0 — Arquitectura de la simulación', () => {
     // §9 NPC: vida, patrulla/máx., giro, cañones, daño, precisión, alcance, recarga, recompensa, restos, reaparición
     const p = C.SHIP_CLASSES.pirate;
     expect([p.maxHp, p.patrolSpeed, p.maxSpeed, Math.round((p.turnRate * 180) / Math.PI), p.cannonsPerSide, p.cannon, p.reward, p.wreck, p.respawnTime]).toEqual([
-      450, 6, 11, 70, 4, { damage: 22, accuracy: 0.6, range: 55, reload: 4.5 }, 120, 30, 30
+      450, 6, 11, 70, 4, { damage: 22, accuracy: 0.6, range: 55, reload: 4.5 }, 105, 25, 30
     ]);
     const m = C.SHIP_CLASSES.merchant;
     expect([m.maxHp, m.patrolSpeed, m.maxSpeed, Math.round((m.turnRate * 180) / Math.PI), m.cannonsPerSide, m.cannon, m.reward, m.wreck, m.respawnTime]).toEqual([
-      300, 7, 9, 50, 0, null, 70, 20, 20
+      300, 7, 9, 50, 0, null, 60, 15, 20
     ]);
     expect([C.NPC_POPULATION.pirate, C.NPC_POPULATION.merchant, C.PIRATES_PER_SECTOR]).toEqual([12, 8, 3]);
     expect([C.PIRATE_AGGRO_RADIUS, C.PIRATE_DISENGAGE_TARGET, C.PIRATE_LEASH, C.PIRATE_ORBIT_RADIUS, C.PIRATE_ORBIT_SPEED, C.PIRATE_PORT_EXCLUSION]).toEqual([70, 110, 200, 45, 8, 130]);

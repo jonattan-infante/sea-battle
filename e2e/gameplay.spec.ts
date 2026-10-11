@@ -178,7 +178,7 @@ test.describe('Móvil @mobile', () => {
 });
 
 test.describe('Combate completo', () => {
-  test('AC-58 y AC-78: hundir un mercante muestra "Hundiste a Mercante +70 oro" y sube el oro del HUD', async ({ page }) => {
+  test('AC-58 y AC-78: hundir un mercante muestra "Hundiste a Mercante +60 oro" y sube el oro del HUD', async ({ page }) => {
     test.setTimeout(150_000);
     await enterGame(page);
     const goldText = async () => Number(((await page.getByTestId('player-gold').textContent()) ?? '0').replace(/\D/g, ''));
@@ -220,7 +220,7 @@ test.describe('Combate completo', () => {
       90_000,
       1000
     );
-    await expect(page.getByTestId('feed')).toContainText(/Hundiste a Mercante \+\d+ oro/, { timeout: 3000 });
+    await expect(page.getByTestId('feed')).toContainText(/Hundiste a Mercante \+60 oro/, { timeout: 3000 });
     const gold1 = await waitFor(goldText, (g) => g > gold0, 3000, 50);
     console.log(`AC-58/78: oro ${gold0} → ${gold1}`);
     expect(dialogsOf(page)).toEqual([]);
