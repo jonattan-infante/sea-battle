@@ -86,12 +86,23 @@ Vista superior del asset (desde +Y)           En pantalla (cámara de ART-DIRECT
 | `socket_cannon_port_NN` | `x = +(a(u)·B/2 + 0.30)`, `y = 0.60·F`, `z` de la tabla de clase (§8.4); `u = z/L` | Hacia afuera: `rotation.y = +π/2` (+Z → +X) | Fogonazo, humo, salida de la bala |
 | `socket_cannon_stbd_NN` | Igual, con `x` negativa | `rotation.y = −π/2` (+Z → −X) | Igual |
 | `socket_smoke` | `(0, yd(−0.15) + 0.5, −0.15·L)` | — | VFX-SPEC §6 |
-| `socket_fire_01` / `_02` / `_03` | `(+0.2·B, yd(+0.25)+0.3, +0.25·L)` / `(−0.2·B, yd(0)+0.3, 0)` / `(0, yd(−0.30)+0.3, −0.30·L)` | — | VFX-SPEC §6 |
+| `socket_fire_01` / `_02` / `_03` | `(+0.2·B, yd(+0.25)+0.3, +0.25·L)` / `(−0.2·B, yd(0)+0.3, 0)` / `(0, yd(−0.30)+0.3, −0.30·L)`, salvo las excepciones de abajo (AS-V17) | — | VFX-SPEC §6 |
 | `socket_label` | `(0, h_max + 1.5, 0)`; `h_max` = mástil más alto | — | Números de daño, icono de protección (VFX-SPEC §9) |
 | `socket_wake` | `(0, 0, −L/2)` | +Z hacia proa | Estela (VFX-SPEC §8) |
 | `socket_bow` | `(0, 0, +L/2)` | +Z hacia proa | Bigote de proa |
 
 - `yd(u) = s(u)·F` es la altura de cubierta en `u = z/L` (perfil de §8.1, interpolación lineal).
+- **Excepciones de `socket_fire_NN`** (D22). Con la fórmula, la elipse de fuego (0,06·L × 0,15·B, VFX-SPEC §6) caía sobre objetos de cubierta: Mercante `_02` (caja, 26 %) y `_03` (castillo de popa, 93 %); Fragata `_01` (castillo de proa, 20 %) y `_03` (alcázar, 100 %); Bergantín `_03` (camareta, 33 %); Balandra `_03` (camareta, 13 %). Las llamas nacían dentro del objeto y la prueba de profundidad las tapaba. Posiciones corregidas, todas con 0 % de solape:
+
+| Clase | Socket | Posición |
+|---|---|---|
+| Balandra | `_03` | `(0, yd+0.3, −4.4)` |
+| Bergantín | `_03` | `(0, yd+0.3, −6.0)` |
+| Fragata | `_01` | `(+1.72, yd+0.3, +7.4)` |
+| Fragata | `_03` | Sobre el alcázar: `(0, 5.06, −12.5)` (tapa en 4,76 + 0,3) |
+| Mercante | `_02` | Sin cambio: se mueve la carga (§8.4) |
+| Mercante | `_03` | Sobre el castillo de popa: `(0, 4.95, −8.3)` (tapa en 4,65 + 0,3) |
+
 - La **placa de nombre** no usa socket: se ancla debajo del casco con `sb_length` y `sb_beam` (ART-DIRECTION §11.1).
 - La **banda que dispara** es la que mira al objetivo: babor si `dot(objetivo − pos, +X_mundo_del_barco) > 0`; si no, estribor.
 - Los sockets son hijos directos de la raíz (no de un LOD), así que sobreviven al cambio de LOD.
@@ -346,7 +357,7 @@ Notación: vela cuadra = `w × h @ y_b` (ancho × alto en la altura de su borde 
 | Mesana latina | A (−5,0, 4,5) · B (−11,4, 4,8) · C (−12,4, 11,5); entena de A a C |
 | Foque (D12) | H (0, 13,1, 5,3) · T = punta del bauprés (0, 4,71, 14,7) · C (0, 3,96, 9,53) |
 | Castillo de popa alto | `Box(6.0, 1.8, 5.4)` en (0, 3,75, −8,3) |
-| Carga | 6 × `Box(1.4, 1.4, 1.4)` `cargo` en (±1,2, 3,1, +2,6 / +1,0 / −4,4) · 3 × `CylinderGeometry(0.45, 0.45, 1.0, 6)` `barrel` en (−1,3 / 0 / +1,3, 3,2, +7,6) |
+| Carga | 6 × `Box(1.4, 1.4, 1.4)` `cargo` en (±1,2, 3,1, +2,6 / −3,0 / −4,4). El par de z = +1,0 pasa a −3,0 porque metía el 26 % de la elipse de `socket_fire_02` dentro de una caja (Q18; D22) · 3 × `CylinderGeometry(0.45, 0.45, 1.0, 6)` `barrel` en (−1,3 / 0 / +1,3, 3,2, +7,6) |
 | Colores | `hull #6E4A2C` · `band #E8DCC0` · `deck #C9965E` · `rail/mast #6B4426` |
 | Bandera | `#2F7FB8` + cuadro `#F5F1E6` |
 | Cañones por banda | 0 (sin sockets de cañón) |
@@ -437,6 +448,7 @@ Se ejecuta con un script de desarrollo (`npm run assets:validate`, dependencia d
 | AS-V14 | Velas visibles con cualquier rumbo: `runtime.measureSails` con zoom 0,7×, rumbos de 0° a 345° cada 15°, en LOD0 y LOD1, para las 5 clases P0 | Mínimo/máximo ≥ 0,25 en todas (objetivo ≥ 0,28) |
 | AS-V15 | El procedural cumple el contrato: AS-V02…V09 en Jest para las 5 recetas P0 | `npm test` en verde |
 | AS-V16 | Islas: radio visual en la flotación de cada columna de vértices de la playa; y ningún vértice sobre el agua (y > 0) de la isla, rocas, muelles o palmeras fuera de r + 0,5 m en XZ | Playa entre 0,94r y 1,00r en el 100 %; 0 vértices fuera |
+| AS-V17 | **Fuego sin obstáculos** (D22): para cada `socket_fire_NN`, la elipse de semiejes 0,06·L (eslora) × 0,15·B (manga) no se solapa en planta con ningún objeto de cubierta que sobresalga > 0,5 m de la superficie del socket (carga, barriles, camaretas, castillos, botes). Quedan fuera mástiles y jarcia. Si el socket cae sobre una superestructura, va en su tapa + 0,3 m | Solape ≤ 5 % del área de cada elipse |
 
 ---
 
