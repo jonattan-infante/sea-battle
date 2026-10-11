@@ -232,21 +232,27 @@ El criterio que se valida es AD-01 (color del océano) y AD-10 (valor de las vel
 **Zoom por defecto** (se recalcula al cambiar el tamaño del viewport):
 ```
 ppm₀ = clamp( min( (W/2 − 12) / R ,  (H/2 − max(top, bottom)) / (R · sin θ) ),  1.5, 12 )
-R = 80 m (alcance máximo del GDD §7; fijo, para que el zoom no cambie al mejorar los cañones)
+R = máx(alcance del cañón propio, 65 m) → 65 / 70 / 80 m con N1 / N2 / N3 (GDD §5, AC-24; U8 cerrado, D26)
+    65 m = el mayor alcance de disparo de un NPC (cañonera y capitán). Si un NPC alcanza más, R sube con él
 top/bottom = reserva de HUD del layout (§12): escritorio 120/108 · móvil vertical 116/104 · móvil horizontal 12/12
 ```
 
-| Viewport | ppm₀ | Suelo visible | Balandra (16 m) | Bergantín (24 m) | Fragata (34 m) | Pirata (20 m) | Mercante (22 m) |
-|---|---|---|---|---|---|---|---|
-| 1440×900 | **5,04** | 286 × 218 m | 81 px | 121 px | 171 px | 101 px | 111 px |
-| 390×844 | **2,29** | 170 × 450 m | 37 px | 55 px | 78 px | 46 px | 50 px |
-| 844×390 | **2,79** | 302 × 171 m | 45 px | 67 px | 95 px | 56 px | 61 px |
+| Viewport | Cañón | ppm₀ | Suelo visible | Balandra (16 m) | Bergantín (24 m) | Fragata (34 m) | Pirata (20 m) | Mercante (22 m) | Cañonera (28 m) | Capitán (30 m) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1440×900 | **N1 (sesión nueva)** | **6,20** | 232 × 177 m | 99 px | 149 px | 211 px | 124 px | 136 px | 174 px | 186 px |
+| 1440×900 | N2 | 5,76 | 250 × 191 m | 92 | 138 | 196 | 115 | 127 | 161 | 173 |
+| 1440×900 | N3 | 5,04 | 286 × 218 m | 81 | 121 | 171 | 101 | 111 | 141 | 151 |
+| 390×844 | **N1** | **2,82** | 139 × 366 m | 45 | 68 | 96 | 56 | 62 | 79 | 84 |
+| 390×844 | N2 | 2,61 | 149 × 394 m | 42 | 63 | 89 | 52 | 58 | 73 | 78 |
+| 390×844 | N3 | 2,29 | 170 × 450 m | 37 | 55 | 78 | 46 | 50 | 64 | 69 |
+| 844×390 | **N1** | **3,44** | 246 × 139 m | 55 | 82 | 117 | 69 | 76 | 96 | 103 |
+| 844×390 | N3 | 2,79 | 302 × 170 m | 45 | 67 | 95 | 56 | 61 | 78 | 84 |
 
 (px = eslora del casco de lado. El suelo visible mide `W/ppm` × `H/(ppm·sin θ)`.)
 
-**Propuesta D23, corregida en D25: encuadre por alcance (pendiente de `game-product`, U8).** `R = máx(alcance del cañón propio, 65 m)`. 65 m es el mayor alcance de disparo hostil (cañonera y capitán, GDD §9). Así se cumplen dos garantías: **tu círculo de alcance cabe entero** y **todo lo que te puede disparar está en pantalla**. Con R = 60 m no se cumpliría la segunda, porque la cañonera orbita a 62 m y dispara a 65. Al cambiar de cañón (solo en la tienda del puerto), ppm₀ pasa al valor nuevo con una transición *ease-in-out* de 600 ms al cerrar la tienda, que además comunica la mejora. Esto sustituye el motivo de «R fijo» (que el zoom no cambie al mejorar), porque el cambio ocurre una sola vez y en un momento tranquilo.
+**Encuadre por alcance (D23 → D25 → decidido por `game-product` en U8, D26).** `R = máx(alcance del cañón propio, 65 m)`. 65 m es el mayor alcance de disparo hostil (cañonera y capitán, GDD §9). Así se cumplen dos garantías: **tu círculo de alcance cabe entero** y **todo lo que te puede disparar está en pantalla**. Con R = 60 m no se cumpliría la segunda, porque la cañonera orbita a 62 m y dispara a 65. Al cambiar de cañón (solo en la tienda del puerto), ppm₀ pasa al valor nuevo con una transición *ease-in-out* de 600 ms al cerrar la tienda, que además comunica la mejora. Esto sustituye el motivo de «R fijo» (que el zoom no cambie al mejorar), porque el cambio ocurre una sola vez y en un momento tranquilo.
 
-**Intercambio para producto** (cálculo con la fórmula de arriba; eslora en px de lado; «vertical × horizontal» = alcance en pantalla hacia arriba y abajo × hacia los lados, dentro de las reservas del HUD):
+**Intercambio con el que decidió producto** (cálculo con la fórmula de arriba; eslora en px de lado; «vertical × horizontal» = alcance en pantalla hacia arriba y abajo × hacia los lados, dentro de las reservas del HUD):
 
 | R | 1440×900: ppm₀ · alcance en pantalla | Eslora en px (Balandra / Pirata / Cañonera / Capitán / Fragata) | Balandra, peor rumbo (`measureShipValues`) | 390×844: ppm₀ · alcance en pantalla · Balandra / Cañonera / Capitán en px | Hostiles que te pueden disparar, en pantalla |
 |---|---|---|---|---|---|
@@ -260,7 +266,7 @@ Con la propuesta: cañón N1 → R 65 (+23 % de eslora en px frente a hoy); N2 �
 
 **No hay que codificar 5,04 ni 2,29.** ppm₀ se calcula en tiempo de ejecución con la fórmula, a partir de θ y de las reservas `top`/`bottom` definidas como constantes del layout del HUD. En escritorio, el eje vertical del círculo queda exactamente en el borde del área útil (660 px frente a 660 px). Por eso cambiar θ o la altura del HUD solo exige actualizar esas constantes, y AD-06 lo verifica.
 
-**Niveles** (GDD §5) de **extensión visible** `f` ∈ {0,7 (más cerca), 1,0, 1,5 (más lejos)}: `ppm = ppm₀ / f`. La rueda o el pellizco salta de nivel en nivel, sin zoom continuo, con una transición *ease-out* de 180 ms. Escritorio: 7,20 / 5,04 / 3,36 px/m. Móvil vertical: 3,27 / 2,29 / 1,53 px/m. `preventDefault` en `wheel` y `touchmove` sobre el canvas (AC-25, AC-81).
+**Niveles** (GDD §5) de **extensión visible** `f` ∈ {0,7 (más cerca), 1,0, 1,5 (más lejos)}: `ppm = ppm₀ / f`. La rueda o el pellizco salta de nivel en nivel, sin zoom continuo, con una transición *ease-out* de 180 ms. Escritorio con N1: 8,85 / 6,20 / 4,13 px/m (con N3: 7,19 / 5,04 / 3,36). Móvil vertical con N1: 4,02 / 2,82 / 1,88 px/m (con N3: 3,27 / 2,29 / 1,53). **Las reglas de QA que dicen «1,0×» usan el ppm₀ de la sesión de la captura.** Las cifras en px escritas antes de U8 (VFX-09b, AS-V14, VFX-07…) están calculadas con 5,04; las que son fracciones de `A_casco` no cambian. `preventDefault` en `wheel` y `touchmove` sobre el canvas (AC-25, AC-81).
 
 ### 6.3 Seguimiento
 - **Rígido**: `target = posición interpolada del barco propio` en cada frame, sin *lookahead* ni amortiguación. La interpolación de 100 ms (GDD §13) ya suaviza el movimiento, y el barco queda en el centro exacto, lo que garantiza AC-23.
@@ -518,13 +524,27 @@ canvas 0 · placas 10 · números de daño 15 · HUD 20 · toasts 30 · modal (t
 ### 12.7 Cursor (escritorio)
 Sobre el agua: flecha por defecto. Sobre un barco atacable: mira SVG de 32 px (coral, punto caliente en el centro). Sobre un barco no atacable (zona segura o protegido): `not-allowed`.
 
-### 12.8 Vista libre (I2; GDD §5, AC-119 y AC-121)
+### 12.8 Vista libre e indicadores de borde (I2; GDD §5, AC-119, AC-121 y AC-124)
 | Elemento | Escritorio 1440×900 | Móvil vertical 390×844 | Móvil horizontal 844×390 |
 |---|---|---|---|
 | **Botón Centrar** (solo en vista libre; aparece con un fundido de 150 ms) | 1240, 276, 184, 40, bajo las coordenadas y junto al minimapa con el que se mueve la vista: icono Lucide `locate-fixed` + "Centrar" + tecla `C` | 322, 616, 52, 52, encima de Reparar (684) con 16 px de separación: solo el icono | 704, 238, 52, 52, a la izquierda de Reparar (768, 238) |
 | **Indicador del barco propio** (solo si el barco propio queda fuera de la pantalla, con 24 px de margen) | Chip circular de 44 px | 48 px (se puede tocar) | 48 px |
 
 **Indicador**: círculo `--ui-panel` con borde de 2 px `--rel-self` (`#FFD166`), una estrella de 18 px en el centro, un triángulo de 10 px fuera del círculo que apunta hacia el barco y debajo la distancia ("320 m", 12 px tabular). **Posición**: sobre el rayo que va del centro de la pantalla a la proyección del barco, recortado contra el marco útil (escritorio: 16 px a los lados, 120 arriba y 108 abajo; móvil vertical: 12 / 116 / 104). Si cae sobre un bloque del HUD (minimapa, paneles, botones), se desliza por el marco hasta el punto libre más cercano. **Ángulo**: el triángulo apunta desde la posición **real** del chip hacia el barco (no desde el centro), así que no hay error aunque el chip se haya deslizado (AC-121: ≤ 10°). Se mueve por ref en cada frame, fuera de React (GDD §13). Al pulsarlo se centra como con `C`. Desaparece en 150 ms cuando el barco vuelve a verse.
+
+**Indicador de atacante (AC-124; D26).** Usa el mismo componente de chip que el del barco propio, con estas diferencias:
+
+| Campo | Indicador del barco propio (AC-121) | Indicador de atacante (AC-124) |
+|---|---|---|
+| Cuándo | Vista libre con el barco propio fuera de pantalla | Un barco fuera de pantalla te dispara (evento `volley` con `targetId` = tú). Dura mientras siga atacando y **3 s** después del último disparo; luego se desvanece en 300 ms |
+| Rayo | Del centro de la pantalla a tu barco | De tu barco (que en seguimiento está en el centro) al atacante |
+| Borde y color | 2 px `--rel-self` | 2 px del color de la relación del atacante (§4.3: coral `#FF7A7A` para hostiles; hueso `#F5F1E6` para jugadores en PvP) |
+| Icono | Estrella | El de la relación: calavera, calavera + bomba, calavera + corona o ancla |
+| Al recibir un impacto | — | Late una vez: escala 1,0 → 1,15 → 1,0 en 180 ms |
+| Al pulsarlo | Centra | Selecciona al atacante como objetivo (como Tab sobre él), sin mover la cámara |
+| Cuántos | 1 | Hasta 3 a la vez (los 3 más cercanos); el resto se agrupa en el 3.º con un número «+2» |
+
+Si dos chips quedan a menos de 52 px por el borde, el más lejano se desliza por el marco hasta separarse. El ángulo siempre se calcula desde la posición real de cada chip (≤ 10°). Caso de diseño: PvP con un jugador N3 a 80 m contra un N1 con R = 65 m; queda fuera arriba o abajo y el chip señala desde dónde llegan las balas.
 
 ---
 
@@ -661,10 +681,11 @@ Captura estándar = `npm run qa:capture` con zoom 1,0×, sin modales y el barco 
 | AD-23 | Zona segura visible | Captura en el borde de la zona (r 110 m) | La línea discontinua y ≥ 3 boyas son visibles; aparece el aviso "Zona segura" | AC-65 |
 | AD-24 | Olas sin bandas regulares | Percentiles p5 y p95 de L\* en el parche de AD-01 | p95 − p5 entre 4 y 12. Medido el 2026-10-11: 16–21, son bandas. Con el ruido de 9 m y 4,5 m (D20): 8,8 (dev-render; falta QA) | — |
 | AD-25 | Albedo compensado | ΔE76 entre el color medio de la tapa de la playa o de la cubierta en la captura y su token de §4.2.1 | ≤ 6 | — |
-| AD-26 | **Escala del barco inicial** (D23; depende de U8) | `measureShipValues` (vela + cubierta + casco) con el zoom por defecto de una sesión nueva (Balandra, cañón de 8 lb) en 1440×900, rumbos 0/90/180/270° | ≥ 1 900 px en el peor rumbo: paridad con el barco del jugador en Seafight (2 000–2 018 px² en dos capturas, `qa-artifacts/render/escala/`), con un margen del 5 % por la incertidumbre de la máscara de un JPEG. Hoy: 1 310 px a 0°. Con R = 65: 1 980 px | AC-24 (revisado) |
+| AD-26 | **Escala del barco inicial** (D23; U8 cerrado, D26) | `measureShipValues` (vela + cubierta + casco) con el zoom por defecto de una sesión nueva (Balandra, cañón de 8 lb) en 1440×900, rumbos 0/90/180/270° | ≥ 1 900 px en el peor rumbo: paridad con el barco del jugador en Seafight (2 000–2 018 px² en dos capturas, `qa-artifacts/render/escala/`), con un margen del 5 % por la incertidumbre de la máscara de un JPEG. Hoy: 1 310 px a 0°. Con R = 65: 1 980 px | AC-24 (revisado) |
 | AD-28 | **Hostiles distinguibles en grises** (I2; AC-115) | 390×844, zoom 1,0×, rumbos 45 / 135 / 225 / 315°, captura en L\*. Máscara de cada barco = píxeles que cambian al ocultarlo. Firmas: área (px), fracción oscura (L\* ≤ 25) y fracción clara (L\* ≥ 65) | En cada rumbo y para cada par de {pirata, cañonera, capitán}, al menos una firma difiere ≥ 30 % (\|x − y\| / máx ≥ 0,30). Además: el estandarte del capitán da ≥ 20 px con L\* ≥ 80 en cada rumbo, y en 1440×900 se cuentan ≥ 8 cañones de la cañonera (manchas con L\* ≤ 25 y ≥ 4 px de largo sobre su cubierta) | AC-115 |
 | AD-29 | **Minimapa: 6 formas** (I2; AC-115) | Plantilla de cada marcador de §4.3 dibujada aparte a 4×. En una captura del minimapa (escritorio y móvil), correlación cruzada normalizada en grises de cada marcador con las 6 plantillas | Con la suya ≥ 0,90 y con cada una de las otras ≤ 0,80. El capitán se ve en el minimapa desde cualquier punto del mapa | AC-115, AC-111 |
 | AD-30 | **Vista libre** (I2) | e2e con el barco propio fuera de pantalla en 8 direcciones y en los 3 viewports | El indicador es visible y apunta al barco con ≤ 10° de error, no se cruza con ningún bloque del HUD, y el botón Centrar solo existe en vista libre | AC-119, AC-121 |
+| AD-31 | **Indicador de atacante** (I2; D26) | e2e: un barco te dispara desde fuera de la pantalla (8 direcciones; 3 viewports), y otro caso con 2 atacantes | Aparece ≤ 100 ms después del primer `volley`; apunta al atacante con ≤ 10° de error; desaparece a los 3,0 ±0,2 s del último disparo; no se cruza con el HUD ni con otro chip; 0 commits de React por frame | AC-124 |
 | AD-27 | **Espuma natural** (D23) | Capturas de mar abierto a 1,0× (`desktop-open-sea`, `d-ocean-a/b`), sin HUD, barcos ni islas. Espuma = píxeles de agua con L\* ≥ mediana + 10. Celdas de 240×110 px con ≥ 85 % de agua | Cobertura entre 0,3 % y 1,2 %; **≥ 40 % de las celdas sin espuma** (< 0,1 %); mediana de ΔL\* de la espuma ≤ 20. Hoy: 1,8–3,0 %, 0–17 % de celdas sin espuma y ΔL\* 22–26 | — |
 
 ---
@@ -680,6 +701,7 @@ Captura estándar = `npm run qa:capture` con zoom 1,0×, sin modales y el barco 
 | U3 | La cámara no se limita al borde; más allá de ±500 m hay mar oscuro con una línea de borde | GDD §4, §7.4 aquí |
 | U4 | "Fuera de React" = canvas de three.js o capa DOM movida por refs | GDD §14 |
 | U5 | Un número de daño por andanada (`impactos × daño`); "Fallo" solo si el tirador o el objetivo es el jugador propio; una salpicadura por cada bala fallada | GDD §14, AC-75, VFX-SPEC §4 y §9 |
+| U8 | **Encuadre por alcance** (cerrada el 2026-10-11): `R = máx(alcance del cañón propio, 65 m)` → 65 / 70 / 80 m con N1 / N2 / N3; transición de 600 ms al cerrar la tienda, aceptada | GDD §5, AC-24; §6.2 aquí |
 
 **Decisiones de implementación** (preguntas de desarrollo, 2026-10-11):
 
@@ -710,6 +732,7 @@ Captura estándar = `npm run qa:capture` con zoom 1,0×, sin modales y el barco 
 | D23 | QA-REPORT-2026-10-11-3 §8: Barcos 7/10, «a 1,0× se ven pequeños y facetados frente a los sprites de Seafight». Además, la espuma se ve repetida y procedural | **Medición** (`qa-artifacts/render/escala/`). Seafight: barco del jugador de 64–68 × 84–85 px y ≈ 2 000 px²; galeón de 81 × 81 px y 2 200 px²; pirata de 52 × 49 px y 1 014 px², en un área de juego de ≈ 800×565. Nuestro (vela + cubierta + casco a 1,0×): Balandra 1 310–2 100 px, Bergantín 2 750–3 980, Fragata 5 400–7 210, Pirata 1 770–2 670 y Mercante 2 680–3 090, en 1440×900. **En px absolutos ya estamos cerca. Lo que falla es la Balandra inicial**, que sale al 65–105 % del barco de Seafight según el rumbo, sobre un mar con 2,9× más píxeles, y además **el detalle interno**: píxeles interiores con \|∇L\*\| ≥ 4, 70–80 % en Seafight frente a 30–49 % aquí. **Opciones**: (a) subir ppm a todos: con 6,2 ya no cabe el círculo de 80 m en 1440×900 (rompe GDD §5) ✗. (b) Escalar los modelos: rompe eslora y radio del GDD, navClearance y sockets ✗. **(a') Encuadre por alcance propio** (R = 60 m con el cañón inicial → ppm 6,71): la Balandra pasa a 2 330 px en el peor rumbo, el círculo propio sigue cabiendo y no cuesta rendimiento ✓. Necesita U8. **(c) Detalle dentro del presupuesto** ✓: normales con pliegue de 40°, loft de 13 estaciones, tablas de cubierta, paneles de vela, oclusión horneada y cañones y portas legibles; 0 draw calls y entre +400 (Balandra) y +700 tris (Fragata, ≈ 1 900 ≤ 2 500) por barco en LOD0. **Recomendación: (a') + (c)**, con las reglas AD-26 (escala), AS-V18 (sin facetas), AS-V19 (textura interna ≥ 55 %) y AS-V20 (cañones legibles). **Espuma**: vetas a lo largo del viento, agrupadas por rachas y con opacidad 0,25 (§7.3; AD-27). El umbral de AS-V19 es provisional (HIPÓTESIS): se calibra con el primer render y no baja de 50 % | §6.2, §7.3, §4.2, AD-26, AD-27, U8; ASSET-SPEC §6, §8.1, §8.2, AS-V18–V20 |
 | D24 | Q20: el fuego del Mercante da 72–81 px² = 0,021–0,023·A (pide ≥ 0,03·A). Lo tapan sus cuadras braceadas a 20° (dev-render: 79 px² con velas, 125 plegadas, 143 sin prueba de profundidad) | **(a) Sesgo también en las llamas**: forma 8 (perfil de la 2 con el sesgo de la 7), en el cuerpo y en el núcleo, con los mismos 6 m que el humo (`uFxBias`). Previsión: ≈ 125–143 px², ≥ 0,036·A. Es la misma razón que en D20: el efecto de daño de un barco no lo tapa su propio aparejo. La vela que tapa puede estar hasta ≈ 6,7 m por delante a lo largo de la vista. Descartadas: (b) mover `_01` y la carga o los barriles solo arregla un rumbo de una clase; (c) aceptar el criterio absoluto en el Mercante daría por buena una llama que en otros rumbos tampoco se ve. VFX-23 pasa a medir humo y llamas juntos (≤ 15 %); las llamas son pequeñas frente a la columna, así que se espera poco cambio | VFX-SPEC §0.3, §6, VFX-23; ASSET-SPEC AS-V17 |
 | D25 | Requisitos de arte de I2 (GDD §9: cañonera y capitán; GDD §5: vista libre; AC-115 y AC-121) y petición de product: las cifras del intercambio de escala | **Cañonera**: casco ancho y bajo (28 × 10 m, francobordo 1,5), **un solo mástil** con una sola cuadra grande negra, **cubierta clara con la batería de 6 + 6 cañones oscuros a la vista** y un mortero central. Es la hostil con menos vela y la única con la cubierta clara. **Capitán**: el mayor de los piratas (30 m, 3 mástiles de hasta 24 m), con **estandarte blanco de 6 × 4 m** como rasgo exclusivo y regala dorada. Firmas en grises previstas (HIPÓTESIS, estimadas por áreas proyectadas): área del capitán ≈ 1,35× la de la cañonera y 2,3× la del pirata; fracción oscura de la cañonera ≈ 0,18 frente a ≈ 0,4 del pirata y del capitán. AD-28 lo verifica. **Minimapa**: ▬ para la cañonera y ★ con halo para el capitán (AD-29). **Vista libre**: botón Centrar y chip indicador (§12.8, AD-30). **Escala (corrige D23)**: R = máx(alcance propio, 65 m), porque con R = 60 la cañonera y el capitán dispararían desde fuera de la pantalla. AD-26 baja a ≥ 1 900 px (paridad con Seafight, con un margen del 5 % por la medida) | §4.3, §6.2, §10, §12.8, AD-26, AD-28–AD-30, U8; ASSET-SPEC §3, §8.1, §8.4, §10 |
+| D26 | U8 cerrado por `game-product` (R = máx(alcance propio, 65 m)); propone AD-26 ≥ 1 950 px; pide AC-124 (indicador de atacante fuera de pantalla) | **AD-26 se queda en ≥ 1 900 px**, no en 1 950. La previsión con R = 65 es 1 984 px, sacada de `measureShipValues` a ppm 7,2 y escalada, sin render. 1 950 dejaría un margen del 1,7 % frente al ruido del render real (bordes y suavizado). La referencia de Seafight ya tiene ±5 %: 2 000–2 018 px² en dos capturas del mismo barco con una máscara sobre JPEG. Si el render da < 1 900, la palanca sería visual (detalle de D23), no el encuadre. **AC-124**: el mismo chip que el indicador de vista libre, con el color y el icono de la relación del atacante, que late con cada impacto, dura 3 s tras el último disparo, con hasta 3 chips a la vez y que al pulsarlo selecciona al atacante (§12.8, AD-31). Tablas de §6.2 y niveles de zoom actualizados a N1 / N2 / N3. Encuadre por defecto de los barcos actuales con N1 en 1440×900: Balandra 99 px y Bergantín 149 px de eslora (390×844: 45 y 68) | §6.2, §12.8, AD-26, AD-31, U8; ASSET-SPEC §7 (LOD) |
 
 **Abiertas:**
 
@@ -717,4 +740,3 @@ Captura estándar = `npm run qa:capture` con zoom 1,0×, sin modales y el barco 
 |---|---|---|---|
 | U6 | `game-developer` | Preset de cámara de `qa:capture` para generar las imágenes de la landing | §16.1 |
 | U7 | Jonattan | Licencia: fuentes de Google (OFL) e iconos Lucide (ISC) | Aceptables |
-| U8 | `game-product` | GDD §5: «el círculo de alcance máximo (80 m) cabe entero» → «cabe entero el círculo de radio máx(tu alcance, 65 m)», y AC-24 en consecuencia (D23, corregida en D25). Cifras del intercambio en §6.2 | Hasta que se decida, sigue R = 80 m (§6.2) y AD-26 no se evalúa |

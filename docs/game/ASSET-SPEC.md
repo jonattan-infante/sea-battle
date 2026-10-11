@@ -184,8 +184,8 @@ Margen de 43 draw calls. Si alguna vez hay > 60 barcos, se pasa a un `InstancedM
 |---|---|
 | Criterio | Eslora proyectada en px = `L · ppm` (`ppm = camera.zoom`). Con una cámara ortográfica la distancia no cambia el tamaño, así que **no se usa `THREE.LOD`** |
 | Umbrales | LOD0 si `L·ppm ≥ 72`; LOD1 si `L·ppm < 64`; entre 64 y 72 se mantiene el actual (histéresis). Al aparecer un barco dentro de esa banda, arranca en LOD1 |
-| Resultado por defecto | Escritorio (5,04 ppm): todas las clases en LOD0. Móvil (2,29 ppm): Balandra, Bergantín, Pirata y Mercante en LOD1; Fragata (78 px) en LOD0; Capitán (69 px, dentro de la banda) arranca en LOD1 |
-| Qué quita LOD1 | Cañones, portas, vergas (el borde superior de la vela hace de verga), cofas, faroles, ventanas, carga y barriles. El casco pasa a 5 estaciones (u = −0.5, −0.25, 0, +0.36, +0.5). **Las velas, los mástiles, los castillos y los colores de franja se quedan**: son la silueta y la facción |
+| Resultado por defecto | Escritorio (6,20 ppm con N1; 5,04 con N3): todas las clases en LOD0. Móvil vertical con N1 (2,82 ppm): Balandra (45 px), Pirata (56) y Mercante (62) en LOD1; Bergantín (68, dentro de la banda) arranca en LOD1; Cañonera (79), Capitán (84) y Fragata (96) en LOD0. Con N3 (2,29 ppm): la Cañonera (64) y el Capitán (69) caen en la banda y arrancan en LOD1 |
+| Qué quita LOD1 | Cañones, portas, vergas (el borde superior de la vela hace de verga), cofas, faroles, ventanas, carga, barriles, tablas de cubierta y paneles de lona (D23). **Se quedan** el mortero de la cañonera y el estandarte del capitán, porque son rasgos de identidad (AD-28). El casco pasa a 5 estaciones (u = −0.5, −0.25, 0, +0.36, +0.5). **Las velas, los mástiles, los castillos y los colores de franja se quedan**: son la silueta y la facción |
 | GLB | Nodos hermanos `<id>_lod0` y `<id>_lod1`. No se usa `MSFT_lod` (three no lo soporta de forma nativa) |
 
 ---
@@ -228,7 +228,7 @@ Cada barco = **casco por *loft*** (§8.1) + **aparejo** (§8.2) + **piezas** (§
 
 **Tapas:** espejo de popa = polígono V5…V4…V5' triangulado con `THREE.ShapeUtils.triangulateShape`, en `hull`. Proa = lo mismo si `a > 0` en `u = +0.5`. Si `a = b = 0`, los quads degeneran a triángulos: se eliminan los de área < 1e-6.
 
-**Estaciones (D23)**: 13, con u cada 1/12. La tabla de perfiles se interpola con Catmull-Rom; antes eran las 7 filas con interpolación lineal, que daban 6 facetas a lo largo de la eslora. **Cubierta en tablas (D23)**: la cara V0 babor – V0 estribor se divide en `n = 2·ceil(B/2 / 0.5)` tiras longitudinales (≈ 0,5 m; ≥ 3 px a ppm 6,71), alternando `deck` y `deck.alt`. ≈ 22 tris por tramo × 12 + tablas (`n` × 12 × 2) + tapas ≈ **530 tris en la Balandra y 730 en la Fragata** (LOD1: sin tablas y con 7 estaciones, ≈ 100).
+**Estaciones (D23)**: 13, con u cada 1/12. La tabla de perfiles se interpola con Catmull-Rom; antes eran las 7 filas con interpolación lineal, que daban 6 facetas a lo largo de la eslora. **Cubierta en tablas (D23)**: la cara V0 babor – V0 estribor se divide en `n = 2·ceil(B/2 / 0.5)` tiras longitudinales (≈ 0,5 m; 3,1 px con N1 en escritorio, ppm 6,20), alternando `deck` y `deck.alt`. ≈ 22 tris por tramo × 12 + tablas (`n` × 12 × 2) + tapas ≈ **530 tris en la Balandra y 730 en la Fragata** (LOD1: sin tablas y con las 5 estaciones de §7, ≈ 100).
 
 **Perfiles** (interpolación lineal entre filas):
 
