@@ -1,14 +1,8 @@
-import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
+import { clerkMiddleware } from '@clerk/nextjs/server';
 
-const isProtectedRoute = createRouteMatcher([
-  '/',
-  '/game(.*)',
-  // Agregar aquí otras rutas del juego que necesiten protección
-]);
-
-export default clerkMiddleware(async (auth, req) => {
-  if (isProtectedRoute(req)) await auth.protect();
-});
+// Clerk necesita su middleware para que auth() funcione en el servidor. La protección de /game está en
+// src/app/game/page.tsx: el runtime Edge fija process.env al compilar y no vería el modo invitado.
+export default clerkMiddleware();
 
 export const config = {
   matcher: [
