@@ -6,6 +6,14 @@ loadEnvConfig(process.cwd(), dev);
 const next = require('next');
 const { Server } = require('socket.io');
 const { verifyToken } = require('@clerk/backend');
+const {
+  onValidated,
+  parsePlayerJoin,
+  parseShipPositionUpdate,
+  parseFireBullet,
+  parseShipDamage,
+  parseNpcDestroyed
+} = require('./src/server/socket-payloads');
 
 const hostname = 'localhost';
 const port = parseInt(process.env.PORT || '3000', 10);
@@ -127,7 +135,7 @@ app.prepare().then(() => {
     console.log('👤 Jugador conectado:', socket.id);
 
     // Enviar estado actual del juego al nuevo jugador
-    socket.on('player_join', (data) => {
+    onValidated(socket, 'player_join', parsePlayerJoin, (data) => {
       console.log('🎮 Jugador unido:', data.playerId);
       gameState.players.set(socket.id, data);
 
@@ -147,7 +155,7 @@ app.prepare().then(() => {
     });
 
     // Actualización de posición del barco
-    socket.on('ship_position_update', (data) => {
+    onValidated(socket, 'ship_position_update', parseShipPositionUpdate, (data) => {
       const ship = gameState.ships.get(data.shipId) || {
         id: data.shipId,
         position: data.position,
@@ -174,7 +182,7 @@ app.prepare().then(() => {
     });
 
     // Disparo de bala
-    socket.on('fire_bullet', (data) => {
+    onValidated(socket, 'fire_bullet', parseFireBullet, (data) => {
       console.log('💥 Disparo desde:', socket.id);
       // Emitir a todos los clientes
       io.emit('bullet_fired', {
@@ -184,7 +192,7 @@ app.prepare().then(() => {
     });
 
     // Daño a barco
-    socket.on('ship_damage', (data) => {
+    onValidated(socket, 'ship_damage', parseShipDamage, (data) => {
       const ship = gameState.ships.get(data.shipId);
       if (ship) {
         ship.health = Math.max(0, ship.health - data.damage);
@@ -197,7 +205,7 @@ app.prepare().then(() => {
     });
 
     // Destrucción de NPC
-    socket.on('npc_destroyed', (data) => {
+    onValidated(socket, 'npc_destroyed', parseNpcDestroyed, (data) => {
       const npc = gameState.npcs.get(data.npcId);
       if (npc) {
         gameState.map.occupiedPositions = gameState.map.occupiedPositions.filter(pos =>
