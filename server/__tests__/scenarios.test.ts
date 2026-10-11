@@ -5,6 +5,7 @@ import {
   NAV_LIMIT,
   navClearance,
   PIRATE_PORT_EXCLUSION,
+  PIRATE_RETURN_ARRIVE,
   RESPAWN_RING,
   SAFE_ZONE_RADIUS,
   SHIP_CLASSES,
@@ -51,6 +52,39 @@ describe('escenario "showcase" para capturas', () => {
       if (s.kind === 'pirate') expect(Math.hypot(s.pos.x, s.pos.z)).toBeGreaterThan(PIRATE_PORT_EXCLUSION);
       expect(Math.max(Math.abs(s.pos.x), Math.abs(s.pos.z))).toBeLessThan(NAV_LIMIT);
     }
+  });
+
+  // QA-5 H-13: tras un combate, los piratas del escenario volvían a su origen y se ponían a patrullar a ≤ 120 m
+  // (world.ts sobrescribía su espera de 1e9), así que el estado del servidor compartido dependía de los tests anteriores
+  test('el artillero ciego vuelve a su puesto tras un combate y se queda quieto en él', () => {
+    const w = createWorld({ seed: 3, spawnNpcs: false });
+    applyScenario(w, 'showcase');
+    const blind = [...w.ships.values()].find((s) => Math.hypot(s.pos.x - BLIND_GUNNER_POINT.x, s.pos.z - BLIND_GUNNER_POINT.z) < 1)!;
+    addPlayer(w, 'u1', 'Ana');
+    const ship = shipOfPlayer(w, 'u1')!;
+    const at = (x: number, z: number) => {
+      ship.pos = { x, z };
+      ship.speed = 0;
+      ship.destination = null;
+    };
+    const run = (seconds: number, x: number, z: number) => {
+      for (let i = 0; i < seconds * TICK_RATE; i++) {
+        at(x, z);
+        step(w, 1 / TICK_RATE);
+        drainEvents(w);
+      }
+    };
+    ship.protectedUntil = 0;
+    run(20, BLIND_GUNNER_POINT.x, BLIND_GUNNER_POINT.z - 45); // combate contra un jugador a 45 m
+    expect(blind.ai!.state).toBe('combat');
+    run(80, BLIND_GUNNER_POINT.x, BLIND_GUNNER_POINT.z - 200); // el jugador se aleja: vuelve a su origen
+    const drift = Math.hypot(blind.pos.x - BLIND_GUNNER_POINT.x, blind.pos.z - BLIND_GUNNER_POINT.z);
+    console.log(`H-13: tras el combate, estado ${blind.ai!.state} a ${drift.toFixed(1)} m de su puesto`);
+    expect(drift).toBeLessThanOrEqual(PIRATE_RETURN_ARRIVE);
+  });
+
+  test('todos los piratas del escenario esperan en su puesto (holdPosition)', () => {
+    expect(npcs.filter((s) => s.kind === 'pirate').every((s) => s.holdPosition === true)).toBe(true);
   });
 
   test('la emboscada y el artillero ciego quedan fuera del radio de interés desde el anillo de reaparición y el punto de captura', () => {

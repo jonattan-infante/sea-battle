@@ -66,7 +66,7 @@ export function applyScenario(world: World, name: ScenarioName): void {
     pirate.pos = { x: ENDURANCE_POINT.x, z: ENDURANCE_POINT.z - ENDURANCE_PIRATE_OFFSET };
     pirate.heading = 0;
     pirate.ai!.origin = { ...pirate.pos };
-    pirate.ai!.wait = 1e9;
+    pirate.holdPosition = true;
     pirate.destination = null;
     pirate.path = [];
     pirate.accuracyOverride = ENDURANCE_PIRATE_ACCURACY;
@@ -88,7 +88,7 @@ export function applyScenario(world: World, name: ScenarioName): void {
   pirate.pos = { x: 45, z: 205 };
   pirate.heading = -Math.PI / 2;
   pirate.ai!.origin = { ...pirate.pos };
-  pirate.ai!.wait = 1e9;
+  pirate.holdPosition = true;
   pirate.destination = null;
   pirate.path = [];
 
@@ -105,7 +105,7 @@ export function applyScenario(world: World, name: ScenarioName): void {
   coastal.pos = { x: 20, z: 318 };
   coastal.heading = Math.PI;
   coastal.ai!.origin = { ...coastal.pos };
-  coastal.ai!.wait = 1e9;
+  coastal.holdPosition = true;
   coastal.destination = null;
   coastal.path = [];
 
@@ -116,7 +116,7 @@ export function applyScenario(world: World, name: ScenarioName): void {
   blind.pos = { ...BLIND_GUNNER_POINT };
   blind.heading = 0;
   blind.ai!.origin = { ...blind.pos };
-  blind.ai!.wait = 1e9;
+  blind.holdPosition = true;
   blind.destination = null;
   blind.path = [];
   blind.accuracyOverride = 0;
@@ -128,7 +128,7 @@ export function applyScenario(world: World, name: ScenarioName): void {
     p.pos = { x: AMBUSH_POINT.x + Math.cos(a) * AMBUSH_RADIUS, z: AMBUSH_POINT.z + Math.sin(a) * AMBUSH_RADIUS };
     p.heading = a + Math.PI / 2;
     p.ai!.origin = { ...p.pos };
-    p.ai!.wait = 1e9;
+    p.holdPosition = true;
     p.destination = null;
     p.path = [];
   }

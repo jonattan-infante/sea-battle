@@ -956,6 +956,7 @@ function updatePirate(world: World, ship: Ship, dt: number): void {
     return;
   }
   if (ship.destination) return;
+  if (ship.holdPosition) return; // escenarios de prueba: espera en su puesto en vez de patrullar
   if (ai.wait > 0) {
     ai.wait -= dt;
     if (ai.wait <= 0) {

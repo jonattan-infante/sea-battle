@@ -3,6 +3,7 @@ import {
   MERCHANT_RING,
   NPC_RESPAWN_MIN_PLAYER_DISTANCE,
   PIRATE_PORT_EXCLUSION,
+  PIRATE_RETURN_ARRIVE,
   PIRATE_RING,
   SAFE_ZONE_RADIUS,
   SHIP_CLASSES,
@@ -57,6 +58,30 @@ describe('E3 — Pirata hostil (§9)', () => {
     expect([...events, ...after].filter((e) => e.type === 'volley' && e.shipId === pirate.id && pirate.ai!.state === 'return')).toHaveLength(0);
     expect(pirate.ai!.state).toBe('patrol');
     expect(pirate.hp).toBe(pirate.maxHp);
+  });
+
+  // Combate contra un jugador que luego se aleja a 170 m: el pirata vuelve a su origen y se le deja 30 s más
+  function afterReturn(hold: boolean) {
+    const world = emptyWorld();
+    const player = placePlayer(world, 'a', 300, 300);
+    const pirate = placePirate(world, 300, 350);
+    if (hold) pirate.holdPosition = true;
+    run(world, 1);
+    expect(pirate.ai!.state).toBe('combat');
+    player.pos = { x: 300, z: 470 };
+    player.speed = 0;
+    run(world, 30, () => { player.pos = { x: 300, z: 470 }; });
+    expect(pirate.ai!.state).toBe('patrol');
+    run(world, 30, () => { player.pos = { x: 300, z: 470 }; });
+    return distance(pirate.pos, pirate.ai!.origin);
+  }
+
+  test('holdPosition (solo escenarios de prueba): tras un combate vuelve a su puesto y se queda quieto en él', () => {
+    expect(afterReturn(true)).toBeLessThanOrEqual(PIRATE_RETURN_ARRIVE);
+  });
+
+  test('sin holdPosition (pirata normal): tras volver a su origen sigue patrullando', () => {
+    expect(afterReturn(false)).toBeGreaterThan(PIRATE_RETURN_ARRIVE);
   });
 
   test('AC-45: tampoco se aleja más de 200 m de su origen', () => {
