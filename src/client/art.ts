@@ -140,14 +140,23 @@ export const CAMERA = {
 
 // ---- §6.2 Zoom: ppm₀ calculado, 3 niveles de extensión visible ----
 export const ZOOM = {
-  rangeM: 80, // alcance máximo del GDD §7: fijo para que el zoom no cambie al mejorar los cañones
+  // R nunca baja del mayor alcance de disparo de un NPC (cañonera y capitán, GDD §9): todo lo que te puede disparar
+  // está en pantalla. Si un NPC alcanza más, hay que subirlo (lo vigila un test)
+  hostileRangeM: 65,
   sideMarginPx: 12,
   minPpm: 1.5,
   maxPpm: 12,
   levels: [0.7, 1, 1.5] as const, // f = extensión visible; ppm = ppm₀ / f (0,7 = más cerca)
   defaultLevel: 1,
-  transitionMs: 180
+  transitionMs: 180,
+  rangeTransitionMs: 600 // cañón nuevo: ease-in-out hacia el ppm₀ nuevo al cerrar la tienda (U8)
 };
+
+// R del encuadre (U8, D26): máx(alcance del cañón propio, 65 m) → 65 / 70 / 80 m con N1 / N2 / N3. Tu círculo de
+// alcance cabe entero y todo lo que te puede disparar está en pantalla
+export function frameRangeM(cannonRange: number): number {
+  return Math.max(cannonRange, ZOOM.hostileRangeM);
+}
 
 export type HudLayout = 'desktop' | 'portrait' | 'landscape';
 
@@ -167,11 +176,12 @@ export function hudLayout(w: number, h: number): HudLayout {
   return 'desktop';
 }
 
-// ppm₀ = clamp(min((W/2 − 12)/R, (H/2 − max(top, bottom))/(R·sin θ)), 1,5, 12)
-export function computePpm0(w: number, h: number): number {
+// ppm₀ = clamp(min((W/2 − 12)/R, (H/2 − max(top, bottom))/(R·sin θ)), 1,5, 12): el máximo con el que el círculo de
+// radio R alrededor del barco cabe entero dentro de las reservas del HUD (AC-24, AD-06)
+export function computePpm0(w: number, h: number, rangeM: number): number {
   const reserve = HUD_RESERVE[hudLayout(w, h)];
-  const byWidth = (w / 2 - ZOOM.sideMarginPx) / ZOOM.rangeM;
-  const byHeight = (h / 2 - Math.max(reserve.top, reserve.bottom)) / (ZOOM.rangeM * Math.sin(CAMERA.elevation));
+  const byWidth = (w / 2 - ZOOM.sideMarginPx) / rangeM;
+  const byHeight = (h / 2 - Math.max(reserve.top, reserve.bottom)) / (rangeM * Math.sin(CAMERA.elevation));
   return Math.min(ZOOM.maxPpm, Math.max(ZOOM.minPpm, Math.min(byWidth, byHeight)));
 }
 

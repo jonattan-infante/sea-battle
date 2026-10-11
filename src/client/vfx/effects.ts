@@ -249,7 +249,8 @@ export class Effects {
     this.alpha.emit(s);
   }
 
-  // Cuerpo de la llama (D21): de 3,0 a 0,9 m × L/24 (mínimo 10 px), nacida en un punto al azar de la elipse de
+  // Cuerpo de la llama (D21): de 3,0 a 1,2 m × L/24 (mínimo 10 px; final 1,2 m en D29, antes 0,9: con el encuadre N1
+  // el mínimo en px ya no inflaba el final y el fuego del Mercante quedaba en el límite), nacida en un punto al azar de la elipse de
   // cubierta del socket, de semiejes 0,06·L (eslora) × 0,15·B (manga). Antes nacían a ±0,3 m y se apilaban en un óvalo.
   // Forma 8 (D24): con el sesgo del humo, para que las cuadras braceadas propias no la tapen (Q20)
   flame(x: number, y: number, z: number, heading: number, length: number, beam: number): void {
@@ -258,7 +259,7 @@ export class Effects {
     const along = 0.06 * length * d * Math.cos(a);
     const across = 0.15 * beam * d * Math.sin(a);
     const k = length / 24;
-    const s = this.spec(x + Math.sin(heading) * along + Math.cos(heading) * across, y, z + Math.cos(heading) * along - Math.sin(heading) * across, 0.55, 3.0 * k, 0.9 * k, C.flame, SHAPE.damageFlame);
+    const s = this.spec(x + Math.sin(heading) * along + Math.cos(heading) * across, y, z + Math.cos(heading) * along - Math.sin(heading) * across, 0.55, 3.0 * k, 1.2 * k, C.flame, SHAPE.damageFlame);
     s.vy = 1.8 + rand(-0.4, 0.4);
     s.pxMin = 10;
     this.alpha.emit(s);
@@ -267,7 +268,7 @@ export class Effects {
   // Núcleo aditivo (forma 8) en el centro del socket: la mitad del tamaño de la llama (mínimo 5 px) y vida 0,4 s (D21)
   flameCore(x: number, y: number, z: number, length: number): void {
     const k = length / 24;
-    const s = this.spec(x, y, z, 0.4, 1.5 * k, 0.45 * k, C.flameCore, SHAPE.damageFlame);
+    const s = this.spec(x, y, z, 0.4, 1.5 * k, 0.6 * k, C.flameCore, SHAPE.damageFlame);
     s.vy = 1.8 + rand(-0.4, 0.4);
     s.pxMin = 5;
     this.add.emit(s);

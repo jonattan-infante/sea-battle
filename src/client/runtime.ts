@@ -3,10 +3,10 @@
 // sin estado de React por frame (CLAUDE.md, regla 3). Fuentes: ART-DIRECTION, ASSET-SPEC y VFX-SPEC.
 import * as THREE from 'three';
 import type { RootState } from '@react-three/fiber';
-import { CANNON_LEVELS, INTERPOLATION_DELAY_MS, ISLANDS, PORT_POSITION, PVP_ENABLED, SAFE_ZONE_RADIUS, SHIP_CLASSES, SINKING_TIME } from '../game/constants';
+import { CANNON_LEVELS, INTERPOLATION_DELAY_MS, MAX_CANNON_RANGE, ISLANDS, PORT_POSITION, PVP_ENABLED, SAFE_ZONE_RADIUS, SHIP_CLASSES, SINKING_TIME } from '../game/constants';
 import { Navigator } from '../game/nav';
 import { GameEvent, PlayerView, Welcome, WreckView } from '../game/types';
-import { CAMERA, computePpm0, DAMAGE_TEXT, DamageTextKind, LABEL, LIGHTING, MOBILE_MAX_WIDTH, RING_COLORS, ZOOM } from './art';
+import { CAMERA, computePpm0, DAMAGE_TEXT, DamageTextKind, frameRangeM, LABEL, LIGHTING, MOBILE_MAX_WIDTH, RING_COLORS, ZOOM } from './art';
 import type { GameClient, RenderShip } from './game-client';
 import { useHud } from './hud-store';
 import { buildBuoyGeometry, buildIslands, buildLootGeometry, buildPalmGeometry, buoyInstances, PropInstance } from './models/island-geometry';
@@ -641,6 +641,13 @@ export class GameRuntime implements OverlayHost {
   viewH = 0;
   ppm = 5;
   private ppm0 = 5;
+  // Encuadre por alcance (§6.2, U8): R aplicado, transición de ppm₀ al cambiar de cañón y si R ya salió del jugador
+  private frameRange = 0;
+  private frameFromPlayer = false;
+  private sceneCannonLevel = 1;
+  private ppm0From = 5;
+  private ppm0To = 5;
+  private ppm0Start = -Infinity;
   private level: number = ZOOM.defaultLevel;
   private zoomFrom: number = ZOOM.levels[ZOOM.defaultLevel];
   private zoomStart = -Infinity;
@@ -749,6 +756,7 @@ export class GameRuntime implements OverlayHost {
     this.src = src;
     this.subscribe(src);
     this.labels?.sync(this.views.values());
+    this.snapFrame();
   }
 
   private instanced(geometry: THREE.BufferGeometry, items: PropInstance[]): THREE.InstancedMesh {
@@ -1001,7 +1009,7 @@ export class GameRuntime implements OverlayHost {
   stats(): Record<string, number> {
     return {
       ...this.effects.liveCounts(), floating: this.floating?.active ?? 0, ships: this.views.size, ppm: this.ppm, ppm0: this.ppm0,
-      splashes: this.vfxCounters.splashes, hits: this.vfxCounters.hits
+      splashes: this.vfxCounters.splashes, hits: this.vfxCounters.hits, frameRange: this.frameRange
     };
   }
 
@@ -1022,16 +1030,23 @@ export class GameRuntime implements OverlayHost {
     this.cosT = Math.cos(elevation);
     this.camUp.set(0, this.cosT, -this.sinT);
     this.ocean.material.uniforms.uViewDir.value.set(0, this.sinT, this.cosT);
+    this.snapFrame(); // antes de startScene: la escena se compone con el ppm del preset
   }
 
-  // ppm al que llegará la cámara con el preset y el nivel actuales (sin la transición)
+  // ppm al que llegará la cámara con el preset y el nivel actuales (sin las transiciones)
   targetPpm(): number {
-    return this.preset === 'presentation' ? this.ppm0 * PRESENTATION.zoom : this.ppm0 / ZOOM.levels[this.level];
+    return this.preset === 'presentation' ? this.ppm0To * PRESENTATION.zoom : this.ppm0To / ZOOM.levels[this.level];
   }
 
-  // myShipId: barco "propio" de la escena (placa propia con recarga, AC-107); por defecto, el de la escena
-  startScene(name: SceneName, options: { myShipId?: string } = {}): SyntheticSource {
-    const view = { w: this.viewW, h: this.viewH, ppm: this.targetPpm(), sinT: this.sinT };
+  // myShipId: barco "propio" de la escena (placa propia con recarga, AC-107); por defecto, el de la escena.
+  // cannonLevel: nivel de cañón con el que se encuadra (VFX-09b se mide con N1 y con N3, D29); por defecto, N1.
+  // La escena estándar se compone en metros con la densidad de N3 en 1440×900 (5,04 px/m) y se renderiza con
+  // cualquier nivel: rellenar la pantalla con el ppm de N1 juntaría los barcos un 19 % (Q23, D31)
+  startScene(name: SceneName, options: { myShipId?: string; cannonLevel?: number } = {}): SyntheticSource {
+    this.sceneCannonLevel = options.cannonLevel ?? 1;
+    const view = name === 'standard'
+      ? { w: 1440, h: 900, ppm: computePpm0(1440, 900, MAX_CANNON_RANGE), sinT: this.sinT }
+      : { w: this.viewW, h: this.viewH, ppm: this.targetPpm(), sinT: this.sinT };
     const spec = name === 'hero' ? heroScene(view) : name === 'showcase' ? showcaseScene() : name === 'damage' ? damageScene() : standardScene(view);
     const source = new SyntheticSource(options.myShipId ? { ...spec, myShipId: options.myShipId } : spec);
     this.setSource(source);
@@ -1039,6 +1054,7 @@ export class GameRuntime implements OverlayHost {
   }
 
   stopScene(): void {
+    this.sceneCannonLevel = 1;
     if (this.src !== this.client) this.setSource(this.client);
   }
 
@@ -1070,16 +1086,17 @@ export class GameRuntime implements OverlayHost {
     return { calls: this.gl?.info.render.calls ?? 0, triangles: this.gl?.info.render.triangles ?? 0 };
   }
 
-  // AS-V14: píxeles de vela por rumbo (0°…345° cada 15°) con el nivel más cercano (0,7×) de 1440×900
+  // AS-V14: píxeles de vela por rumbo (0°…345° cada 15°) con el nivel más cercano (0,7×) de 1440×900. Con R = 80 m
+  // (5,04 px/m, la base con la que se calibró antes de U8): es un cociente, no depende del encuadre
   measureSails(classIds: string[] = ['sloop', 'brig', 'frigate', 'pirate', 'merchant'], sheet = false, lod?: 0 | 1): SailVisibility[] {
     if (!this.gl) return [];
-    return measureSailVisibility(this.gl, computePpm0(1440, 900) / ZOOM.levels[0], CAMERA.elevation, classIds, { sheet, lod });
+    return measureSailVisibility(this.gl, computePpm0(1440, 900, MAX_CANNON_RANGE) / ZOOM.levels[0], CAMERA.elevation, classIds, { sheet, lod });
   }
 
   // AD-10 / D8: L* de velas y casco por rumbo con el nivel más cercano (0,7×) de 1440×900 y la cámara del juego
   measureShipValues(classIds: string[] = ['sloop', 'brig', 'frigate', 'pirate', 'merchant'], headingsDeg?: number[]): ShipValues[] {
     if (!this.gl) return [];
-    return measureShipValues(this.gl, computePpm0(1440, 900) / ZOOM.levels[0], CAMERA.elevation, classIds, headingsDeg);
+    return measureShipValues(this.gl, computePpm0(1440, 900, MAX_CANNON_RANGE) / ZOOM.levels[0], CAMERA.elevation, classIds, headingsDeg);
   }
 
   // QA: congela la simulación y los efectos (R3F sigue dibujando el último estado) para comparar dos capturas del
@@ -1128,6 +1145,40 @@ export class GameRuntime implements OverlayHost {
     return k >= 1 ? target : this.zoomFrom + (target - this.zoomFrom) * easeOut(k);
   }
 
+  // R del encuadre: en partida, máx(alcance propio, 65 m); la portada conserva la base de 80 m con la que se compuso
+  private frameRangeTarget(): number {
+    return this.preset === 'presentation' ? MAX_CANNON_RANGE : frameRangeM(this.cannonRange());
+  }
+
+  // R y ppm₀ al momento: viewport nuevo, cambio de preset o de fuente
+  private snapFrame(): void {
+    this.frameRange = this.frameRangeTarget();
+    this.frameFromPlayer = !!this.src.player;
+    this.ppm0 = this.ppm0To = computePpm0(this.viewW, this.viewH, this.frameRange);
+    this.ppm0Start = -Infinity;
+  }
+
+  // Cañón nuevo (solo se compra en la tienda): al cerrarla, ease-in-out de 600 ms hacia el ppm₀ nuevo. Si R cambia
+  // con el primer dato del jugador (al entrar con un cañón mejorado), se aplica sin transición
+  private updateFrame(now: number): void {
+    const range = this.frameRangeTarget();
+    if (range !== this.frameRange) {
+      if (!this.frameFromPlayer) this.snapFrame();
+      else if (!useHud.getState().shopOpen) {
+        this.ppm0From = this.ppm0;
+        this.ppm0To = computePpm0(this.viewW, this.viewH, range);
+        this.ppm0Start = now;
+        this.frameRange = range;
+      }
+    } else if (!this.frameFromPlayer && this.src.player) {
+      this.frameFromPlayer = true;
+    }
+    if (this.ppm0Start === -Infinity) return;
+    const k = clamp01((now - this.ppm0Start) / ZOOM.rangeTransitionMs);
+    this.ppm0 = this.ppm0From + (this.ppm0To - this.ppm0From) * easeInOut(k);
+    if (k >= 1) this.ppm0Start = -Infinity;
+  }
+
   private updateCamera(state: RootState, now: number): void {
     const cam = state.camera as THREE.OrthographicCamera;
     this.camera = cam;
@@ -1136,8 +1187,9 @@ export class GameRuntime implements OverlayHost {
     if (w !== this.viewW || h !== this.viewH) {
       this.viewW = w;
       this.viewH = h;
-      this.ppm0 = computePpm0(w, h);
+      this.snapFrame();
     }
+    this.updateFrame(now);
     this.ppm = this.preset === 'presentation' ? this.ppm0 * PRESENTATION.zoom : this.ppm0 / this.currentZoomFactor(now);
 
     // Seguimiento rígido del barco propio (AC-23); muerto, la cámara se queda sobre los restos y al
@@ -1413,13 +1465,18 @@ export class GameRuntime implements OverlayHost {
     this.effects.rings.push(r);
   }
 
+  // Nivel de cañón propio: el del jugador; en una escena sintética (sin jugador), el que fije la prueba (QA, D29)
+  private cannonLevel(): number {
+    return this.src.player?.upgrades.cannons ?? this.sceneCannonLevel;
+  }
+
   private cannonRange(): number {
-    const level = this.src.player?.upgrades.cannons ?? 1;
+    const level = this.cannonLevel();
     return CANNON_LEVELS[Math.max(0, Math.min(CANNON_LEVELS.length - 1, level - 1))].range;
   }
 
   private reloadMs(): number {
-    const level = this.src.player?.upgrades.cannons ?? 1;
+    const level = this.cannonLevel();
     return CANNON_LEVELS[Math.max(0, Math.min(CANNON_LEVELS.length - 1, level - 1))].reload * 1000;
   }
 

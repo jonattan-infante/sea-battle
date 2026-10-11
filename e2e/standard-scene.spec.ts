@@ -1,6 +1,6 @@
 // AC-89 y VFX-01/02/03 (VFX-SPEC §15) con la escena estándar sintética del runtime (src/client/synthetic-scene.ts):
-// 20 barcos de jugadores + 20 NPC + 1 Fragata en lugar del jefe, todos en pantalla con el zoom por defecto, una isla
-// y 8 duelos simultáneos. Sin servidor de por medio para los barcos: el runtime dibuja exactamente lo mismo que en
+// 20 barcos de jugadores + 20 NPC + 1 Fragata en lugar del jefe, todos en pantalla con 1,0× y el cañón N3 (5,04 px/m,
+// la densidad en metros con la que se compone la escena, D31), una isla y 8 duelos simultáneos. Sin servidor de por medio para los barcos: el runtime dibuja exactamente lo mismo que en
 // una partida, pero la escena es reproducible. AC-107 (declutter con el indicador de recarga) usa la misma escena
 // con uno de los barcos en duelo como propio.
 import { expect, test } from '@playwright/test';
@@ -20,7 +20,7 @@ test.describe('Escena estándar @perf', () => {
       const rt = window.__SEA_BATTLE__!.runtime();
       rt.setCameraPreset('game');
       rt.setZoomLevel(1); // 1,0× (por defecto)
-      const scene = rt.startScene('standard');
+      const scene = rt.startScene('standard', { cannonLevel: 3 }); // con N3 cabe entera (D31)
       return { ships: scene.spec.ships.length, duels: scene.spec.duels.length, ids: scene.spec.ships.map((s) => s.id) };
     });
     expect(setup.ships).toBe(41);
@@ -85,7 +85,7 @@ test.describe('Escena estándar', () => {
       rt.setZoomLevel(1);
       // s9 está en duelo y su placa cae justo a la derecha de la de s8: sin el indicador en la caja propia, la
       // recarga pisa la placa de s8 en la mayoría de los instantes
-      rt.startScene('standard', { myShipId: 's9' });
+      rt.startScene('standard', { myShipId: 's9', cannonLevel: 3 });
     });
     await page.waitForTimeout(2500);
 

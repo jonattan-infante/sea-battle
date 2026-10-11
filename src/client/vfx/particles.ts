@@ -4,10 +4,10 @@ import * as THREE from 'three';
 
 export const SHAPE = { disc: 0, ring: 1, flame: 2, square: 3, streak: 4, foam: 5, cross: 6, puff: 7, damageFlame: 8 } as const;
 
-// Formas 7 (bocanada, D20) y 8 (llama de daño, D24): 6 m hacia la cámara solo en profundidad. En ortográfica no mueve
-// la imagen; así el aparejo propio (la cangreja abierta de D12, las cuadras braceadas) no tapa el humo ni el fuego de
-// vida baja (VFX §0.3)
-export const FX_BIAS_M = 6;
+// Formas 7 (bocanada, D20) y 8 (llama de daño, D24): 7 m hacia la cámara solo en profundidad (D31; antes 6, con
+// oclusión residual del gratil del trinquete del Mercante, a ≈ 6,7 m). En ortográfica no mueve la imagen; así el
+// aparejo propio (la cangreja abierta de D12, las cuadras braceadas) no tapa el humo ni el fuego de vida baja (VFX §0.3)
+export const FX_BIAS_M = 7;
 
 // Partícula a emitir: objeto de trabajo reutilizable (se rellena y se pasa a emit, sin asignar)
 export interface ParticleSpec {
