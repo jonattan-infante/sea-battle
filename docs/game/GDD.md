@@ -156,7 +156,8 @@ Orientaciones soportadas: vertical (390×844) y horizontal (844×390). Mientras 
 1. Un clic fija un destino. El servidor calcula una ruta con *waypoints* que esquiva las islas (A\* sobre una rejilla de 5 m). **Margen de navegación** = media eslora + 2 m (`L/2 + 2`), medido desde el borde de la isla: Balandra 10 m, Bergantín 14 m, Fragata 19 m, Pirata 12 m, Mercante 13 m y Capitán 17 m. Así el casco (sin el bauprés) nunca se mete en una isla: lo que parece sólido es sólido. El radio de colisión no cambia y sigue siendo el límite físico de último recurso.
 2. Cada tick, el barco gira hacia el siguiente *waypoint* a su **velocidad de giro máxima**.
 3. Velocidad objetivo = máxima × factor de giro (1,0 si el error de rumbo es ≤ 45°, 0,6 si es ≤ 90° y 0,4 si es mayor).
-4. Acelera y frena con su aceleración y frenado. Empieza a frenar cuando `distancia ≤ v² / (2·frenado)`.
+4. Acelera y frena con su aceleración y frenado. Empieza a frenar cuando la **distancia que le queda de ruta hasta el destino final** cumple `d ≤ v² / (2·frenado)`. No basta con medir hasta el *waypoint* actual: si no, el barco se pasa del destino.
+4b. **Giro casi en el sitio junto a islas.** Si el error de rumbo es > 45° y el centro del barco está a menos de (margen de navegación + 8 m) de una isla, o si el siguiente *waypoint* es una esquina de más de 45°, la velocidad objetivo es ≤ 1 m/s hasta que el error baje de 45°. En mar abierto rigen solo los factores del punto 3.
 5. **Llegada**: se detiene a ≤2 m del destino con velocidad 0.
 6. No hay colisión entre barcos (se atraviesan; ver §3). Las islas y el borde son sólidos.
 
@@ -236,8 +237,8 @@ Lectura de diseño: la Balandra repara 32 HP/s y, bajo fuego, 12 HP/s. Contra un
 ### Estadísticas
 | Tipo | Vida | Vel. patrulla / máx. | Giro | Cañones | Daño por bala | Precisión | Alcance | Recarga | DPS | Recompensa | Restos (P1) | Reaparición | Población |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| **Pirata** (hostil) | 450 | 6 / 11 m/s | 70 °/s | 4 | 22 | 60 % | 55 m | 4,5 s | 11,7 | 120 oro | 30 oro | 30 s | 12 (3 por sector) |
-| **Mercante** (pasivo) | 300 | 7 / 9 m/s | 50 °/s | 0 | — | — | — | — | 0 | 70 oro | 20 oro | 20 s | 8 |
+| **Pirata** (hostil) | 450 | 6 / 11 m/s | 70 °/s | 4 | 22 | 60 % | 55 m | 4,5 s | 11,7 | 105 oro | 25 oro | 30 s | 12 (3 por sector) |
+| **Mercante** (pasivo) | 300 | 7 / 9 m/s | 50 °/s | 0 | — | — | — | — | 0 | 60 oro | 15 oro | 20 s | 8 |
 | **Capitán pirata** (P2, jefe) | 1 800 | 6 / 10 m/s | 60 °/s | 6 | 28 | 65 % | 65 m | 4,0 s | 27,3 | 600 oro | 150 oro | Tras 10 piratas hundidos en el servidor; máximo 1 vivo | 0–1 |
 
 Eslora y radio de colisión: Pirata 20 m / 6 m, Mercante 22 m / 7 m, Capitán 30 m / 9 m.
@@ -288,7 +289,7 @@ Eslora y radio de colisión: Pirata 20 m / 6 m, Mercante 22 m / 7 m, Capitán 30
 
 | Hito | Objetivo |
 |---|---|
-| Ingreso medio con Balandra N1 | ~150–180 oro/min de juego activo |
+| Ingreso medio con Balandra N1 | ≈130–190 oro/min de juego activo (estimación: −12,5 % sobre los 150–218 oro/min que midió desarrollo con 120/70 de recompensa; lo confirma la corrida del AC-60) |
 | Primera mejora (≤500 oro) | ≤ 4 min |
 | Bergantín | ≤ 20 min |
 | Todo comprado (12 800 oro) | 45–70 min |
@@ -365,7 +366,7 @@ El layout, la paleta y la forma los define `game-ux`. Aquí solo se fija qué de
 | Minimapa (P1) | Mapa completo (islas, puerto, zona segura) + entidades dentro del área de interés; propio / jugadores / piratas / mercantes con **color y forma** | ≤ 2 Hz |
 | Zona segura | Borde visible en el mundo + aviso "Zona segura" en el HUD | Al cambiar |
 | Protección | Indicador sobre el barco + tiempo restante | Al cambiar |
-| Feed de eventos (P1) | "Hundiste a Pirata +120 oro", "X te hundió" (máx. 4 líneas, 5 s cada una) | Al cambiar |
+| Feed de eventos (P1) | "Hundiste a Pirata +105 oro", "X te hundió" (máx. 4 líneas, 5 s cada una) | Al cambiar |
 | Conexión | Estado + ping si es > 200 ms | Al cambiar |
 
 **Requisito de legibilidad (pilar P2)**: en una captura, sin leer texto, el jugador distingue su barco, otros jugadores, piratas hostiles, mercantes pasivos, su objetivo, si está a tiro y su vida baja, también en escala de grises.
