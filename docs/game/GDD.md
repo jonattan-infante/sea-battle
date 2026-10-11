@@ -128,6 +128,7 @@ Lectura de diseño: el **riesgo crece con la distancia al puerto**. Los mercante
 | Atacar / cancelar | `Espacio` o botón **Atacar** | Alterna (*toggle*) sobre el objetivo seleccionado (§7) |
 | Seleccionar + atacar (P1) | Doble clic sobre un barco atacable | Atajo |
 | Cancelar / deseleccionar | `Esc` | La 1.ª pulsación cancela el ataque; la 2.ª deselecciona |
+| Zarpar (hundido) | `Espacio` / `Enter` o botón **Zarpar** | Solo cuando la cuenta atrás ha terminado; antes no hacen nada |
 | Detener | `S` | Borra el destino; el barco frena |
 | Reparar | `R` o botón **Reparar** | Alterna (§8) |
 | Zoom | Rueda del ratón | 3 niveles de **extensión visible**: 0,7× (más cerca), 1,0× (por defecto) y 1,5× (más lejos) |
@@ -314,7 +315,7 @@ Eslora y radio de colisión: Pirata 20 m / 6 m, Mercante 22 m / 7 m, Capitán 30
 | Paso | Regla |
 |---|---|
 | Vida ≤ 0 | Estado **Hundiéndose** durante 3 s. No se puede seleccionar ni atacar. Los ataques contra él terminan. |
-| Pantalla de muerte | Muestra quién te hundió, el oro perdido y una cuenta atrás de 8 s desde la muerte. El botón **Zarpar** se activa al llegar a 0 (no hay reaparición automática, para evitar barcos AFK). |
+| Pantalla de muerte | Muestra quién te hundió, el oro perdido y una cuenta atrás de 8 s desde la muerte. El botón **Zarpar** se activa al llegar a 0 (no hay reaparición automática, para evitar barcos AFK). También zarpa con `Espacio` o `Enter`, y nunca antes de que termine la cuenta. |
 | Reaparición | En el anillo del puerto, con la vida al 100 %, la misma clase y las mismas mejoras |
 | Protección | 15 s o hasta que el jugador ataque, lo que ocurra primero. Mientras dura, ningún pirata lo elige como objetivo y ningún jugador puede dañarlo. Tiene indicador visual. (Inspirado en Seafight, REFERENCE §10.) |
 

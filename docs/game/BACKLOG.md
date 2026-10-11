@@ -28,52 +28,45 @@
 
 Los AC de rendimiento de E9 son una **puerta desde H1**: se mantienen en verde en cada hito, no se dejan para el final.
 
-## Triaje QA-REPORT-2026-10-11 (SHA `614ae0d`, veredicto RECHAZADO)
+## Triaje de QA
 
-Fuente: [`qa/QA-REPORT-2026-10-11.md`](./qa/QA-REPORT-2026-10-11.md) §3 y §5. Resultado: 82 APROBADOS, 2 RECHAZADOS (AC-63 y AC-97), 6 NO VERIFICADOS y 7 a revalidar.
+Reportes:
+- [`qa/QA-REPORT-2026-10-11.md`](./qa/QA-REPORT-2026-10-11.md): SHA `614ae0d`, RECHAZADO.
+- [`qa/QA-REPORT-2026-10-11-2.md`](./qa/QA-REPORT-2026-10-11-2.md): revalidación sobre `c631272`, **APROBADO CON OBSERVACIONES**. 91 APROBADOS, 1 RECHAZADO (AC-97, ya conocido) y 6 NO VERIFICADOS. Los AC-101 a AC-108 todavía no tienen veredicto.
 
-### Hallazgos nuevos (§5)
+### Hallazgos
 | Hallazgo | Sev. | Qué pasa | AC | Responsable | Estado |
 |---|---|---|---|---|---|
-| H-01 | **P0** | "Zarpar" no envía `respawn`: el jugador queda hundido para siempre | AC-63 (verificación endurecida) + **AC-101** | lead | Arreglo y e2e real en curso (rojo sin el arreglo, verde con él) |
-| H-02 | P1 | En `614ae0d` el casco entraba en las islas (margen = radio de colisión) | AC-20, AC-21 (el texto es correcto) | game-qa (revalidar con `qa-artifacts/qa/scripts/nav-hull.ts`) | A revalidar sobre `f67a7cf`. Se cierra con 0 rutas con el casco dentro y destinos a `L/2 + 2` ±1 m |
-| H-03 | P1 | Velas casi invisibles de proa y de popa: Balandra 18 %, Pirata 23,2 %, Mercante 24,9 % (AS-V14 ≥ 25 %) | **AC-102** | game-ux (decisión D12: velas de cuchillo abiertas 25° y foque del Mercante) → dev-render | Spec en `aa02a60`; falta implementarla y el harness |
-| H-04 | P2 | Muelles y rocas fuera del colisionador (D7, AS-V16): madera a r + 5 m | **AC-103** | dev-render | Hecho en su árbol, sin commit (AS-V16: de 8,03 m a 0,00 m) |
-| H-05 | P2 | El humo y el fuego de vida baja casi no se ven con el zoom 1,0× | **AC-104** | game-ux (fijar el área mínima en VFX-09) → dev-render (D13, humo claro) | Bloqueado hasta tener la cifra de UX |
-| H-06 | P2 | En 844×390 la pista tapa la placa propia | **AC-105** | lead (HUD) | Pendiente |
-| H-07 | P3 | La tarjeta de muerte parte "por ☠ Pirata" en 3 líneas | **AC-106** | lead (CSS) | Pendiente |
-| H-08 | P3 | El indicador de recarga se monta sobre placas vecinas (AD-11) | **AC-107** | dev-render (overlays) | Pendiente |
-| H-09 | P1 | Huecos del harness por los que se escapó el P0 | **AC-108** + regla de verificación (Convenciones) | Ver tabla siguiente | En curso |
-
-**H-09: tests concretos que faltan**
-| AC | Hueco | Responsable | Estado |
-|---|---|---|---|
-| AC-62, AC-63, AC-101 | No hay ningún e2e de muerte → Zarpar | lead | En curso |
-| AC-26, AC-27, AC-28 | El e2e no cuenta frames WebSocket al seleccionar, al pulsar Tab o al pulsar Esc | lead | Pendiente |
-| AC-81 | El e2e hace tap + rueda, no desliza ni pellizca de verdad | lead | Pendiente |
-| AC-84 | El harness no comprueba que haya NPC en pantalla | lead | Pendiente |
-| AC-89 | Medía la escena inicial | — | **Resuelto**: `e2e/standard-scene.spec.ts:15` usa la escena estándar (51 draw calls) |
-| AC-102 (AS-V14) | `measureSails()` existe pero ningún harness lo llama | dev-render | Pendiente |
+| H-01 | P0 | "Zarpar" no enviaba `respawn` | AC-63, AC-101 | lead | **Cerrado** en `c631272` (QA-2 §3: clic, Espacio y Enter → exactamente 1 `respawn`; 0 durante la cuenta atrás). El e2e de toque en móvil (AC-101) está en `9b4bda3` y le falta el veredicto |
+| H-02 | P1 | El casco entraba en las islas | AC-20, AC-21 | — | **Cerrado** en `c631272` (0/300 rutas con el casco dentro en las 5 clases; la proa queda a 2,2–2,3 m de la costa) |
+| H-03 | P1 | Velas casi invisibles de proa y de popa (AS-V14) | AC-102 | game-ux (D12) → dev-render | Sin evaluar (llega con la tanda de dev-render). **Falta el harness de `measureSails()`**: ningún archivo de `e2e/` lo llama |
+| H-04 | P2 | Muelles y rocas fuera del colisionador | AC-103 | dev-render | Sin evaluar (tanda de dev-render) |
+| H-05 | P2 | El humo y el fuego de vida baja casi no se ven | AC-104 | game-ux → dev-render | **VFX-09b falla por un orden de magnitud.** Pasado a game-ux como Q16 |
+| H-06 | P2 | En 844×390 la pista tapaba la placa propia | AC-105 | lead | **Cerrado** en `c631272` para la placa propia; queda el residuo H-06b |
+| H-06b | P3 | En 844×390 la pista (y 338–379) tapa la placa del **objetivo** cuando está a ~55–63 m al sur | AC-105 (ampliado) | lead | Pendiente. Decisión: la pista **evita dinámicamente** las placas propia y del objetivo, porque cualquier posición fija puede quedar tapada por algún objetivo |
+| H-07 | P3 | La tarjeta de muerte se partía en 3 líneas | AC-106 | lead | **Cerrado** en `c631272` (23,04 px, una línea) |
+| H-08 | P3 | El indicador de recarga pisa placas vecinas | AC-107 | dev-render | Sin evaluar (tanda de dev-render) |
+| H-09 | P1 | Huecos del harness | AC-108 + regla de verificación | lead / dev-render | **Casi cerrado.** En `079b0a8` se asertan los observables de AC-26 y de Tab/Esc (`trackSocket`, `gameplay.spec.ts:113,157`), AC-81 con toques reales por CDP (`:232`) y AC-84 con NPC en pantalla (`perf.spec.ts:53`). AC-89 ya usaba `standard-scene`. **Solo falta AS-V14 (AC-102)**, de dev-render. QA lo revalida sobre `9b4bda3` |
 
 ### AC sin veredicto final
-| AC | Motivo | Responsable | Qué falta |
+| AC | Motivo | Responsable | Estado |
 |---|---|---|---|
-| AC-20, 21, 22, 56, 57, 59, 60, 100 | Cambiaron en `94d3a39` y `f67a7cf` | game-qa | Revalidar en la próxima corrida |
-| AC-04, 58, 78 | Afectados por las constantes 105/60 | game-qa | Repasar (el e2e de la rama ya espera "+60 oro") |
-| AC-70 | Una sesión da unos 340 de oro y el e2e necesita 2 000 | lead | Escenario de prueba con oro inicial, solo con `AUTH_BYPASS` |
-| AC-72 | Exige 5 evaluadores humanos | game-qa + Jonattan | Organizar la prueba de 5 s |
-| AC-75 | Parcial: falta ver "Fallo" (k = 0) y contar las salpicaduras | lead | e2e con semilla que fuerce una andanada sin impactos |
+| AC-70 | Hacían falta 2 000 de oro en el e2e | lead | e2e escrito en `aab8581` (escenario `shipyard`); falta el veredicto |
+| AC-72 | Exige 5 evaluadores humanos | game-qa + Jonattan | Hay que organizar la prueba de 5 s |
+| AC-75 | Faltaba ver "Fallo" (k = 0) y contar las salpicaduras | lead / dev-render | e2e escrito, sin verificar. Falta el contador de salpicaduras (dev-render) |
 | AC-90 | Manual en el portátil de referencia | game-qa | Bloqueado por GDD Q9 (Jonattan) |
-| AC-91 | No se ejecutaron los 10 min de memoria | game-qa | Corrida de perf |
-| AC-92 | SwiftShader no da 60 fps | game-qa | Repetir con Chrome y GPU (`--use-angle=metal`). Repetir también la observación de AC-95 (274 ms) |
+| AC-91 | Corrida de memoria de 10 min | game-qa | Pendiente |
+| AC-92 | SwiftShader no llega a 60 fps | game-qa | Repetir con GPU (`--use-angle=metal`), junto con la observación de AC-95 |
+| AC-101…AC-108 | Se añadieron en el triaje del 2026-10-11 | game-qa | Entran en la próxima corrida |
 
 ### Ya conocidos (fuera de este triaje)
-- Persistencia (AC-97): RECHAZADO porque no está implementado. Depende de GDD Q2 (Jonattan).
-- **AD-10 y §5, iluminación D2/D8:** pendiente de implementar (dev-render).
-- **AD-17, fondo de la landing (U6-a):** pendiente (desarrollo).
+- Persistencia (AC-97): RECHAZADO porque no está implementada. Depende de GDD Q2 (Jonattan).
+- AD-10 y ART §5, iluminación D2/D8: tanda de dev-render.
+- AD-17, fondo de la landing (U6-a): desarrollo.
 
-### Decisión de producto sobre observaciones de QA
-- Pellizco largo (AC-82): que un pellizco largo salte 2 niveles en un solo gesto es **aceptable**. El AC exige pasar por los mismos 3 niveles, y se cumple. No se cambia.
+### Decisiones de producto sobre observaciones de QA
+- Pellizco largo (AC-82): que salte 2 niveles en un gesto es aceptable. El AC exige pasar por los mismos 3 niveles, y se cumple.
+- Espacio estando hundido (QA-2 §4, H-01): se **acepta** que Espacio (y Enter) equivalgan a "Zarpar" cuando el jugador está hundido y la cuenta atrás ha terminado. Durante la cuenta atrás no hacen nada (verificado por QA: 0 `respawn`). Queda en el GDD §5 y §12 y en AC-101.
 
 ---
 
@@ -202,7 +195,7 @@ Fuente: [`qa/QA-REPORT-2026-10-11.md`](./qa/QA-REPORT-2026-10-11.md) §3 y §5. 
 - **AC-61** — Dado un barco con vida ≤ 0, cuando pasa ese tick, entonces entra en Hundiéndose durante 3 s, no se puede seleccionar y todos los ataques contra él terminan. Verificación: unitario.
 - **AC-62** — Dado un jugador con 455 de oro que es hundido, cuando ve la pantalla de muerte, entonces esta muestra quién lo hundió, "−45 oro" y una cuenta atrás de 8 s. El botón Zarpar está desactivado hasta que la cuenta llega a 0. Verificación: e2e + captura.
 - **AC-63** — Dado un jugador muerto con la cuenta atrás terminada, cuando pulsa Zarpar, entonces reaparece en el anillo de 60–90 m del puerto, con el 100 % de la vida y la misma clase y mejoras. Verificación: unitario + e2e con **clic real** en Zarpar (llamar a `respawn()` directamente no cuenta; QA H-01).
-- **AC-101** — Dado un jugador hundido con la cuenta atrás en 0, cuando hace clic en Zarpar, lo toca (móvil) o pulsa Enter con el botón enfocado, entonces el cliente emite **exactamente 1** intención `respawn` y en ≤ 1 s el barco propio existe con el 100 % de la vida. Verificación: e2e con interacción real en 1440×900 y 390×844 (QA H-01).
+- **AC-101** — Dado un jugador hundido con la cuenta atrás en 0, cuando hace clic en Zarpar, lo toca (móvil) o pulsa Enter o Espacio, entonces el cliente emite **exactamente 1** intención `respawn` y en ≤ 1 s el barco propio existe con el 100 % de la vida. Verificación: e2e con interacción real en 1440×900 y 390×844 (QA H-01).
 - **AC-64** — Dado un jugador recién reaparecido, cuando pasan 15 s o él ataca (lo que ocurra primero), entonces pierde la protección. Mientras la tiene, ningún pirata lo elige, los ataques de jugadores se rechazan y se ve el indicador. Verificación: unitario + captura.
 
 ### H-502 Tarjeta de muerte en una línea (QA H-07) · P3
@@ -256,8 +249,8 @@ Fuente: [`qa/QA-REPORT-2026-10-11.md`](./qa/QA-REPORT-2026-10-11.md) §3 y §5. 
 - **AC-80** — Dado el juego en 390×844 y en 844×390, cuando se juega con toques, entonces tocar el agua navega y tocar un barco lo selecciona. El botón Atacar mide ≥ 64×64 px y Objetivo, Reparar y Puerto ≥ 48×48 px, sin solaparse con el panel ni con el minimapa. Verificación: e2e (emulación) + captura.
 - **AC-81** — Dado el juego en móvil, cuando el jugador desliza o pellizca sobre el canvas, entonces la página no hace scroll ni zoom. Verificación: e2e.
 
-### H-803 Las pistas no tapan placas en móvil (QA H-06) · P2
-- **AC-105** — Dado el juego en 844×390 y en 390×844 con una pista visible, cuando se renderiza, entonces la caja de la pista no se cruza con la placa propia ni con la del objetivo. Verificación: e2e (cajas del DOM).
+### H-803 Las pistas no tapan placas en móvil (QA H-06 y H-06b) · P3
+- **AC-105** — Dado el juego en 844×390 y en 390×844 con una pista visible y un objetivo seleccionado, cuando se renderiza, entonces la caja de la pista **en ningún momento** se cruza con la placa propia ni con la del objetivo, esté donde esté el objetivo. Si fueran a cruzarse, la pista cambia de posición o se oculta mientras dure el cruce. Verificación: e2e (cajas del DOM) con el objetivo a 55–63 m al sur (el caso de H-06b) y a la misma distancia al norte.
 
 ### H-802 Zoom con pellizco · P1
 - **AC-82** — Dado el juego en móvil, cuando el jugador pellizca, entonces el zoom pasa por los mismos 3 niveles que en escritorio. Verificación: e2e.
