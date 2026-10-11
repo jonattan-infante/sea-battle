@@ -233,6 +233,7 @@ body {
   .hud-mobile-btn--target { right: 108px; bottom: 12px; }
   .hud-mobile-btn--repair { right: 24px; bottom: 100px; }
   .hud-mobile-btn--port { left: 12px; bottom: 12px; }
+  .hud-hint { bottom: 12px; } /* H-06: entre Puerto y Objetivo, lejos del barco centrado y de su placa */
 }
 
 /* ---------- Modales (z 40) ---------- */
@@ -280,7 +281,7 @@ body {
 /* Muerte (§15) */
 .death-card { position: absolute; left: 50%; top: 50%; z-index: 40; width: 440px; max-width: calc(100vw - 32px); height: 300px; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; background: rgba(6, 17, 26, 0.88); border: 1px solid var(--ui-line); border-radius: 12px; animation: card-in 200ms ease 1.2s both; }
 .death-card h2 { font-size: 48px; line-height: 1; }
-.death-card__by { font-size: 16px; font-weight: 600; }
+.death-card__by { font-size: 16px; font-weight: 600; display: flex; gap: 6px; align-items: center; white-space: nowrap; }
 .death-card__lost { font-size: 20px; font-weight: 600; color: var(--ui-danger); display: flex; gap: 6px; align-items: center; }
 .death-ring { position: relative; width: 64px; height: 64px; display: grid; place-items: center; font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .death-ring svg { position: absolute; inset: 0; transform: rotate(-90deg); }

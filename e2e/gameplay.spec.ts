@@ -168,6 +168,29 @@ test.describe('Móvil @mobile', () => {
     }
   });
 
+  test('H-06: en horizontal (844×390) la pista no tapa la placa propia ni los botones', async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+    try {
+      const page = await ctx.newPage();
+      await enterGame(page);
+      const hint = page.getByTestId('hint');
+      await expect(hint).toBeVisible();
+      const plate = page.locator('[data-plate][data-relation="self"]');
+      await expect(plate).toBeVisible();
+      const boxes = { hint: (await hint.boundingBox())!, plate: (await plate.boundingBox())! } as Record<string, { x: number; y: number; width: number; height: number }>;
+      for (const id of ['m-attack', 'm-target', 'm-repair', 'm-port']) boxes[id] = (await page.getByTestId(id).boundingBox())!;
+      console.log(`H-06: pista ${JSON.stringify(boxes.hint)} · placa propia ${JSON.stringify(boxes.plate)}`);
+      for (const id of Object.keys(boxes).filter((k) => k !== 'hint')) {
+        const a = boxes.hint;
+        const b = boxes[id];
+        const overlap = a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+        expect(overlap, `la pista se solapa con ${id}`).toBe(false);
+      }
+    } finally {
+      await ctx.close();
+    }
+  });
+
   test('AC-81: deslizar sobre el canvas no hace scroll de la página', async ({ page }) => {
     await enterGame(page);
     const before = await page.evaluate(() => ({ x: window.scrollX, y: window.scrollY }));
@@ -247,6 +270,10 @@ test.describe('Muerte y reaparición', () => {
     const button = page.getByTestId('btn-respawn');
     await expect(button).toBeDisabled();
     await expect(button).toHaveText(/^Zarpar en \d s$/);
+    // H-07: "por ☠ Pirata" en una sola línea (ART-DIRECTION §15)
+    const byHeight = (await page.getByTestId('death-by').boundingBox())!.height;
+    console.log(`H-07: línea "por …" de ${byHeight} px`);
+    expect(byHeight).toBeLessThanOrEqual(24);
     net.reset();
     await button.click({ force: true });
     await page.keyboard.press('Space');
