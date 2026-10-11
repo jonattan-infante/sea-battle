@@ -293,7 +293,7 @@ export function addPlayer(world: World, id: string, name: string): Player {
   const spot = respawnPoint(world, navClearance(player.activeShip));
   const ship = newShip(world, player.activeShip, name, id, spot.pos, spot.heading);
   ship.maxHp = maxHpFor(player.activeShip, player);
-  ship.hp = ship.maxHp;
+  ship.hp = Math.round(ship.maxHp * (world.startingHull ?? 1));
   ship.protectedUntil = world.time + SPAWN_PROTECTION;
   player.shipId = ship.id;
   world.ships.set(ship.id, ship);

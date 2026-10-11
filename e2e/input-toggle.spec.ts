@@ -4,15 +4,19 @@
 // El estado de acción del HUD refleja la última pulsación en ≤ 50 ms y no se desdice: se muestrea en cada frame
 // durante 500 ms tras la última pulsación, con un objetivo vivo y a tiro, y no cambia después de los primeros 50 ms.
 // Pulsaciones reales; la API del cliente solo prepara (navegar y dejar el ataque en un estado conocido).
+// AC-128 (H-17): Reparar y Atacar alternados (R y luego Espacio, Espacio y luego R) tienen en cuenta lo que la otra
+// intención cancela, y con el casco intacto R no anula el ataque ni el HUD sale de "atacando" (GDD §5 y §8).
 import { expect, Page, test } from '@playwright/test';
 import { CANNON_LEVELS, SHIP_CLASSES } from '../src/game/constants';
-import { TARGET_FAN, TARGETS_POINT } from '../server/scenarios';
+import { ScenarioName, TARGET_FAN, TARGETS_POINT } from '../server/scenarios';
 import { DebugShip, enterGame, hud, me, ships, trackSocket, waitFor } from './helpers';
 import { frames, intents, Net, sailTo } from './net';
 import { installNetDelay, setNetDelay } from './net-delay';
 import { OwnServer, startOwnServer } from './own-server';
 
 const GAPS = [80, 120, 200, 300];
+const CROSS_GAPS = [80, 120, 200]; // AC-128
+const MAX_HULL = 0.9; // AC-128: la reparación no termina durante la prueba
 const DELAYS = [0, 100];
 const HUD_MS = 50;
 const SAMPLE_MS = 500;
@@ -35,11 +39,12 @@ const STANDS = TARGET_FAN.map((t) => {
 // pasa al puesto del siguiente. Los mercantes del escenario no regeneran ni disparan
 const MAX_VOLLEY = SHIP_CLASSES.sloop.cannonsPerSide * CANNON_LEVELS[0].damage;
 
-// Un servidor por test: cada uno empieza con los cuatro mercantes a plena vida
+// Un servidor por test: cada uno empieza con los cuatro mercantes a plena vida. "targets" con el casco entero y
+// "repair" (AC-128) con el jugador al 10 % de vida
 let own: OwnServer;
-test.beforeEach(async () => {
-  own = await startOwnServer({ SEA_BATTLE_NPCS: '0', SEA_BATTLE_SCENARIO: 'targets' });
-});
+const serve = (scenario: ScenarioName) => async () => {
+  own = await startOwnServer({ SEA_BATTLE_NPCS: '0', SEA_BATTLE_SCENARIO: scenario });
+};
 test.afterEach(async () => {
   await own?.kill();
 });
@@ -83,10 +88,31 @@ const marks = (page: Page) =>
   });
 
 // Estado de ataque propio según el servidor: el último campo `t` del barco propio en los frames recibidos
-function serverTarget(net: Net, myId: string): string | null {
-  let t: string | null = null;
+function serverTarget(net: Net, myId: string, initial: string | null = null): string | null {
+  let t: string | null = initial;
   for (const f of frames(net)) for (const s of f.s ?? []) if (s.id === myId && 't' in s) t = s.t ?? null;
   return t;
+}
+
+// Igual para la reparación (campo `r`). Los frames son deltas: si el estado no cambia, no viene, de ahí el inicial
+function serverRepairing(net: Net, myId: string, initial = false): boolean {
+  let r = initial;
+  for (const f of frames(net)) for (const s of f.s ?? []) if (s.id === myId && 'r' in s) r = !!s.r;
+  return r;
+}
+
+const actionState = (page: Page) => page.getByTestId('action-state');
+
+// Sin reparar, confirmado por el servidor (AC-128 b)
+async function resetRepair(page: Page) {
+  await page.evaluate(() => (window.__SEA_BATTLE__!.runtime() as unknown as { client: { repair: (on: boolean) => void } }).client.repair(false));
+  await waitFor(() => me(page), (s) => !!s && !s.repairing, 5000, 50);
+  await expect(actionState(page)).not.toHaveAttribute('data-state', 'repairing');
+}
+
+async function hullRatio(page: Page): Promise<number> {
+  const s = (await me(page))!;
+  return s.hp / s.maxHp;
 }
 
 // Sin ataque, confirmado por el servidor, con la red en reposo y la última andanada ya impactada
@@ -153,6 +179,12 @@ function inRangeTarget(page: Page, select: (target: DebugShip) => Promise<void>)
 
 const dist = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.hypot(a.x - b.x, a.z - b.z);
 
+// Selección con la interacción real de escritorio: clic sobre el barco y el ratón fuera de la escena
+const selectByClick = (page: Page) => async (t: DebugShip) => {
+  await page.mouse.click(t.screen!.sx, t.screen!.sy);
+  await page.mouse.move(5, 450);
+};
+
 interface Result {
   delay: number;
   gap: number;
@@ -163,19 +195,28 @@ interface Result {
   ok: boolean;
 }
 
-// Dos pulsaciones separadas `gap` ms; espera a que todo se asiente y mide intenciones, estado final del servidor y HUD
-async function doublePress(page: Page, net: Net, myId: string, press: () => Promise<void>, gap: number, expected: string[]) {
+// Dos pulsaciones separadas `gap` ms (`press(0)` y `press(1)`); espera a que todo se asiente y mide intenciones,
+// estado final del servidor (desde `initial`, el confirmado antes de pulsar) y HUD
+async function doublePress(
+  page: Page,
+  net: Net,
+  myId: string,
+  press: (i: number) => Promise<void>,
+  gap: number,
+  expected: string[],
+  initial: { target: string | null; repairing: boolean } = { target: null, repairing: false }
+) {
   const t0 = (await marks(page)).now;
   net.reset();
   // De inicio a inicio: lo que tarda la primera pulsación (un toque son varias idas y vueltas) no se suma al Δ
   const start = Date.now();
-  await press();
+  await press(0);
   await page.waitForTimeout(Math.max(0, gap - (Date.now() - start)));
-  await press();
+  await press(1);
   const delay = await page.evaluate(() => (window as unknown as { __NET_DELAY_MS__: number }).__NET_DELAY_MS__);
   await page.waitForTimeout(Math.max(2 * delay + 900, SAMPLE_MS + 200));
   const m = await marks(page);
-  const presses = m.input.filter((i) => i.t >= t0 && !i.repeat && (i.code === 'Space' || i.code === 'Escape' || i.code === 'm-attack'));
+  const presses = m.input.filter((i) => i.t >= t0 && !i.repeat && ['Space', 'Escape', 'KeyR', 'm-attack'].includes(i.code));
   const action = m.action.filter((a) => a.t >= t0);
   // Latencia del HUD por pulsación: primer cambio al estado esperado después de pulsar (null si nunca llega)
   const latencies = presses.map((p, i) => {
@@ -196,7 +237,8 @@ async function doublePress(page: Page, net: Net, myId: string, press: () => Prom
     realGap: presses.length >= 2 ? presses[1].t - presses[0].t : NaN,
     intents: intents(net).map((i) => i.name),
     raw: intents(net),
-    server: serverTarget(net, myId),
+    server: serverTarget(net, myId, initial.target),
+    repairing: serverRepairing(net, myId, initial.repairing),
     latencies,
     // Todos los estados por los que pasó el HUD desde la primera pulsación: sin intermedios ni vueltas atrás
     sequence: action.map((a) => a.s),
@@ -241,6 +283,8 @@ function report(label: string, results: Result[], targets: string) {
 }
 
 test.describe('Doble pulsación con el estado del servidor en camino', () => {
+  test.beforeEach(serve('targets'));
+
   test('AC-125: Espacio ×2 a Δ ∈ {80, 120, 200, 300} ms con 0 y 100 ms de retardo → exactamente attack → cancelAttack, el servidor sin ataque y el HUD al día en ≤ 50 ms sin desdecirse', async ({ page }) => {
     test.setTimeout(300_000);
     await instrument(page);
@@ -351,9 +395,64 @@ test.describe('Doble pulsación con el estado del servidor en camino', () => {
     expect.soft(spaceServer, 'Espacio mantenido: el ataque queda activo').toBe(target.id);
     expect.soft(stop.sent, 'S mantenida').toEqual(['stop']);
   });
+
+  test('AC-128 (c): con el casco intacto y un objetivo atacado, R con 0 y 100 ms de retardo → repair(true) rechazado por el servidor, el ataque sigue y el HUD no sale de "atacando"', async ({ page }) => {
+    test.setTimeout(180_000);
+    await instrument(page);
+    const net = trackSocket(page);
+    await enterGame(page, own.url);
+    const myId = (await me(page))!.id;
+    const targets = inRangeTarget(page, selectByClick(page));
+    const lines: string[] = [];
+    const fails: string[] = [];
+    for (const delay of DELAYS) {
+      await setNetDelay(page, delay);
+      // Objetivo seleccionado y atacado con Espacio, confirmado por el servidor y "a tiro" en el HUD
+      await resetAttack(page);
+      const target = await targets.next();
+      await page.keyboard.press('Space');
+      await waitFor(() => me(page), (s) => !!s && s.targetId === target.id, 5000, 50);
+      await page.waitForTimeout(2 * delay + 300);
+      await expect(actionState(page)).toHaveAttribute('data-state', 'firing');
+      const hull = await hullRatio(page);
+      const t0 = (await marks(page)).now;
+      net.reset();
+      await page.keyboard.press('KeyR');
+      await page.waitForTimeout(Math.max(2 * delay + 900, SAMPLE_MS + 200));
+      const m = await marks(page);
+      const from = m.input.find((i) => i.t >= t0 && i.code === 'KeyR' && !i.repeat)?.t ?? t0;
+      // Desde la pulsación, sin descontar los primeros 50 ms: ningún frame fuera de "firing"
+      const window500 = m.frames.filter((f) => f.t >= from && f.t <= from + SAMPLE_MS);
+      const off = window500.filter((f) => f.s !== 'firing').map((f) => f.s);
+      const sequence = m.action.filter((a) => a.t >= t0).map((a) => a.s);
+      const raw = intents(net);
+      const server = serverTarget(net, myId, target.id);
+      const repairing = serverRepairing(net, myId, false);
+      const toasts = (await page.getByTestId('toasts').textContent()) ?? '';
+      const after = await targets.after();
+      const ok =
+        hull === 1 &&
+        JSON.stringify(raw) === JSON.stringify([{ name: 'repair', data: { on: true } }]) &&
+        server === target.id &&
+        !repairing &&
+        window500.length >= MIN_FRAMES &&
+        off.length === 0 &&
+        sequence.length === 0 &&
+        toasts.includes('El casco ya está intacto') &&
+        after.startsWith('alive');
+      const line = `retardo ${delay} ms · casco ${(hull * 100).toFixed(0)} % → ${JSON.stringify(raw)} · servidor: ${server ?? 'sin ataque'}, ${repairing ? 'reparando' : 'sin reparar'} · HUD estados ${JSON.stringify(sequence)} · ${window500.length} frames en 500 ms${off.length ? `, fuera de "firing": ${[...new Set(off)].join(',')}` : ', todos "firing"'} · aviso ${JSON.stringify(toasts)} · objetivo ${after} · ${ok ? 'OK' : 'FALLA'}`;
+      lines.push(`  ${line}`);
+      if (!ok) fails.push(line);
+    }
+    await setNetDelay(page, 0);
+    console.log(`AC-128 (c): R con el casco intacto\n${lines.join('\n')}`);
+    expect(fails, 'R con el casco intacto').toEqual([]);
+  });
 });
 
 test.describe('Doble toque en Atacar @mobile', () => {
+  test.beforeEach(serve('targets'));
+
   test('AC-125: en 390×844, el botón Atacar ×2 a Δ ∈ {80, 120, 200, 300} ms con 0 y 100 ms de retardo → exactamente attack → cancelAttack, el servidor sin ataque y el HUD al día en ≤ 50 ms sin desdecirse', async ({ page }) => {
     test.setTimeout(360_000);
     await instrument(page);
@@ -395,4 +494,94 @@ test.describe('Doble toque en Atacar @mobile', () => {
     report('AC-125 (botón Atacar ×2, 390×844)', results, `mercantes agotados: ${JSON.stringify(targets.log)}`);
     for (const r of results) expect.soft(r.ok, `Atacar ×2, retardo ${r.delay} ms, Δ ${r.gap} ms: ${r.intents}, servidor ${r.server}, HUD ${r.hud}`).toBe(true);
   });
+});
+
+test.describe('Reparar y atacar cruzados con el casco dañado (AC-128)', () => {
+  test.beforeEach(serve('repair'));
+
+  test('AC-128 (a): con un objetivo atacado, R y luego Espacio a Δ ∈ {80, 120, 200} ms con 0 y 100 ms de retardo → exactamente repair(true) → attack, el servidor atacando sin reparar y el HUD al día en ≤ 50 ms sin desdecirse', async ({ page }) => {
+    test.setTimeout(300_000);
+    await instrument(page);
+    const net = trackSocket(page);
+    await enterGame(page, own.url);
+    const myId = (await me(page))!.id;
+    const targets = inRangeTarget(page, selectByClick(page));
+    const expected = ['repairing', 'firing'];
+    const results: Result[] = [];
+    for (const delay of DELAYS) {
+      await setNetDelay(page, delay);
+      for (const gap of CROSS_GAPS) {
+        const { r, target, hull, after, attempts } = await withGap(gap, async () => {
+          // Objetivo seleccionado y atacado con Espacio, sin reparar, confirmado por el servidor y "a tiro" en el HUD
+          await resetAttack(page);
+          const target = await targets.next();
+          await page.keyboard.press('Space');
+          await waitFor(() => me(page), (s) => !!s && s.targetId === target.id && !s.repairing, 5000, 50);
+          await page.waitForTimeout(2 * delay + 300);
+          await expect(actionState(page)).toHaveAttribute('data-state', 'firing');
+          const hull = await hullRatio(page);
+          const r = await doublePress(page, net, myId, (i) => page.keyboard.press(i === 0 ? 'KeyR' : 'Space'), gap, expected, { target: target.id, repairing: false });
+          return { r, target, hull, after: await targets.after() };
+        });
+        const ok =
+          gapOk(r, gap) &&
+          hull <= MAX_HULL &&
+          JSON.stringify(r.raw) === JSON.stringify([{ name: 'repair', data: { on: true } }, { name: 'attack', data: { targetId: target.id } }]) &&
+          r.server === target.id &&
+          !r.repairing &&
+          hudOk(r, expected) &&
+          after.startsWith('alive');
+        results.push({ delay, gap, realGap: r.realGap, intents: JSON.stringify(r.intents), server: `${r.server ?? 'sin ataque'}, ${r.repairing ? 'reparando' : 'sin reparar'}`, hud: `${fmtHud(r)} · casco ${(hull * 100).toFixed(0)} % · objetivo ${after}${fmtTries(attempts)}`, ok });
+      }
+    }
+    await setNetDelay(page, 0);
+    report('AC-128 (a): R y luego Espacio', results, `mercantes agotados: ${JSON.stringify(targets.log)}`);
+    for (const r of results) expect.soft(r.ok, `R → Espacio, retardo ${r.delay} ms, Δ ${r.gap} ms: ${r.intents}, servidor ${r.server}, HUD ${r.hud}`).toBe(true);
+  });
+
+  // Un test por retardo: reparar cura 32 de vida/s y cada ronda repara ~2,5 s, así que cada servidor nuevo (casco al
+  // 10 %) da para 3 rondas y sus reintentos sin pasar del 90 %
+  for (const delay of DELAYS) {
+    test(`AC-128 (b): reparando y con un objetivo seleccionado sin atacar, Espacio y luego R a Δ ∈ {80, 120, 200} ms con ${delay} ms de retardo → exactamente attack → repair(true), el servidor reparando sin ataque y el HUD al día en ≤ 50 ms sin desdecirse`, async ({ page }) => {
+      test.setTimeout(240_000);
+      await instrument(page);
+      const net = trackSocket(page);
+      await enterGame(page, own.url);
+      const myId = (await me(page))!.id;
+      const targets = inRangeTarget(page, selectByClick(page));
+      const expected = ['firing', 'repairing'];
+      const results: Result[] = [];
+      await setNetDelay(page, delay);
+      for (const gap of CROSS_GAPS) {
+        const { r, target, hull, after, attempts } = await withGap(gap, async () => {
+          // Reparando con R, el objetivo seleccionado y sin atacar, confirmado por el servidor y en el HUD
+          await resetAttack(page);
+          await resetRepair(page);
+          const target = await targets.next();
+          const hull = await hullRatio(page);
+          await page.keyboard.press('KeyR');
+          await waitFor(() => me(page), (s) => !!s && s.repairing && s.targetId === null, 5000, 50);
+          await page.waitForTimeout(2 * delay + 100);
+          await expect(actionState(page)).toHaveAttribute('data-state', 'repairing');
+          const r = await doublePress(page, net, myId, (i) => page.keyboard.press(i === 0 ? 'Space' : 'KeyR'), gap, expected, { target: null, repairing: true });
+          const out = { r, target, hull, after: await targets.after() };
+          await resetRepair(page);
+          return out;
+        });
+        const ok =
+          gapOk(r, gap) &&
+          hull <= MAX_HULL &&
+          JSON.stringify(r.raw) === JSON.stringify([{ name: 'attack', data: { targetId: target.id } }, { name: 'repair', data: { on: true } }]) &&
+          r.server === null &&
+          r.repairing &&
+          hudOk(r, expected) &&
+          after.startsWith('alive');
+        results.push({ delay, gap, realGap: r.realGap, intents: JSON.stringify(r.intents), server: `${r.server ?? 'sin ataque'}, ${r.repairing ? 'reparando' : 'sin reparar'}`, hud: `${fmtHud(r)} · casco ${(hull * 100).toFixed(0)} % · objetivo ${after}${fmtTries(attempts)}`, ok });
+        expect.soft((await hud(page)).selectedId, `selección tras Δ ${gap}`).toBe(target.id);
+      }
+      await setNetDelay(page, 0);
+      report(`AC-128 (b): Espacio y luego R (retardo ${delay} ms)`, results, `mercantes agotados: ${JSON.stringify(targets.log)}`);
+      for (const r of results) expect.soft(r.ok, `Espacio → R, retardo ${r.delay} ms, Δ ${r.gap} ms: ${r.intents}, servidor ${r.server}, HUD ${r.hud}`).toBe(true);
+    });
+  }
 });

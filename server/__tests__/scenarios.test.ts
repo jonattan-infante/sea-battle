@@ -22,6 +22,7 @@ import {
   ENDURANCE_MERCHANTS,
   ENDURANCE_POINT,
   parseScenario,
+  REPAIR_START_HULL,
   SHOWCASE_POINT,
   TARGET_FAN,
   TARGETS_POINT
@@ -111,6 +112,7 @@ describe('escenario "shipyard" (AC-70)', () => {
     expect(parseScenario('shipyard')).toBe('shipyard');
     expect(parseScenario('targets')).toBe('targets');
     expect(parseScenario('endurance')).toBe('endurance');
+    expect(parseScenario('repair')).toBe('repair');
     expect(parseScenario('rich')).toBeNull();
     expect(parseScenario(undefined)).toBeNull();
   });
@@ -143,6 +145,33 @@ describe('escenario "targets" (AC-27, AC-31)', () => {
       for (const isl of ISLANDS) expect(Math.hypot(p.x - isl.x, p.z - isl.z)).toBeGreaterThan(isl.radius + navClearance('merchant'));
       expect(Math.max(Math.abs(p.x), Math.abs(p.z))).toBeLessThan(NAV_LIMIT);
     }
+  });
+});
+
+describe('escenario "repair" (AC-128)', () => {
+  test('el abanico de "targets" y cada jugador entra con el casco al 10 %; sin escenario, entero', () => {
+    const world = createWorld({ seed: 1, spawnNpcs: false });
+    applyScenario(world, 'repair');
+    const npcs = [...world.ships.values()];
+    expect(npcs).toHaveLength(4);
+    expect(npcs.every((s) => s.kind === 'merchant' && s.ai === null && s.destination === null)).toBe(true);
+    const ship = shipOfPlayer(world, addPlayer(world, 'u1', 'Ana').id)!;
+    expect(ship.hp).toBe(Math.round(ship.maxHp * REPAIR_START_HULL));
+    const plain = createWorld({ seed: 1, spawnNpcs: false });
+    const full = shipOfPlayer(plain, addPlayer(plain, 'u1', 'Ana').id)!;
+    expect(full.hp).toBe(full.maxHp);
+  });
+
+  test('sin nadie que dispare, 18 s reparando dejan el casco por debajo del 90 % que pide AC-128', () => {
+    const world = createWorld({ seed: 1, spawnNpcs: false });
+    applyScenario(world, 'repair');
+    const player = addPlayer(world, 'u1', 'Ana');
+    const ship = shipOfPlayer(world, player.id)!;
+    expect(setRepair(world, player.id, true).ok).toBe(true);
+    for (let i = 0; i < 18 * TICK_RATE; i++) step(world, 1 / TICK_RATE);
+    expect(ship.repairing).toBe(true);
+    expect(ship.hp).toBeGreaterThan(Math.round(ship.maxHp * REPAIR_START_HULL));
+    expect(ship.hp / ship.maxHp).toBeLessThanOrEqual(0.9);
   });
 });
 

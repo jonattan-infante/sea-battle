@@ -117,6 +117,7 @@ export interface World {
   nextId: number;
   killsSinceBoss: number;
   startingGold?: number; // solo escenarios de prueba (server/scenarios.ts); por defecto STARTING_GOLD
+  startingHull?: number; // solo escenarios de prueba: fracción de la vida máxima con la que entra un jugador; por defecto 1
 }
 
 // ---- Red (servidor → cliente) ----

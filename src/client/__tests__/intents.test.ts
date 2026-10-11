@@ -122,9 +122,63 @@ describe('DT-01: intención pendiente frente al estado del servidor', () => {
     }
   });
 
-  test('Reparar alterna igual: R ×2 rápido da repair(true) → repair(false)', () => {
+  test('H-17: R y luego Espacio con el casco dañado y el servidor atrasado da repair(true) → attack, y queda atacando sin reparar', () => {
     const { client, frame, sent, advance, done } = setup();
     try {
+      frame({ t: 'pirate-1', hp: 500 });
+      client.repair(!client.myRepairing());
+      expect(client.myTargetId()).toBeNull(); // reparar anula el ataque aunque el servidor aún no lo diga
+      advance(80);
+      if (client.myTargetId()) client.cancelAttack();
+      else client.attack('pirate-1');
+      expect(sent()).toEqual([C2S.repair, C2S.attack]);
+      frame({ t: 'pirate-1', hp: 500 }); // frame viejo: nada confirmado todavía
+      expect(client.myTargetId()).toBe('pirate-1');
+      expect(client.myRepairing()).toBe(false);
+    } finally {
+      done();
+    }
+  });
+
+  test('H-17: Espacio y luego R mientras repara da attack → repair(true), y queda reparando sin atacar', () => {
+    const { client, frame, sent, advance, done } = setup();
+    try {
+      frame({ r: true, hp: 500 });
+      if (client.myTargetId()) client.cancelAttack();
+      else client.attack('pirate-1');
+      expect(client.myRepairing()).toBe(false); // atacar deja de reparar
+      advance(80);
+      client.repair(!client.myRepairing());
+      expect(sent()).toEqual([C2S.attack, C2S.repair]);
+      frame({ r: true, hp: 500 });
+      expect(client.myRepairing()).toBe(true);
+      expect(client.myTargetId()).toBeNull();
+    } finally {
+      done();
+    }
+  });
+
+  test('H-17 / AC-128 (c): con el casco entero, R no anula el ataque ni pasa por "reparando" (el servidor la rechaza)', () => {
+    const { client, frame, sent, advance, done } = setup();
+    try {
+      frame({ t: 'pirate-1' });
+      client.repair(!client.myRepairing());
+      expect(sent()).toEqual([C2S.repair]); // se envía igual: el rechazo del servidor trae el aviso "El casco ya está intacto"
+      for (const ms of [0, 80, 400, 1000, 1600]) {
+        advance(ms);
+        frame({ t: 'pirate-1' });
+        expect(client.myTargetId()).toBe('pirate-1');
+        expect(client.myRepairing()).toBe(false);
+      }
+    } finally {
+      done();
+    }
+  });
+
+  test('Reparar alterna igual: R ×2 rápido con el casco dañado da repair(true) → repair(false)', () => {
+    const { client, frame, sent, advance, done } = setup();
+    try {
+      frame({ hp: 500 });
       client.repair(!client.myRepairing());
       advance(80);
       client.repair(!client.myRepairing());

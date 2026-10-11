@@ -37,7 +37,12 @@ export const ENDURANCE_MERCHANT_RADIUS = 28; // dentro de la órbita del pirata 
 export const ENDURANCE_PIRATE_OFFSET = 60; // a < 70 m (radio de agresión): ataca en cuanto el jugador pierde la protección
 export const ENDURANCE_PIRATE_ACCURACY = 0.15; // ~2,9 de vida/s: reparar bajo fuego (1,5 %/s = 12/s) gana terreno de sobra
 
-export const SCENARIOS = ['showcase', 'shipyard', 'targets', 'endurance'] as const;
+// Reparar y atacar cruzados (AC-128, e2e/input-toggle.spec.ts): el abanico de "targets" y el jugador entra con el casco
+// al 10 %. Sin nadie que dispare, reparar cura 32 de vida/s (GDD §8): con 80 de vida quedan ~20 s de reparación antes
+// de pasar del 90 % que pide el criterio
+export const REPAIR_START_HULL = 0.1;
+
+export const SCENARIOS = ['showcase', 'shipyard', 'targets', 'endurance', 'repair'] as const;
 export type ScenarioName = (typeof SCENARIOS)[number];
 
 export function parseScenario(value: string | undefined): ScenarioName | null {
@@ -72,7 +77,8 @@ export function applyScenario(world: World, name: ScenarioName): void {
     pirate.accuracyOverride = ENDURANCE_PIRATE_ACCURACY;
     return;
   }
-  if (name === 'targets') {
+  if (name === 'targets' || name === 'repair') {
+    if (name === 'repair') world.startingHull = REPAIR_START_HULL;
     for (const p of TARGET_FAN) {
       const m = spawnMerchant(world);
       m.pos = { x: p.x, z: p.z };

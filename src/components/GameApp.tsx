@@ -402,6 +402,7 @@ export default function GameApp({ guest }: { guest: boolean }) {
         maxHp: s.maxHp,
         state: s.state,
         targetId: s.targetId,
+        repairing: s.repairing,
         protectedUntil: s.protectedUntil,
         screen: runtime.project(s.x, s.z)
       };

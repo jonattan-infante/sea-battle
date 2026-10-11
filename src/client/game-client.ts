@@ -176,8 +176,13 @@ export class GameClient {
   stop(): void {
     this.socket.emit(C2S.stop);
   }
+  // Atacar deja de reparar y reparar con el casco dañado anula el ataque (GDD §8, world.ts): la intención cruzada también
+  // se apunta, para que el conmutador siguiente no lea el estado viejo del servidor (H-17). Con el casco entero el
+  // servidor rechaza la reparación seguro: no se apunta nada, así que ni el HUD pasa por "reparando" ni el ataque se
+  // anula mientras llega el rechazo (AC-128 c)
   attack(targetId: string): void {
     push(this.targetIntents, targetId);
+    push(this.repairIntents, false);
     this.socket.emit(C2S.attack, { targetId });
   }
   cancelAttack(): void {
@@ -185,7 +190,10 @@ export class GameClient {
     this.socket.emit(C2S.cancelAttack);
   }
   repair(on: boolean): void {
-    push(this.repairIntents, on);
+    const own = this.latestOwn();
+    const intact = !!own && own.hp >= own.mhp;
+    if (!on || !intact) push(this.repairIntents, on);
+    if (on && own && !intact) push(this.targetIntents, null);
     this.socket.emit(C2S.repair, { on });
   }
 

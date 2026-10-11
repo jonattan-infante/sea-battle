@@ -12,6 +12,7 @@ export interface DebugShip {
   maxHp: number;
   state: 'alive' | 'sinking' | 'dead';
   targetId: string | null;
+  repairing: boolean;
   protectedUntil: number;
   screen: { sx: number; sy: number } | null;
 }
