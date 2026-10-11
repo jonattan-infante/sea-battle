@@ -4,6 +4,7 @@ import { HINTS } from '../src/client/hints';
 import { SHIP_CLASSES } from '../src/game/constants';
 import { AMBUSH_POINT, BLIND_GUNNER_POINT, SHOWCASE_POINT } from '../server/scenarios';
 import { clickWater, dialogsOf, enterGame, hud, me, ships, trackSocket, waitFor } from './helpers';
+import { OwnServer, startOwnServer } from './own-server';
 
 test.describe('Landing', () => {
   test('AC-10: con AUTH_BYPASS aparece "Jugar como invitado"; sin él no existe en el DOM', async ({ page }) => {
@@ -613,10 +614,20 @@ const sailTo = (page: Page, x: number, z: number) =>
   }, [x, z]);
 
 test.describe('Números de daño', () => {
+  // Servidor propio con el showcase en cada test (QA-5 H-13): en el compartido, un test anterior puede sacar al artillero
+  // ciego de su puesto y AC-75 dependía del orden de la suite
+  let showcase: OwnServer;
+  test.beforeEach(async () => {
+    showcase = await startOwnServer({ SEA_BATTLE_NPCS: '0', SEA_BATTLE_SCENARIO: 'showcase' });
+  });
+  test.afterEach(async () => {
+    await showcase?.kill();
+  });
+
   test('AC-75 (k = 0): cada andanada fallida contra el jugador muestra un único "Fallo" y ningún número', async ({ page }) => {
     test.setTimeout(180_000);
     const net = trackSocket(page);
-    await enterGame(page, `http://localhost:${PORTS.showcase}`);
+    await enterGame(page, showcase.url);
     await recordFloats(page);
     await resetVfxCounters(page);
     const myId = (await me(page))!.id;
@@ -636,15 +647,14 @@ test.describe('Números de daño', () => {
 
   test('AC-75 (negativo): quien no es tirador ni objetivo no ve "Fallo" de una andanada ajena, aunque vea sus salpicaduras', async ({ browser }) => {
     test.setTimeout(180_000);
-    const showcase = `http://localhost:${PORTS.showcase}`;
     const ctxA = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const ctxB = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     try {
       const a = await ctxA.newPage();
       const b = await ctxB.newPage();
       const netB = trackSocket(b);
-      await enterGame(a, showcase);
-      await enterGame(b, showcase);
+      await enterGame(a, showcase.url);
+      await enterGame(b, showcase.url);
       for (const p of [a, b]) {
         await recordFloats(p);
         await resetVfxCounters(p);
@@ -671,7 +681,7 @@ test.describe('Números de daño', () => {
   test('AC-75 (k > 0): cada andanada contra el jugador muestra un único número igual a k × daño', async ({ page }) => {
     test.setTimeout(180_000);
     const net = trackSocket(page);
-    await enterGame(page, `http://localhost:${PORTS.showcase}`);
+    await enterGame(page, showcase.url);
     await recordFloats(page);
     await resetVfxCounters(page);
     const myId = (await me(page))!.id;
