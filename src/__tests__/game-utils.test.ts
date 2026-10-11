@@ -4,9 +4,33 @@ import {
   generateNPC,
   calculateDamage,
   clearOccupiedPositions,
-  getOccupiedPositions
+  getOccupiedPositions,
+  findBulletHit
 } from '../lib/game-utils';
-import { NPCType } from '../types/game';
+import { NPC, NPCType, Ship, ShipClass } from '../types/game';
+
+const makeShip = (id: string, x: number, y: number): Ship => ({
+  id,
+  name: id,
+  playerId: id,
+  position: { x, y },
+  health: 100,
+  maxHealth: 100,
+  speed: 5,
+  shipClass: ShipClass.Galleon,
+  equipment: [],
+  lastUpdated: new Date()
+});
+
+const makeNpc = (id: string, x: number, y: number, health = 50): NPC => ({
+  id,
+  name: id,
+  type: NPCType.Pirate,
+  position: { x, y },
+  health,
+  rewardGold: 20,
+  lastUpdated: new Date()
+});
 
 describe('Game Utils', () => {
   beforeEach(() => {
@@ -127,6 +151,49 @@ describe('Game Utils', () => {
       const damage = calculateDamage(0, 0);
 
       expect(damage).toBe(1); // Mínimo 1
+    });
+  });
+
+  describe('findBulletHit', () => {
+    const shooter = makeShip('ship-a', 0, 0);
+
+    test('should not hit the ship that fired the bullet', () => {
+      // La bala nace sobre el barco que dispara: antes esto era autodaño
+      const hit = findBulletHit({ x: 0.33, y: 0 }, shooter.id, { ships: [shooter], npcs: [], npcHealth: new Map() });
+
+      expect(hit).toBeNull();
+    });
+
+    test('should hit another ship within radius', () => {
+      const enemy = makeShip('ship-b', 1, 0);
+
+      const hit = findBulletHit({ x: 0.5, y: 0 }, shooter.id, { ships: [shooter, enemy], npcs: [], npcHealth: new Map() });
+
+      expect(hit).toEqual({ id: 'ship-b', type: 'ship' });
+    });
+
+    test('should hit a living NPC within radius', () => {
+      const npc = makeNpc('npc1', 5, 5);
+
+      const hit = findBulletHit({ x: 5, y: 4 }, shooter.id, { ships: [shooter], npcs: [npc], npcHealth: new Map([['npc1', 30]]) });
+
+      expect(hit).toEqual({ id: 'npc1', type: 'npc' });
+    });
+
+    test('should ignore a dead NPC', () => {
+      const npc = makeNpc('npc1', 5, 5);
+
+      const hit = findBulletHit({ x: 5, y: 5 }, shooter.id, { ships: [], npcs: [npc], npcHealth: new Map([['npc1', -10]]) });
+
+      expect(hit).toBeNull();
+    });
+
+    test('should return null when nothing is within radius', () => {
+      const enemy = makeShip('ship-b', 10, 10);
+
+      const hit = findBulletHit({ x: 3, y: 3 }, shooter.id, { ships: [shooter, enemy], npcs: [makeNpc('npc1', -5, -5)], npcHealth: new Map() });
+
+      expect(hit).toBeNull();
     });
   });
 });

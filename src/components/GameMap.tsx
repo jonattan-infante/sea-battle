@@ -24,7 +24,7 @@ interface GameMapProps {
 
 const GameMapComponent: React.FC<GameMapProps> = ({ gameMap, ships, npcs, onShipPositionUpdate, onGoldEarned, onShipDamage, playerShip }) => {
   const { width, height } = gameMap;
-  const [bullets, setBullets] = useState<Array<{id: string, position: Position, direction: Position}>>([]);
+  const [bullets, setBullets] = useState<Array<{id: string, ownerId: string, position: Position, direction: Position}>>([]);
   const [flashes, setFlashes] = useState<Array<{id: string, position: Position, direction?: Position}>>([]);
   const [npcHealth, setNpcHealth] = useState<Map<string, number>>(new Map());
   const [showShop, setShowShop] = useState(false);
@@ -89,7 +89,7 @@ const GameMapComponent: React.FC<GameMapProps> = ({ gameMap, ships, npcs, onShip
       onBulletFired((data) => {
         // Solo renderizar disparos de otros jugadores
         if (data.shipId !== playerShip.id) {
-          handleShoot(data.position, data.direction);
+          handleShoot(data.position, data.shipId, data.direction);
         }
       });
 
@@ -119,7 +119,7 @@ const GameMapComponent: React.FC<GameMapProps> = ({ gameMap, ships, npcs, onShip
     }
   }, [playerShip?.id]); // Usar playerShip.id para evitar bucles infinitos
 
-  const handleShoot = (position: Position, direction?: Position) => {
+  const handleShoot = (position: Position, ownerId: string, direction?: Position) => {
     let shootDirection = direction || { x: 0, y: 1 };
 
     // Si hay barco seleccionado, disparar hacia él
@@ -136,7 +136,7 @@ const GameMapComponent: React.FC<GameMapProps> = ({ gameMap, ships, npcs, onShip
     }
 
     const id = `bullet-${Date.now()}-${Math.random()}`;
-    setBullets(prev => [...prev, {id, position, direction: shootDirection}]);
+    setBullets(prev => [...prev, {id, ownerId, position, direction: shootDirection}]);
 
     // Efecto de fogonazo (muzzle flash)
     const flashId = `flash-${Date.now()}-${Math.random()}`;
@@ -325,7 +325,7 @@ const GameMapComponent: React.FC<GameMapProps> = ({ gameMap, ships, npcs, onShip
               // Enviar actualización de posición por Socket.io
               updateShipPosition(playerShip.id, newPosition);
             }}
-            onShoot={handleShoot}
+            onShoot={(position) => handleShoot(position, playerShip.id)}
             onClick={() => handleShipClick(playerShip.id)}
             isSelected={selectedShipId === playerShip.id}
           />
@@ -362,6 +362,7 @@ const GameMapComponent: React.FC<GameMapProps> = ({ gameMap, ships, npcs, onShip
           <Bullet
             key={bullet.id}
             id={bullet.id}
+            ownerId={bullet.ownerId}
             position={bullet.position}
             direction={bullet.direction}
             speed={20}
