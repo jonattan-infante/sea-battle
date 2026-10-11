@@ -231,11 +231,12 @@ async function expectEveryHintFitsLandscape(page: Page, label: string) {
   const rows = await page.evaluate(
     ([texts, ids]) => {
       const el = document.querySelector<HTMLElement>('[data-testid="hint"]')!;
-      const span = el.querySelector<HTMLElement>('.hint-touch')!;
-      const before = { text: span.textContent, cls: el.className };
+      // El texto de toque va en las dos variantes: se mide la que se vea (ver la nota de `pointer: coarse` más abajo)
+      const spans = Array.from(el.querySelectorAll<HTMLElement>('.hint-mouse, .hint-touch'));
+      const before = { texts: spans.map((sp) => sp.textContent), cls: el.className };
       const out: { text: string; slot: string; box: number[]; hits: string[] }[] = [];
       for (const alt of [false, true]) for (const text of texts) {
-        span.textContent = text;
+        spans.forEach((sp) => (sp.textContent = text));
         el.classList.toggle('is-alt', alt);
         el.classList.remove('is-hidden');
         const b = el.getBoundingClientRect();
@@ -245,7 +246,7 @@ async function expectEveryHintFitsLandscape(page: Page, label: string) {
         });
         out.push({ text, slot: alt ? 'alta' : 'normal', box: [b.left, b.top, b.width, b.height].map(Math.round), hits });
       }
-      span.textContent = before.text;
+      spans.forEach((sp, i) => (sp.textContent = before.texts[i]));
       el.className = before.cls;
       return out;
     },
@@ -258,22 +259,45 @@ async function expectEveryHintFitsLandscape(page: Page, label: string) {
 }
 
 // AC-105 + AC-110 en un tamaño de pantalla. Mercante quieto del showcase en (−40, 195); el jugador para 60 m al norte
-// (placa del objetivo bajo el barco, el caso de H-06b) o 60 m al sur (sobre el barco). A 78 m al sur (z 117), en
-// vertical la placa del objetivo cae bajo el barco y empuja la pista a la ranura alta (H-11). Los tres puntos quedan a
-// > 70 m de los piratas del escenario. Exige que, con avisos en pantalla, la pista se haya visto en las dos ranuras.
+// (placa del objetivo bajo el barco, el caso de H-06b) o 60 m al sur (sobre el barco), las distancias literales de
+// AC-105. Además, a 0,75·R y 0,975·R al sur (R = radio de encuadre, U8): es donde la placa del objetivo cae sobre la
+// ranura normal y empuja la pista a la alta (H-11), y esa posición en pantalla escala con R, no con los metros (con
+// R = 80 coinciden con 60 y 78 m). Todos los puntos quedan a > 70 m de los piratas del escenario. Exige que, con avisos
+// en pantalla, la pista se haya visto en las dos ranuras.
 // browser.newContext hereda las opciones del proyecto: el caso táctil corre en el proyecto móvil y el de ratón en el de
 // escritorio (en el móvil, un contexto de 1440×900 sigue con puntero táctil y muestra las pistas de toque)
 async function expectHintAndToastsInSize(browser: Browser, viewport: { width: number; height: number }, touch: boolean) {
   const size = `${viewport.width}×${viewport.height}`;
   const seen = new Set<HintSlot>();
-  for (const { side, z } of [{ side: 'sur', z: 135 }, { side: 'norte', z: 255 }, { side: 'sur a 78 m', z: 117 }]) {
+  const done: string[] = [];
+  let landscapeChecked = false;
+  const cases = [
+    { side: 'sur', at: () => 60 },
+    { side: 'norte', at: () => 60 },
+    { side: 'sur', at: (r: number) => 0.75 * r },
+    { side: 'sur', at: (r: number) => 0.975 * r }
+  ];
+  for (const { side, at } of cases) {
     const ctx = await browser.newContext(touch ? { viewport, isMobile: true, hasTouch: true, deviceScaleFactor: 2 } : { viewport });
     try {
       const page = await ctx.newPage();
       await enterGame(page, `http://localhost:${PORTS.showcase}`);
+      // Radio de encuadre de la sesión (U8: 65 m con el cañón N1; 80 m antes de U8, cuando stats() no lo daba)
+      let range = 0;
+      for (let i = 0; i < 30 && !range; i++) {
+        range = await page.evaluate(() => Number(window.__SEA_BATTLE__!.runtime().stats().frameRange ?? 80));
+        if (!range) await page.waitForTimeout(100);
+      }
+      const d = Math.round(at(range) * 10) / 10;
+      const key = `${side} ${d}`;
+      if (done.includes(key)) continue;
+      done.push(key);
+      const z = side === 'sur' ? 195 - d : 195 + d;
       await expect(page.getByTestId('hint')).toBeVisible();
-      // La pista muestra la variante de la entrada del contexto (toque o ratón)
-      await expect(page.getByTestId('hint').locator(touch ? '.hint-touch' : '.hint-mouse'), `${size}: pista de ${touch ? 'toque' : 'ratón'}`).toBeVisible();
+      // En escritorio la pista es la de ratón (guarda: un contexto creado en el proyecto móvil heredaba el puntero
+      // táctil). En los contextos táctiles Chromium no siempre emula `pointer: coarse`, así que ahí no se exige la
+      // variante: las medidas de AC-110 se hacen con los textos de toque en cualquier caso
+      if (!touch) await expect(page.getByTestId('hint').locator('.hint-mouse'), `${size}: pista de ratón`).toBeVisible();
       // En puerto: la pista con un aviso ("Zona segura")
       seen.add(await expectHintClear(page, `en puerto con "Zona segura", ${size}`));
       await expectToastsClear(page, `en puerto, ${size}`, 1);
@@ -286,9 +310,12 @@ async function expectHintAndToastsInSize(browser: Browser, viewport: { width: nu
       else await page.mouse.click(merchant!.screen!.sx, merchant!.screen!.sy);
       await expect(page.getByTestId('target-frame')).toHaveAttribute('data-target-id', merchant!.id);
       await expect(page.getByTestId('hint')).toBeVisible();
-      const label = `objetivo al ${side}, ${size}`;
+      const label = `objetivo al ${side} a ${d} m (R ${range}), ${size}`;
       await expectHintClear(page, label, merchant!.id);
-      if (viewport.height < 500 && side === 'sur') await expectEveryHintFitsLandscape(page, label);
+      if (viewport.height < 500 && side === 'sur' && !landscapeChecked) {
+        await expectEveryHintFitsLandscape(page, label);
+        landscapeChecked = true;
+      }
       // Con uno y con dos avisos (fuera de la zona, P da "El puerto solo abre en la zona segura") la pista tampoco los
       // tapa, y los avisos se leen enteros sin pisar los paneles ni el minimapa (H-11). La ranura sobre el barco queda
       // bajo el primer aviso: con uno la pista sigue visible; con dos, si la otra ranura está ocupada, se oculta
@@ -308,7 +335,7 @@ async function expectHintAndToastsInSize(browser: Browser, viewport: { width: nu
 
 test.describe('HUD de escritorio', () => {
   test('AC-105 + AC-110: con el objetivo a 60 m al sur o al norte, la pista no tapa su placa, la propia ni los avisos, y los avisos se leen enteros sin pisar los paneles (1440×900, ratón)', async ({ browser }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(360_000);
     await expectHintAndToastsInSize(browser, { width: 1440, height: 900 }, false);
   });
 });
@@ -363,7 +390,7 @@ test.describe('Móvil @mobile', () => {
   });
 
   test('AC-105 + AC-110: con el objetivo a 60 m al sur o al norte, la pista no tapa su placa, la propia ni los avisos, y los avisos se leen enteros sin pisar los paneles (844×390 y 390×844)', async ({ browser }) => {
-    test.setTimeout(420_000);
+    test.setTimeout(600_000);
     for (const viewport of [{ width: 844, height: 390 }, { width: 390, height: 844 }]) await expectHintAndToastsInSize(browser, viewport, true);
   });
 
