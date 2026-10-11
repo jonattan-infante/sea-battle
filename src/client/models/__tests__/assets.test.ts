@@ -139,6 +139,39 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
       }
     });
   });
+
+  test('AS-V17 (D22): la elipse de fuego de cada socket se solapa ≤ 5 % con objetos de cubierta que sobresalen > 0,5 m', () => {
+    const r = model.recipe;
+    const ax = 0.15 * r.B; // semieje en manga (VFX-SPEC §6)
+    const az = 0.06 * r.L; // semieje en eslora
+    const N = 120;
+    for (const name of ['socket_fire_01', 'socket_fire_02', 'socket_fire_03']) {
+      const s = child(name)!.position;
+      const surface = s.y - 0.3;
+      // Sobre una superestructura, el socket va en su tapa + 0,3 m
+      const under = r.boxes.find((b) => b.kind === 'castle' && Math.abs(s.x - b.pos[0]) <= b.size[0] / 2 && Math.abs(s.z - b.pos[2]) <= b.size[2] / 2);
+      if (under) expect(s.y).toBeCloseTo(under.pos[1] + under.size[1] / 2 + 0.3, 5);
+      // Obstáculos: cajas (castillos, carga, faroles) y barriles (cilindro de r 0,45 y 1 m de alto); sin mástiles ni jarcia
+      const boxes = r.boxes.filter((b) => b.pos[1] + b.size[1] / 2 - surface > 0.5);
+      const barrels = r.barrels.filter((p) => p[1] + 0.5 - surface > 0.5);
+      let inside = 0;
+      let hit = 0;
+      for (let a = 0; a <= N; a++) {
+        for (let b = 0; b <= N; b++) {
+          const dx = ((2 * a) / N - 1) * ax;
+          const dz = ((2 * b) / N - 1) * az;
+          if ((dx / ax) ** 2 + (dz / az) ** 2 > 1) continue;
+          inside++;
+          const x = s.x + dx;
+          const z = s.z + dz;
+          const blocked = boxes.some((o) => Math.abs(x - o.pos[0]) <= o.size[0] / 2 && Math.abs(z - o.pos[2]) <= o.size[2] / 2) ||
+            barrels.some((p) => Math.hypot(x - p[0], z - p[2]) <= 0.45);
+          if (blocked) hit++;
+        }
+      }
+      expect({ name, overlap: hit / inside <= 0.05 ? 'ok' : hit / inside }).toEqual({ name, overlap: 'ok' });
+    }
+  });
 });
 
 describe('Islas y props procedurales', () => {

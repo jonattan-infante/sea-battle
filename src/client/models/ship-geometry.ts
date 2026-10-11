@@ -61,6 +61,7 @@ interface MastDef {
 }
 
 interface BoxDef { size: Vec3; pos: Vec3; kind: 'castle' | 'lantern' | 'cargo' }
+interface FireAt { z: number; y?: number }
 
 export interface ShipRecipe {
   assetId: string;
@@ -87,6 +88,9 @@ export interface ShipRecipe {
   trimRail: boolean;
   cannonScale: number; // escala del fogonazo y del humo (VFX §1)
   knifeOpen?: number; // apertura de las velas de cuchillo (D12): 25° por defecto, 35° solo si la clase no pasa AS-V14
+  // Excepciones de socket_fire_01…03 (D22, AS-V17): z propia y, si cae sobre una superestructura, y = su tapa + 0,3.
+  // x sigue la fórmula (+0,2·B / −0,2·B / 0)
+  fire?: [FireAt?, FireAt?, FireAt?];
   radius: number; // sb_radius
   mastHeight: number;
   pick: Vec3;
@@ -100,6 +104,7 @@ const SLOOP: ShipRecipe = {
   jibs: [{ H: [0, 12.0, 1.8], T: 'tip', C: [0, 2.9, 6.47] }],
   boxes: [{ size: [2.6, 0.7, 2.4], pos: [0, 2.1, -6.6], kind: 'castle' }],
   barrels: [],
+  fire: [undefined, undefined, { z: -4.4 }], // _03 fuera de la camareta (13 % de solape con la fórmula)
   cannonZ: [-4.5, -1.5, 1.5, 4.5], cannonY: 0.9, cannon: [0.12, 0.16, 1.2],
   sailStyle: 'plain', flagStyle: 'pennant', trimRail: false, cannonScale: 0.8,
   radius: 9, mastHeight: 14.5, pick: [3.2, 14.5, 8.0]
@@ -116,6 +121,7 @@ const BRIGANTINE: ShipRecipe = {
   jibs: [{ H: [0, 14.8, 5.8], T: [0, 4.89, 17.58], C: [0, 3.44, 11.1] }],
   boxes: [{ size: [4.0, 1.0, 4.0], pos: [0, 2.8, -9.6], kind: 'castle' }],
   barrels: [],
+  fire: [undefined, undefined, { z: -6.0 }], // _03 fuera de la camareta (33 %)
   cannonZ: [-7.5, -4.5, -1.5, 1.5, 4.5, 7.5], cannonY: 1.2, cannon: [0.14, 0.18, 1.4],
   sailStyle: 'plain', flagStyle: 'pennant', trimRail: false, cannonScale: 1.0,
   radius: 13, mastHeight: 19.5, pick: [4.8, 19.5, 12.0]
@@ -144,6 +150,8 @@ const FRIGATE: ShipRecipe = {
     { size: [0.9, 0.6, 0.06], pos: [2.0, 3.0, -17.05], kind: 'lantern' }
   ],
   barrels: [],
+  // _01 fuera del castillo de proa (20 %); _03 sobre el alcázar, en su tapa (4,76) + 0,3 (estaba dentro al 100 %)
+  fire: [{ z: 7.4 }, undefined, { z: -12.5, y: 5.06 }],
   cannonZ: [-11.5, -8.5, -5.5, -2.5, 0.5, 3.5, 6.5, 9.5], cannonY: 1.68, cannon: [0.16, 0.21, 1.6],
   sailStyle: 'plain', flagStyle: 'pennant', trimRail: true, cannonScale: 1.2,
   radius: 18, mastHeight: 27, pick: [7.0, 27.0, 17.0]
@@ -177,9 +185,11 @@ const MERCHANT: ShipRecipe = {
   jibs: [{ H: [0, 13.1, 5.3], T: 'tip', C: [0, 3.96, 9.53] }], // D12: era la única clase sin vela a proa
   boxes: [
     { size: [6.0, 1.8, 5.4], pos: [0, 3.75, -8.3], kind: 'castle' },
-    ...[2.6, 1.0, -4.4].flatMap((z) => [1.2, -1.2].map((x): BoxDef => ({ size: [1.4, 1.4, 1.4], pos: [x, 3.1, z], kind: 'cargo' })))
+    // D22: el par de z +1,0 pasa a −3,0; metía el 26 % de la elipse de socket_fire_02 dentro de una caja (Q18)
+    ...[2.6, -3.0, -4.4].flatMap((z) => [1.2, -1.2].map((x): BoxDef => ({ size: [1.4, 1.4, 1.4], pos: [x, 3.1, z], kind: 'cargo' })))
   ],
   barrels: [[-1.3, 3.2, 7.6], [0, 3.2, 7.6], [1.3, 3.2, 7.6]],
+  fire: [undefined, undefined, { z: -8.3, y: 4.95 }], // _03 sobre el castillo de popa, en su tapa (4,65) + 0,3 (93 %)
   cannonZ: [], cannonY: 0, cannon: [0, 0, 0],
   sailStyle: 'striped', flagStyle: 'flag', trimRail: false, cannonScale: 1.0,
   radius: 12, mastHeight: 17.5, pick: [4.9, 17.5, 11.0]
@@ -469,6 +479,13 @@ function flag(g: GeoBuilder, r: ShipRecipe, look: ShipLook, group: THREE.Matrix4
   }
 }
 
+// socket_fire_NN (ASSET-SPEC §3): (x, yd(u) + 0,3, u·L), salvo las excepciones de la receta (D22, AS-V17)
+function fireSocket(r: ShipRecipe, i: 0 | 1 | 2, x: number, u: number): THREE.Vector3 {
+  const at = r.fire?.[i];
+  const z = at ? at.z : u * r.L;
+  return new THREE.Vector3(x, at?.y ?? deckY(r, z / r.L) + 0.3, z);
+}
+
 function buildSockets(r: ShipRecipe): ShipSockets {
   const zs = [...r.cannonZ].sort((a, b) => a - b);
   const cannon = (side: 1 | -1) => zs.map((z) => new THREE.Vector3(side * (sample(PROFILES[r.profile], z / r.L).a * r.B / 2 + 0.3), 0.6 * r.F, z));
@@ -476,11 +493,7 @@ function buildSockets(r: ShipRecipe): ShipSockets {
     cannonsPort: cannon(1),
     cannonsStbd: cannon(-1),
     smoke: new THREE.Vector3(0, deckY(r, -0.15) + 0.5, -0.15 * r.L),
-    fire: [
-      new THREE.Vector3(0.2 * r.B, deckY(r, 0.25) + 0.3, 0.25 * r.L),
-      new THREE.Vector3(-0.2 * r.B, deckY(r, 0) + 0.3, 0),
-      new THREE.Vector3(0, deckY(r, -0.3) + 0.3, -0.3 * r.L)
-    ],
+    fire: [fireSocket(r, 0, 0.2 * r.B, 0.25), fireSocket(r, 1, -0.2 * r.B, 0), fireSocket(r, 2, 0, -0.3)],
     label: new THREE.Vector3(0, r.mastHeight + 1.5, 0),
     wake: new THREE.Vector3(0, 0, -r.L / 2),
     bow: new THREE.Vector3(0, 0, r.L / 2)

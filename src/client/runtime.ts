@@ -80,6 +80,7 @@ interface ShipView extends LabelTarget {
   fire: boolean;
   smokeAcc: number;
   fireAcc: number;
+  coreAcc: number;
   emberAcc: number;
   repairAcc: number;
   chipAcc: number;
@@ -395,11 +396,15 @@ export class VfxDirector {
     const visible = f.mine || rt.inView(x, z);
     if (f.hit && target) {
       const index = record ? record.hitIndex++ : 0;
-      if (visible) rt.effects.impact(x, Math.max(y, 0.5), z, index);
+      if (visible) {
+        rt.effects.impact(x, Math.max(y, 0.5), z, index);
+        rt.vfxCounters.hits++;
+      }
       target.hitAt = now;
       if (target.id === rt.src.myShipId) rt.shake(now);
     } else if (visible) {
       rt.effects.splash(x, z);
+      rt.vfxCounters.splashes++;
     }
     if (!record) return;
     record.arrivedAny = true;
@@ -480,11 +485,10 @@ export class VfxDirector {
       }
 
       // Humo (≤ 50 %) y fuego (≤ 25 %) con histéresis; siguen encendidos mientras se hunde
-      const sizeScale = r.L / 24;
       const dense = view.fire;
       if (view.smoke && s.state !== 'dead' && shown) {
-        // 3/s (≤ 50 %) o 5/s denso (≤ 25 %) con vida 3,4 s: ≤ 12 y ≤ 18 vivas por barco (VFX §6)
-        view.smokeAcc += dt * (dense ? 5 : 3) * rate;
+        // 3/s (≤ 50 %) o 6/s denso (≤ 25 %) con vida 3,4 s: ≤ 11 y ≤ 21 vivas por barco (VFX §6, D20)
+        view.smokeAcc += dt * (dense ? 6 : 3) * rate;
         while (view.smokeAcc >= 1) {
           view.smokeAcc -= 1;
           this.v.copy(view.model.sockets.smoke).applyMatrix4(view.mesh.matrix);
@@ -494,17 +498,21 @@ export class VfxDirector {
       if (view.fire && view.fireSlot && shown) {
         const ratio = s.hp / Math.max(1, s.maxHp);
         const sockets = ratio <= 0.12 ? 3 : 2;
+        // Por socket: 12 cuerpos de llama/s (P_ALPHA), 6 núcleos/s y 2 brasas/s (P_ADD); vivos ≤ 20, ≤ 8 y ≤ 7 (D21)
         view.fireAcc += dt * 12 * rate;
+        view.coreAcc += dt * 6 * rate;
         view.emberAcc += dt * 2 * rate;
-        while (view.fireAcc >= 1 || view.emberAcc >= 1) {
-          const flame = view.fireAcc >= 1;
-          if (flame) view.fireAcc -= 1;
+        while (view.fireAcc >= 1 || view.coreAcc >= 1 || view.emberAcc >= 1) {
+          const kind = view.fireAcc >= 1 ? 0 : view.coreAcc >= 1 ? 1 : 2;
+          if (kind === 0) view.fireAcc -= 1;
+          else if (kind === 1) view.coreAcc -= 1;
           else view.emberAcc -= 1;
           for (let i = 0; i < sockets; i++) {
             if (view.fireUnder[i]) continue;
             this.v.copy(view.model.sockets.fire[i]).applyMatrix4(view.mesh.matrix);
             if (this.v.y <= 0) continue;
-            if (flame) fx.flame(this.v.x, this.v.y, this.v.z, sizeScale);
+            if (kind === 0) fx.flame(this.v.x, this.v.y, this.v.z, s.heading, r.L, r.B);
+            else if (kind === 1) fx.flameCore(this.v.x, this.v.y, this.v.z, r.L);
             else fx.ember(this.v.x, this.v.y, this.v.z);
           }
         }
@@ -665,7 +673,8 @@ export class GameRuntime implements OverlayHost {
   private readonly materialPool: ShipMaterial[] = [];
   private readonly unsubscribe: (() => void)[] = [];
   private readonly reducedMotionQuery: MediaQueryList | null;
-  private readonly t0 = performance.now();
+  private t0 = performance.now(); // origen del reloj de animación y de VFX (se desplaza lo que dure una pausa de QA)
+  private pausedAt = 0;
   private lastVolleyAt = -Infinity;
   private readonly reloadState: ReloadState = { visible: false, progress: 1, ready: false, flash: false };
   private infoAt = 0;
@@ -674,6 +683,8 @@ export class GameRuntime implements OverlayHost {
   private baseDpr = 0;
   private dprOverride = false;
   private paused = false;
+  // AC-75: salpicaduras por bala fallada e impactos en casco emitidos (los que se ven: en pantalla o propios)
+  readonly vfxCounters = { splashes: 0, hits: 0 };
   private readonly ring: RingSpec = makeRing();
   private readonly ringColor = new Float32Array(4);
   private readonly m4 = new THREE.Matrix4();
@@ -986,8 +997,17 @@ export class GameRuntime implements OverlayHost {
   }
 
   // Depuración/QA: partículas vivas por pool, placas y números visibles
+  // Más los contadores acumulados de AC-75: no dependen de los pools y solo se reinician con resetCounters()
   stats(): Record<string, number> {
-    return { ...this.effects.liveCounts(), floating: this.floating?.active ?? 0, ships: this.views.size, ppm: this.ppm, ppm0: this.ppm0 };
+    return {
+      ...this.effects.liveCounts(), floating: this.floating?.active ?? 0, ships: this.views.size, ppm: this.ppm, ppm0: this.ppm0,
+      splashes: this.vfxCounters.splashes, hits: this.vfxCounters.hits
+    };
+  }
+
+  resetCounters(): void {
+    this.vfxCounters.splashes = 0;
+    this.vfxCounters.hits = 0;
   }
 
   plateRects(): ReturnType<LabelLayer['visibleRects']> {
@@ -1065,7 +1085,13 @@ export class GameRuntime implements OverlayHost {
   // QA: congela la simulación y los efectos (R3F sigue dibujando el último estado) para comparar dos capturas del
   // mismo instante, con y sin una capa (VFX-20, VFX-21). Las placas siguen recolocándose sobre el estado congelado,
   // así sus cajas se miden sin la deriva entre dos pasadas del declutter (AD-11, AC-107)
+  // El reloj de VFX no cuenta la pausa: si no, al reanudar las partículas envejecerían de golpe lo que duró y, como en
+  // pausa no se emite, la columna de humo quedaría con un hueco (sesgaba a la baja las capturas 2.ª y 3.ª de VFX-09b)
   setPaused(paused: boolean): void {
+    if (paused === this.paused) return;
+    const now = performance.now();
+    if (paused) this.pausedAt = now;
+    else this.t0 += now - this.pausedAt;
     this.paused = paused;
   }
 
@@ -1188,7 +1214,7 @@ export class GameRuntime implements OverlayHost {
     this.scene.add(mesh);
     return {
       id: ship.id, ship, model, mesh, lod, length: model.recipe.L, beam: model.recipe.B, phase: Math.random() * Math.PI * 2,
-      smoke: false, fire: false, smokeAcc: 0, fireAcc: 0, emberAcc: 0, repairAcc: 0, chipAcc: 0, wakeDist: 0, wakeCount: 0,
+      smoke: false, fire: false, smokeAcc: 0, fireAcc: 0, coreAcc: 0, emberAcc: 0, repairAcc: 0, chipAcc: 0, wakeDist: 0, wakeCount: 0,
       lastX: ship.x, lastZ: ship.z, hitAt: -Infinity, lastDamagedAt: -Infinity, heel: 1, emergeAt: -Infinity, sinkFx: false,
       sinkRingAcc: 0, sprayAcc: 0, debris: false, fireUnder: [false, false, false], shieldEnd: -Infinity, wasProtected: false,
       lastHp: ship.hp, repairGain: 0, repairClock: 0, fireSlot: false

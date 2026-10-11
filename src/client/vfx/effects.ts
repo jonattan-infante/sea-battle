@@ -10,8 +10,8 @@ import { RingLayer } from './rings';
 export const RENDER_ORDER = { ocean: 0, water: 1, contact: 2, islands: 3, rings: 4, ships: 5, shadows: 6, balls: 7, alpha: 8, add: 9 };
 
 const POOLS = {
-  desktop: { add: 384, alpha: 1024, water: 768, balls: 96, contact: 64, rings: 64 },
-  mobile: { add: 192, alpha: 512, water: 384, balls: 64, contact: 64, rings: 64 }
+  desktop: { add: 384, alpha: 1280, water: 768, balls: 96, contact: 64, rings: 64 }, // P_ALPHA con los cuerpos de llama (D21)
+  mobile: { add: 192, alpha: 640, water: 384, balls: 64, contact: 64, rings: 64 }
 };
 
 const WIND = new THREE.Vector3(0.5, 0, -0.5); // m/s (VFX §2); el humo de daño usa × 1,2 = (0,6, 0, −0,6)
@@ -34,10 +34,14 @@ const C = {
   flash: [rgba('#FFE7A8', 1), rgba('#FF7A1A', 0)],
   splinter: [rgba('#7A4E2A', 1), rgba('#7A4E2A', 0)],
   hitSmoke: [rgba('#6B6660', 0.7), rgba('#4A4642', 0)],
-  // Humo claro (D13): aclara lo que cubre, también la vela negra del pirata (L* ≈ 15) y el agua (L* ≈ 38)
-  smoke: [rgba('#B8B3AC', 0.5), rgba('#8E8984', 0)],
-  denseSmoke: [rgba('#8A8580', 0.75), rgba('#5E5A56', 0)],
-  flame: [rgba('#FFE08A', 1), rgba('#C2361B', 0)],
+  // Humo de vida baja: bocanadas (forma 7, D20) de color constante (D22). El alfa final no se usa: la curva de la forma
+  // la apaga en el último 45 % de la vida. Claro con α0,42: con 0,35, una bocanada sola sobre el agua daba ΔE76 14,7
+  // (Q17). Denso #A29D97 (L* 65): aclara el agua ΔL* +19,7 y la vela pirata +40, y oscurece la vela blanca −22 (Q19)
+  smoke: [rgba('#B8B3AC', 0.42), rgba('#B8B3AC', 0)],
+  denseSmoke: [rgba('#A29D97', 0.8), rgba('#A29D97', 0)],
+  // Cuerpo de la llama en mezcla normal y núcleo aditivo (D21): en aditivo puro saturaba a blanco sobre la cubierta
+  flame: [rgba('#FF9E2C', 1), rgba('#D9381A', 0)],
+  flameCore: [rgba('#FFE08A', 0.6), rgba('#FFE08A', 0)],
   ember: [rgba('#FFB347', 1), rgba('#FFB347', 0)],
   sinkRing: [rgba(PALETTE.oceanFoam, 0.7), rgba(PALETTE.oceanFoam, 0)],
   spray: [rgba('#F4FBFD', 0.8), rgba('#F4FBFD', 0)],
@@ -233,10 +237,11 @@ export class Effects {
 
   // ---- §6 Humo y fuego con vida baja ----
   // Cinemática escalada con h = sb_mast_height (D13): v0 = 0,22·h, flotación +0,035·h y vida 3,4 s → la columna
-  // sube 0,75h + 0,20h sobre el socket, hasta la punta del mástil más alto. Tamaño final del denso 0,40·h (antes
-  // 0,30·h): primer remedio de VFX-09b (D19)
+  // sube 0,75h + 0,20h sobre el socket, hasta la punta del mástil más alto. Bocanadas de borde firme (forma 7, D20)
+  // de 0,07·h → 0,25·h (claro) o 0,10·h → 0,32·h (denso), × (1 ± 0,15) para que la columna no sea un collar de cuentas
   damageSmoke(x: number, y: number, z: number, dense: boolean, mastHeight: number): void {
-    const s = this.spec(x + rand(-0.3, 0.3), y, z + rand(-0.3, 0.3), 3.4, dense ? 1.5 : 1.2, (dense ? 0.4 : 0.25) * mastHeight, dense ? C.denseSmoke : C.smoke, SHAPE.disc);
+    const k = mastHeight * (1 + rand(-0.15, 0.15));
+    const s = this.spec(x + rand(-0.3, 0.3), y, z + rand(-0.3, 0.3), 3.4, (dense ? 0.1 : 0.07) * k, (dense ? 0.32 : 0.25) * k, dense ? C.denseSmoke : C.smoke, SHAPE.puff);
     s.vy = 0.22 * mastHeight;
     s.gravity = 0.035 * mastHeight;
     s.wind = 1.2;
@@ -244,11 +249,26 @@ export class Effects {
     this.alpha.emit(s);
   }
 
-  // D19 (H-05): de 2,0 a 0,6 m × L/24 con un mínimo de 8 px (antes 0,9→0,25 m: QA vio una llama de ~2 px)
-  flame(x: number, y: number, z: number, sizeScale: number): void {
-    const s = this.spec(x + rand(-0.3, 0.3), y, z + rand(-0.3, 0.3), 0.55, 2.0 * sizeScale, 0.6 * sizeScale, C.flame, SHAPE.flame);
+  // Cuerpo de la llama (D21): de 3,0 a 0,9 m × L/24 (mínimo 10 px), nacida en un punto al azar de la elipse de
+  // cubierta del socket, de semiejes 0,06·L (eslora) × 0,15·B (manga). Antes nacían a ±0,3 m y se apilaban en un óvalo
+  flame(x: number, y: number, z: number, heading: number, length: number, beam: number): void {
+    const d = Math.sqrt(Math.random());
+    const a = rand(0, Math.PI * 2);
+    const along = 0.06 * length * d * Math.cos(a);
+    const across = 0.15 * beam * d * Math.sin(a);
+    const k = length / 24;
+    const s = this.spec(x + Math.sin(heading) * along + Math.cos(heading) * across, y, z + Math.cos(heading) * along - Math.sin(heading) * across, 0.55, 3.0 * k, 0.9 * k, C.flame, SHAPE.flame);
     s.vy = 1.8 + rand(-0.4, 0.4);
-    s.pxMin = 8;
+    s.pxMin = 10;
+    this.alpha.emit(s);
+  }
+
+  // Núcleo aditivo en el centro del socket: la mitad del tamaño de la llama (mínimo 5 px) y vida 0,4 s (D21)
+  flameCore(x: number, y: number, z: number, length: number): void {
+    const k = length / 24;
+    const s = this.spec(x, y, z, 0.4, 1.5 * k, 0.45 * k, C.flameCore, SHAPE.flame);
+    s.vy = 1.8 + rand(-0.4, 0.4);
+    s.pxMin = 5;
     this.add.emit(s);
   }
 

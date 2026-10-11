@@ -2,7 +2,11 @@
 // emitir y sube el rango tocado; el vertex shader calcula posición, tamaño y color con uTime. Sin texturas.
 import * as THREE from 'three';
 
-export const SHAPE = { disc: 0, ring: 1, flame: 2, square: 3, streak: 4, foam: 5, cross: 6 } as const;
+export const SHAPE = { disc: 0, ring: 1, flame: 2, square: 3, streak: 4, foam: 5, cross: 6, puff: 7 } as const;
+
+// Forma 7 (bocanada, D20): 6 m hacia la cámara solo en profundidad. En ortográfica no mueve la imagen; así la
+// cangreja abierta (D12) y las velas cercanas no tapan la base de la columna de humo (VFX §0.3)
+export const SMOKE_BIAS_M = 6;
 
 // Partícula a emitir: objeto de trabajo reutilizable (se rellena y se pasa a emit, sin asignar)
 export interface ParticleSpec {
@@ -50,6 +54,7 @@ uniform vec3 uCamRight;
 uniform vec3 uCamUp;
 uniform vec3 uWind;
 uniform float uWaterY;
+uniform float uSmokeBias;
 varying vec2 vUv;
 varying vec4 vColor;
 varying float vShape;
@@ -88,8 +93,14 @@ void main() {
   vec2 r = vec2(ca * c.x - sa * c.y, sa * c.x + ca * c.y) * size;
   p += uCamRight * r.x + uCamUp * r.y;
 #endif
-  gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
+  vec4 mv = viewMatrix * vec4(p, 1.0);
+#ifndef WATER
+  if (aMisc.x > 6.5) mv.z += uSmokeBias;
+#endif
+  gl_Position = projectionMatrix * mv;
   vColor = mix(aC0, aC1, x);
+  // Forma 7: opaca hasta el 55 % de la vida y apagada en el último 45 % (ignora aC1.a)
+  vColor.a = aMisc.x > 6.5 ? aC0.a * (1.0 - smoothstep(0.55, 1.0, x)) : vColor.a;
   vColor.a *= smoothstep(0.0, 0.08, x);
   vUv = position.xy * 2.0;
   vShape = aMisc.x;
@@ -112,6 +123,7 @@ float hash(vec2 p) {
 void main() {
   float r = length(vUv);
   int shape = int(vShape + 0.5);
+  vec3 rgb = vColor.rgb;
   float a;
   if (shape == 0) a = 1.0 - smoothstep(0.3, 1.0, r);
   else if (shape == 1) a = smoothstep(0.7, 0.82, r) * (1.0 - smoothstep(0.92, 1.0, r));
@@ -130,13 +142,18 @@ void main() {
     float n = mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
     a = (1.0 - smoothstep(0.35, 1.0, r)) * (0.45 + 0.55 * n);
   }
+  else if (shape == 7) {
+    // Bocanada: borde firme y luz cenital (más clara arriba)
+    a = 1.0 - smoothstep(0.6, 1.0, r);
+    rgb *= 0.9 + 0.2 * smoothstep(-0.6, 0.6, vUv.y);
+  }
   else {
     float bar = min(max(abs(vUv.x) - 0.2, abs(vUv.y) - 0.8), max(abs(vUv.y) - 0.2, abs(vUv.x) - 0.8));
     a = 1.0 - smoothstep(-0.08, 0.04, bar);
   }
   a *= vColor.a;
   if (a < 0.004) discard;
-  gl_FragColor = vec4(vColor.rgb, a);
+  gl_FragColor = vec4(rgb, a);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }
@@ -195,7 +212,8 @@ export class ParticlePool {
         uCamRight: { value: new THREE.Vector3(1, 0, 0) },
         uCamUp: { value: new THREE.Vector3(0, 1, 0) },
         uWind: { value: new THREE.Vector3() },
-        uWaterY: { value: opts.waterY ?? 0.03 }
+        uWaterY: { value: opts.waterY ?? 0.03 },
+        uSmokeBias: { value: SMOKE_BIAS_M }
       },
       depthWrite: false,
       toneMapped: false,
