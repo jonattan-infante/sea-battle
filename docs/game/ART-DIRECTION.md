@@ -11,7 +11,7 @@
 3. **Océano de valor medio (#1A5F86, L\* 38).** No es el azul marino casi negro de Seafight (#03243D): las velas negras del pirata y los cascos oscuros necesitan contraste de valor.
 4. **Se identifica por 3 canales redundantes**, nunca solo por el color: la **silueta** da la clase, el **valor de las velas** la facción (negras = pirata, claras = resto) y un **icono + color en la etiqueta**. El par de colores hostil/pasivo es coral #FF7A7A / cielo #6CC3F5, que se distingue con las 3 formas de daltonismo (§4.4).
 5. **Etiquetas debajo del casco** (como en Seafight), sobre una placa oscura al 85 %. El contraste es ≥ 4,5:1 sobre agua, arena o espuma, y un *declutter* garantiza que no se solapen nunca.
-6. **Un solo material para todo** (`MeshStandardMaterial`, vertex colors, *flat shading*), **sin tone mapping** (`NoToneMapping`) y solo 2 luces calibradas (hemisférica + direccional), así la paleta llega 1:1 a la pantalla. Cero luces puntuales (decisión D2/D8, §19).
+6. **Un solo material para todo** (`MeshStandardMaterial`, vertex colors; *flat shading* en islas y normales suavizadas con pliegue de 40° en barcos, D23), **sin tone mapping** (`NoToneMapping`) y solo 2 luces calibradas (hemisférica + direccional), así la paleta llega 1:1 a la pantalla. Cero luces puntuales (decisión D2/D8, §19).
 7. **La tienda es pergamino y madera** sobre un velo translúcido (≤ 60 %). Nunca un negro al 100 %. Las alertas se sustituyen por *toasts* no bloqueantes.
 8. **La landing usa una captura del propio motor**, no fotos de stock.
 
@@ -111,6 +111,8 @@ El estado analizado es el commit `f3f1345`, antes de la reescritura en curso.
 | `deck` | — | `#C9965E` | `#6E4B30` | `#C9965E` |
 | `rail` / `mast` | — | `#6B4426` | `#3A2A20` | `#6B4426` |
 | `sail` | — | `#F2EADB` | `#2B2A2E` | `#EADFC6` + franjas `#2F7FB8` |
+| `sail.alt` (paneles de lona, D23) | — | `#E1D9CA` (ΔL\* −6) | `#363539` (+5; L\* 22 ≤ AD-10) | `#D9CEB6` (solo en las franjas crema) |
+| `deck.alt` (tablas alternas, D23) | — | `#AC7C46` (ΔL\* −10) | `#5C3B21` (−7) | `#AC7C46` |
 | `cannon` / `gunport` | `#26282B` / `#1A1410` | ✓ | ✓ | (sin cañones) |
 | `flag` | — | `#F2C14E` gallardete | `#111111` + `#F5F1E6` | `#2F7FB8` + `#F5F1E6` |
 | `trim` (Fragata) | `#D9A93F` | ✓ | — | — |
@@ -126,6 +128,8 @@ Los hex de §4.1–4.2 son el **color que se ve en pantalla** en la cara dominan
 | `grass` (meseta) | `#5E9E48` | `#589444` |
 | `deck` (jugador y mercante) | `#C9965E` | `#BD8D59` |
 | `deck` (pirata) | `#6E4B30` | `#67462D` |
+| `deck.alt` (jugador y mercante) | `#AC7C46` | `#A17442` |
+| `deck.alt` (pirata) | `#5C3B21` | `#56371F` |
 | `cargo` | `#B07A3E` | `#A5723B` |
 
 ### 4.3 Relación (etiquetas, minimapa, barras)
@@ -239,6 +243,17 @@ top/bottom = reserva de HUD del layout (§12): escritorio 120/108 · móvil vert
 
 (px = eslora del casco de lado. El suelo visible mide `W/ppm` × `H/(ppm·sin θ)`.)
 
+**Propuesta D23: encuadre por alcance propio (pendiente de `game-product`, U8).** `R` = alcance del **cañón propio** (60 / 70 / 80 m, GDD §6) en lugar de 80 m fijos. Se mantiene la garantía que importa: tu círculo de alcance siempre cabe entero. Al cambiar de cañón (solo en la tienda del puerto), ppm₀ pasa al valor nuevo con una transición *ease-in-out* de 600 ms al cerrar la tienda, que además comunica la mejora. Esto sustituye el motivo de «R fijo» (que el zoom no cambie al mejorar), porque el cambio ocurre una sola vez y en un momento tranquilo.
+
+| Viewport | R = 60 m (cañón de 8 lb, sesión nueva) | R = 70 m | R = 80 m (= hoy) |
+|---|---|---|---|
+| 1440×900 | **6,71** | 5,75 | 5,04 |
+| 390×844 | 3,05 | 2,61 | 2,29 |
+| 844×390 | 3,72 | 3,19 | 2,79 |
+| Balandra en 1440×900, peor rumbo (px de vela + cubierta + casco, `measureShipValues`) | **2 330** | 1 710 | 1 310 |
+
+El enemigo hostil de más alcance del P0 es el pirata, con 55 m, que queda dentro con R = 60. El capitán (P2) tiene 65 m: con el cañón de 8 lb puede disparar desde 5 m fuera del borde vertical. Se resuelve en P2 con un indicador de borde o con R = máx(alcance propio, 65).
+
 **No hay que codificar 5,04 ni 2,29.** ppm₀ se calcula en tiempo de ejecución con la fórmula, a partir de θ y de las reservas `top`/`bottom` definidas como constantes del layout del HUD. En escritorio, el eje vertical del círculo queda exactamente en el borde del área útil (660 px frente a 660 px). Por eso cambiar θ o la altura del HUD solo exige actualizar esas constantes, y AD-06 lo verifica.
 
 **Niveles** (GDD §5) de **extensión visible** `f` ∈ {0,7 (más cerca), 1,0, 1,5 (más lejos)}: `ppm = ppm₀ / f`. La rueda o el pellizco salta de nivel en nivel, sin zoom continuo, con una transición *ease-out* de 180 ms. Escritorio: 7,20 / 5,04 / 3,36 px/m. Móvil vertical: 3,27 / 2,29 / 1,53 px/m. `preventDefault` en `wheel` y `touchmove` sobre el canvas (AC-25, AC-81).
@@ -282,7 +297,7 @@ Fresnel F = 0.02 + 0.98·(1 − n·v)^5  → c = mix(c, ocean.sky, 0.6·F)
 ### 7.3 Espuma y especular
 | Elemento | Regla |
 |---|---|
-| Espuma de cresta | `smoothstep(0.72, 0.95, h) · 0.35`, cortada por ruido (umbral 0,5) para que forme manchas, no bandas |
+| Espuma de cresta (D23) | `crest = smoothstep(0.75, 0.95, h) · smoothstep(0.45, 0.65, n_v) · racha · 0.25`. `n_v = vnoise(rot_viento(p) · (1/6, 1/2) + 0.5·drift)`: ruido **estirado 3:1 a lo largo del viento**, que da vetas en lugar de manchas redondas. `racha = smoothstep(0.55, 0.80, vnoise(p/70 + 0.15·drift))`: unas 2/3 partes del mar quedan sin espuma y el resto la tiene en grupos. Antes era `smoothstep(0.72, 0.95, h) · 0.35 · step(0.5, vnoise(p·0.45))`: medias lunas de borde duro, repartidas por igual en todo el mar (QA-REPORT-2026-10-11-3: «repetidas y procedurales»). Lo verifica AD-27 |
 | Espuma de orilla | Banda `d_isla ∈ [0, 2.5]` m modulada por `sin(d·2.4 − t·1.6)` (ondas que avanzan hacia la costa), intensidad 0,8 |
 | Especular | Blinn-Phong con `H = normalize(L + v)`, brillo 90, intensidad 0,8, color `ocean.spec`. Con agua plana, `n·H` = 0,834 → 0 tras la potencia: solo brillan facetas de ola, como destellos dispersos |
 | Zona segura | Dentro de 110 m del puerto, amplitud de olas × 0,6 y tinte un 8 % hacia `#2A7FA0` (agua mansa) |
@@ -632,8 +647,10 @@ Captura estándar = `npm run qa:capture` con zoom 1,0×, sin modales y el barco 
 | AD-21 | Legibilidad en grises | Capturas de AC-72 convertidas a escala de grises | ≥ 4/5 evaluadores identifican propio, jugador, pirata, mercante y objetivo | AC-72 |
 | AD-22 | Recarga monótona | 5 capturas de un ciclo de recarga: ángulo del relleno del indicador | Creciente y en 360° en el frame del disparo | AC-73 |
 | AD-23 | Zona segura visible | Captura en el borde de la zona (r 110 m) | La línea discontinua y ≥ 3 boyas son visibles; aparece el aviso "Zona segura" | AC-65 |
-| AD-25 | Albedo compensado | ΔE76 entre el color medio de la tapa de la playa o de la cubierta en la captura y su token de §4.2.1 | ≤ 6 | — |
 | AD-24 | Olas sin bandas regulares | Percentiles p5 y p95 de L\* en el parche de AD-01 | p95 − p5 entre 4 y 12. Medido el 2026-10-11: 16–21, son bandas. Con el ruido de 9 m y 4,5 m (D20): 8,8 (dev-render; falta QA) | — |
+| AD-25 | Albedo compensado | ΔE76 entre el color medio de la tapa de la playa o de la cubierta en la captura y su token de §4.2.1 | ≤ 6 | — |
+| AD-26 | **Escala del barco inicial** (D23; depende de U8) | `measureShipValues` (vela + cubierta + casco) con el zoom por defecto de una sesión nueva (Balandra, cañón de 8 lb) en 1440×900, rumbos 0/90/180/270° | ≥ 2 000 px en el peor rumbo. Referencia: el barco del jugador en Seafight ocupa ≈ 2 000 px² (`qa-artifacts/render/escala/ref-seafight-1297031307.jpg`). Hoy: 1 310 px a 0° | AC-24 (revisado) |
+| AD-27 | **Espuma natural** (D23) | Capturas de mar abierto a 1,0× (`desktop-open-sea`, `d-ocean-a/b`), sin HUD, barcos ni islas. Espuma = píxeles de agua con L\* ≥ mediana + 10. Celdas de 240×110 px con ≥ 85 % de agua | Cobertura entre 0,3 % y 1,2 %; **≥ 40 % de las celdas sin espuma** (< 0,1 %); mediana de ΔL\* de la espuma ≤ 20. Hoy: 1,8–3,0 %, 0–17 % de celdas sin espuma y ΔL\* 22–26 | — |
 
 ---
 
@@ -675,6 +692,7 @@ Captura estándar = `npm run qa:capture` con zoom 1,0×, sin modales y el barco 
 | D20 | Q15: VFX-20 da mediana +6,3 (p75 +8,5) y solo 113 px sobre vela; la cangreja abierta (D12) tapa la base de la columna. Además dev-render confirmó huecos de alfa en el framebuffer y eligió 9 m y 4,5 m para el ruido de AD-24 | **Las dos cosas, primero el humo** (la causa): forma 7 «bocanada» de borde firme, alfa sostenida hasta el 55 % de la vida, más tamaño (0,10·h → 0,32·h) y 6/s, y sesgo de profundidad de 6 m para que las velas no la tapen. **Métrica**: VFX-20 mide el núcleo (p75 de ΔE76 ≥ 20 y p75 de ΔL\* ≥ +20 sobre vela), porque la mediana castiga el borde suave, que es intencionado; un umbral de α no se puede medir en una captura. Alfa del framebuffer: obligatorio en todo `CustomBlending` (VFX-22). Ruido de AD-24 **fijado** en 9 m y 4,5 m. Sesgo de 6 m **aceptado por el lead** con una condición: sin artefactos visibles en la escena estándar de 41 barcos (lo comprueba dev-render); si aparecen, vuelve con captura para decidir | VFX-SPEC §0.2, §0.3, §6, VFX-20, VFX-22; §7.2, AD-24 |
 | D21 | Q16: VFX-09b falla por un orden de magnitud (con \|ΔL\*\| ≥ 8, 0,01–0,08·A frente a 0,35·A y 0,60·A; fuego 18–66 px²). Mi 0,60·A suponía cuadrados opacos (dev-render tenía razón) | **Una sola versión, coherente con D20**, calibrada con un modelo de partículas realista: perfil y α del shader, mezcla sRGB de 8 bits y fondo real de `tanda-d15-d19`. La medición del modelo, aplicada a las capturas reales, reproduce las cifras de dev-render (73 / 104 / 308 px frente a 76 / 93 / 277). (1) **Humo**: el de D20, sin el 0,40·h. (2) **Llamas**: cuerpo en mezcla normal (`#FF9E2C` → `#D9381A`), de 3,0 a 0,9 m × L/24 (mínimo 10 px), nacidas en una elipse de 0,06·L × 0,15·B por socket, más un núcleo aditivo pequeño. En aditivo puro, la llama se vuelve blanca sobre la cubierta y cian sobre el agua. (3) **VFX-09b** mide ΔE76 ≥ 15, porque el humo gris sobre el agua azul es contraste de croma: \|ΔL\*\| no pasa de +16 ni con α 1 (L\* 56 frente a 40). Umbrales: 0,07·A y 0,25·A, fuego ≥ 0,03·A y ≥ 60 px², grises ≥ 0,04·A y tope del 20 % del barco tapado. Todos quedan ≥ 20 % por debajo de la previsión en la peor clase (el Mercante, ancho para su `h`) y por encima de lo que daba el D19 real, que fallaba (Mercante: 0,01·A con ≤ 50 % y 0,08·A con ≤ 25 %). **0,60·A no se alcanza sin tapar el barco**: con 0,14·h → 0,48·h el Mercante llega solo a 0,52·A y la Balandra queda tapada un 22 %, con la vela mayor oculta. **Legibilidad frente a Seafight**: el referente lee la vida en la línea bajo el nombre y en el panel del objetivo (R4, R7), y la evidencia R1–R13 no registra humo de daño. Aquí el humo y el fuego refuerzan la placa: avisan a primera vista sin competir con la identidad del barco (el color de la vela da la relación) | VFX-SPEC §0.2, §6, VFX-09b; modelo y capturas en `qa-artifacts/render/q16-modelo/` |
 | D22 | Medición de D20 + D21 (`qa-artifacts/render/d20-d21/`): pasan VFX-20, VFX-22 y el tope de barco tapado. VFX-09b falla en 4 casillas (Q17 ≤ 50 % en Balandra y Mercante; Q18 fuego del Mercante; Q19 grises de la Fragata). El sesgo de 6 m pinta 506 px sobre barcos ajenos | (Q17) Humo claro con α0,42 y **color constante**: oscurecerse con la edad le restaba contraste sobre el agua. (Q18) La carga del Mercante pasa de z +1,0 a −3,0, y se corrigen **6 sockets de fuego** que caían dentro de objetos (dos de ellos al 93–100 %), con la regla nueva AS-V17. (Q19) Humo denso `#A29D97` (L\* 65), constante: ΔL\* +19,7 sobre el agua frente a +12,2. **Sesgo: opción A, se mantiene 6 m**. El 85 % de lo que cambia es la columna propia, visible desde la base en todos los frames. Lo ajeno (10,5 %) solo aparece con las arboladuras ya cruzadas y se ve como gris claro sobre el borde de una vela. B no lo elimina (el pirata necesita ≥ 5,5 m) y C cambia el contrato sin quitar la oclusión de la vela propia (de 3,4 a 13,4 m). Guarda: VFX-23 ≤ 15 %. **Corrijo** mi cota de «barcos casi tocándose»: valía para cascos, no para foques ni baupreses. Previsión del modelo (5 semillas, fondo de d20-d21; HIPÓTESIS hasta el render): ≤ 50 % 0,12 / 0,12 / 0,19·A; ≤ 25 % 0,56 / 0,34 / 0,43·A; grises 0,42 / 0,24 / 0,22·A. Confirmados los supuestos de dev-render: núcleo con forma 2 y subida de 1,8 ±0,4 m/s; tono = `h_ab` de CIELab. **ROI resuelta**: dev-render usa la misma ROI y su medida coincide con la mía (0,053 / 0,096 / 0,160 frente a 0,053 / 0,096 / 0,159). La diferencia ×1,5 venía de una pausa que no detenía el reloj de VFX; ya está arreglado. **Render con D22** (dev-render, 12 capturas): ≤ 50 % da 0,146–0,156 / 0,130–0,135 / 0,186–0,199·A (pasa; previsión 0,12 / 0,12 / 0,19) y el Mercante con ≤ 25 % da 0,305–0,354·A | VFX-SPEC §0.3, §6, VFX-09b, VFX-23; ASSET-SPEC §3, §8.4, AS-V17 |
+| D23 | QA-REPORT-2026-10-11-3 §8: Barcos 7/10, «a 1,0× se ven pequeños y facetados frente a los sprites de Seafight». Además, la espuma se ve repetida y procedural | **Medición** (`qa-artifacts/render/escala/`). Seafight: barco del jugador de 64–68 × 84–85 px y ≈ 2 000 px²; galeón de 81 × 81 px y 2 200 px²; pirata de 52 × 49 px y 1 014 px², en un área de juego de ≈ 800×565. Nuestro (vela + cubierta + casco a 1,0×): Balandra 1 310–2 100 px, Bergantín 2 750–3 980, Fragata 5 400–7 210, Pirata 1 770–2 670 y Mercante 2 680–3 090, en 1440×900. **En px absolutos ya estamos cerca. Lo que falla es la Balandra inicial**, que sale al 65–105 % del barco de Seafight según el rumbo, sobre un mar con 2,9× más píxeles, y además **el detalle interno**: píxeles interiores con \|∇L\*\| ≥ 4, 70–80 % en Seafight frente a 30–49 % aquí. **Opciones**: (a) subir ppm a todos: con 6,2 ya no cabe el círculo de 80 m en 1440×900 (rompe GDD §5) ✗. (b) Escalar los modelos: rompe eslora y radio del GDD, navClearance y sockets ✗. **(a') Encuadre por alcance propio** (R = 60 m con el cañón inicial → ppm 6,71): la Balandra pasa a 2 330 px en el peor rumbo, el círculo propio sigue cabiendo y no cuesta rendimiento ✓. Necesita U8. **(c) Detalle dentro del presupuesto** ✓: normales con pliegue de 40°, loft de 13 estaciones, tablas de cubierta, paneles de vela, oclusión horneada y cañones y portas legibles; 0 draw calls y entre +400 (Balandra) y +700 tris (Fragata, ≈ 1 900 ≤ 2 500) por barco en LOD0. **Recomendación: (a') + (c)**, con las reglas AD-26 (escala), AS-V18 (sin facetas), AS-V19 (textura interna ≥ 55 %) y AS-V20 (cañones legibles). **Espuma**: vetas a lo largo del viento, agrupadas por rachas y con opacidad 0,25 (§7.3; AD-27). El umbral de AS-V19 es provisional (HIPÓTESIS): se calibra con el primer render y no baja de 50 % | §6.2, §7.3, §4.2, AD-26, AD-27, U8; ASSET-SPEC §6, §8.1, §8.2, AS-V18–V20 |
 
 **Abiertas:**
 
@@ -682,3 +700,4 @@ Captura estándar = `npm run qa:capture` con zoom 1,0×, sin modales y el barco 
 |---|---|---|---|
 | U6 | `game-developer` | Preset de cámara de `qa:capture` para generar las imágenes de la landing | §16.1 |
 | U7 | Jonattan | Licencia: fuentes de Google (OFL) e iconos Lucide (ISC) | Aceptables |
+| U8 | `game-product` | GDD §5: «el círculo de alcance máximo (80 m) cabe entero» → «el círculo de **tu alcance actual** (60 / 70 / 80 m) cabe entero», y AC-24 en consecuencia (D23) | Hasta que se decida, sigue R = 80 m (§6.2) y AD-26 no se evalúa |

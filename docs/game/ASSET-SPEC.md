@@ -13,7 +13,7 @@
 | Unidades | **1 u = 1 m**. Escala de la raíz = 1 |
 | Pivote | Origen en la **línea de flotación** (y = 0), en el centro de la eslora del casco y de la manga |
 | Draw calls | **1 por barco** (1 malla, 1 primitiva, 1 material por LOD) |
-| Material | `MeshStandardMaterial` con vertex colors (`COLOR_0`, lineal), `flatShading`, rugosidad 0,85, metalicidad 0, `DoubleSide`, opaco |
+| Material | `MeshStandardMaterial` con vertex colors (`COLOR_0`, lineal), rugosidad 0,85, metalicidad 0, `DoubleSide`, opaco. **Barcos**: `flatShading: false` con normales con pliegue de 40° (`NORMAL` del GLB o `BufferGeometryUtils.toCreasedNormals(g, 40°)`, `BufferGeometryUtils.js:1316`). **Islas y estáticos**: `flatShading` (D23) |
 | Texturas | 0 en el MVP. GLB futuro: ≤ 1 atlas en potencia de 2, KTX2 |
 | Sockets | Nodos vacíos con nombre fijo: cañones por banda, humo, fuego, etiqueta, estela, proa |
 | Metadatos | `extras` de la raíz con dimensiones y radios (§4) |
@@ -166,11 +166,11 @@ Margen de 43 draw calls. Si alguna vez hay > 60 barcos, se pasa a un `InstancedM
 
 | Regla | Detalle |
 |---|---|
-| Material único | `new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.85, metalness: 0, side: DoubleSide })`. `DoubleSide` porque las velas son planos; el casco es cerrado y su sobrecoste es despreciable |
+| Material único | `new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.85, metalness: 0, side: DoubleSide })` para islas y estáticos. **Barcos** (D23): el mismo con `flatShading: false`, y la geometría fusionada del barco pasa por `toCreasedNormals(g, 40° en radianes)` antes de generar los LOD. Así desaparecen las bandas de facetas del casco y de la panza de las velas, y siguen duros los cantos de cubierta, borda y franjas. `DoubleSide` porque las velas son planos; el casco es cerrado y su sobrecoste es despreciable |
 | Material por barco | Se clona por instancia de barco (mismo programa de shader, uniforms propios) para el destello de impacto `uHit` y el oscurecimiento `uDamage` (VFX-SPEC §5) vía `onBeforeCompile` |
 | Espacio de color | Los hex de ART-DIRECTION §4 son sRGB. **`COLOR_0` es lineal**: "COLOR_0 … acts as an additional linear multiplier to base color" ([glTF 2.0](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html)). En el procedural, `new THREE.Color(hex)` ya convierte a lineal (`ColorManagement.enabled = true` por defecto, `ColorManagement.js:21`), así que se escriben `c.r, c.g, c.b` en el atributo |
 | Máscara de borde (D18) | Atributo por vértice `_rim_mask` (escalar float; en el GLB se llama `_RIM_MASK`, que `GLTFLoader` pasa a minúsculas, `GLTFLoader.js:4836`). Vale **1** en el casco (*loft*, borda, castillos y camaretas) y **0** en todo lo demás (mástiles, vergas, botavaras, picos, bauprés, cofas, velas, cañones, portas, banderas, carga). Lo usa el borde de protección (VFX-SPEC §12) |
-| Color por pieza | Cada pieza tiene un único color; las caras de una pieza no mezclan colores. Excepciones: el casco (por banda, §8.1), las cajas con tapa (tapa = `deck`) y las velas a franjas (por fila de vértices) |
+| Color por pieza | Cada pieza tiene un único color; las caras de una pieza no mezclan colores. Excepciones: el casco (por banda, §8.1), las cajas con tapa (tapa = `deck`), las velas a franjas (por fila de vértices), las **tablas de cubierta** (`deck` / `deck.alt` por tira) y los **paneles de lona** (`sail` / `sail.alt` por columna) (D23). **Oclusión horneada** (D23): multiplicador de `COLOR_0` ×0,85 en la tira de cubierta junto a la borda, en la base de mástiles y castillos (primeros 0,4 m) y en el vértice inferior de la cara V2–V3 del casco |
 | Emisivos | No hay: los faroles y ventanas usan el vertex color `#FFE9A8`, que con el *tone mapping* se lee como luz |
 | Transparencia | Prohibida en los assets. Toda la transparencia es de VFX |
 | GLB futuro | `baseColorFactor` = 1 y (opcional) 1 atlas `baseColorTexture` en sRGB. Sin mapas de normales, rugosidad ni oclusión en el MVP. Si el GLB trae textura y vertex colors, se multiplican (comportamiento estándar de glTF) |
@@ -227,7 +227,7 @@ Cada barco = **casco por *loft*** (§8.1) + **aparejo** (§8.2) + **piezas** (§
 
 **Tapas:** espejo de popa = polígono V5…V4…V5' triangulado con `THREE.ShapeUtils.triangulateShape`, en `hull`. Proa = lo mismo si `a > 0` en `u = +0.5`. Si `a = b = 0`, los quads degeneran a triángulos: se eliminan los de área < 1e-6.
 
-≈ 22 tris por tramo × 6 + tapas ≈ **150 tris** (LOD1: ≈ 100).
+**Estaciones (D23)**: 13, con u cada 1/12. La tabla de perfiles se interpola con Catmull-Rom; antes eran las 7 filas con interpolación lineal, que daban 6 facetas a lo largo de la eslora. **Cubierta en tablas (D23)**: la cara V0 babor – V0 estribor se divide en `n = 2·ceil(B/2 / 0.5)` tiras longitudinales (≈ 0,5 m; ≥ 3 px a ppm 6,71), alternando `deck` y `deck.alt`. ≈ 22 tris por tramo × 12 + tablas (`n` × 12 × 2) + tapas ≈ **530 tris en la Balandra y 730 en la Fragata** (LOD1: sin tablas y con 7 estaciones, ≈ 100).
 
 **Perfiles** (interpolación lineal entre filas):
 
@@ -248,15 +248,15 @@ Con `rm = 0.022·L` (radio de la base del mástil):
 |---|---|---|---|
 | Mástil | `CylinderGeometry(0.6·rm, rm, h − yd(u), 6)` | Base en `(0, yd(u_m), z_m)`. Con caída: grupo del mástil y sus velas rotado `rotation.x = −rake` alrededor de la base (la punta va a popa) | `mast` |
 | Verga (LOD0) | `CylinderGeometry(0.35·rm, 0.35·rm, w + 0.6, 5)`, `rotation.z = π/2` | Borde superior de cada vela cuadra, en `z_m + 0.35` | `mast` |
-| **Vela cuadra** | `PlaneGeometry(w, h, 2, 2)` (pirata: `(w, h, 4, 2)`; franjas: `(w, h, 2, 5)`) | Centro en `(0, y_b + h/2, z_m + 0.45)`. **Panza**: `z += 0.12·w·sin(πu')·sin(πv')`, con u', v' ∈ [0, 1] a lo ancho y alto. **Braza**: vela + verga rotadas `+20°` en Y alrededor del eje del mástil (todas igual) | `sail` |
+| **Vela cuadra** | `PlaneGeometry(w, h, 4, 3)` (pirata: `(w, h, 4, 3)` con el borde raído; franjas: `(w, h, 4, 5)`). **Paneles (D23)**: columnas de caras alternas `sail` / `sail.alt` | Centro en `(0, y_b + h/2, z_m + 0.45)`. **Panza**: `z += 0.12·w·sin(πu')·sin(πv')`, con u', v' ∈ [0, 1] a lo ancho y alto. **Braza**: vela + verga rotadas `+20°` en Y alrededor del eje del mástil (todas igual) | `sail` |
 | Vela cangreja / cangrejo | 5 vértices en el plano YZ (x = 0): amura A, puño de driza B, pico C, puño de escota D y centro E desplazado `x += 0.08·pie` (panza) → 4 triángulos en abanico. **Apertura de 25°** (D12): vela + botavara + pico giran 25° alrededor del eje del mástil (gratil A→B) | Coordenadas (z, y) en la tabla de clase | `sail` |
 | Botavara y pico (LOD0) | `CylinderGeometry(0.3·rm, 0.3·rm, len, 5)` alineados de A→D y de B→C | — | `mast` |
 | Vela latina | Triángulo A (amura) · B (escota) · C (pico) + centro con panza `0.06·len`. **Apertura de 25°** alrededor del eje vertical que pasa por A, con la entena incluida (D12) | Tabla de clase | `sail` |
 | Foque | Triángulo: puño de driza H, amura T (punta del bauprés o un punto intermedio) y puño de escota C, + centro con panza `0.06·\|HT\|`. **Apertura de 25°** alrededor del estay T→H (D12) | Tabla de clase | `sail` |
 | Bauprés | `CylinderGeometry(0.25·rm, 0.45·rm, bs + 1, 5)`, `rotation.x = +70°` (eje a 20° sobre el horizonte hacia +Z) | Arranque `S = (0, 1.25·F, L/2 − 1)`; centro = `S + (0, 0.342, 0.940)·(bs + 1)/2`; punta `T = S + (0, 0.342, 0.940)·(bs + 1)` | `mast` |
 | Cofa (LOD0) | `CylinderGeometry(0.045·L, 0.04·L, 0.5, 6)` | En el mástil, a la altura del borde superior de la vela baja + 0,1 | `rail` |
-| Cañón (LOD0) | Balandra `(0.12, 0.16, 1.2, 6)` · Bergantín `(0.14, 0.18, 1.4, 6)` · Fragata `(0.16, 0.21, 1.6, 6)` · Pirata `(0.13, 0.17, 1.3, 6)`; `rotation.z = π/2` | La boca en el socket; centro = socket − signo·(len/2) en X | `cannon` |
-| Porta (LOD0) | `BoxGeometry(0.06, 0.5, 0.6)` | `x = ±(a(u)·B/2 + 0.02)`, misma y, z que el cañón | `gunport` |
+| Cañón (LOD0) | Balandra `(0.22, 0.28, 1.2, 6)` · Bergantín `(0.24, 0.30, 1.4, 6)` · Fragata `(0.26, 0.32, 1.6, 6)` · Pirata `(0.23, 0.29, 1.3, 6)`; `rotation.z = π/2`. Radios ≈ ×1,7 (D23): con los de antes, 0,12–0,21 m ocupaban 1 px a 1,0×. Exageración deliberada, como en los sprites de Seafight | La boca en el socket; centro = socket − signo·(len/2) en X | `cannon` |
+| Porta (LOD0) | `BoxGeometry(0.06, 0.8, 0.8)` (D23; antes 0,5 × 0,6: 1,5 px de alto a 1,0×). Debe quedar bajo el canto de cubierta: `0.60·F + 0.4 ≤ yd(u)` | `x = ±(a(u)·B/2 + 0.02)`, misma y, z que el cañón | `gunport` |
 | Bandera | `PlaneGeometry(1.0·kf, 0.65·kf)`, `kf = L/16`, en el plano YZ (`rotation.y = π/2`) | Punta del palo mayor, desplazada `−Z` media anchura (ondea a popa) | `flag` |
 | Gallardete (jugador) | Triángulo de `2.4·kf × 0.5·kf` en el plano YZ | Punta del palo mayor | `flag` |
 
@@ -449,6 +449,9 @@ Se ejecuta con un script de desarrollo (`npm run assets:validate`, dependencia d
 | AS-V15 | El procedural cumple el contrato: AS-V02…V09 en Jest para las 5 recetas P0 | `npm test` en verde |
 | AS-V16 | Islas: radio visual en la flotación de cada columna de vértices de la playa; y ningún vértice sobre el agua (y > 0) de la isla, rocas, muelles o palmeras fuera de r + 0,5 m en XZ | Playa entre 0,94r y 1,00r en el 100 %; 0 vértices fuera |
 | AS-V17 | **Fuego sin obstáculos** (D22): para cada `socket_fire_NN`, la elipse de semiejes 0,06·L (eslora) × 0,15·B (manga) no se solapa en planta con ningún objeto de cubierta que sobresalga > 0,5 m de la superficie del socket (carga, barriles, camaretas, castillos, botes). Quedan fuera mástiles y jarcia. Si el socket cae sobre una superestructura, va en su tapa + 0,3 m | Solape ≤ 5 % del área de cada elipse |
+| AS-V18 | **Sin facetas** (D23): capturas de cada clase a rumbos 0° y 90° con el zoom por defecto, más la misma vista con una pasada de solo albedo (vertex colors sin luz) para localizar los bordes de color. En 5 líneas horizontales y 5 verticales sobre el costado y sobre cada vela visible se cuentan los escalones \|ΔL\*\| ≥ 5 entre píxeles vecinos que no están a ±1 px de un borde de la pasada de albedo | ≤ 1 escalón por línea; media ≤ 0,5 |
+| AS-V19 | **Textura interna** (D23): mismas capturas. Silueta = píxeles que cambian (ΔE76 ≥ 3) al ocultar el barco en el mismo frame, erosionada 1 px; se cuenta la fracción de píxeles interiores con \|∇L\*\| ≥ 4 (diferencia central). Seafight: 70 % (barco del jugador) y 80 % (galeón). Hoy: 30–49 % | ≥ 55 % en cada clase y rumbo (provisional; se calibra con el primer render y nunca baja de 50 %) |
+| AS-V20 | **Cañones legibles** (D23): captura a 90° y 270° con el zoom por defecto; manchas oscuras (L\* ≤ 30) de ≥ 3 × 2 px sobre el costado visible | Número = cañones por banda de la clase (4 / 6 / 8; Pirata 4; Mercante 0) |
 
 ---
 
