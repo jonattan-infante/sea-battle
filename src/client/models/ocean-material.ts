@@ -38,6 +38,7 @@ uniform float uSafeRadius;
 uniform vec4 uWaves[4]; // dir.x, dir.z, k, ω
 uniform vec4 uWaveAmp;
 uniform vec4 uWaveSlope;
+uniform vec3 uDeep;
 uniform vec3 uTrough;
 uniform vec3 uCrest;
 uniform vec3 uShallow;
@@ -68,22 +69,14 @@ float vnoise(vec2 p) {
   return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
 
-// Línea antialiasada de ancho constante en px a partir de una distancia con signo en metros
-float lineMask(float sd, float widthPx) {
-  float aa = max(fwidth(sd), 1e-4);
-  return 1.0 - smoothstep(widthPx * 0.5 - 0.5, widthPx * 0.5 + 0.5, abs(sd) / aa);
+// Línea antialiasada de ancho constante en px a partir de una distancia con signo en metros; aa = metros por px
+float lineMaskAA(float sd, float aa, float widthPx) {
+  return 1.0 - smoothstep(widthPx * 0.5 - 0.5, widthPx * 0.5 + 0.5, abs(sd) / max(aa, 1e-4));
 }
 
-#if defined(TONE_MAPPING) && defined(NEUTRAL_TOE_COMPENSATION)
-// NeutralToneMapping resta al color un desplazamiento que depende del canal mínimo (x − 6,25x² si x < 0,08):
-// aplasta el rojo del océano (#1A5F86 → #025B83). Se aplica la inversa exacta para que el agua salga con el
-// color de la paleta (AD-01) sin dejar de pasar por el tone mapping como el resto de la escena.
-vec3 neutralToeInverse(vec3 c) {
-  float t = max(min(c.r, min(c.g, c.b)), 0.0);
-  float offset = t < 0.04 ? sqrt(t / 6.25) - t : 0.04;
-  return (c + offset) / toneMappingExposure;
+float lineMask(float sd, float widthPx) {
+  return lineMaskAA(sd, fwidth(sd), widthPx);
 }
-#endif
 
 void main() {
   vec2 p = vWorld.xz;
@@ -109,7 +102,11 @@ void main() {
   vec3 n = normalize(vec3(-grad.x, 1.0, -grad.y));
 
   // §7.2 Color
-  vec3 c = mix(uTrough, uCrest, smoothstep(-0.6, 0.8, h));
+  // AD-24: la altura de color mezcla ruido de 2 octavas (9 y 4,5 m) para romper las bandas regulares, y el
+  // contraste de ola baja al 55 % hacia ocean.deep (p95 − p5 de L* entre 4 y 12)
+  float nc = (vnoise(p / 9.0 + drift * 0.6) + 0.5 * vnoise(p / 4.5 - drift * 0.4)) / 1.5 * 2.0 - 1.0;
+  float hc = 0.6 * h + 0.4 * nc;
+  vec3 c = mix(uDeep, mix(uTrough, uCrest, smoothstep(-0.6, 0.8, hc)), 0.55);
   float dIsle = 1e5;
   for (int i = 0; i < ${MAX_ISLANDS}; i++) {
     if (i >= uIslandCount) break;
@@ -136,8 +133,9 @@ void main() {
   // §7.4 Rejilla de sectores cada 100 m (blanca al 5 %, 1 px)
   float e = max(abs(p.x), abs(p.y)) - uMapHalf;
   if (e < 0.0) {
+    // La derivada se toma de p, no de g: fract() salta en ±50 m y fwidth(g) dibujaba líneas falsas ahí
     vec2 g = (fract(p / 100.0 + 0.5) - 0.5) * 100.0;
-    float grid = max(lineMask(g.x, 1.0), lineMask(g.y, 1.0));
+    float grid = max(lineMaskAA(g.x, fwidth(p.x), 1.0), lineMaskAA(g.y, fwidth(p.y), 1.0));
     c = mix(c, vec3(1.0), 0.05 * grid);
   }
 
@@ -153,9 +151,6 @@ void main() {
   float dashS = step(0.5, fract(arc / 12.0));
   c = mix(c, uSafeLine, 0.55 * lineMask(dSafe - uSafeRadius, 2.0) * dashS);
 
-#if defined(TONE_MAPPING) && defined(NEUTRAL_TOE_COMPENSATION)
-  c = neutralToeInverse(c);
-#endif
   gl_FragColor = vec4(c, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
@@ -179,7 +174,6 @@ export function createOceanMaterial(islands: IslandDef[]): THREE.ShaderMaterial 
   return new THREE.ShaderMaterial({
     vertexShader,
     fragmentShader,
-    defines: { NEUTRAL_TOE_COMPENSATION: 1 },
     uniforms: {
       uTime: { value: 0 },
       uLightDir: { value: new THREE.Vector3(...LIGHTING.sunDir) },
@@ -192,6 +186,7 @@ export function createOceanMaterial(islands: IslandDef[]): THREE.ShaderMaterial 
       uWaves: { value: waves.map((w) => w.v) },
       uWaveAmp: { value: new THREE.Vector4(...waves.map((w) => w.amp)) },
       uWaveSlope: { value: new THREE.Vector4(...waves.map((w) => w.slope)) },
+      uDeep: { value: col(PALETTE.oceanDeep) },
       uTrough: { value: col(PALETTE.oceanTrough) },
       uCrest: { value: col(PALETTE.oceanCrest) },
       uShallow: { value: col(PALETTE.oceanShallow) },

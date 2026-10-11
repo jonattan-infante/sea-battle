@@ -135,18 +135,24 @@ export class LabelLayer {
     root.style.setProperty('--bar-h', `${barH}px`);
     root.style.setProperty('--plate-max', `${mobile ? LABEL.maxWMobile : LABEL.maxW}px`);
     root.style.setProperty('--reload-size', `${LABEL.reloadPx}px`);
+    root.style.setProperty('--reload-gap', `${LABEL.reloadGapPx}px`);
+    root.style.setProperty('--reload-top', `${LABEL.reloadTopPx}px`);
     const body = el('div', 'wo-plate__body', root);
     const row = el('div', 'wo-plate__row', body);
     const icon = el('span', 'wo-plate__icon', row);
     const name = el('span', 'wo-plate__name', row);
-    const status = el('span', 'wo-plate__status', row);
-    const bar = el('div', 'wo-plate__bar', body);
+    // 2.ª fila: barra + iconos de estado a su derecha (§11.1): el estado nunca le quita espacio al nombre
+    const meter = el('div', 'wo-plate__meter', body);
+    const bar = el('div', 'wo-plate__bar', meter);
+    const status = el('span', 'wo-plate__status', meter);
     const trail = el('div', 'wo-plate__trail', bar);
     const fill = el('div', 'wo-plate__fill', bar);
+    // Caja estimada hasta la primera medida en modo completo (world-overlays.css): ancho mínimo + borde, y alto de
+    // las 2 filas (16 + 1 + 12) + padding 2 × 2 + borde 2
     return {
       id: '', target: null, root, body, row, icon, name, status, bar, trail, fill, reload: null,
       relation: null, nameText: '', statusKey: '', fillPx: -1, low: false, attacker: false,
-      mode: 'full', display: false, dy: 0, sx: NaN, sy: NaN, opacity: 1, w: barW + 2 * LABEL.padX, h: 24, sizeDirty: true,
+      mode: 'full', display: false, dy: 0, sx: NaN, sy: NaN, opacity: 1, w: barW + 2 * LABEL.padX + 2, h: 35, sizeDirty: true,
       priority: 4, dist: 0, onScreen: false, reloadP: -1, reloadVisible: false, reloadReady: false, reloadFlash: false
     };
   }
@@ -264,7 +270,12 @@ export class LabelLayer {
     } else if (!own && plate.reload) {
       plate.reload.remove();
       plate.reload = null;
-    }
+    } else return;
+    // Nodo nuevo o retirado: el estado escrito era del anterior (si no, un indicador nuevo nunca se mostraría)
+    plate.reloadP = -1;
+    plate.reloadVisible = false;
+    plate.reloadReady = false;
+    plate.reloadFlash = false;
   }
 
   private setLow(plate: Plate, low: boolean): void {
@@ -293,9 +304,10 @@ export class LabelLayer {
     const { viewW, viewH } = this.host;
     const order = this.order;
     order.length = 0;
-    // Lecturas de tamaño agrupadas (un solo layout)
+    // Lecturas de tamaño agrupadas (un solo layout). Solo en modo completo: medida con el estilo compacto, la caja
+    // se quedaría corta cuando la placa vuelva a completa y se montaría sobre sus vecinas (AD-11)
     for (const plate of this.byId.values()) {
-      if (plate.display && plate.sizeDirty && plate.mode !== 'hidden') {
+      if (plate.display && plate.sizeDirty && plate.mode === 'full') {
         plate.w = plate.body.offsetWidth;
         plate.h = plate.body.offsetHeight;
         plate.sizeDirty = false;
@@ -315,14 +327,20 @@ export class LabelLayer {
     const placed = this.placed;
     placed.length = 0;
     const gap = LABEL.gapPx;
-    const barW = (this.host.mobile ? LABEL.barWMobile : LABEL.barW) + 2;
-    const barH = (this.host.mobile ? LABEL.barHMobile : LABEL.barH) + 2;
+    // Placa compacta: la barra con su borde y el borde (transparente) del cuerpo
+    const barW = (this.host.mobile ? LABEL.barWMobile : LABEL.barW) + 4;
+    const barH = (this.host.mobile ? LABEL.barHMobile : LABEL.barH) + 4;
     for (const plate of order) {
-      const x = plate.sx - plate.w / 2;
+      // AC-107: la caja de la placa propia incluye el indicador de recarga, siempre (aunque esté oculto) para que
+      // las placas vecinas no salten cada vez que aparece o desaparece
+      const lead = plate.reload ? LABEL.reloadPx + LABEL.reloadGapPx : 0;
+      const x = plate.sx - plate.w / 2 - lead;
+      const w = plate.w + lead;
+      const h = plate.reload ? Math.max(plate.h, LABEL.reloadTopPx + LABEL.reloadPx) : plate.h;
       let done = false;
       for (const dy of DY_STEPS) {
-        if (!this.hits(x, plate.sy + dy, plate.w, plate.h, gap)) {
-          this.place(plate, 'full', dy, x, plate.w, plate.h);
+        if (!this.hits(x, plate.sy + dy, w, h, gap)) {
+          this.place(plate, 'full', dy, x, w, h);
           done = true;
           break;
         }
@@ -330,7 +348,7 @@ export class LabelLayer {
       if (done) continue;
       if (plate.priority < 2) {
         // Nunca se ocultan ni se compactan la propia y la del objetivo
-        this.place(plate, 'full', LABEL.steps[LABEL.steps.length - 1], x, plate.w, plate.h);
+        this.place(plate, 'full', LABEL.steps[LABEL.steps.length - 1], x, w, h);
         continue;
       }
       const cx = plate.sx - barW / 2;
@@ -405,13 +423,22 @@ export class LabelLayer {
     }
   }
 
-  // Rectángulos visibles (depuración/QA de AD-11)
-  visibleRects(): { id: string; x: number; y: number; w: number; h: number; mode: PlateMode }[] {
-    const out: { id: string; x: number; y: number; w: number; h: number; mode: PlateMode }[] = [];
+  // Rectángulos visibles (depuración/QA de AD-11). La propia incluye el indicador de recarga si se ve (AC-107)
+  visibleRects(): { id: string; x: number; y: number; w: number; h: number; mode: PlateMode; reload: boolean }[] {
+    const out: { id: string; x: number; y: number; w: number; h: number; mode: PlateMode; reload: boolean }[] = [];
     for (const plate of this.byId.values()) {
       if (!plate.display) continue;
       const r = plate.body.getBoundingClientRect();
-      out.push({ id: plate.id, x: r.left, y: r.top, w: r.width, h: r.height, mode: plate.mode });
+      let x0 = r.left, y0 = r.top, x1 = r.right, y1 = r.bottom;
+      const reload = !!plate.reload && plate.reloadVisible;
+      if (reload) {
+        const q = plate.reload!.getBoundingClientRect();
+        x0 = Math.min(x0, q.left);
+        y0 = Math.min(y0, q.top);
+        x1 = Math.max(x1, q.right);
+        y1 = Math.max(y1, q.bottom);
+      }
+      out.push({ id: plate.id, x: x0, y: y0, w: x1 - x0, h: y1 - y0, mode: plate.mode, reload });
     }
     return out;
   }

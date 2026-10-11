@@ -98,9 +98,29 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
     expect(material.vertexColors).toBe(true);
     for (const m of meshes) {
       expect(m.geometry.groups).toHaveLength(0);
-      expect(m.geometry.getAttribute('color')).toBeDefined();
-      expect(m.geometry.getAttribute('uv')).toBeUndefined();
+      // Atributos exactos (POSITION, NORMAL, COLOR_0, _RIM_MASK en el GLB)
+      expect(Object.keys(m.geometry.attributes).sort()).toEqual(['_rim_mask', 'color', 'normal', 'position']);
     }
+  });
+
+  test('AS-V09 (D18): _rim_mask vale 1 solo en el casco (loft y castillos) y 0 en velas y aparejo', () => {
+    const hull = new THREE.Color(SHIP_LOOKS[model.recipe.look].hull);
+    model.lods.forEach((geometry, lod) => {
+      const rim = geometry.getAttribute('_rim_mask');
+      const color = geometry.getAttribute('color');
+      expect(rim.count).toBe(geometry.getAttribute('position').count);
+      let ones = 0;
+      for (let v = 0; v < rim.count; v++) {
+        const value = rim.getX(v);
+        expect(value === 0 || value === 1).toBe(true);
+        ones += value;
+        // Todo vértice del color del casco es casco (strips del loft y tapas)
+        if (Math.abs(color.getX(v) - hull.r) + Math.abs(color.getY(v) - hull.g) + Math.abs(color.getZ(v) - hull.b) < 1e-4) expect(value).toBe(1);
+      }
+      for (const [t0, t1] of model.sails[lod]) for (let v = t0 * 3; v < t1 * 3; v++) expect(rim.getX(v)).toBe(0);
+      expect(ones).toBeGreaterThan(0);
+      expect(ones).toBeLessThan(rim.count);
+    });
   });
 
   test('AS-V14 (base): los rangos de vela de cada LOD solo contienen vértices del color de vela o de franja', () => {
@@ -133,6 +153,34 @@ describe('Islas y props procedurales', () => {
         expect(r).toBeLessThanOrEqual(island.radius + 1e-9);
       }
     }
+  });
+
+  // D7: "lo que parece sólido es sólido": nada por encima del agua fuera de r + 0,5 m de su isla
+  const outside = (x: number, z: number) => Math.min(...ISLANDS.map((i) => Math.hypot(x - i.x, z - i.z) - i.radius));
+
+  test('AS-V16 (D7): ningún vértice sobre el agua de islas, rocas, muelles y pueblo queda fuera de r + 0,5 m', () => {
+    const pos = islands.geometry.getAttribute('position');
+    let worst = -Infinity;
+    for (let v = 0; v < pos.count; v++) {
+      if (pos.getY(v) <= 0) continue;
+      worst = Math.max(worst, outside(pos.getX(v), pos.getZ(v)));
+    }
+    expect(worst).toBeLessThanOrEqual(0.5);
+  });
+
+  test('AS-V16 (D7): ninguna hoja ni tronco de palmera sobre el agua queda fuera de r + 0,5 m', () => {
+    const palm = buildPalmGeometry().getAttribute('position');
+    const m = new THREE.Matrix4();
+    const v = new THREE.Vector3();
+    let worst = -Infinity;
+    for (const p of islands.palms) {
+      m.compose(new THREE.Vector3(p.x, p.y, p.z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, p.rotY, 0)), new THREE.Vector3().setScalar(p.scale));
+      for (let i = 0; i < palm.count; i++) {
+        v.fromBufferAttribute(palm, i).applyMatrix4(m);
+        if (v.y > 0) worst = Math.max(worst, outside(v.x, v.z));
+      }
+    }
+    expect(worst).toBeLessThanOrEqual(0.5);
   });
 
   test('§5: islas ≤ 900 triángulos, puerto ≤ 2 000, todo fusionado en una geometría', () => {

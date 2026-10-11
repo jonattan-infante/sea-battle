@@ -86,6 +86,7 @@ export interface ShipRecipe {
   flagStyle: 'pennant' | 'flag';
   trimRail: boolean;
   cannonScale: number; // escala del fogonazo y del humo (VFX §1)
+  knifeOpen?: number; // apertura de las velas de cuchillo (D12): 25° por defecto, 35° solo si la clase no pasa AS-V14
   radius: number; // sb_radius
   mastHeight: number;
   pick: Vec3;
@@ -173,7 +174,7 @@ const MERCHANT: ShipRecipe = {
     { z: -8.0, h: 12, baseY: 4.65, lateen: { A: [-5.0, 4.5], B: [-11.4, 4.8], C: [-12.4, 11.5] } }
   ],
   flagMast: 1,
-  jibs: [],
+  jibs: [{ H: [0, 13.1, 5.3], T: 'tip', C: [0, 3.96, 9.53] }], // D12: era la única clase sin vela a proa
   boxes: [
     { size: [6.0, 1.8, 5.4], pos: [0, 3.75, -8.3], kind: 'castle' },
     ...[2.6, 1.0, -4.4].flatMap((z) => [1.2, -1.2].map((x): BoxDef => ({ size: [1.4, 1.4, 1.4], pos: [x, 3.1, z], kind: 'cargo' })))
@@ -307,6 +308,20 @@ function fanSail(g: GeoBuilder, group: THREE.Matrix4, pts: Vec3[], bulge: number
 }
 
 const zy = (p: ZY): Vec3 => [0, p[1], p[0]];
+
+// D12 (ASSET-SPEC §8.3): las velas de cuchillo se abren `open` alrededor de su gratil (eje por `p` en la dirección
+// `axis`), con sus palos. El sentido se elige para que el puño libre `free` vaya siempre hacia −X (estribor): toda
+// la flota abre hacia el mismo costado que la prueba medida (cuchillo25)
+function opened(group: THREE.Matrix4, p: Vec3, axis: Vec3, free: Vec3, open: number): THREE.Matrix4 {
+  const u = new THREE.Vector3(...axis).normalize();
+  const r = new THREE.Vector3(free[0] - p[0], free[1] - p[1], free[2] - p[2]);
+  const side = new THREE.Vector3().crossVectors(u, r).x; // x del desplazamiento = side·sin(ángulo)
+  const angle = side > 0 ? -open : open;
+  return group.clone()
+    .multiply(new THREE.Matrix4().makeTranslation(p[0], p[1], p[2]))
+    .multiply(new THREE.Matrix4().makeRotationAxis(u, angle))
+    .multiply(new THREE.Matrix4().makeTranslation(-p[0], -p[1], -p[2]));
+}
 const dist3 = (a: Vec3, b: Vec3) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 
 function squareSail(g: GeoBuilder, r: ShipRecipe, look: ShipLook, group: THREE.Matrix4, mast: MastDef, sail: SquareSail, lod: 0 | 1, rm: number): void {
@@ -347,13 +362,17 @@ function boxColors(look: ShipLook, kind: BoxDef['kind']): (x: number, y: number,
 
 function buildLod(r: ShipRecipe, lod: 0 | 1): { geometry: THREE.BufferGeometry; hullBox: THREE.Box3; triangles: number; sails: [number, number][] } {
   const look = SHIP_LOOKS[r.look];
-  const g = new GeoBuilder();
+  const g = new GeoBuilder({ rim: true });
   const rm = 0.022 * r.L;
   const cMast = lin(look.mast);
   const cSail = lin(look.sail);
+  const open = (r.knifeOpen ?? 25) * deg;
 
+  // _rim_mask = 1 solo en el casco: loft (con borda y cubierta), castillos y camaretas (D18, ASSET-SPEC §6)
   g.beginBox();
+  g.rim = 1;
   loftHull(g, r, look, lod === 0 ? PROFILES[r.profile].map((row) => row[0]) : LOD1_STATIONS);
+  g.rim = 0;
   const hullBox = g.endBox();
 
   // Bauprés: eje a 20° sobre el horizonte hacia +Z
@@ -374,17 +393,22 @@ function buildLod(r: ShipRecipe, lod: 0 | 1): { geometry: THREE.BufferGeometry; 
     g.add(new THREE.CylinderGeometry(0.6 * rm, rm, len, 6), group.clone().multiply(trs(0, baseY + len / 2, mast.z)), cMast);
     for (const sail of mast.squares ?? []) squareSail(g, r, look, group, mast, sail, lod, rm);
     if (mast.gaff) {
+      // Cangreja: vela + botavara + pico giran alrededor del eje del mástil (gratil A→B)
       const { A, B, C, D } = mast.gaff;
-      fanSail(g, group, [zy(A), zy(B), zy(C), zy(D)], 0.08 * dist3(zy(A), zy(D)), cSail);
+      const axis: Vec3 = [0, B[1] - A[1], B[0] - A[0]];
+      const m = opened(group, zy(A), axis, zy(D), open);
+      fanSail(g, m, [zy(A), zy(B), zy(C), zy(D)], 0.08 * dist3(zy(A), zy(D)), cSail);
       if (lod === 0) {
-        spar(g, group, zy(A), zy(D), 0.3 * rm, cMast);
-        spar(g, group, zy(B), zy(C), 0.3 * rm, cMast);
+        spar(g, m, zy(A), zy(D), 0.3 * rm, cMast);
+        spar(g, m, zy(B), zy(C), 0.3 * rm, cMast);
       }
     }
     if (mast.lateen) {
+      // Latina: alrededor del eje vertical que pasa por la amura A, con la entena
       const { A, B, C } = mast.lateen;
-      fanSail(g, group, [zy(A), zy(B), zy(C)], 0.06 * dist3(zy(A), zy(C)), cSail);
-      if (lod === 0) spar(g, group, zy(A), zy(C), 0.3 * rm, cMast);
+      const m = opened(group, zy(A), [0, 1, 0], zy(B), open);
+      fanSail(g, m, [zy(A), zy(B), zy(C)], 0.06 * dist3(zy(A), zy(C)), cSail);
+      if (lod === 0) spar(g, m, zy(A), zy(C), 0.3 * rm, cMast);
     }
     if (lod === 0 && mast.topY !== undefined) {
       g.add(new THREE.CylinderGeometry(0.045 * r.L, 0.04 * r.L, 0.5, 6), group.clone().multiply(trs(0, mast.topY, mast.z)), lin(look.rail));
@@ -393,15 +417,19 @@ function buildLod(r: ShipRecipe, lod: 0 | 1): { geometry: THREE.BufferGeometry; 
   });
 
   for (const jib of r.jibs) {
+    // Foque: alrededor del estay T→H
     const T = jib.T === 'tip' ? tip : jib.T;
-    fanSail(g, new THREE.Matrix4(), [jib.H, T, jib.C], 0.06 * dist3(jib.H, T), cSail);
+    const m = opened(new THREE.Matrix4(), T, [jib.H[0] - T[0], jib.H[1] - T[1], jib.H[2] - T[2]], jib.C, open);
+    fanSail(g, m, [jib.H, T, jib.C], 0.06 * dist3(jib.H, T), cSail);
   }
 
   for (const box of r.boxes) {
     if (lod === 1 && box.kind !== 'castle') continue;
     const geo = new THREE.BoxGeometry(...box.size);
     // La cara inferior de los castillos queda dentro del casco: no se dibuja
+    g.rim = box.kind === 'castle' ? 1 : 0;
     g.add(geo, trs(...box.pos), boxColors(look, box.kind), box.kind === 'castle' ? (t) => Math.floor(t / 2) === 3 : undefined);
+    g.rim = 0;
   }
 
   if (lod === 0) {
@@ -542,15 +570,25 @@ const SHIELD_COLOR = new THREE.Color(RING_COLORS.shield);
 // Misma función para todos los materiales → misma clave de caché → un único programa de shader
 function shipOnBeforeCompile(this: THREE.Material, shader: THREE.WebGLProgramParametersWithUniforms): void {
   const fx = (this.userData as { fx: ShipFx }).fx;
+  shader.vertexShader = 'attribute float _rim_mask;\nvarying float vRimMask;\n' +
+    shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n\tvRimMask = _rim_mask;');
   shader.uniforms.uHit = fx.uHit;
   shader.uniforms.uDamage = fx.uDamage;
   shader.uniforms.uShield = fx.uShield;
   shader.uniforms.uShieldColor = fx.uShieldColor;
-  shader.fragmentShader = 'uniform float uHit;\nuniform float uDamage;\nuniform float uShield;\nuniform vec3 uShieldColor;\n' +
-    shader.fragmentShader.replace(
-      '#include <color_fragment>',
-      '#include <color_fragment>\n\tdiffuseColor.rgb = diffuseColor.rgb * (1.0 - 0.25 * uDamage) + vec3(0.35) * uHit + uShieldColor * (0.25 * uShield);'
-    );
+  // Protección (VFX §12, D8, D18): borde luminoso (rim) solo en el casco (_rim_mask), no un velo sobre el difuso.
+  // Con cámara ortográfica la dirección de vista es (0, 0, 1) en espacio de vista, como geometryViewDir de three
+  shader.fragmentShader = 'uniform float uHit;\nuniform float uDamage;\nuniform float uShield;\nuniform vec3 uShieldColor;\nvarying float vRimMask;\n' +
+    shader.fragmentShader
+      .replace(
+        '#include <color_fragment>',
+        '#include <color_fragment>\n\tdiffuseColor.rgb = diffuseColor.rgb * (1.0 - 0.25 * uDamage) + vec3(0.35) * uHit;'
+      )
+      .replace(
+        '#include <opaque_fragment>',
+        '\tvec3 sbViewDir = isOrthographic ? vec3(0.0, 0.0, 1.0) : normalize(vViewPosition);\n' +
+          '\toutgoingLight += uShieldColor * 0.6 * uShield * vRimMask * pow(1.0 - abs(dot(normal, sbViewDir)), 2.0);\n#include <opaque_fragment>'
+      );
 }
 
 export function createShipMaterial(): ShipMaterial {

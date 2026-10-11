@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { IslandDef, PORT_POSITION, SAFE_ZONE_RADIUS } from '../../game/constants';
 import { createRng } from '../../game/vec';
-import { PALETTE } from '../art';
+import { PALETTE, TOP_FACE } from '../art';
 import { GeoBuilder, lin, trs } from './geometry-utils';
 
 const deg = Math.PI / 180;
@@ -66,7 +66,8 @@ function addIsland(g: GeoBuilder, island: IslandDef, palms: PropInstance[], wate
   const t0 = (-0.1 + 0.7) / 1.4;
   for (let c = 0; c < n; c++) waterline.push(bottom[c] + (top[c] - bottom[c]) * t0);
   const beachPart = cylinderSides(n);
-  g.add(beach, trs(island.x, 0.1, island.z), (_x, _y, _z, t) => lin(beachPart(t) === 'top' ? PALETTE.sand : PALETTE.sandWet), (t) => beachPart(t) === 'bottom');
+  // Tapa de arena con albedo compensado (D17, ART §4.2.1): en pantalla sale el token sand
+  g.add(beach, trs(island.x, 0.1, island.z), (_x, _y, _z, t) => lin(beachPart(t) === 'top' ? TOP_FACE.sand.albedo : PALETTE.sandWet), (t) => beachPart(t) === 'bottom');
 
   // Meseta desplazada
   const dx = (rnd() * 2 - 1) * 0.08 * r * Math.SQRT1_2;
@@ -74,7 +75,7 @@ function addIsland(g: GeoBuilder, island: IslandDef, palms: PropInstance[], wate
   const topR = 0.62 * r * (1 + (rnd() * 2 - 1) * 0.08);
   const baseR = 0.74 * r * (1 + (rnd() * 2 - 1) * 0.08);
   const plateauPart = cylinderSides(n - 2);
-  g.add(new THREE.CylinderGeometry(topR, baseR, 1.0, n - 2), trs(island.x + dx, 1.3, island.z + dz), lin(PALETTE.grass), (t) => plateauPart(t) === 'bottom');
+  g.add(new THREE.CylinderGeometry(topR, baseR, 1.0, n - 2), trs(island.x + dx, 1.3, island.z + dz), lin(TOP_FACE.grass.albedo), (t) => plateauPart(t) === 'bottom');
 
   // Colina rocosa (r ≥ 35): base grass.dark, cima rock.dark
   if (r >= 35 && !isPort) {
@@ -88,12 +89,13 @@ function addIsland(g: GeoBuilder, island: IslandDef, palms: PropInstance[], wate
     );
   }
 
-  // Rocas de costa, mitad sumergidas
+  // Rocas de costa con el borde exterior en r (D7: lo que parece sólido es sólido); el radio circunscrito del
+  // dodecaedro es `size`, así que ningún vértice pasa de r con cualquier rotación
   const rocks = Math.round(r / 9);
   for (let i = 0; i < rocks; i++) {
     const a = rnd() * Math.PI * 2;
-    const d = r * (0.95 + rnd() * 0.1);
     const size = 1.2 + rnd() * 1.6;
+    const d = r - size;
     g.add(
       new THREE.DodecahedronGeometry(size, 0),
       trs(island.x + Math.sin(a) * d, 0.2, island.z + Math.cos(a) * d, rnd() * Math.PI, rnd() * Math.PI, rnd() * Math.PI),
@@ -154,18 +156,16 @@ function addTown(g: GeoBuilder, island: IslandDef, rnd: () => number): void {
   });
   g.add(new THREE.BoxGeometry(1.4, 1.2, 1.4), trs(lx, 1.8 + 12 + 0.6, lz), lin(PALETTE.lantern));
 
-  // Muelles hacia +X y +Z, desde la arena
+  // Muelles hacia +X y +Z de 0,70r a 0,99r: cruzan la playa hasta el agua sin salir del colisionador (D7)
+  const dockLen = 0.29 * r;
+  const dockMid = 0.845 * r;
   for (const [ux, uz] of [[1, 0], [0, 1]]) {
-    const start = 0.8 * r;
-    const cx = island.x + ux * (start + 7);
-    const cz = island.z + uz * (start + 7);
-    g.add(new THREE.BoxGeometry(ux ? 14 : 3, 0.4, ux ? 3 : 14), trs(cx, 1.0, cz), lin(PALETTE.palmTrunk));
-    for (const along of [-5, 5]) {
-      for (const across of [-1.2, 1.2]) {
-        const px = cx + ux * along + uz * across;
-        const pz = cz + uz * along + ux * across;
-        g.add(new THREE.CylinderGeometry(0.2, 0.2, 2, 5), trs(px, 0, pz), lin(PALETTE.palmTrunk));
-      }
+    const cx = island.x + ux * dockMid;
+    const cz = island.z + uz * dockMid;
+    g.add(new THREE.BoxGeometry(ux ? dockLen : 3, 0.4, ux ? 3 : dockLen), trs(cx, 1.0, cz), lin(PALETTE.palmTrunk));
+    // 3 postes bajo el tablero, el último a 0,2 m del extremo exterior
+    for (const along of [-0.3, 0.1, 0.5 - 0.2 / dockLen]) {
+      g.add(new THREE.CylinderGeometry(0.2, 0.2, 2, 5), trs(cx + ux * along * dockLen, 0, cz + uz * along * dockLen), lin(PALETTE.palmTrunk));
     }
   }
 
@@ -245,7 +245,7 @@ export function buoyInstances(): PropInstance[] {
 export function buildLootGeometry(): THREE.BufferGeometry {
   const g = new GeoBuilder();
   const cy = 0.6 - 0.36;
-  g.add(new THREE.BoxGeometry(1.2, 1.2, 1.2), trs(0, cy, 0), lin(PALETTE.cargo));
+  g.add(new THREE.BoxGeometry(1.2, 1.2, 1.2), trs(0, cy, 0), lin(TOP_FACE.cargo.albedo));
   for (const dy of [-0.3, 0.3]) g.add(new THREE.BoxGeometry(1.24, 0.15, 1.24), trs(0, cy + dy, 0), lin(PALETTE.lootStrap));
   return g.build();
 }

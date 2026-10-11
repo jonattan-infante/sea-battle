@@ -37,6 +37,18 @@ export const PALETTE = {
   lootStrap: '#F2C14E'
 };
 
+// ---- §4.2.1 Albedo de las caras horizontales (D17) ----
+// Con la luz de §5 una cara horizontal recibe ×(1,153, 1,149, 1,118) en lineal. Los materiales que se ven sobre todo
+// desde arriba llevan un albedo compensado (objetivo ÷ multiplicador) para que en pantalla salga su token (AD-25);
+// velas y cascos (verticales) usan el hex tal cual
+export const TOP_FACE = {
+  sand: { albedo: '#D8C392', target: PALETTE.sand },
+  grass: { albedo: '#589444', target: PALETTE.grass },
+  deck: { albedo: '#BD8D59', target: '#C9965E' }, // jugador y mercante
+  deckPirate: { albedo: '#67462D', target: '#6E4B30' },
+  cargo: { albedo: '#A5723B', target: PALETTE.cargo }
+} as const;
+
 // ---- §4.2 Barcos (un look por facción; todos los jugadores comparten colores, §9) ----
 export interface ShipLook {
   hull: string;
@@ -57,19 +69,19 @@ export interface ShipLook {
   barrel: string;
 }
 
-const SHARED = { cannon: '#26282B', gunport: '#1A1410', trim: '#D9A93F', lantern: '#FFE9A8', cargo: '#B07A3E', barrel: '#8A5A33' };
+const SHARED = { cannon: '#26282B', gunport: '#1A1410', trim: '#D9A93F', lantern: '#FFE9A8', cargo: TOP_FACE.cargo.albedo, barrel: '#8A5A33' };
 
 export const SHIP_LOOKS: Record<ShipKind, ShipLook> = {
   player: {
-    ...SHARED, hull: '#4A2F1C', band: '#D4A548', bottom: '#3A2416', deck: '#C9965E', rail: '#6B4426', mast: '#6B4426',
+    ...SHARED, hull: '#4A2F1C', band: '#D4A548', bottom: '#3A2416', deck: TOP_FACE.deck.albedo, rail: '#6B4426', mast: '#6B4426',
     sail: '#F2EADB', sailStripe: null, flag: '#F2C14E', flagMark: null
   },
   pirate: {
-    ...SHARED, hull: '#2A2523', band: '#B3261E', bottom: '#1C1817', deck: '#6E4B30', rail: '#3A2A20', mast: '#3A2A20',
+    ...SHARED, hull: '#2A2523', band: '#B3261E', bottom: '#1C1817', deck: TOP_FACE.deckPirate.albedo, rail: '#3A2A20', mast: '#3A2A20',
     sail: '#2B2A2E', sailStripe: null, flag: '#111111', flagMark: '#F5F1E6'
   },
   merchant: {
-    ...SHARED, hull: '#6E4A2C', band: '#E8DCC0', bottom: '#3A2416', deck: '#C9965E', rail: '#6B4426', mast: '#6B4426',
+    ...SHARED, hull: '#6E4A2C', band: '#E8DCC0', bottom: '#3A2416', deck: TOP_FACE.deck.albedo, rail: '#6B4426', mast: '#6B4426',
     sail: '#EADFC6', sailStripe: '#2F7FB8', flag: '#2F7FB8', flagMark: '#F5F1E6'
   }
 };
@@ -97,13 +109,14 @@ export function relationOf(ship: { id: string; kind: ShipKind }, myShipId: strin
 }
 
 // ---- §5 Iluminación y render ----
+// Sin tone mapping (`<Canvas flat>`, D2): el toe de NeutralToneMapping aplastaba todos los oscuros. Hemisférica
+// clara ×3,0 + sol ×1,2 (D8): velas del jugador L* 81–90 en cualquier cara, pirata 14–16, casco 18–21
 export const LIGHTING = {
-  exposure: 1,
-  hemiSky: '#CFE8FF',
-  hemiGround: '#2A5D78',
-  hemiIntensity: 1.2,
+  hemiSky: '#F2F6FA',
+  hemiGround: '#B8C9D1',
+  hemiIntensity: 3.0,
   sunColor: '#FFF1D6',
-  sunIntensity: 2.4,
+  sunIntensity: 1.2,
   sunDir: normalize3(-0.45, 0.8, 0.4), // hacia la luz; el océano usa el mismo vector
   dprDesktop: [1, 2] as [number, number],
   dprMobile: [1, 1.5] as [number, number],
@@ -180,6 +193,8 @@ export const LABEL = {
   lowHp: 0.3,
   fadeMs: 300,
   reloadPx: 18,
+  reloadGapPx: 6, // hueco entre el indicador y el borde izquierdo de la placa propia
+  reloadTopPx: 2,
   reloadFlashMs: 120
 };
 

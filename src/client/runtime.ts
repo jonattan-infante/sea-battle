@@ -3,7 +3,7 @@
 // sin estado de React por frame (CLAUDE.md, regla 3). Fuentes: ART-DIRECTION, ASSET-SPEC y VFX-SPEC.
 import * as THREE from 'three';
 import type { RootState } from '@react-three/fiber';
-import { CANNON_LEVELS, ISLANDS, PORT_POSITION, PVP_ENABLED, SAFE_ZONE_RADIUS, SHIP_CLASSES, SINKING_TIME } from '../game/constants';
+import { CANNON_LEVELS, INTERPOLATION_DELAY_MS, ISLANDS, PORT_POSITION, PVP_ENABLED, SAFE_ZONE_RADIUS, SHIP_CLASSES, SINKING_TIME } from '../game/constants';
 import { Navigator } from '../game/nav';
 import { GameEvent, PlayerView, Welcome, WreckView } from '../game/types';
 import { CAMERA, computePpm0, DAMAGE_TEXT, DamageTextKind, LABEL, LIGHTING, MOBILE_MAX_WIDTH, RING_COLORS, ZOOM } from './art';
@@ -11,19 +11,19 @@ import type { GameClient, RenderShip } from './game-client';
 import { useHud } from './hud-store';
 import { buildBuoyGeometry, buildIslands, buildLootGeometry, buildPalmGeometry, buoyInstances, PropInstance } from './models/island-geometry';
 import { createOceanGeometry, createOceanMaterial } from './models/ocean-material';
-import { measureSailVisibility, SailVisibility } from './models/sail-visibility';
+import { measureSailVisibility, measureShipValues, SailVisibility, ShipValues } from './models/sail-visibility';
 import { createShipMaterial, getShipModel, LOD_PX, ShipMaterial, ShipModel } from './models/ship-geometry';
 import { FloatingTextLayer, LabelLayer, LabelTarget, OverlayHost, ReloadState, ScreenPoint } from './overlays';
 import { Effects, RENDER_ORDER, rgba } from './vfx/effects';
 import { makeRing, RING_MODE, RingSpec } from './vfx/rings';
-import { heroScene, SceneName, standardScene, SyntheticSource } from './synthetic-scene';
+import { VolleyRandom, volleySide } from './vfx/volley';
+import { damageScene, heroScene, SceneName, showcaseScene, standardScene, SyntheticSource } from './synthetic-scene';
 
 const deg = Math.PI / 180;
 const CAM_RIGHT = new THREE.Vector3(1, 0, 0); // guiñada 0: derecha en pantalla = +X
 const SINK_MS = SINKING_TIME * 1000;
 const LOOT_CAPACITY = 32;
 const FLIGHT_CAPACITY = 96;
-const WRECK_LIFETIME_MS = 30_000;
 const EMERGE_MS = 600;
 const SIDES = [1, -1] as const;
 const VIEW_MARGIN = 30; // m: un emisor fuera del suelo visible + 30 m no emite (VFX §0.1)
@@ -141,6 +141,7 @@ interface WreckState {
   z: number;
   seenAt: number; // ms
   goneAt: number; // ms (0 = activo)
+  expiresAt: number; // tiempo de servidor (s) en que desaparece (D4)
   seed: number;
   sparkleAcc: number;
 }
@@ -156,6 +157,7 @@ export class VfxDirector {
   private readonly volleys: VolleyRecord[] = [];
   private readonly v = new THREE.Vector3();
   private readonly fireCandidates: ShipView[] = [];
+  private readonly random = new VolleyRandom(); // reparto sembrado de cada andanada (D3)
 
   constructor(private readonly rt: GameRuntime) {
     for (let i = 0; i < FLIGHT_CAPACITY; i++) {
@@ -235,22 +237,14 @@ export class VfxDirector {
     this.volleys.push(record);
     if (this.volleys.length > 64) this.volleys.shift();
     const mine = e.shipId === myId || e.targetId === myId;
-    // Banda que mira al objetivo (ASSET-SPEC §3): babor si dot(objetivo − pos, +X del barco) > 0
+    // Banda (VFX §1, D3) y azar sembrado con shipId + from/to: todos los clientes ven el mismo reparto
     const sx = shooter?.ship.x ?? e.from.x;
     const sz = shooter?.ship.z ?? e.from.z;
-    const h = shooter?.ship.heading ?? 0;
-    const side: 1 | -1 = (e.to.x - sx) * Math.cos(h) - (e.to.z - sz) * Math.sin(h) > 0 ? 1 : -1;
+    const side = volleySide(e, shooter?.ship.heading ?? 0);
+    const rand = this.random.seed(e);
     const sockets = shooter ? (side === 1 ? shooter.model.sockets.cannonsPort : shooter.model.sockets.cannonsStbd) : [];
     const count = Math.max(1, Math.min(e.cannons, sockets.length || e.cannons));
-    // Qué balas aciertan: `hits` de `count`, al azar
-    let hitMask = 0;
-    for (let placed = 0; placed < Math.min(e.hits, count);) {
-      const k = Math.floor(Math.random() * count);
-      if (!(hitMask & (1 << k))) {
-        hitMask |= 1 << k;
-        placed++;
-      }
-    }
+    const hitMask = rand.hitMask(count, e.hits);
     const d = Math.hypot(e.to.x - e.from.x, e.to.z - e.from.z);
     const tModel = target?.model;
     for (let k = 0; k < count; k++) {
@@ -277,16 +271,16 @@ export class VfxDirector {
         // Punto aleatorio dentro de la elipse del casco (0,6·L/2 × 0,6·B/2) a 0,6·F, en coordenadas del casco
         const L = tModel?.recipe.L ?? 20;
         const B = tModel?.recipe.B ?? 5;
-        const a = Math.random() * Math.PI * 2;
-        const r = Math.sqrt(Math.random());
+        const a = rand.next() * Math.PI * 2;
+        const r = Math.sqrt(rand.next());
         f.ox = Math.cos(a) * r * 0.3 * B;
         f.oz = Math.sin(a) * r * 0.3 * L;
         f.oy = 0.6 * (tModel?.recipe.F ?? 1.6);
       } else {
         // Fallo: en el agua, del lado del tirador (±60°) a [0,5·sb_radius + 2, sb_radius + 4] m del centro
         const R = tModel?.extras.sb_radius ?? 10;
-        const toShooter = Math.atan2(sx - f.tx, sz - f.tz) + (Math.random() * 2 - 1) * 60 * deg;
-        const dist = 0.5 * R + 2 + Math.random() * (0.5 * R + 2);
+        const toShooter = Math.atan2(sx - f.tx, sz - f.tz) + (rand.next() * 2 - 1) * 60 * deg;
+        const dist = 0.5 * R + 2 + rand.next() * (0.5 * R + 2);
         f.ox = Math.sin(toShooter) * dist;
         f.oz = Math.cos(toShooter) * dist;
         f.oy = 0;
@@ -489,11 +483,12 @@ export class VfxDirector {
       const sizeScale = r.L / 24;
       const dense = view.fire;
       if (view.smoke && s.state !== 'dead' && shown) {
-        view.smokeAcc += dt * (dense ? 6 : 4) * rate;
+        // 3/s (≤ 50 %) o 5/s denso (≤ 25 %) con vida 3,4 s: ≤ 12 y ≤ 18 vivas por barco (VFX §6)
+        view.smokeAcc += dt * (dense ? 5 : 3) * rate;
         while (view.smokeAcc >= 1) {
           view.smokeAcc -= 1;
           this.v.copy(view.model.sockets.smoke).applyMatrix4(view.mesh.matrix);
-          if (this.v.y > 0) fx.damageSmoke(this.v.x, this.v.y, this.v.z, dense, sizeScale);
+          if (this.v.y > 0) fx.damageSmoke(this.v.x, this.v.y, this.v.z, dense, view.model.extras.sb_mast_height);
         }
       }
       if (view.fire && view.fireSlot && shown) {
@@ -678,6 +673,7 @@ export class GameRuntime implements OverlayHost {
   private fastFor = 0;
   private baseDpr = 0;
   private dprOverride = false;
+  private paused = false;
   private readonly ring: RingSpec = makeRing();
   private readonly ringColor = new Float32Array(4);
   private readonly m4 = new THREE.Matrix4();
@@ -1013,9 +1009,11 @@ export class GameRuntime implements OverlayHost {
     return this.preset === 'presentation' ? this.ppm0 * PRESENTATION.zoom : this.ppm0 / ZOOM.levels[this.level];
   }
 
-  startScene(name: SceneName): SyntheticSource {
+  // myShipId: barco "propio" de la escena (placa propia con recarga, AC-107); por defecto, el de la escena
+  startScene(name: SceneName, options: { myShipId?: string } = {}): SyntheticSource {
     const view = { w: this.viewW, h: this.viewH, ppm: this.targetPpm(), sinT: this.sinT };
-    const source = new SyntheticSource(name === 'hero' ? heroScene(view) : standardScene(view));
+    const spec = name === 'hero' ? heroScene(view) : name === 'showcase' ? showcaseScene() : name === 'damage' ? damageScene() : standardScene(view);
+    const source = new SyntheticSource(options.myShipId ? { ...spec, myShipId: options.myShipId } : spec);
     this.setSource(source);
     return source;
   }
@@ -1024,16 +1022,27 @@ export class GameRuntime implements OverlayHost {
     if (this.src !== this.client) this.setSource(this.client);
   }
 
-  // Renderiza un frame y lo codifica en la misma tarea (no hace falta preserveDrawingBuffer)
-  captureImage(type = 'image/webp', quality = 0.9): string | null {
+  // Dibuja el estado actual una vez (sin avanzar la simulación) y devuelve renderer.info de ese render
+  renderFrame(): RenderInfo | null {
     if (!this.gl || !this.rootScene || !this.camera) return null;
     this.gl.render(this.rootScene, this.camera);
-    return this.gl.domElement.toDataURL(type, quality);
+    return { calls: this.gl.info.render.calls, triangles: this.gl.info.render.triangles };
+  }
+
+  // Renderiza un frame y lo codifica en la misma tarea (no hace falta preserveDrawingBuffer)
+  captureImage(type = 'image/webp', quality = 0.9): string | null {
+    if (!this.renderFrame()) return null;
+    return this.gl!.domElement.toDataURL(type, quality);
   }
 
   // VFX-01: draw calls de los efectos = con VFX − sin VFX
   setVfxVisible(visible: boolean): void {
     this.effects.group.visible = visible;
+  }
+
+  // VFX-02: geometrías y texturas vivas en la GPU (deben quedar constantes durante el combate)
+  memoryInfo(): { geometries: number; textures: number } {
+    return { geometries: this.gl?.info.memory.geometries ?? 0, textures: this.gl?.info.memory.textures ?? 0 };
   }
 
   // Draw calls y triángulos del último frame dibujado (sin el muestreo a 2 Hz de renderInfo)
@@ -1042,9 +1051,22 @@ export class GameRuntime implements OverlayHost {
   }
 
   // AS-V14: píxeles de vela por rumbo (0°…345° cada 15°) con el nivel más cercano (0,7×) de 1440×900
-  measureSails(classIds: string[] = ['sloop', 'brig', 'frigate', 'pirate', 'merchant'], sheet = false): SailVisibility[] {
+  measureSails(classIds: string[] = ['sloop', 'brig', 'frigate', 'pirate', 'merchant'], sheet = false, lod?: 0 | 1): SailVisibility[] {
     if (!this.gl) return [];
-    return measureSailVisibility(this.gl, computePpm0(1440, 900) / ZOOM.levels[0], CAMERA.elevation, classIds, { sheet });
+    return measureSailVisibility(this.gl, computePpm0(1440, 900) / ZOOM.levels[0], CAMERA.elevation, classIds, { sheet, lod });
+  }
+
+  // AD-10 / D8: L* de velas y casco por rumbo con el nivel más cercano (0,7×) de 1440×900 y la cámara del juego
+  measureShipValues(classIds: string[] = ['sloop', 'brig', 'frigate', 'pirate', 'merchant'], headingsDeg?: number[]): ShipValues[] {
+    if (!this.gl) return [];
+    return measureShipValues(this.gl, computePpm0(1440, 900) / ZOOM.levels[0], CAMERA.elevation, classIds, headingsDeg);
+  }
+
+  // QA: congela la simulación y los efectos (R3F sigue dibujando el último estado) para comparar dos capturas del
+  // mismo instante, con y sin una capa (VFX-20, VFX-21). Las placas siguen recolocándose sobre el estado congelado,
+  // así sus cajas se miden sin la deriva entre dos pasadas del declutter (AD-11, AC-107)
+  setPaused(paused: boolean): void {
+    this.paused = paused;
   }
 
   // ---- Frame ----
@@ -1052,6 +1074,10 @@ export class GameRuntime implements OverlayHost {
     const now = performance.now();
     this.gl = state.gl;
     this.rootScene = state.scene;
+    if (this.paused) {
+      this.labels?.frame(now);
+      return;
+    }
     this.src.update(now);
     if (this.src !== this.client) this.client.update(now); // drena sus eventos aunque no se dibuje
     const step = Math.min(dt, 0.1);
@@ -1222,7 +1248,7 @@ export class GameRuntime implements OverlayHost {
       const prot = s.state === 'alive' && s.protectedUntil > serverTime;
       if (view.wasProtected && !prot) view.shieldEnd = now;
       view.wasProtected = prot;
-      const pulse = 0.5 + 0.5 * Math.sin(2 * Math.PI * 2 * t);
+      const pulse = 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(2 * Math.PI * 2 * t)); // VFX §12
       fx.uShield.value = prot ? pulse : Math.max(0, 1 - (now - view.shieldEnd) / 300) * pulse;
     }
   }
@@ -1281,7 +1307,8 @@ export class GameRuntime implements OverlayHost {
       if (sinkK < 1) {
         const R = target.model.extras.sb_radius * 1.1;
         if (inRange) this.pushRing(s.x, s.z, R, 3, RING_COLORS.target, 1 - sinkK, 12, 0.7, still ? 0 : 25 * deg * t, 1, 0.6 * (1 - sinkK));
-        else this.pushRing(s.x, s.z, R, 3, RING_COLORS.target, 0.6 * (1 - sinkK), 12, 0.4, 0, 1, 0.6 * (1 - sinkK));
+        // Fuera de alcance (D11): α 1; el estado lo dicen el relleno al 40 % y la ausencia de giro
+        else this.pushRing(s.x, s.z, R, 3, RING_COLORS.target, 1 - sinkK, 12, 0.4, 0, 1, 0.6 * (1 - sinkK));
       }
       // Alcance (§11): en alcance trazos 2/2 m verdes; fuera 2/6 m claros (se distinguen en grises, AC-74)
       if (me && me.ship.state === 'alive' && s.state === 'alive') {
@@ -1297,10 +1324,13 @@ export class GameRuntime implements OverlayHost {
 
     this.clickRings(now, me);
 
+    // Últimos 5 s (VFX §14, D4): con expiresAt del servidor en el reloj de render (serverTime − retardo de
+    // interpolación), el mismo con el que se despacha wreckGone; así cuadra aunque se entre tarde al área
+    const renderClock = this.src.serverTime() - INTERPOLATION_DELAY_MS / 1000;
     for (const w of this.wrecks.values()) {
       if (w.goneAt) continue;
       const age = now - w.seenAt;
-      const blink = age > WRECK_LIFETIME_MS - 5000 && !still ? (Math.sin(2 * Math.PI * 2 * (age / 1000)) > 0 ? 1 : 0.15) : 1;
+      const blink = w.expiresAt - renderClock < 5 && !still ? (Math.sin(2 * Math.PI * 2 * (age / 1000)) > 0 ? 1 : 0.15) : 1;
       const beat = still ? 1 : 0.75 + 0.25 * Math.sin(2 * Math.PI * (age / 1000));
       this.pushRing(w.x, w.z, Math.max(2.5, 10 / this.ppm), 2, RING_COLORS.wreck, 0.45 * beat * blink);
     }
@@ -1385,7 +1415,7 @@ export class GameRuntime implements OverlayHost {
     for (const w of list) {
       seen.add(w.id);
       if (!this.wrecks.has(w.id)) {
-        this.wrecks.set(w.id, { id: w.id, x: w.x, z: w.z, seenAt: now, goneAt: 0, seed: Math.random() * Math.PI * 2, sparkleAcc: 0 });
+        this.wrecks.set(w.id, { id: w.id, x: w.x, z: w.z, seenAt: now, goneAt: 0, expiresAt: w.expiresAt, seed: Math.random() * Math.PI * 2, sparkleAcc: 0 });
       }
     }
     for (const w of this.wrecks.values()) if (!seen.has(w.id) && !w.goneAt) w.goneAt = now;

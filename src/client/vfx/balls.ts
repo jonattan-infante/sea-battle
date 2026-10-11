@@ -205,6 +205,8 @@ export class ContactLayer {
       blending: THREE.CustomBlending,
       blendSrc: THREE.SrcAlphaFactor,
       blendDst: THREE.OneMinusSrcAlphaFactor,
+      blendSrcAlpha: THREE.OneFactor, // VFX §0.2: el alfa del framebuffer se queda en 1
+      blendDstAlpha: THREE.OneMinusSrcAlphaFactor,
       depthWrite: false,
       toneMapped: false,
       side: THREE.DoubleSide

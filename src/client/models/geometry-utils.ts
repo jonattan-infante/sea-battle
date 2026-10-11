@@ -31,6 +31,13 @@ export class GeoBuilder {
   private boxTracking = false;
   // Rangos de triángulos [inicio, fin) añadidos dentro de mark() (las velas, para AS-V14)
   readonly marks: [number, number][] = [];
+  // Máscara de borde por vértice (`_rim_mask`, D18): valor que se escribe en lo que se añada a continuación
+  rim = 0;
+  private readonly rimValues: number[] | null;
+
+  constructor(options: { rim?: boolean } = {}) {
+    this.rimValues = options.rim ? [] : null;
+  }
 
   get triangles(): number {
     return this.pos.length / 9;
@@ -97,6 +104,7 @@ export class GeoBuilder {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
     g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
+    if (this.rimValues) g.setAttribute('_rim_mask', new THREE.Float32BufferAttribute(this.rimValues, 1));
     g.computeVertexNormals(); // no indexada → normales planas por cara
     g.computeBoundingBox();
     g.computeBoundingSphere();
@@ -106,6 +114,7 @@ export class GeoBuilder {
   private push(v: THREE.Vector3, c: THREE.Color): void {
     this.pos.push(v.x, v.y, v.z);
     this.col.push(c.r, c.g, c.b);
+    this.rimValues?.push(this.rim);
     if (this.boxTracking) this.box.expandByPoint(v);
   }
 }

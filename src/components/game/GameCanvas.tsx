@@ -2,7 +2,6 @@
 
 import React, { useEffect, useRef } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import * as THREE from 'three';
 import { CAMERA, LIGHTING, PALETTE } from '../../client/art';
 import { GameRuntime } from '../../client/runtime';
 import World from './World';
@@ -190,14 +189,16 @@ export default function GameCanvas({ runtime, onWaterClick, onShipClick, onShipD
       data-testid="game-canvas"
       style={{ position: 'absolute', inset: 0, overflow: 'hidden', touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}
     >
+      {/* flat = sin tone mapping (D2). alpha: false solo fija el alfa de borrado en 1: three r180 crea el contexto
+          siempre con alfa (WebGLRenderer.js:345); lo que deja el alfa del framebuffer en 1 son blendSrcAlpha y
+          blendDstAlpha de las capas con CustomBlending (VFX §0.2) */}
       <Canvas
         orthographic
+        flat
         dpr={runtime.mobile ? LIGHTING.dprMobile : LIGHTING.dprDesktop}
-        gl={{ antialias: true, powerPreference: 'high-performance' }}
+        gl={{ antialias: true, alpha: false, powerPreference: 'high-performance' }}
         camera={{ near: CAMERA.near, far: CAMERA.far, zoom: 5, position: [0, CAMERA.distance * Math.sin(CAMERA.elevation), CAMERA.distance * Math.cos(CAMERA.elevation)] }}
         onCreated={({ gl }) => {
-          gl.toneMapping = THREE.NeutralToneMapping;
-          gl.toneMappingExposure = LIGHTING.exposure;
           gl.shadowMap.enabled = false;
           gl.setClearColor(PALETTE.oceanEdge);
         }}

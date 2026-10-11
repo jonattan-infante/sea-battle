@@ -34,8 +34,9 @@ const C = {
   flash: [rgba('#FFE7A8', 1), rgba('#FF7A1A', 0)],
   splinter: [rgba('#7A4E2A', 1), rgba('#7A4E2A', 0)],
   hitSmoke: [rgba('#6B6660', 0.7), rgba('#4A4642', 0)],
-  smoke: [rgba('#8C8781', 0.55), rgba('#5E5A55', 0)],
-  denseSmoke: [rgba('#45413D', 0.7), rgba('#2E2B29', 0)],
+  // Humo claro (D13): aclara lo que cubre, también la vela negra del pirata (L* ≈ 15) y el agua (L* ≈ 38)
+  smoke: [rgba('#B8B3AC', 0.5), rgba('#8E8984', 0)],
+  denseSmoke: [rgba('#8A8580', 0.75), rgba('#5E5A56', 0)],
   flame: [rgba('#FFE08A', 1), rgba('#C2361B', 0)],
   ember: [rgba('#FFB347', 1), rgba('#FFB347', 0)],
   sinkRing: [rgba(PALETTE.oceanFoam, 0.7), rgba(PALETTE.oceanFoam, 0)],
@@ -231,18 +232,23 @@ export class Effects {
   }
 
   // ---- §6 Humo y fuego con vida baja ----
-  damageSmoke(x: number, y: number, z: number, dense: boolean, sizeScale: number): void {
-    const s = this.spec(x + rand(-0.3, 0.3), y, z + rand(-0.3, 0.3), 2.2, 1.0 * sizeScale, 4.2 * sizeScale, dense ? C.denseSmoke : C.smoke, SHAPE.disc);
-    s.vy = 2.2;
+  // Cinemática escalada con h = sb_mast_height (D13): v0 = 0,22·h, flotación +0,035·h y vida 3,4 s → la columna
+  // sube 0,75h + 0,20h sobre el socket, hasta la punta del mástil más alto. Tamaño final del denso 0,40·h (antes
+  // 0,30·h): primer remedio de VFX-09b (D19)
+  damageSmoke(x: number, y: number, z: number, dense: boolean, mastHeight: number): void {
+    const s = this.spec(x + rand(-0.3, 0.3), y, z + rand(-0.3, 0.3), 3.4, dense ? 1.5 : 1.2, (dense ? 0.4 : 0.25) * mastHeight, dense ? C.denseSmoke : C.smoke, SHAPE.disc);
+    s.vy = 0.22 * mastHeight;
+    s.gravity = 0.035 * mastHeight;
     s.wind = 1.2;
     s.pxMin = 6;
     this.alpha.emit(s);
   }
 
+  // D19 (H-05): de 2,0 a 0,6 m × L/24 con un mínimo de 8 px (antes 0,9→0,25 m: QA vio una llama de ~2 px)
   flame(x: number, y: number, z: number, sizeScale: number): void {
-    const s = this.spec(x + rand(-0.3, 0.3), y, z + rand(-0.3, 0.3), 0.55, 0.9 * sizeScale, 0.25 * sizeScale, C.flame, SHAPE.flame);
+    const s = this.spec(x + rand(-0.3, 0.3), y, z + rand(-0.3, 0.3), 0.55, 2.0 * sizeScale, 0.6 * sizeScale, C.flame, SHAPE.flame);
     s.vy = 1.8 + rand(-0.4, 0.4);
-    s.pxMin = 5;
+    s.pxMin = 8;
     this.add.emit(s);
   }
 

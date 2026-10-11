@@ -122,8 +122,13 @@ void main() {
   else if (shape == 3) a = 1.0 - smoothstep(0.7, 0.95, max(abs(vUv.x), abs(vUv.y)));
   else if (shape == 4) a = 1.0 - smoothstep(0.15, 1.0, r);
   else if (shape == 5) {
-    vec2 cell = floor(vUv * 3.0 + vSeed * 9.0);
-    a = (1.0 - smoothstep(0.35, 1.0, r)) * (0.45 + 0.55 * hash(cell));
+    // Mancha de espuma: ruido de valor interpolado (sin bloques) sobre un disco suave
+    vec2 q = vUv * 2.5 + vSeed * 9.0;
+    vec2 i = floor(q);
+    vec2 f = fract(q);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    float n = mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
+    a = (1.0 - smoothstep(0.35, 1.0, r)) * (0.45 + 0.55 * n);
   }
   else {
     float bar = min(max(abs(vUv.x) - 0.2, abs(vUv.y) - 0.8), max(abs(vUv.y) - 0.2, abs(vUv.x) - 0.8));
@@ -206,6 +211,8 @@ export class ParticlePool {
       material.blending = THREE.CustomBlending;
       material.blendSrc = THREE.SrcAlphaFactor;
       material.blendDst = THREE.OneMinusSrcAlphaFactor;
+      material.blendSrcAlpha = THREE.OneFactor; // VFX §0.2: el alfa del framebuffer se queda en 1
+      material.blendDstAlpha = THREE.OneMinusSrcAlphaFactor;
     } else {
       material.transparent = true;
     }
