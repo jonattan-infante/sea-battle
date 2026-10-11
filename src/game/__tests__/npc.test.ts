@@ -197,6 +197,27 @@ describe('E3 — Población y reaparición (§9)', () => {
     if (kind === 'pirate') expect(r).toBeGreaterThanOrEqual(PIRATE_RING.min - 1e-6);
     else expect(r).toBeGreaterThan(SAFE_ZONE_RADIUS);
   });
+
+  test('respawnPos (solo escenarios de prueba): el mercante hundido reaparece a los 20 s en su punto, quieto y sin IA, aunque haya un jugador cerca', () => {
+    const world = emptyWorld();
+    const victim = placeMerchant(world, 200, 50);
+    victim.ai = null;
+    victim.respawnPos = { x: 200, z: 50 };
+    placePlayer(world, 'a', 200, 80);
+    victim.hp = 1;
+    world.rng = () => 0; // acierta la primera andanada
+    attack(world, 'a', victim.id);
+    const events = run(world, SHIP_CLASSES.merchant.respawnTime + 2);
+    const sunkAt = events.findIndex((e) => e.type === 'sunk' && e.shipId === victim.id);
+    expect(sunkAt).toBeGreaterThanOrEqual(0);
+    expect(events.findIndex((e) => e.type === 'respawn' && e.shipId === victim.id)).toBeGreaterThan(sunkAt);
+    expect(victim.state).toBe('alive');
+    expect(victim.hp).toBe(SHIP_CLASSES.merchant.maxHp);
+    expect(victim.pos).toEqual({ x: 200, z: 50 });
+    expect(victim.ai).toBeNull();
+    run(world, 5);
+    expect(victim.pos).toEqual({ x: 200, z: 50 }); // sin IA no se mueve
+  });
 });
 
 describe('E3 — Balance de duelos (§9)', () => {

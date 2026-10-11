@@ -31,6 +31,7 @@ game-product (GDD + criterios AC-xx) ──► game-ux (arte + specs) ──► 
 | `npm test` | Jest: simulación, protocolo y servidor de juego con socket.io real |
 | `npm run test:e2e` | Playwright: jugabilidad y multijugador con 2 contextos (modo invitado) |
 | `npm run test:perf` | Playwright: presupuesto de rendimiento (commits de React, mensajes de red, draw calls) |
+| `npm run test:soak` | Playwright: corrida de 10 min (AC-91) sin fugas de memoria, DOM, escuchas, geometrías ni commits (`AC91_MINUTES=2` para el modo corto; la ejecuta QA) |
 | `npm run qa:capture` | Capturas de escritorio y móvil en `qa-artifacts/` para revisión visual |
 | `npm run verify` | typecheck + test + build (puerta antes de cualquier commit de feature) |
 | `npm run dev:guest` | Servidor local con `AUTH_BYPASS=1` (sin Clerk; solo fuera de Railway) |

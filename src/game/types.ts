@@ -52,6 +52,7 @@ export interface Ship {
   ai: NpcAi | null;
   disconnectedAt: number | null;
   accuracyOverride?: number; // solo escenarios de prueba (server/scenarios.ts): precisión fija de sus andanadas
+  respawnPos?: Vec2; // solo escenarios de prueba (server/scenarios.ts): NPC que reaparece aquí, quieto y sin IA
 }
 
 export interface DeathInfo {

@@ -9,10 +9,22 @@ import {
   SAFE_ZONE_RADIUS,
   SHIP_CLASSES,
   STARTING_GOLD,
-  TAB_TARGET_RADIUS
+  TAB_TARGET_RADIUS,
+  TICK_RATE
 } from '../../src/game/constants';
-import { addPlayer, createWorld } from '../../src/game/world';
-import { AMBUSH_POINT, applyScenario, BLIND_GUNNER_POINT, parseScenario, SHOWCASE_POINT, TARGET_FAN, TARGETS_POINT } from '../scenarios';
+import { addPlayer, attack, createWorld, drainEvents, setRepair, shipOfPlayer, step } from '../../src/game/world';
+import {
+  AMBUSH_POINT,
+  applyScenario,
+  BLIND_GUNNER_POINT,
+  ENDURANCE_MERCHANT_RADIUS,
+  ENDURANCE_MERCHANTS,
+  ENDURANCE_POINT,
+  parseScenario,
+  SHOWCASE_POINT,
+  TARGET_FAN,
+  TARGETS_POINT
+} from '../scenarios';
 
 describe('escenario "showcase" para capturas', () => {
   const world = createWorld({ seed: 1, spawnNpcs: false });
@@ -63,6 +75,7 @@ describe('escenario "shipyard" (AC-70)', () => {
     expect(parseScenario('showcase')).toBe('showcase');
     expect(parseScenario('shipyard')).toBe('shipyard');
     expect(parseScenario('targets')).toBe('targets');
+    expect(parseScenario('endurance')).toBe('endurance');
     expect(parseScenario('rich')).toBeNull();
     expect(parseScenario(undefined)).toBeNull();
   });
@@ -95,5 +108,83 @@ describe('escenario "targets" (AC-27, AC-31)', () => {
       for (const isl of ISLANDS) expect(Math.hypot(p.x - isl.x, p.z - isl.z)).toBeGreaterThan(isl.radius + navClearance('merchant'));
       expect(Math.max(Math.abs(p.x), Math.abs(p.z))).toBeLessThan(NAV_LIMIT);
     }
+  });
+});
+
+describe('escenario "endurance" (AC-91)', () => {
+  const world = createWorld({ seed: 1, spawnNpcs: false });
+  applyScenario(world, 'endurance');
+  const npcs = [...world.ships.values()];
+  const merchants = npcs.filter((s) => s.kind === 'merchant');
+  const pirates = npcs.filter((s) => s.kind === 'pirate');
+  const dist = (p: { x: number; z: number }) => Math.hypot(p.x - ENDURANCE_POINT.x, p.z - ENDURANCE_POINT.z);
+
+  test('mercantes quietos y sin IA en corro, que reaparecen en su sitio, y un pirata de puntería baja; oro para N2 + N3', () => {
+    expect(merchants).toHaveLength(ENDURANCE_MERCHANTS);
+    for (const m of merchants) {
+      expect(m.ai).toBeNull();
+      expect(m.respawnPos).toEqual(m.pos);
+      expect(dist(m.pos)).toBeCloseTo(ENDURANCE_MERCHANT_RADIUS, 6);
+    }
+    expect(pirates).toHaveLength(1);
+    expect(pirates[0].accuracyOverride).toBeLessThan(SHIP_CLASSES.pirate.cannon!.accuracy);
+    expect(addPlayer(world, 'u1', 'Ana').gold).toBe(CANNON_LEVELS[1].price + CANNON_LEVELS[2].price);
+  });
+
+  test('el punto queda fuera de la zona segura y nada toca una isla, la exclusión de piratas ni el límite navegable', () => {
+    expect(Math.hypot(ENDURANCE_POINT.x, ENDURANCE_POINT.z)).toBeGreaterThan(SAFE_ZONE_RADIUS);
+    for (const s of npcs) {
+      for (const isl of ISLANDS) expect(Math.hypot(s.pos.x - isl.x, s.pos.z - isl.z)).toBeGreaterThan(isl.radius + navClearance(s.classId));
+      if (s.kind === 'pirate') expect(Math.hypot(s.pos.x, s.pos.z)).toBeGreaterThan(PIRATE_PORT_EXCLUSION);
+      expect(Math.max(Math.abs(s.pos.x), Math.abs(s.pos.z))).toBeLessThan(NAV_LIMIT);
+    }
+  });
+
+  // La carga que exige AC-91, con la misma política que e2e/endurance.spec.ts (reacción cada 0,5 s): ataca al mercante
+  // vivo más cercano, repara al bajar del 45 % y vuelve a atacar al pasar del 55 %. Se mide desde la primera reparación
+  // completa (el calentamiento del e2e)
+  test('en 10 min tras el calentamiento, un jugador con cañones N3 hunde ≥ 40 mercantes que reaparecen, recibe daño, repara y no se hunde', () => {
+    const w = createWorld({ seed: 7, spawnNpcs: false });
+    applyScenario(w, 'endurance');
+    const player = addPlayer(w, 'bot', 'Bot');
+    player.upgrades.cannons = 3;
+    const ship = shipOfPlayer(w, 'bot')!;
+    ship.pos = { ...ENDURANCE_POINT };
+    ship.protectedUntil = 0;
+    const merchantIds = new Set([...w.ships.values()].filter((s) => s.kind === 'merchant').map((s) => s.id));
+    const sunk = new Set<string>();
+    const load = { cycles: 0, damageTaken: 0, repairs: 0, deaths: 0 };
+    let repairsDone = 0;
+    let wasRepairing = false;
+    let measuredTicks = 0;
+    for (let i = 0; measuredTicks < 600 * TICK_RATE; i++) {
+      if (repairsDone === 0 && i > 300 * TICK_RATE) throw new Error('sin una reparación completa en 5 min simulados de calentamiento');
+      if (wasRepairing && !ship.repairing) repairsDone++;
+      wasRepairing = ship.repairing;
+      const measuring = repairsDone > 0;
+      if (measuring) measuredTicks++;
+      step(w, 1 / TICK_RATE);
+      for (const e of drainEvents(w)) {
+        if (e.type === 'sunk' && merchantIds.has(e.shipId)) sunk.add(e.shipId);
+        if (e.type === 'sunk' && e.shipId === ship.id && measuring) load.deaths++;
+        if (e.type === 'respawn' && sunk.delete(e.shipId) && measuring) load.cycles++;
+        if (e.type === 'impact' && e.shipId === ship.id && measuring) load.damageTaken += e.damage;
+      }
+      if (i % (TICK_RATE / 2) !== 0 || ship.state !== 'alive') continue;
+      if (!ship.repairing && ship.hp <= ship.maxHp * 0.45) {
+        setRepair(w, 'bot', true);
+        if (measuring) load.repairs++;
+      } else if ((ship.repairing && ship.hp >= ship.maxHp * 0.55) || (!ship.repairing && !ship.attackTargetId)) {
+        const next = [...w.ships.values()]
+          .filter((s) => merchantIds.has(s.id) && s.state === 'alive')
+          .sort((a, b) => Math.hypot(a.pos.x - ship.pos.x, a.pos.z - ship.pos.z) - Math.hypot(b.pos.x - ship.pos.x, b.pos.z - ship.pos.z))[0];
+        if (next) attack(w, 'bot', next.id);
+      }
+    }
+    console.log(`AC-91 (simulación): ${load.cycles} ciclos · ${load.damageTaken} de daño recibido · ${load.repairs} reparaciones · ${load.deaths} hundimientos propios`);
+    expect(load.cycles).toBeGreaterThanOrEqual(40);
+    expect(load.damageTaken).toBeGreaterThan(0);
+    expect(load.repairs).toBeGreaterThanOrEqual(3);
+    expect(load.deaths).toBe(0);
   });
 });

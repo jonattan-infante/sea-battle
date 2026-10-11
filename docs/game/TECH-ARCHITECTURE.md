@@ -46,6 +46,7 @@ Medido (Jest + socket real, `server/__tests__/game-server.test.ts`): con 20 clie
 | `npm run build` | `next build` + `tsc -p tsconfig.server.json` → `dist/server/index.js` |
 | `npm run test:e2e` | Playwright contra el build de producción, con 3 servidores: invitado (3100), invitado sin NPC (3101) y sin invitado (3102) |
 | `npm run test:perf` | Commits de React (hook de DevTools inyectado), frames de WebSocket y `renderInfo` |
+| `npm run test:soak` | AC-91: corrida larga de 10 min (`e2e/endurance.spec.ts`, escenario `endurance` en un servidor propio) con una muestra por minuto tras forzar el GC por CDP: heap, nodos DOM, escuchas JS, geometrías y texturas, y commits/s. Fuera de `verify` y de `test:e2e`; la ejecuta game-qa. `AC91_MINUTES=2` la acorta para validar el harness (10 muestras igualmente) |
 | `npm run qa:capture` | Capturas estándar en `qa-artifacts/` (escritorio 1440×900 y móvil 390×844) |
 | `npm run verify` | typecheck + test + build (lo mismo que la CI) |
 

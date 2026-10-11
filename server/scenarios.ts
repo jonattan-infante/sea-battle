@@ -1,6 +1,6 @@
 // Escenarios deterministas para capturas de QA y UX (ART-DIRECTION §18). Solo se aplican con el modo
 // invitado permitido (nunca en Railway); en producción el mundo es siempre el del GDD.
-import { SHIP_CLASSES, WRECK_LIFETIME } from '../src/game/constants';
+import { CANNON_LEVELS, SHIP_CLASSES, WRECK_LIFETIME } from '../src/game/constants';
 import { World } from '../src/game/types';
 import { spawnMerchant, spawnPirate } from '../src/game/world';
 
@@ -28,7 +28,16 @@ export const TARGET_FAN = [
   { d: 170, x: 120.21, z: 270.21 }
 ] as const;
 
-export const SCENARIOS = ['showcase', 'shipyard', 'targets'] as const;
+// Corrida larga de AC-91 (e2e/endurance.spec.ts): mercantes quietos y sin IA en corro alrededor de ENDURANCE_POINT, que
+// reaparecen en su sitio al hundirse (ciclos de hundimiento y reaparición en pantalla), y un pirata de puntería baja que
+// mantiene al jugador bajo fuego sin hundirlo mientras repara. El jugador entra con el oro de los cañones N2 + N3
+export const ENDURANCE_POINT = { x: 0, z: -200 };
+export const ENDURANCE_MERCHANTS = 5;
+export const ENDURANCE_MERCHANT_RADIUS = 28; // dentro de la órbita del pirata (45 m) y a tiro de cualquier cañón
+export const ENDURANCE_PIRATE_OFFSET = 60; // a < 70 m (radio de agresión): ataca en cuanto el jugador pierde la protección
+export const ENDURANCE_PIRATE_ACCURACY = 0.15; // ~2,9 de vida/s: reparar bajo fuego (1,5 %/s = 12/s) gana terreno de sobra
+
+export const SCENARIOS = ['showcase', 'shipyard', 'targets', 'endurance'] as const;
 export type ScenarioName = (typeof SCENARIOS)[number];
 
 export function parseScenario(value: string | undefined): ScenarioName | null {
@@ -39,6 +48,28 @@ export function applyScenario(world: World, name: ScenarioName): void {
   if (name === 'shipyard') {
     // AC-70: cada jugador entra con el oro justo para comprar el Bergantín en el puerto
     world.startingGold = SHIP_CLASSES.brig.price;
+    return;
+  }
+  if (name === 'endurance') {
+    world.startingGold = CANNON_LEVELS[1].price + CANNON_LEVELS[2].price;
+    for (let i = 0; i < ENDURANCE_MERCHANTS; i++) {
+      const a = (2 * Math.PI * i) / ENDURANCE_MERCHANTS;
+      const m = spawnMerchant(world);
+      m.pos = { x: ENDURANCE_POINT.x + Math.cos(a) * ENDURANCE_MERCHANT_RADIUS, z: ENDURANCE_POINT.z + Math.sin(a) * ENDURANCE_MERCHANT_RADIUS };
+      m.heading = a + Math.PI / 2;
+      m.destination = null;
+      m.path = [];
+      m.ai = null;
+      m.respawnPos = { ...m.pos };
+    }
+    const pirate = spawnPirate(world, 0);
+    pirate.pos = { x: ENDURANCE_POINT.x, z: ENDURANCE_POINT.z - ENDURANCE_PIRATE_OFFSET };
+    pirate.heading = 0;
+    pirate.ai!.origin = { ...pirate.pos };
+    pirate.ai!.wait = 1e9;
+    pirate.destination = null;
+    pirate.path = [];
+    pirate.accuracyOverride = ENDURANCE_PIRATE_ACCURACY;
     return;
   }
   if (name === 'targets') {

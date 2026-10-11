@@ -782,8 +782,10 @@ function updateLifecycle(world: World, dt: number): void {
 
 function respawnNpc(world: World, ship: Ship): void {
   const stats = classOf(ship);
-  let ai: NpcAi;
-  if (ship.kind === 'pirate') {
+  let ai: NpcAi | null = null;
+  if (ship.respawnPos) {
+    ship.pos = { ...ship.respawnPos };
+  } else if (ship.kind === 'pirate') {
     const sector = ship.ai?.sector ?? 0;
     const pos = pirateSpot(world, sector, true);
     ship.pos = pos;

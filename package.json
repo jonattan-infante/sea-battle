@@ -11,8 +11,9 @@
     "typecheck": "tsc --noEmit",
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:e2e": "npm run build:e2e && playwright test --grep-invert \"@perf|@capture\"",
+    "test:e2e": "npm run build:e2e && playwright test --grep-invert \"@perf|@capture|@soak\"",
     "test:perf": "npm run build:e2e && playwright test --grep @perf",
+    "test:soak": "npm run build:e2e && playwright test --grep @soak",
     "qa:capture": "npm run build:e2e && playwright test --grep @capture",
     "qa:hero": "npm run build:e2e && node scripts/qa-hero.mjs",
     "verify": "npm run typecheck && npm test && npm run build"
