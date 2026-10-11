@@ -181,19 +181,44 @@ test.describe('Partida como invitado', () => {
 type Box = { x: number; y: number; width: number; height: number };
 const boxesOverlap = (a: Box, b: Box) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
 
-// AC-105 / H-11: la pista visible no se cruza con la placa propia, la del objetivo ni ningún toast (oculta, vale)
-async function expectHintClear(page: Page, label: string, targetId?: string) {
+// AC-105 / H-11: la pista visible no se cruza con la placa propia, la del objetivo ni ningún toast (oculta, vale).
+// Devuelve la ranura en la que está la pista. `:visible` deja fuera las líneas del feed, que en escritorio son
+// toasts con display: none
+type HintSlot = 'bajo el barco' | 'sobre el barco' | 'oculta';
+async function expectHintClear(page: Page, label: string, targetId?: string): Promise<HintSlot> {
   await page.waitForTimeout(400); // la pista revisa los obstáculos a 10 Hz
   const hint = page.getByTestId('hint');
   const cls = (await hint.getAttribute('class')) ?? '';
   const h = (await hint.boundingBox())!;
   const obstacles: Record<string, Box> = { 'placa propia': (await page.locator('[data-plate][data-relation="self"]').boundingBox())! };
   if (targetId) obstacles['placa del objetivo'] = (await page.locator(`[data-plate][data-ship-id="${targetId}"]`).boundingBox())!;
-  const toasts = await page.getByTestId('toasts').locator('.toast').all();
+  const toasts = await page.getByTestId('toasts').locator('.toast:visible').all();
   for (let i = 0; i < toasts.length; i++) obstacles[`toast ${i + 1}`] = (await toasts[i].boundingBox())!;
-  console.log(`AC-105 ${label}: ${cls.includes('is-hidden') ? 'oculta' : cls.includes('is-alt') ? 'ranura sobre el barco' : 'ranura bajo el barco'} · ${toasts.length} toasts`);
-  if (cls.includes('is-hidden')) return;
-  for (const [id, b] of Object.entries(obstacles)) expect(boxesOverlap(h, b), `${label}: la pista se cruza con ${id}`).toBe(false);
+  const slot: HintSlot = cls.includes('is-hidden') ? 'oculta' : cls.includes('is-alt') ? 'sobre el barco' : 'bajo el barco';
+  console.log(`AC-105 ${label}: ${slot} (caja ${Math.round(h.x)}, ${Math.round(h.y)}, ${Math.round(h.width)}×${Math.round(h.height)}) · ${toasts.length} toasts`);
+  if (slot !== 'oculta') for (const [id, b] of Object.entries(obstacles)) expect(boxesOverlap(h, b), `${label}: la pista se cruza con ${id}`).toBe(false);
+  return slot;
+}
+
+// AC-110 / H-11: cada aviso visible se lee entero (sin recorte ni elipsis) y no pisa los paneles del jugador, del
+// objetivo ni del oro, ni el minimapa
+async function expectToastsClear(page: Page, label: string, count: number) {
+  const toasts = page.getByTestId('toasts').locator('.toast:visible');
+  await expect(toasts).toHaveCount(count);
+  const panels: Record<string, Box> = {};
+  for (const id of ['player-frame', 'target-frame', 'player-gold-panel', 'minimap']) {
+    const panel = page.getByTestId(id);
+    if (await panel.count()) panels[id] = (await panel.boundingBox())!;
+  }
+  for (const t of await toasts.all()) {
+    const text = await t.innerText();
+    const tb = (await t.boundingBox())!;
+    for (const [id, b] of Object.entries(panels)) expect(boxesOverlap(tb, b), `${label}: el aviso «${text}» pisa ${id}`).toBe(false);
+    const fit = await t.evaluate((el) => ({ sw: el.scrollWidth, cw: el.clientWidth, sh: el.scrollHeight, ch: el.clientHeight }));
+    console.log(`AC-110 ${label}: «${text}» caja ${Math.round(tb.x)}, ${Math.round(tb.y)}, ${Math.round(tb.width)}×${Math.round(tb.height)} · scroll ${fit.sw}×${fit.sh} ≤ client ${fit.cw}×${fit.ch}`);
+    expect(fit.sw, `${label}: el aviso «${text}» se recorta en horizontal`).toBeLessThanOrEqual(fit.cw);
+    expect(fit.sh, `${label}: el aviso «${text}» se recorta en vertical`).toBeLessThanOrEqual(fit.ch);
+  }
 }
 
 test.describe('Móvil @mobile', () => {
@@ -245,46 +270,58 @@ test.describe('Móvil @mobile', () => {
     }
   });
 
-  test('AC-105: con el objetivo a 60 m al sur o al norte, la pista no tapa su placa ni la propia (844×390 y 390×844)', async ({ browser }) => {
-    test.setTimeout(300_000);
+  test('AC-105 + AC-110: con el objetivo a 60 m al sur o al norte, la pista no tapa su placa, la propia ni los avisos, y los avisos se leen enteros sin pisar los paneles (844×390, 390×844 y 1440×900)', async ({ browser }) => {
+    test.setTimeout(540_000);
     // Mercante quieto del showcase en (−40, 195); el jugador para 60 m al norte (placa del objetivo bajo el barco, el
     // caso de H-06b) o 60 m al sur (sobre el barco). Los dos puntos quedan a > 70 m de los piratas del escenario.
     // A 78 m al sur (z 117), en vertical la placa del objetivo cae bajo el barco y empuja la pista a la ranura alta,
     // que comparte altura con los toasts (H-11)
     const cases = [{ side: 'sur', z: 135 }, { side: 'norte', z: 255 }, { side: 'sur a 78 m', z: 117 }];
-    for (const { side, z } of cases) for (const viewport of [{ width: 844, height: 390 }, { width: 390, height: 844 }]) {
-      const ctx = await browser.newContext({ viewport, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+    const viewports = [
+      { width: 844, height: 390, touch: true },
+      { width: 390, height: 844, touch: true },
+      { width: 1440, height: 900, touch: false }
+    ];
+    // Ranuras en las que se ha visto la pista con avisos en pantalla, por tamaño (AC-110: «con la pista en las dos ranuras»)
+    const slots: Record<string, Set<HintSlot>> = {};
+    for (const { side, z } of cases) for (const { touch, ...viewport } of viewports) {
+      const ctx = await browser.newContext(touch ? { viewport, isMobile: true, hasTouch: true, deviceScaleFactor: 2 } : { viewport });
+      const size = `${viewport.width}×${viewport.height}`;
+      const seen = (slots[size] ??= new Set());
       try {
         const page = await ctx.newPage();
         await enterGame(page, `http://localhost:${PORTS.showcase}`);
         await expect(page.getByTestId('hint')).toBeVisible();
-        await expectHintClear(page, `en puerto con "Zona segura", ${viewport.width}×${viewport.height}`);
+        // En puerto: la pista con un aviso ("Zona segura")
+        seen.add(await expectHintClear(page, `en puerto con "Zona segura", ${size}`));
+        await expectToastsClear(page, `en puerto, ${size}`, 1);
         await sailTo(page, -40, z);
         await waitFor(() => me(page), (s) => !!s && Math.hypot(s.x + 40, s.z - z) < 4, 45_000, 250);
         await page.waitForTimeout(700);
         const merchant = (await ships(page)).find((s) => s.kind === 'merchant' && s.screen && Math.hypot(s.x + 40, s.z - 195) < 5);
         expect(merchant?.screen).toBeTruthy();
-        await page.touchscreen.tap(merchant!.screen!.sx, merchant!.screen!.sy);
+        if (touch) await page.touchscreen.tap(merchant!.screen!.sx, merchant!.screen!.sy);
+        else await page.mouse.click(merchant!.screen!.sx, merchant!.screen!.sy);
         await expect(page.getByTestId('target-frame')).toHaveAttribute('data-target-id', merchant!.id);
         await expect(page.getByTestId('hint')).toBeVisible();
-        const label = `objetivo al ${side}, ${viewport.width}×${viewport.height}`;
+        const label = `objetivo al ${side}, ${size}`;
         await expectHintClear(page, label, merchant!.id);
-        // Con dos toasts (fuera de la zona, P da "El puerto solo abre en la zona segura") tampoco los tapa, y los
-        // toasts no pisan los paneles del jugador ni del objetivo (H-11)
-        await page.keyboard.press('KeyP');
-        await page.waitForTimeout(150);
-        await page.keyboard.press('KeyP');
-        await expect(page.getByTestId('toasts').locator('.toast')).toHaveCount(2);
-        await expectHintClear(page, `${label} con 2 toasts`, merchant!.id);
-        for (const t of await page.getByTestId('toasts').locator('.toast').all()) {
-          const tb = (await t.boundingBox())!;
-          for (const panel of ['player-frame', 'target-frame']) {
-            expect(boxesOverlap(tb, (await page.getByTestId(panel).boundingBox())!), `${label}: un toast pisa ${panel}`).toBe(false);
-          }
+        // Con uno y con dos avisos (fuera de la zona, P da "El puerto solo abre en la zona segura") la pista tampoco
+        // los tapa, y los avisos se leen enteros sin pisar los paneles ni el minimapa (H-11). La ranura sobre el barco
+        // queda bajo el primer aviso: con uno la pista sigue visible; con dos, si la otra ranura está ocupada, se oculta
+        for (const count of [1, 2]) {
+          await page.keyboard.press('KeyP');
+          await expect(page.getByTestId('toasts').locator('.toast:visible')).toHaveCount(count);
+          seen.add(await expectHintClear(page, `${label} con ${count} toasts`, merchant!.id));
+          await expectToastsClear(page, `${label} con ${count} toasts`, count);
         }
       } finally {
         await ctx.close();
       }
+    }
+    console.log(`AC-110 ranuras con avisos en pantalla: ${Object.entries(slots).map(([size, s]) => `${size} → ${[...s].join(', ')}`).join(' · ')}`);
+    for (const [size, s] of Object.entries(slots)) {
+      expect([...s], `${size}: la pista se ha comprobado con avisos en las dos ranuras`).toEqual(expect.arrayContaining(['bajo el barco', 'sobre el barco']));
     }
   });
 
