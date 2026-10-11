@@ -117,6 +117,17 @@ El estado analizado es el commit `f3f1345`, antes de la reescritura en curso.
 | `lantern` | `#FFE9A8` | ✓ | — | — |
 | `cargo` / `barrel` | `#B07A3E` / `#8A5A33` | — | — | ✓ |
 
+### 4.2.1 Albedo de las caras horizontales (D17)
+Los hex de §4.1–4.2 son el **color que se ve en pantalla** en la cara dominante. Con la iluminación de §5, una cara horizontal recibe ×(1,153, 1,149, 1,118) en lineal, así que la arena sale `#F5DCA2` en lugar de `#E6CF9A` (modelo de §5; desarrollo midió `#F5DDA3`, lo que valida el modelo). Los materiales que se ven sobre todo desde arriba usan un **albedo compensado** (objetivo lineal ÷ multiplicador). El resto, incluidas las velas y los cascos (verticales), usa el hex tal cual.
+
+| Token | En pantalla (objetivo) | Albedo (vertex color) |
+|---|---|---|
+| `sand` (tapa de la playa) | `#E6CF9A` | `#D8C392` |
+| `grass` (meseta) | `#5E9E48` | `#589444` |
+| `deck` (jugador y mercante) | `#C9965E` | `#BD8D59` |
+| `deck` (pirata) | `#6E4B30` | `#67462D` |
+| `cargo` | `#B07A3E` | `#A5723B` |
+
 ### 4.3 Relación (etiquetas, minimapa, barras)
 | Relación | Texto/acento | Barra de vida | Icono | Forma en el minimapa |
 |---|---|---|---|---|
@@ -620,6 +631,7 @@ Captura estándar = `npm run qa:capture` con zoom 1,0×, sin modales y el barco 
 | AD-21 | Legibilidad en grises | Capturas de AC-72 convertidas a escala de grises | ≥ 4/5 evaluadores identifican propio, jugador, pirata, mercante y objetivo | AC-72 |
 | AD-22 | Recarga monótona | 5 capturas de un ciclo de recarga: ángulo del relleno del indicador | Creciente y en 360° en el frame del disparo | AC-73 |
 | AD-23 | Zona segura visible | Captura en el borde de la zona (r 110 m) | La línea discontinua y ≥ 3 boyas son visibles; aparece el aviso "Zona segura" | AC-65 |
+| AD-25 | Albedo compensado | ΔE76 entre el color medio de la tapa de la playa o de la cubierta en la captura y su token de §4.2.1 | ≤ 6 | — |
 | AD-24 | Olas sin bandas regulares | Percentiles p5 y p95 de L\* en el parche de AD-01 | p95 − p5 entre 4 y 12. Medido el 2026-10-11: 16–21, son bandas | — |
 
 ---
@@ -654,6 +666,11 @@ Captura estándar = `npm run qa:capture` con zoom 1,0×, sin modales y el barco 
 | D12 | AS-V14 falla en 3 de 5 clases; la braza a 30° empeora las 5 | Braza de las cuadras en 20°. **Todas las velas de cuchillo de todas las clases se abren 25°** hacia el costado de la prueba medida. Foque nuevo en el Mercante. Umbral ≥ 0,25 en LOD0 y LOD1 (objetivo ≥ 0,28); 35° solo para la clase que falle | ASSET-SPEC §8.2–8.4, AS-V14 |
 | D13 | Q10: el humo denso del pirata no se distingue y sube solo 4,8 m | Humo claro (`#B8B3AC` / denso `#8A8580`, L\* ≥ 55) que sube hasta la punta del mástil más alto (cinemática escalada con `sb_mast_height`). El oscurecimiento medido (43 → 6) no se explica con mezcla alfa normal: **HIPÓTESIS**, la muestra con VFX se leyó de un render target lineal (6/255 lineal ≈ 42 sRGB). Falta el resto del reporte de dev-render para confirmarlo | VFX-SPEC §6, VFX-20 |
 | D14 | Portada U6-a | **Provisional aceptada**. Para la definitiva hay que regenerarla con `qa:hero` tras D2/D8, la rejilla, el humo (VFX-21) y las olas (AD-24) | §16.1 |
+| D15 | Q12: las facetas de vela más orientadas al sol llegan a p95 L\* 96,7, aunque la media es ≤ 90,1 | **Aceptado**: es el brillo de la lona al sol y aporta volumen. El sol sigue en ×1,2. Condición: sin recorte, < 1 % de los píxeles de vela con algún canal = 255 | §5 |
+| D16 | Q13: velas pirata con L\* 16,9–17,5 frente al cálculo de 14–16 | **Aceptado**. El 14–16 era una estimación mía, no un umbral. Manda AD-10 (≤ 25) y se cumple con margen frente al agua (L\* 38) | AD-10 |
+| D17 | Q14: las caras horizontales reciben ×1,15; la arena sale `#F5DDA3` | **Albedo compensado** solo para los materiales que se ven desde arriba (arena, hierba, cubiertas y carga). Ni velas ni cascos | §4.2.1, AD-25 |
+| D18 | Rim de `uShield`: mástiles azulados; dev-render usa `(0,0,1)` como vista ortográfica | **Excluir del rim todo lo que no es casco** con la máscara `_rim_mask`. **Confirmado** `geometryViewDir` (`(0,0,1)` en ortográfica, como hace three) | VFX-SPEC §12, ASSET-SPEC §6 |
+| D19 | H-05 (QA): con el 10 % de vida, un mercante solo muestra una llama de ~2 px y casi nada de humo | Área mínima medible en VFX-09b (fracción de la huella del casco, con contraste en grises) y llamas más grandes (de 2,0 a 0,6 m × L/24, mínimo 8 px). D13 cubre el color y la altura del humo (VFX-20), no el área | VFX-SPEC §6, VFX-09b |
 
 **Abiertas:**
 

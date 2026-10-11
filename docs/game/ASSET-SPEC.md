@@ -158,6 +158,7 @@ Margen de 43 draw calls. Si alguna vez hay > 60 barcos, se pasa a un `InstancedM
 | Material único | `new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.85, metalness: 0, side: DoubleSide })`. `DoubleSide` porque las velas son planos; el casco es cerrado y su sobrecoste es despreciable |
 | Material por barco | Se clona por instancia de barco (mismo programa de shader, uniforms propios) para el destello de impacto `uHit` y el oscurecimiento `uDamage` (VFX-SPEC §5) vía `onBeforeCompile` |
 | Espacio de color | Los hex de ART-DIRECTION §4 son sRGB. **`COLOR_0` es lineal**: "COLOR_0 … acts as an additional linear multiplier to base color" ([glTF 2.0](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html)). En el procedural, `new THREE.Color(hex)` ya convierte a lineal (`ColorManagement.enabled = true` por defecto, `ColorManagement.js:21`), así que se escriben `c.r, c.g, c.b` en el atributo |
+| Máscara de borde (D18) | Atributo por vértice `_rim_mask` (escalar float; en el GLB se llama `_RIM_MASK`, que `GLTFLoader` pasa a minúsculas, `GLTFLoader.js:4836`). Vale **1** en el casco (*loft*, borda, castillos y camaretas) y **0** en todo lo demás (mástiles, vergas, botavaras, picos, bauprés, cofas, velas, cañones, portas, banderas, carga). Lo usa el borde de protección (VFX-SPEC §12) |
 | Color por pieza | Cada pieza tiene un único color; las caras de una pieza no mezclan colores. Excepciones: el casco (por banda, §8.1), las cajas con tapa (tapa = `deck`) y las velas a franjas (por fila de vértices) |
 | Emisivos | No hay: los faroles y ventanas usan el vertex color `#FFE9A8`, que con el *tone mapping* se lee como luz |
 | Transparencia | Prohibida en los assets. Toda la transparencia es de VFX |
@@ -179,7 +180,7 @@ Margen de 43 draw calls. Si alguna vez hay > 60 barcos, se pasa a un `InstancedM
 
 ## 8. Recetas procedurales: barcos
 
-Cada barco = **casco por *loft*** (§8.1) + **aparejo** (§8.2) + **piezas** (§8.4). Todo se construye en coordenadas del asset, se transforma, se colorea, se fusiona con `BufferGeometryUtils.mergeGeometries` (atributos `position`, `normal`, `color`; quitar `uv` para homogeneizar) y se añaden los sockets como `Object3D` hijos con su nombre.
+Cada barco = **casco por *loft*** (§8.1) + **aparejo** (§8.2) + **piezas** (§8.4). Todo se construye en coordenadas del asset, se transforma, se colorea, se fusiona con `BufferGeometryUtils.mergeGeometries` (atributos `position`, `normal`, `color` y `_rim_mask`; quitar `uv` para homogeneizar) y se añaden los sockets como `Object3D` hijos con su nombre.
 
 ### 8.1 Casco por *loft* (una sola función para todos los barcos)
 `loftHull({ L, B, F, D, profile, railH, colors })`. Recibe estaciones a lo largo de Z (`z = u·L`) y unas proporciones normalizadas por estación:
@@ -428,7 +429,7 @@ Se ejecuta con un script de desarrollo (`npm run assets:validate`, dependencia d
 | AS-V06 | Sockets de cañón | Número por banda = `sb_cannons_per_side`; babor con x > 0 y estribor con x < 0; numeración 01…N con z creciente; resto de sockets de §3 presentes |
 | AS-V07 | Orientación de los sockets | +Z del socket en el mundo: babor · (1, 0, 0) ≥ 0,99; estribor · (−1, 0, 0) ≥ 0,99 |
 | AS-V08 | Triángulos | ≤ el presupuesto de §5 para cada LOD |
-| AS-V09 | Draw calls y material | 1 malla y 1 primitiva por LOD; 1 material; `alphaMode = OPAQUE`; procedural sin texturas; sin planos con textura que imiten el modelo |
+| AS-V09 | Draw calls y material | 1 malla y 1 primitiva por LOD; 1 material; `alphaMode = OPAQUE`; procedural sin texturas; sin planos con textura que imiten el modelo; atributos exactos: `POSITION`, `NORMAL`, `COLOR_0`, `_RIM_MASK` (con `_rim_mask` = 1 solo en vértices del casco) |
 | AS-V10 | Texturas (GLB) | ≤ 1 por asset; potencia de 2; ≤ el tamaño de §5; KTX2 |
 | AS-V11 | Tamaño del archivo | ≤ §5 |
 | AS-V12 | Contenido prohibido | 0 cámaras, luces, skins, morph targets y animaciones en la raíz |
