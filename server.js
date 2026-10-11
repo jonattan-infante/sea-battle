@@ -1,9 +1,12 @@
 const { createServer } = require('http');
 const { parse } = require('url');
+const { loadEnvConfig } = require('@next/env');
+const dev = process.env.NODE_ENV !== 'production';
+loadEnvConfig(process.cwd(), dev);
 const next = require('next');
 const { Server } = require('socket.io');
+const { verifyToken } = require('@clerk/backend');
 
-const dev = process.env.NODE_ENV !== 'production';
 const hostname = 'localhost';
 const port = parseInt(process.env.PORT || '3000', 10);
 
@@ -67,10 +70,36 @@ app.prepare().then(() => {
     handle(req, res, parsedUrl);
   });
 
+  const publicDomain = process.env.RAILWAY_PUBLIC_DOMAIN;
+  const allowedOrigins = [
+    `http://localhost:${port}`,
+    'http://localhost:3000',
+    ...(publicDomain ? [`https://${publicDomain}`] : [])
+  ];
+
   const io = new Server(httpServer, {
     cors: {
-      origin: '*',
+      origin: allowedOrigins,
       methods: ['GET', 'POST']
+    }
+  });
+
+  // Autenticación: exigir JWT válido de Clerk en cada conexión socket
+  const clerkSecretKey = process.env.CLERK_SECRET_KEY;
+  io.use(async (socket, next) => {
+    try {
+      if (!clerkSecretKey) {
+        // Sin clave: permitir solo en desarrollo local
+        if (dev) return next();
+        return next(new Error('server misconfigured'));
+      }
+      const token = socket.handshake.auth?.token;
+      if (!token) return next(new Error('unauthorized'));
+      const session = await verifyToken(token, { secretKey: clerkSecretKey });
+      socket.data.userId = session.sub;
+      next();
+    } catch (err) {
+      next(new Error('unauthorized'));
     }
   });
 

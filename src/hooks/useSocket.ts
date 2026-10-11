@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { useUser } from '@clerk/nextjs';
+import { useAuth } from '@clerk/nextjs';
 import { Position } from '../types/game';
 
 export interface ShipPositionUpdateEvent {
@@ -40,48 +40,55 @@ interface UseSocketReturn {
 }
 
 export const useSocket = (): UseSocketReturn => {
-  const { user } = useUser();
+  const { getToken, isLoaded, userId } = useAuth();
   const socketRef = useRef<Socket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
 
+  // Crear el socket una vez (sin conectar): auth con JWT fresco de Clerk en cada intento
   useEffect(() => {
-    // Conectar siempre, con o sin usuario autenticado
-    if (!socketRef.current) {
-      // Conectar al servidor Socket.io (mismo puerto que Next.js)
-      const socketUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
-      console.log('🔌 Conectando a Socket.IO:', socketUrl);
-      socketRef.current = io(socketUrl, {
-        auth: {
-          token: user?.id || 'guest' // Usar ID de Clerk o guest
-        },
-        transports: ['websocket', 'polling']
-      });
+    const socketUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+    const socket = io(socketUrl, {
+      autoConnect: false,
+      transports: ['websocket', 'polling'],
+      auth: (cb) => {
+        getToken()
+          .then((token) => cb({ token: token ?? undefined }))
+          .catch(() => cb({}));
+      }
+    });
+    socketRef.current = socket;
 
-      const socket = socketRef.current;
+    socket.on('connect', () => {
+      setIsConnected(true);
+    });
 
-      socket.on('connect', () => {
-        console.log('Conectado al servidor Socket.io');
-        setIsConnected(true);
-      });
+    socket.on('disconnect', () => {
+      setIsConnected(false);
+    });
 
-      socket.on('disconnect', () => {
-        console.log('Desconectado del servidor Socket.io');
-        setIsConnected(false);
-      });
+    socket.on('connect_error', (error) => {
+      console.error('Error de conexión Socket.io:', error.message);
+      setIsConnected(false);
+    });
 
-      socket.on('connect_error', (error) => {
-        console.error('Error de conexión Socket.io:', error);
-        setIsConnected(false);
-      });
+    return () => {
+      socket.removeAllListeners();
+      socket.disconnect();
+      socketRef.current = null;
+      setIsConnected(false);
+    };
+  }, []); // getToken se captura a propósito: se invoca en cada intento de conexión
 
-      // Cleanup
-      return () => {
-        socket.disconnect();
-        socketRef.current = null;
-        setIsConnected(false);
-      };
+  // Conectar solo con usuario autenticado
+  useEffect(() => {
+    const socket = socketRef.current;
+    if (!socket) return;
+    if (isLoaded && userId) {
+      socket.connect();
+    } else if (socket.connected) {
+      socket.disconnect();
     }
-  }, []); // Solo conectar una vez al montar
+  }, [isLoaded, userId]);
 
   const joinGame = (playerId: string, shipId: string) => {
     socketRef.current?.emit('player_join', { playerId, shipId });

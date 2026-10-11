@@ -11,6 +11,7 @@
     "test:watch": "jest --watch"
   },
   "dependencies": {
+    "@clerk/backend": "^3.23.2",
     "@clerk/nextjs": "^6.32.0",
     "@react-three/drei": "^10.7.6",
     "@react-three/fiber": "^9.3.0",
