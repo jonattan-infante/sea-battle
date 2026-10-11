@@ -41,3 +41,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# build del servidor y artefactos de harness
+/dist
+/.next-e2e/
+/qa-artifacts
+/test-results
+/playwright-report

@@ -1,0 +1,52 @@
+// Harness e2e, de rendimiento y de capturas. Corre contra un build de producción propio en .next-e2e
+// (`npm run build:e2e`; los scripts test:e2e, test:perf y qa:capture ya lo hacen).
+// Servidores: invitado con NPC (3100), invitado sin NPC para medir reposo (3101), sin invitado (3102)
+// y escenario determinista de capturas (3103).
+import { defineConfig, devices } from '@playwright/test';
+
+export const PORTS = { game: 3100, empty: 3101, auth: 3102, showcase: 3103 } as const;
+
+const server = (port: number, env: string) => ({
+  command: `${env} PORT=${port} NEXT_DIST_DIR=.next-e2e NODE_ENV=production node dist/server/index.js`,
+  url: `http://localhost:${port}/healthz`,
+  reuseExistingServer: false, // nunca reutilizar un servidor ajeno o viejo: si el puerto está ocupado, fallar
+  timeout: 60_000,
+  stdout: 'ignore' as const,
+  stderr: 'pipe' as const
+});
+
+// Chrome del sistema con GPU (Metal en macOS): con SwiftShader el WebGL por software satura la CPU
+const chrome = {
+  channel: 'chrome',
+  launchOptions: { args: ['--use-angle=metal', '--enable-gpu-rasterization', '--ignore-gpu-blocklist'] }
+};
+
+export default defineConfig({
+  testDir: './e2e',
+  globalSetup: './e2e/global-setup.ts',
+  fullyParallel: false,
+  workers: 1,
+  timeout: 60_000,
+  expect: { timeout: 10_000 },
+  reporter: [['list'], ['html', { outputFolder: 'playwright-report', open: 'never' }]],
+  outputDir: 'test-results',
+  use: {
+    baseURL: `http://localhost:${PORTS.game}`,
+    trace: 'retain-on-failure',
+    screenshot: 'only-on-failure'
+  },
+  webServer: [
+    server(PORTS.game, 'AUTH_BYPASS=1'),
+    server(PORTS.empty, 'AUTH_BYPASS=1 SEA_BATTLE_NPCS=0'),
+    server(PORTS.auth, ''),
+    server(PORTS.showcase, 'AUTH_BYPASS=1 SEA_BATTLE_NPCS=0 SEA_BATTLE_SCENARIO=showcase')
+  ],
+  projects: [
+    { name: 'desktop', use: { ...chrome, viewport: { width: 1440, height: 900 } }, grepInvert: /@mobile/ },
+    {
+      name: 'mobile',
+      use: { ...chrome, viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, userAgent: devices['iPhone 13'].userAgent },
+      grep: /@mobile/
+    }
+  ]
+});
