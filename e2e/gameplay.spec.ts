@@ -1,6 +1,7 @@
 import { expect, Page, test } from '@playwright/test';
 import { PORTS } from '../playwright.config';
-import { AMBUSH_POINT } from '../server/scenarios';
+import { SHIP_CLASSES } from '../src/game/constants';
+import { AMBUSH_POINT, BLIND_GUNNER_POINT, SHOWCASE_POINT } from '../server/scenarios';
 import { clickWater, dialogsOf, enterGame, hud, me, ships, trackSocket, waitFor } from './helpers';
 
 test.describe('Landing', () => {
@@ -111,15 +112,20 @@ test.describe('Partida como invitado', () => {
     test.setTimeout(90_000);
     const net = trackSocket(page);
     await enterGame(page, `http://localhost:${PORTS.showcase}`);
-    // Escenario showcase: pirata quieto en (45, 205). El jugador para a 85 m, fuera de su radio de agresión
-    // (70 m): si se acercara más, al acabar la protección el pirata atacaría y dejaría de estar quieto
+    // Escenario showcase: pirata en (45, 205). El jugador para a 85 m, fuera de su radio de agresión (70 m)
     await page.evaluate(() => {
       const rt = window.__SEA_BATTLE__!.runtime() as unknown as { client: { moveTo: (x: number, z: number) => void } };
       rt.client.moveTo(-10, 140);
     });
     await waitFor(() => me(page), (s) => !!s && Math.hypot(s.x + 10, s.z - 140) < 4, 45_000, 250);
-    await page.waitForTimeout(700);
-    const pirate = (await ships(page)).find((s) => s.kind === 'pirate' && s.state === 'alive' && s.screen && Math.hypot(s.x - 45, s.z - 205) < 10);
+    // El pirata puede no estar quieto: si un test anterior (capturas) lo atacó, vuelve a su puesto y puede entrar en
+    // combate al pasar cerca. Da igual para AC-26: se elige el pirata en pantalla más cercano y se relee su posición
+    // justo antes del clic
+    const vw = page.viewportSize()!;
+    const onScreen = (s: Awaited<ReturnType<typeof ships>>[number]) =>
+      s.kind === 'pirate' && s.state === 'alive' && !!s.screen && s.screen.sx > 0 && s.screen.sx < vw.width && s.screen.sy > 0 && s.screen.sy < vw.height;
+    const near = await waitFor(async () => (await ships(page)).filter(onScreen).sort((a, b) => Math.hypot(a.x + 10, a.z - 140) - Math.hypot(b.x + 10, b.z - 140))[0], (p) => !!p, 45_000, 250);
+    const pirate = (await ships(page)).find((s) => s.id === near!.id && onScreen(s));
     expect(pirate?.screen).toBeTruthy();
 
     net.reset();
@@ -218,6 +224,44 @@ test.describe('Móvil @mobile', () => {
       }
     } finally {
       await ctx.close();
+    }
+  });
+
+  test('AC-105: con el objetivo a 60 m al sur o al norte, la pista no tapa su placa ni la propia (844×390 y 390×844)', async ({ browser }) => {
+    test.setTimeout(300_000);
+    // Mercante quieto del showcase en (−40, 195); el jugador para 60 m al norte (placa del objetivo bajo el barco, el
+    // caso de H-06b) o 60 m al sur (sobre el barco). Los dos puntos quedan a > 70 m de los piratas del escenario.
+    const cases = [{ side: 'sur', z: 135 }, { side: 'norte', z: 255 }];
+    for (const { side, z } of cases) for (const viewport of [{ width: 844, height: 390 }, { width: 390, height: 844 }]) {
+      const ctx = await browser.newContext({ viewport, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+      try {
+        const page = await ctx.newPage();
+        await enterGame(page, `http://localhost:${PORTS.showcase}`);
+        await sailTo(page, -40, z);
+        await waitFor(() => me(page), (s) => !!s && Math.hypot(s.x + 40, s.z - z) < 4, 45_000, 250);
+        await page.waitForTimeout(700);
+        const merchant = (await ships(page)).find((s) => s.kind === 'merchant' && s.screen && Math.hypot(s.x + 40, s.z - 195) < 5);
+        expect(merchant?.screen).toBeTruthy();
+        await page.touchscreen.tap(merchant!.screen!.sx, merchant!.screen!.sy);
+        await expect(page.getByTestId('target-frame')).toHaveAttribute('data-target-id', merchant!.id);
+        const hint = page.getByTestId('hint');
+        await expect(hint).toBeVisible();
+        await page.waitForTimeout(500); // la pista revisa las placas a 10 Hz
+        const boxes = {
+          hint: (await hint.boundingBox())!,
+          own: (await page.locator('[data-plate][data-relation="self"]').boundingBox())!,
+          target: (await page.locator(`[data-plate][data-ship-id="${merchant!.id}"]`).boundingBox())!
+        };
+        console.log(`AC-105 objetivo al ${side}, ${viewport.width}×${viewport.height}: ranura ${(await hint.getAttribute('class'))?.includes('is-alt') ? 'sobre el barco' : 'bajo el barco'} · ${JSON.stringify(boxes)}`);
+        for (const id of ['own', 'target'] as const) {
+          const a = boxes.hint;
+          const b = boxes[id];
+          const overlap = a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+          expect(overlap, `objetivo al ${side}, ${viewport.width}×${viewport.height}: la pista se cruza con la placa ${id}`).toBe(false);
+        }
+      } finally {
+        await ctx.close();
+      }
     }
   });
 
@@ -335,6 +379,87 @@ test.describe('Puerto y barcos', () => {
     await page.waitForTimeout(700);
     expect((await me(page))!.classId).toBe('brig');
     expect(dialogsOf(page)).toEqual([]);
+  });
+});
+
+// Textos flotantes de daño: cada spawn reescribe el texto de un elemento del pool de overlays.ts
+async function recordFloats(page: Page) {
+  await page.evaluate(() => {
+    const w = window as unknown as { __FLOATS__: { kind: string; text: string }[] };
+    w.__FLOATS__ = [];
+    new MutationObserver((list) => {
+      for (const m of list) {
+        const pop = m.target;
+        if (!(pop instanceof HTMLElement) || !pop.classList.contains('wo-float__pop')) continue;
+        w.__FLOATS__.push({ kind: pop.closest<HTMLElement>('[data-float]')?.dataset.kind ?? '', text: pop.textContent ?? '' });
+      }
+    }).observe(document.body, { childList: true, subtree: true });
+  });
+}
+const floatsOf = (page: Page) => page.evaluate(() => (window as unknown as { __FLOATS__: { kind: string; text: string }[] }).__FLOATS__);
+
+interface ImpactEvent { type: 'impact'; shipId: string; byShipId: string; damage: number; hits: number; misses: number }
+function impactsOn(net: ReturnType<typeof trackSocket>, shipId: string): ImpactEvent[] {
+  return net.received
+    .flatMap((p) => {
+      try {
+        const [name, frame] = JSON.parse(p.slice(2)) as [string, { e?: { type: string }[] }];
+        return name === 'frame' ? frame.e ?? [] : [];
+      } catch {
+        return [];
+      }
+    })
+    .filter((e): e is ImpactEvent => e.type === 'impact' && (e as ImpactEvent).shipId === shipId);
+}
+
+// Espera n impactos sobre el jugador y devuelve los impactos y los textos flotantes ya mostrados
+async function impactsAndFloats(page: Page, net: ReturnType<typeof trackSocket>, myId: string, n: number) {
+  await waitFor(async () => impactsOn(net, myId).length, (k) => k >= n, 120_000, 250);
+  const before = impactsOn(net, myId).length;
+  await page.waitForTimeout(600); // el texto sale cuando la bala llega en el reloj interpolado (~100 ms después)
+  return { before, after: impactsOn(net, myId), floats: (await floatsOf(page)).filter((f) => f.kind !== 'gold') };
+}
+
+const sailTo = (page: Page, x: number, z: number) =>
+  page.evaluate(([px, pz]) => {
+    const rt = window.__SEA_BATTLE__!.runtime() as unknown as { client: { moveTo: (x: number, z: number) => void } };
+    rt.client.moveTo(px, pz);
+  }, [x, z]);
+
+test.describe('Números de daño', () => {
+  test('AC-75 (k = 0): cada andanada fallida contra el jugador muestra un único "Fallo" y ningún número', async ({ page }) => {
+    test.setTimeout(180_000);
+    const net = trackSocket(page);
+    await enterGame(page, `http://localhost:${PORTS.showcase}`);
+    await recordFloats(page);
+    const myId = (await me(page))!.id;
+    // Artillero ciego de server/scenarios.ts: precisión 0, ataca en cuanto acaba la protección inicial
+    await sailTo(page, BLIND_GUNNER_POINT.x, BLIND_GUNNER_POINT.z - 45);
+    const { before, after, floats } = await impactsAndFloats(page, net, myId, 3);
+    console.log(`AC-75 (k = 0): ${after.length} impactos · textos ${JSON.stringify(floats)}`);
+    expect(after.every((e) => e.hits === 0 && e.damage === 0 && e.misses === SHIP_CLASSES.pirate.cannonsPerSide)).toBe(true);
+    expect(floats.every((f) => f.kind === 'miss' && f.text === 'Fallo')).toBe(true);
+    expect(floats.length).toBeGreaterThanOrEqual(before);
+    expect(floats.length).toBeLessThanOrEqual(after.length);
+  });
+
+  test('AC-75 (k > 0): cada andanada contra el jugador muestra un único número igual a k × daño', async ({ page }) => {
+    test.setTimeout(180_000);
+    const net = trackSocket(page);
+    await enterGame(page, `http://localhost:${PORTS.showcase}`);
+    await recordFloats(page);
+    const myId = (await me(page))!.id;
+    // Pirata quieto del punto de captura (precisión 0,6): ataca al acabar la protección
+    await sailTo(page, SHOWCASE_POINT.x, SHOWCASE_POINT.z);
+    const { before, after, floats } = await impactsAndFloats(page, net, myId, 4);
+    const damage = SHIP_CLASSES.pirate.cannon!.damage;
+    const expected = after.map((e) => (e.hits === 0 ? 'Fallo' : `−${e.hits * damage}`));
+    console.log(`AC-75 (k > 0): impactos k = ${after.map((e) => e.hits).join(', ')} · textos ${floats.map((f) => f.text).join(', ')}`);
+    for (const e of after) expect(e.damage).toBe(e.hits * damage);
+    expect(floats.length).toBeGreaterThanOrEqual(before);
+    expect(floats.length).toBeLessThanOrEqual(after.length);
+    expect(floats.map((f) => f.text)).toEqual(expected.slice(0, floats.length));
+    expect(floats.filter((f) => f.text !== 'Fallo').every((f) => f.kind === 'taken')).toBe(true);
   });
 });
 

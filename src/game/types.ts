@@ -51,6 +51,7 @@ export interface Ship {
   protectedUntil: number;
   ai: NpcAi | null;
   disconnectedAt: number | null;
+  accuracyOverride?: number; // solo escenarios de prueba (server/scenarios.ts): precisión fija de sus andanadas
 }
 
 export interface DeathInfo {

@@ -33,6 +33,18 @@ describe('E2 — Ataque persistente (§7)', () => {
     expect(volleysOf(run(world, 8), ship.id).length).toBeGreaterThan(0);
   });
 
+  test('accuracyOverride (solo escenarios de prueba): con 0 todas las andanadas salen con k = 0 y no hacen daño', () => {
+    const world = emptyWorld();
+    const ship = placePlayer(world, 'a', 200, 200);
+    const target = dummy(world, 200, 240, 1000);
+    ship.accuracyOverride = 0;
+    attack(world, 'a', target.id);
+    const volleys = volleysOf(run(world, 13), ship.id);
+    expect(volleys.length).toBe(4);
+    for (const v of volleys) expect(v.type === 'volley' && v.hits).toBe(0);
+    expect(target.hp).toBe(1000);
+  });
+
   test('AC-32: el daño medio por andanada es cañones × daño × precisión ±2 % (10 000 andanadas)', () => {
     const rng = createRng(99);
     for (const classId of ['sloop', 'brig', 'frigate']) {

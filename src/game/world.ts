@@ -632,7 +632,7 @@ function updateCombat(world: World, ship: Ship, dt: number): void {
   if (ship.reload > EPS || dist > cannon.range) return;
 
   const cannons = classOf(ship).cannonsPerSide;
-  const hits = rollHits(world.rng, cannons, cannon.accuracy);
+  const hits = rollHits(world.rng, cannons, ship.accuracyOverride ?? cannon.accuracy);
   const duration = dist / CANNONBALL_SPEED;
   world.projectiles.push({
     id: world.nextId++,

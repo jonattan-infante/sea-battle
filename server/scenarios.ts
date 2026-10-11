@@ -14,6 +14,10 @@ export const AMBUSH_POINT = { x: 0, z: -420 };
 const AMBUSH_PIRATES = 5;
 const AMBUSH_RADIUS = 30;
 
+// Artillero ciego para el e2e de "Fallo" (AC-75): un pirata quieto cuyas andanadas nunca aciertan (k = 0). A 424 m
+// del puerto, también fuera del radio de interés desde el anillo de reaparición y desde los puntos de captura.
+export const BLIND_GUNNER_POINT = { x: -300, z: 300 };
+
 export const SCENARIOS = ['showcase', 'shipyard'] as const;
 export type ScenarioName = (typeof SCENARIOS)[number];
 
@@ -55,6 +59,15 @@ export function applyScenario(world: World, name: ScenarioName): void {
 
   // Restos flotantes cerca del punto de captura (VFX §14)
   world.wrecks.push({ id: `wreck-${world.nextId++}`, pos: { x: 12, z: 182 }, gold: 30, expiresAt: world.time + WRECK_LIFETIME * 100 });
+
+  const blind = spawnPirate(world, 2);
+  blind.pos = { ...BLIND_GUNNER_POINT };
+  blind.heading = 0;
+  blind.ai!.origin = { ...blind.pos };
+  blind.ai!.wait = 1e9;
+  blind.destination = null;
+  blind.path = [];
+  blind.accuracyOverride = 0;
 
   // Emboscada: piratas quietos en corro alrededor de AMBUSH_POINT; atacan a quien llegue sin protección
   for (let i = 0; i < AMBUSH_PIRATES; i++) {
