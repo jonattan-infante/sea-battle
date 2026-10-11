@@ -74,10 +74,11 @@ async function sinkVictim(victim: { frames: ServerFrame[] }): Promise<number> {
 
 // Zarpar se activa en el cliente cuando su reloj (adelantado `ahead` s) alcanza respawnAt: eso pasa en el instante
 // real respawnAt − ahead. El servidor llega hasta el último tick anterior y el mensaje entra antes del siguiente.
-async function sailWithClockAhead(victim: { c: ClientSocket; frames: ServerFrame[] }, ahead: number) {
+// `delayed` ticks de los que tocaban antes de ese instante aún no han corrido (el setInterval se retrasó, QA-6 H-18).
+async function sailWithClockAhead(victim: { c: ClientSocket; frames: ServerFrame[] }, ahead: number, delayed = 0) {
   const respawnAt = await sinkVictim(victim);
   const sendAt = respawnAt - ahead;
-  await ticks(Math.floor((sendAt - game.world.time) / DT + 1e-6));
+  await ticks(Math.floor((sendAt - game.world.time) / DT + 1e-6) - delayed);
   const serverTime = game.world.time;
   const mark = victim.frames.length;
   clock += 1000; // la cubeta de intenciones se recarga entre corridas
@@ -111,6 +112,24 @@ describe('AC-109: Zarpar en el mismo frame en que se activa, con el reloj del cl
     expect(runs.reduce((a, r) => a + r.rejected, 0)).toBe(0);
     // El caso límite sí se dio: el servidor procesó algún respawn con su reloj 1 tick (50 ms) antes de los 8 s
     expect(worst).toBeCloseTo(DT * 1000, 0);
+  }, 30_000);
+
+  // El 2.º tick de margen (constants.ts:193-196, QA-6 H-18): con el reloj del cliente adelantado hasta 50 ms y el tick
+  // anterior retrasado por el setInterval, el servidor procesa el respawn con su world.time 2 ticks (100 ms) antes de
+  // respawnAt. Se acepta con 2 ticks de tolerancia; con 1 tick, se rechazaría
+  test('con el reloj adelantado hasta 50 ms y 1 tick retrasado por el setInterval, el servidor acepta 20 de 20 con su reloj 100 ms antes de respawnAt', async () => {
+    const victim = await join('V');
+    await join('K');
+    const runs: { ahead: number; accepted: boolean; rejected: number; lagMs: number }[] = [];
+    for (let i = 0; i < 20; i++) {
+      const ahead = (0.05 * (i + 1)) / 20;
+      runs.push({ ahead, ...(await sailWithClockAhead(victim, ahead, 1)) });
+    }
+    const lags = runs.map((r) => r.lagMs);
+    console.log(`AC-109 (tick retrasado): ${runs.filter((r) => r.accepted).length}/20 aceptados · ${runs.reduce((a, r) => a + r.rejected, 0)} "${NOT_YET}" · el servidor procesó con su reloj entre ${Math.min(...lags).toFixed(1)} y ${Math.max(...lags).toFixed(1)} ms antes de respawnAt`);
+    expect(runs.filter((r) => r.accepted)).toHaveLength(20);
+    expect(runs.reduce((a, r) => a + r.rejected, 0)).toBe(0);
+    for (const lag of lags) expect(lag).toBeCloseTo(2 * DT * 1000, 0);
   }, 30_000);
 
   test('contraste: con el reloj adelantado 150 ms (3 ticks) el servidor lo rechaza con "Aún no puedes zarpar"', async () => {
