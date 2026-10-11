@@ -237,10 +237,10 @@ Con `rm = 0.022·L` (radio de la base del mástil):
 | Mástil | `CylinderGeometry(0.6·rm, rm, h − yd(u), 6)` | Base en `(0, yd(u_m), z_m)`. Con caída: grupo del mástil y sus velas rotado `rotation.x = −rake` alrededor de la base (la punta va a popa) | `mast` |
 | Verga (LOD0) | `CylinderGeometry(0.35·rm, 0.35·rm, w + 0.6, 5)`, `rotation.z = π/2` | Borde superior de cada vela cuadra, en `z_m + 0.35` | `mast` |
 | **Vela cuadra** | `PlaneGeometry(w, h, 2, 2)` (pirata: `(w, h, 4, 2)`; franjas: `(w, h, 2, 5)`) | Centro en `(0, y_b + h/2, z_m + 0.45)`. **Panza**: `z += 0.12·w·sin(πu')·sin(πv')`, con u', v' ∈ [0, 1] a lo ancho y alto. **Braza**: vela + verga rotadas `+20°` en Y alrededor del eje del mástil (todas igual) | `sail` |
-| Vela cangreja / cangrejo | 5 vértices en el plano YZ (x = 0): amura A, puño de driza B, pico C, puño de escota D y centro E desplazado `x += 0.08·pie` (panza) → 4 triángulos en abanico | Coordenadas (z, y) en la tabla de clase | `sail` |
+| Vela cangreja / cangrejo | 5 vértices en el plano YZ (x = 0): amura A, puño de driza B, pico C, puño de escota D y centro E desplazado `x += 0.08·pie` (panza) → 4 triángulos en abanico. **Apertura de 25°** (D12): vela + botavara + pico giran 25° alrededor del eje del mástil (gratil A→B) | Coordenadas (z, y) en la tabla de clase | `sail` |
 | Botavara y pico (LOD0) | `CylinderGeometry(0.3·rm, 0.3·rm, len, 5)` alineados de A→D y de B→C | — | `mast` |
-| Vela latina | Triángulo A (amura) · B (escota) · C (pico) + centro con panza `0.06·len` | Tabla de clase | `sail` |
-| Foque | Triángulo: puño de driza H, amura T (punta del bauprés o un punto intermedio) y puño de escota C, + centro con panza `0.06·\|HT\|` | Tabla de clase | `sail` |
+| Vela latina | Triángulo A (amura) · B (escota) · C (pico) + centro con panza `0.06·len`. **Apertura de 25°** alrededor del eje vertical que pasa por A, con la entena incluida (D12) | Tabla de clase | `sail` |
+| Foque | Triángulo: puño de driza H, amura T (punta del bauprés o un punto intermedio) y puño de escota C, + centro con panza `0.06·\|HT\|`. **Apertura de 25°** alrededor del estay T→H (D12) | Tabla de clase | `sail` |
 | Bauprés | `CylinderGeometry(0.25·rm, 0.45·rm, bs + 1, 5)`, `rotation.x = +70°` (eje a 20° sobre el horizonte hacia +Z) | Arranque `S = (0, 1.25·F, L/2 − 1)`; centro = `S + (0, 0.342, 0.940)·(bs + 1)/2`; punta `T = S + (0, 0.342, 0.940)·(bs + 1)` | `mast` |
 | Cofa (LOD0) | `CylinderGeometry(0.045·L, 0.04·L, 0.5, 6)` | En el mástil, a la altura del borde superior de la vela baja + 0,1 | `rail` |
 | Cañón (LOD0) | Balandra `(0.12, 0.16, 1.2, 6)` · Bergantín `(0.14, 0.18, 1.4, 6)` · Fragata `(0.16, 0.21, 1.6, 6)` · Pirata `(0.13, 0.17, 1.3, 6)`; `rotation.z = π/2` | La boca en el socket; centro = socket − signo·(len/2) en X | `cannon` |
@@ -248,13 +248,28 @@ Con `rm = 0.022·L` (radio de la base del mástil):
 | Bandera | `PlaneGeometry(1.0·kf, 0.65·kf)`, `kf = L/16`, en el plano YZ (`rotation.y = π/2`) | Punta del palo mayor, desplazada `−Z` media anchura (ondea a popa) | `flag` |
 | Gallardete (jugador) | Triángulo de `2.4·kf × 0.5·kf` en el plano YZ | Punta del palo mayor | `flag` |
 
-### 8.3 Visibilidad de las velas (por qué hay braza y velas de cuchillo)
-Con la cámara a 55° y guiñada 0°, el plano de vista es YZ. Una vela cuadra sin brazar (plano YZ) **se ve de canto con rumbo E/O** y la facción desaparece. Se resuelve con 3 medidas:
-1. **Braza de +20°** en todas las cuadras: dejan de estar de canto con rumbo E/O.
-2. **Al menos 1 vela de cuchillo grande por barco** (cangreja, latina o foque), en el plano del eje del barco: es visible justo con rumbo E/O.
-3. **Panza de 0,12·w**, que da volumen incluso de canto.
+### 8.3 Visibilidad de las velas (braza, apertura y velas de cuchillo)
+Con la cámara a 55° y guiñada 0°, el plano de vista es YZ. Cada familia de velas tiene un rumbo ciego:
+- **Cuadras** (plano XY local): se ven de canto con rumbo E/O.
+- **De cuchillo** (cangreja, latina, foque; plano YZ local): se ven de canto con rumbo N/S. Con la proa alejándose de la cámara, además, las cuadras se ven acortadas por el cos 55°.
 
-Regla AS-V14 (§11): el área de vela visible en pantalla con cualquier rumbo es ≥ 25 % del área máxima. Si falla, la braza sube a 30°.
+**Medición** (dev-render, `runtime.measureSails`; zoom 0,7×; rumbos de 0° a 345° cada 15°; mínimo/máximo de píxeles de vela; capturas en `qa-artifacts/render/as-v14/`):
+
+| Clase | Braza 20° | Braza 30° | Braza 20° + cuchillo abierto 25° |
+|---|---|---|---|
+| Balandra | **0,180** (180°) | 0,169 | 0,292 |
+| Bergantín | 0,361 | 0,324 | 0,517 |
+| Fragata | 0,491 | 0,416 | 0,546 |
+| Pirata | **0,232** (180°) | 0,210 | 0,329 |
+| Mercante | **0,249** (240°) | 0,247 | 0,262 |
+
+**Decisión (D12):**
+1. **Braza de las cuadras: +20°**, sin cambios. Subirla a 30° empeora las 5 clases. Corrijo lo que decía este spec antes: el mínimo no está en E/O sino con la proa alejándose de la cámara, donde la braza no ayuda.
+2. **Todas las velas de cuchillo de todas las clases se abren 25°** alrededor de su gratil (§8.2). Todas giran hacia el mismo costado del barco, el de la prueba medida (`*-cuchillo25.png`), porque cambiar el sentido cambiaría el rumbo del mínimo. Se aplica a todas las clases y no solo a las que fallan: el aparejo se ve coherente en toda la flota y las que ya pasaban también mejoran.
+3. **El Mercante gana un foque** (§8.4): era la única clase sin vela a proa y pasaba por solo 0,012.
+4. **Panza de 0,12·w** en las cuadras (sin cambios).
+
+Regla AS-V14 (§11): mínimo/máximo ≥ 0,25 en las 5 clases, en LOD0 y LOD1. Objetivo de margen: ≥ 0,28. Si una clase queda por debajo de 0,25, solo esa clase abre sus velas de cuchillo a 35° y se vuelve a medir.
 
 ### 8.4 Parámetros por clase
 Notación: vela cuadra = `w × h @ y_b` (ancho × alto en la altura de su borde inferior); cangreja = puntos (z, y) A/B/C/D.
@@ -328,6 +343,7 @@ Notación: vela cuadra = `w × h @ y_b` (ancho × alto en la altura de su borde 
 | Trinquete (a franjas) | 8,6 × 3,6 @ 4,6 · 7,0 × 3,0 @ 8,6. `PlaneGeometry(w, h, 2, 5)`: las bandas de caras 1 y 3, **contando desde 0** desde arriba, en `#2F7FB8`; el resto en `#EADFC6` (patrón crema-azul-crema-azul-crema; D9) |
 | Mayor (a franjas) | 9,2 × 3,8 @ 4,6 · 7,4 × 3,2 @ 8,8 |
 | Mesana latina | A (−5,0, 4,5) · B (−11,4, 4,8) · C (−12,4, 11,5); entena de A a C |
+| Foque (D12) | H (0, 13,1, 5,3) · T = punta del bauprés (0, 4,71, 14,7) · C (0, 3,96, 9,53) |
 | Castillo de popa alto | `Box(6.0, 1.8, 5.4)` en (0, 3,75, −8,3) |
 | Carga | 6 × `Box(1.4, 1.4, 1.4)` `cargo` en (±1,2, 3,1, +2,6 / +1,0 / −4,4) · 3 × `CylinderGeometry(0.45, 0.45, 1.0, 6)` `barrel` en (−1,3 / 0 / +1,3, 3,2, +7,6) |
 | Colores | `hull #6E4A2C` · `band #E8DCC0` · `deck #C9965E` · `rail/mast #6B4426` |
@@ -417,7 +433,7 @@ Se ejecuta con un script de desarrollo (`npm run assets:validate`, dependencia d
 | AS-V11 | Tamaño del archivo | ≤ §5 |
 | AS-V12 | Contenido prohibido | 0 cámaras, luces, skins, morph targets y animaciones en la raíz |
 | AS-V13 | Equivalencia GLB ↔ procedural | Cajas envolventes a ±5 % por eje y sockets a ≤ 0,2 m de distancia |
-| AS-V14 | Velas visibles con cualquier rumbo: en el visor de assets con el nivel de cámara más cercano (0,7×), píxeles de vela con rumbos de 0° a 345° cada 15° | Mínimo ≥ 25 % del máximo |
+| AS-V14 | Velas visibles con cualquier rumbo: `runtime.measureSails` con zoom 0,7×, rumbos de 0° a 345° cada 15°, en LOD0 y LOD1, para las 5 clases P0 | Mínimo/máximo ≥ 0,25 en todas (objetivo ≥ 0,28) |
 | AS-V15 | El procedural cumple el contrato: AS-V02…V09 en Jest para las 5 recetas P0 | `npm test` en verde |
 | AS-V16 | Islas: radio visual en la flotación de cada columna de vértices de la playa; y ningún vértice sobre el agua (y > 0) de la isla, rocas, muelles o palmeras fuera de r + 0,5 m en XZ | Playa entre 0,94r y 1,00r en el 100 %; 0 vértices fuera |
 

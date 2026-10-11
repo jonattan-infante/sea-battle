@@ -27,6 +27,8 @@
 
 **Orden de render** (`renderOrder`): océano 0 → `P_WATER` 1 → `P_CONTACT` 2 → islas 3 → `RINGS` 4 → barcos 5 → `P_BALL_SHADOW` 6 → `P_BALL` 7 → `P_ALPHA` 8 → `P_ADD` 9. Los anillos se pintan sobre las islas y los barcos los tapan.
 
+**Alfa del framebuffer.** El canvas se crea sin alfa (`gl={{ alpha: false }}`; R3F lo activa por defecto). Si un pool usa `CustomBlending`, fija `blendSrcAlpha = ONE` y `blendDstAlpha = ONE_MINUS_SRC_ALPHA`. Así el alfa del framebuffer sigue en 1 y la página no se transparenta bajo los efectos. `P_WATER` usa `CustomBlending` sin factores de alfa: **HIPÓTESIS** de que hoy deja huecos de alfa; hay que comprobarlo con `gl.readPixels` bajo una estela.
+
 ### 0.3 Partícula estándar (atributos de instancia)
 | Atributo | Contenido |
 |---|---|
@@ -34,7 +36,7 @@
 | `aV0Life` (vec4) | Velocidad inicial xyz (m/s) + vida (s) |
 | `aSize` (vec4) | Tamaño inicial, tamaño final (m), gravedad (m/s², + = sube), arrastre (s⁻¹) |
 | `aC0` / `aC1` (vec4) | Color RGBA inicial y final (lineal) |
-| `aMisc` (vec4) | Forma (0 disco suave · 1 anillo · 2 llama · 3 astilla cuadrada · 4 estela de chispa · 5 espuma ruidosa · 6 cruz), rotación inicial, velocidad de giro (rad/s), estiramiento |
+| `aMisc` (vec4) | Forma (0 disco suave · 1 anillo · 2 llama · 3 astilla cuadrada · 4 estela de chispa · 5 espuma ruidosa: disco suave × ruido de valor **interpolado** (bilineal, 3 celdas por diámetro, semilla por instancia). Un `floor()` sin interpolar da bloques pixelados, como en `particles.ts:124-126` · 6 cruz), rotación inicial, velocidad de giro (rad/s), estiramiento |
 
 ```
 τ = uTime − t0 ;  si τ < 0 o τ > life → fuera del clip
@@ -119,12 +121,12 @@ En calidad "baja" (media del frame > 20 ms durante 3 s, o en móvil): tasas × 0
 |---|---|
 | Disparador | Vida del barco en el snapshot. **Humo**: se enciende con ≤ 50 % y se apaga con > 53 %. **Fuego**: se enciende con ≤ 25 % y se apaga con > 28 % (histéresis). La reparación lo apaga al cruzar el umbral: las partículas vivas terminan su vida |
 | Duración | Continuo mientras se cumpla la condición |
-| Humo (≤ 50 %) | En `socket_smoke`, 4 discos/s; velocidad `(0, 2.2, 0)` + viento `(0.6, 0, −0.6)` m/s, en coordenadas de mundo, así que deja un rastro si el barco navega; de 1,0 a 4,2 m × (L/24); vida 2,2 s; `#8C8781` α0,55 → `#5E5A55` α0 |
-| Humo denso (≤ 25 %) | 6/s, `#45413D` α0,7 → `#2E2B29` α0 |
+| Humo (≤ 50 %) | En `socket_smoke`, 3 discos/s. Velocidad inicial `(0, 0.22·h, 0)` m/s + viento `(0.6, 0, −0.6)` m/s, con flotación `g = +0.035·h` m/s² y `h = sb_mast_height`. En coordenadas de mundo, así que deja un rastro si el barco navega. Vida 3,4 s: **sube hasta ≈ la punta del mástil más alto** (0,75h + 0,20h + la altura del socket). Tamaño de 1,2 a 0,25·h m. **Claro**: `#B8B3AC` α0,5 → `#8E8984` α0 (Q10) |
+| Humo denso (≤ 25 %) | 5/s, con la misma cinemática. Tamaño de 1,5 a 0,30·h m. `#8A8580` α0,75 → `#5E5A56` α0. **Antes era `#45413D` y se fundía con las velas negras del pirata y con el agua**: el humo tiene que aclarar lo que cubre (L\* inicial ≥ 55; vela pirata L\* ≈ 15; agua L\* ≈ 38) (Q10) |
 | Fuego (≤ 25 %) | En `socket_fire_01` y `_02` (y `_03` con ≤ 12 %): 12 llamas/s por socket (forma 2) a 1,8 ±0,4 m/s hacia arriba, de 0,9 a 0,25 m × (L/24) (mínimo 5 px), vida 0,55 s, `#FFE08A` α1 → `#C2361B` α0 |
 | Brasas (≤ 25 %) | 2/s por socket de fuego, de 0,12 m (mínimo 2 px), a 3 m/s hacia arriba, vida 1,2 s, `#FFB347` → α0 |
 | Casco dañado | Uniform `uDamage = clamp((0.5 − hp)/0.5, 0, 1)` → difuso × (1 − 0,25·uDamage) |
-| Topes | Por barco: humo ≤ 14, fuego ≤ 22 y brasas ≤ 7 vivos. Fuego en ≤ 8 barcos a la vez (los más cercanos al centro de la pantalla); el resto, solo humo. Móvil: 4 barcos y tasas × 0,5 |
+| Topes | Por barco: humo ≤ 12 (denso ≤ 18), fuego ≤ 22 y brasas ≤ 7 vivos. Fuego en ≤ 8 barcos a la vez (los más cercanos al centro de la pantalla); el resto, solo humo. Móvil: 4 barcos y tasas × 0,5 |
 | Técnica | `P_ALPHA` (humo) + `P_ADD` (fuego y brasas); la CPU recorre ≤ 41 barcos para acumular los temporizadores |
 
 ## 7. Hundimiento
@@ -255,3 +257,5 @@ Escena de combate estándar = AC-89 (20 barcos + 20 NPC + islas) con ≥ 6 duelo
 | VFX-17 | Coste | Traza de Performance en el portátil de referencia: escena estándar con VFX frente a sin VFX | p95 del frame +≤ 2 ms | AC-90 |
 | VFX-18 | Protección | Captura tras reaparecer | Anillos `#BDEBFF` y escudo durante 15 s o hasta atacar | AC-64 |
 | VFX-19 | Restos (P1) | Captura | Anillo dorado visible; parpadea los últimos 5 s; desaparece a los 30 s | AC-59 |
+| VFX-20 | Humo con vida baja legible | Pirata al 20 % de vida: L\* de los píxeles con humo frente a los mismos píxeles sin VFX, **los dos leídos de la captura de pantalla** (sRGB, mismo pipeline); altura de la columna | El humo denso aclara: ΔL\* ≥ +15 sobre la vela negra; la columna llega a la punta del mástil más alto ±15 % | — |
+| VFX-21 | Humo de andanada visible | Captura 300 ms después del fogonazo | Hay humo junto a cada boca, ≥ 8 px de diámetro y L\* ≥ 70 | — |

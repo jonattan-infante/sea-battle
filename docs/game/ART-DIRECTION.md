@@ -258,7 +258,8 @@ Encima, ruido de valor de 2 octavas (escala 1,6 m y 0,7 m, desplazamiento a 0,3 
 
 ### 7.2 Color
 ```
-c = mix(ocean.trough, ocean.crest, smoothstep(−0.6, 0.8, h))          // base ≈ ocean.deep
+h_c = 0.6·h + 0.4·n                                                    // n = ruido de 2 octavas en [−1, 1]: rompe las bandas
+c = mix(ocean.deep, mix(ocean.trough, ocean.crest, smoothstep(−0.6, 0.8, h_c)), 0.55)   // contraste de ola al 55 %
 s  = 1 − smoothstep(0, 18, d_isla)   → c = mix(c, ocean.shallow, 0.85·s)
 s2 = 1 − smoothstep(0, 4,  d_isla)   → c = mix(c, ocean.shore, s2)
 Fresnel F = 0.02 + 0.98·(1 − n·v)^5  → c = mix(c, ocean.sky, 0.6·F)
@@ -566,7 +567,7 @@ Se abre con `P` o con el botón, solo dentro de la zona segura (GDD §11). El ba
 ### 16.1 Landing (`/`)
 | Elemento | Escritorio 1440×900 | Móvil 390×844 |
 |---|---|---|
-| Fondo | Captura del motor en WebP de 1920×1080, ≤ 220 KB: cámara de presentación (elevación 40°, `ppm = 1,6·ppm₀`), una Fragata y un pirata intercambiando andanadas con humo y una isla con palmeras en una esquina. Se genera con un preset de `qa:capture`. `priority` (LCP) | Recorte vertical de 828×1792, ≤ 120 KB |
+| Fondo | Captura del motor en WebP de 1920×1080, ≤ 220 KB: cámara de presentación (elevación 40°, `ppm = 1,6·ppm₀`), una Fragata y un pirata intercambiando andanadas con humo y una isla con palmeras en una esquina. Se genera con `npm run qa:hero`. `priority` (LCP). **Estado (2026-10-11): provisional aceptada** (130 KB / 105 KB, composición correcta). Para aceptarla como definitiva hay que regenerarla tras D2/D8, la rejilla, el humo y AD-24, y debe cumplir VFX-21 (humo de andanada) sin líneas de rejilla falsas | Recorte vertical de 828×1792, ≤ 120 KB |
 | Velo | `linear-gradient(180deg, rgba(6,17,26,.15) 0%, rgba(6,17,26,.55) 60%, #06111A 100%)` | Igual |
 | Logo | "Sea Battle" en Pirata One 88 `--ui-gold` con `text-shadow: 0 3px 0 #6B3A1A, 0 8px 24px rgba(0,0,0,.5)`, alineado a la izquierda en x = 120, centrado en vertical | 52 px, centrado, y = 30 % |
 | Lema | Barlow 22/500 `--ui-text`, máx. 520 px: "Navega, hunde piratas y conviértete en el terror de los mares." | 17 px, máx. 342 px |
@@ -619,6 +620,7 @@ Captura estándar = `npm run qa:capture` con zoom 1,0×, sin modales y el barco 
 | AD-21 | Legibilidad en grises | Capturas de AC-72 convertidas a escala de grises | ≥ 4/5 evaluadores identifican propio, jugador, pirata, mercante y objetivo | AC-72 |
 | AD-22 | Recarga monótona | 5 capturas de un ciclo de recarga: ángulo del relleno del indicador | Creciente y en 360° en el frame del disparo | AC-73 |
 | AD-23 | Zona segura visible | Captura en el borde de la zona (r 110 m) | La línea discontinua y ≥ 3 boyas son visibles; aparece el aviso "Zona segura" | AC-65 |
+| AD-24 | Olas sin bandas regulares | Percentiles p5 y p95 de L\* en el parche de AD-01 | p95 − p5 entre 4 y 12. Medido el 2026-10-11: 16–21, son bandas | — |
 
 ---
 
@@ -649,6 +651,9 @@ Captura estándar = `npm run qa:capture` con zoom 1,0×, sin modales y el barco 
 | D9 | Franjas del mercante: "filas 1 y 3" | **Contando desde 0** → crema-azul-crema-azul-crema. Correcto | ASSET-SPEC §8.4 |
 | D10 | En móvil, el toast (y = 116) se solapa con el minimapa (y 60–148) | Error del spec: los toasts pasan a y = 156 | §12.2 |
 | D11 | El anillo de objetivo fuera de alcance se ve caqui (α 0,6) | α 1; el estado se comunica con el relleno al 40 % y sin giro | VFX-SPEC §11 |
+| D12 | AS-V14 falla en 3 de 5 clases; la braza a 30° empeora las 5 | Braza de las cuadras en 20°. **Todas las velas de cuchillo de todas las clases se abren 25°** hacia el costado de la prueba medida. Foque nuevo en el Mercante. Umbral ≥ 0,25 en LOD0 y LOD1 (objetivo ≥ 0,28); 35° solo para la clase que falle | ASSET-SPEC §8.2–8.4, AS-V14 |
+| D13 | Q10: el humo denso del pirata no se distingue y sube solo 4,8 m | Humo claro (`#B8B3AC` / denso `#8A8580`, L\* ≥ 55) que sube hasta la punta del mástil más alto (cinemática escalada con `sb_mast_height`). El oscurecimiento medido (43 → 6) no se explica con mezcla alfa normal: **HIPÓTESIS**, la muestra con VFX se leyó de un render target lineal (6/255 lineal ≈ 42 sRGB). Falta el resto del reporte de dev-render para confirmarlo | VFX-SPEC §6, VFX-20 |
+| D14 | Portada U6-a | **Provisional aceptada**. Para la definitiva hay que regenerarla con `qa:hero` tras D2/D8, la rejilla, el humo (VFX-21) y las olas (AD-24) | §16.1 |
 
 **Abiertas:**
 
