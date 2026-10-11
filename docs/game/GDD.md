@@ -6,7 +6,7 @@
 ## 0. Resumen
 
 **Sea Battle es "Seafight en 10 minutos"**: navegas con un clic, marcas un barco, pulsas una tecla y tu barco dispara andanadas solo hasta hundirlo; recoges el oro y en el puerto lo conviertes en mejores cañones, casco, velas y barcos.
-- **Un mundo de 1 000 × 1 000 m**, con un puerto seguro en el centro, 6 islas, 12 piratas hostiles y 8 mercantes pasivos, para **20 jugadores** por servidor.
+- **Un mundo de 1 000 × 1 000 m**, con un puerto seguro en el centro, 6 islas, 8 piratas y 4 cañoneras hostiles (desde I2), 8 mercantes pasivos y un Capitán pirata que aparece como jefe, para **20 jugadores** por servidor.
 - **Progresión completa en unos 45–70 min**: 3 clases de barco y 3 ejes de mejora con 3 niveles cada uno, todo pagado con oro.
 - **Calidad antes que cantidad**: una sola munición y dos arquetipos de NPC. No hay XP, perlas, monstruos ni abordaje.
 
@@ -50,7 +50,8 @@
 | Mundo | 1 mapa, 1 puerto con zona segura, 6 islas, límites duros |
 | Barcos del jugador | 3 clases: Balandra, Bergantín y Fragata |
 | Combate | Selección, ataque persistente con andanadas, alcance, recarga, precisión, números de daño y reparación |
-| NPC | Pirata (hostil) y Mercante (pasivo). En P2, el Capitán pirata (jefe) |
+| NPC | Pirata (hostil) y Mercante (pasivo). **Incremento I2 (P1):** Cañonera pirata (hostil, mantiene la distancia) y Capitán pirata (jefe) |
+| Cámara | Sigue al barco. **I2 (P1):** vista libre con arrastre, minimapa y flechas, y vuelta al barco (§5) |
 | Economía | Oro: recompensas por hundir, restos flotantes (P1), tienda de mejoras y barcos |
 | Muerte | Hundimiento, pantalla de muerte, reaparición en el puerto y protección |
 | Multijugador | 20 jugadores por servidor. PvE cooperativo (P0) y PvP fuera de la zona segura (P1) |
@@ -61,7 +62,8 @@
 | Fuera | Motivo |
 |---|---|
 | Perlas, moneda premium y pagos | Sin monetización en el slice (pregunta abierta Q5) |
-| Monstruos y arpones | En Seafight exigen un segundo sistema de armas (REFERENCE §6) |
+| Monstruos y arpones | En Seafight exigen un segundo sistema de armas (REFERENCE §6). También fuera de I2: P3, pregunta Q10 |
+| Más tipos de NPC (galeón del tesoro con escolta, corsario rápido) | P2: se decide después de medir I2 |
 | Abordaje, tripulación, gemas, castillos, habilidades | Profundidad que no aporta al bucle principal |
 | XP, niveles, misiones, mapas por nivel | La progresión del slice es solo con oro y equipo |
 | Varios tipos de munición (élite, DoT) | P2: un único tipo especial; el resto, fuera |
@@ -133,6 +135,8 @@ Lectura de diseño: el **riesgo crece con la distancia al puerto**. Los mercante
 | Reparar | `R` o botón **Reparar** | Alterna (§8) |
 | Zoom | Rueda del ratón | 3 niveles de **extensión visible**: 0,7× (más cerca), 1,0× (por defecto) y 1,5× (más lejos) |
 | Puerto | `P` o botón **Puerto** | Solo dentro de la zona segura |
+| Mover la vista (I2) | Arrastrar en el agua (> 12 px), clic o arrastre en el minimapa, flechas | Entra en vista libre. Un clic sin arrastre sigue navegando |
+| Centrar en mi barco (I2) | `C` o botón **Centrar** | Vuelve al seguimiento |
 
 ### Móvil (táctil)
 | Acción | Entrada | Regla |
@@ -144,12 +148,22 @@ Lectura de diseño: el **riesgo crece con la distancia al puerto**. Los mercante
 | Reparar | Botón **Reparar** (≥48×48 px) | Alterna |
 | Zoom (P1) | Pellizco | Mismos 3 niveles |
 | Puerto | Botón **Puerto** | Solo en la zona segura |
+| Mover la vista (I2) | Arrastrar **un** dedo en el agua (> 12 px CSS), o tocar o arrastrar en el minimapa | Un toque sin arrastre sigue navegando; con dos dedos es zoom, nunca desplazamiento |
+| Centrar (I2) | Botón **Centrar** | Vuelve al seguimiento |
 
 Orientaciones soportadas: vertical (390×844) y horizontal (844×390). Mientras se juega, el navegador no hace scroll ni zoom.
 
 ### Cámara (qué debe comunicar; los valores exactos los define `game-ux`)
-- Proyección "isométrica" (cenital oblicua). Sigue al barco propio, que queda siempre en el **10 % central** de la pantalla.
-- Con el zoom por defecto, el **círculo de alcance máximo (80 m)** cabe entero en pantalla a 1440×900 y a 390×844.
+- Proyección "isométrica" (cenital oblicua).
+- **Modo seguimiento** (por defecto): sigue al barco propio, que queda siempre en el **10 % central** de la pantalla. Con el zoom por defecto, el **círculo de alcance máximo (80 m)** cabe entero a 1440×900 y a 390×844.
+- **Vista libre** (I2, P1). En Seafight el minimapa y unas teclas mueven la carta, y "To the Ship" la devuelve al barco (REFERENCE §2 y §12).
+  - **Entrar:** arrastrar en el agua más de 12 px (botón izquierdo o un dedo); hacer clic o arrastrar en el minimapa (la vista se centra en ese punto); o usar las flechas (150 m/s).
+  - **Soltar antes de 12 px es un clic normal:** navega o selecciona. Dos dedos son zoom, nunca desplazamiento.
+  - En vista libre, un clic en el agua navega hacia ese punto (aunque esté lejos del barco) y un clic en un barco lo selecciona. Nada más cambia.
+  - El centro de la vista no sale del mapa (±500 m).
+  - **Volver al seguimiento** (transición de 300 ms): con `C` o el botón Centrar, cuando el barco propio recibe daño, al morir o al reaparecer.
+  - Si el barco propio queda fuera de pantalla, un indicador en el borde señala hacia él.
+  - **Lo que se ve está vivo:** los barcos que hay en la zona mirada se muestran; nunca se ve mar vacío donde hay NPC (§13).
 
 ## 6. Navegación y barcos
 
@@ -238,11 +252,14 @@ Lectura de diseño: la Balandra repara 32 HP/s y, bajo fuego, 12 HP/s. Contra un
 ### Estadísticas
 | Tipo | Vida | Vel. patrulla / máx. | Giro | Cañones | Daño por bala | Precisión | Alcance | Recarga | DPS | Recompensa | Restos (P1) | Reaparición | Población |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| **Pirata** (hostil) | 450 | 6 / 11 m/s | 70 °/s | 4 | 22 | 60 % | 55 m | 4,5 s | 11,7 | 105 oro | 25 oro | 30 s | 12 (3 por sector) |
+| **Pirata** (hostil) | 450 | 6 / 11 m/s | 70 °/s | 4 | 22 | 60 % | 55 m | 4,5 s | 11,7 | 105 oro | 25 oro | 30 s | 8 (2 por sector). Eran 12 antes de I2 |
+| **Cañonera pirata** (hostil, I2) | 900 | 5 / 8 m/s | 50 °/s | 6 | 20 | 55 % | 65 m | 5,0 s | 13,2 | 210 oro | 50 oro | 45 s | 4 (1 por sector, anillo de 400–470 m) |
 | **Mercante** (pasivo) | 300 | 7 / 9 m/s | 50 °/s | 0 | — | — | — | — | 0 | 60 oro | 15 oro | 20 s | 8 |
-| **Capitán pirata** (P2, jefe) | 1 800 | 6 / 10 m/s | 60 °/s | 6 | 28 | 65 % | 65 m | 4,0 s | 27,3 | 600 oro | 150 oro | Tras 10 piratas hundidos en el servidor; máximo 1 vivo | 0–1 |
+| **Capitán pirata** (jefe, I2 P1) | 1 800 | 6 / 10 m/s | 60 °/s | 6 | 28 | 65 % | 65 m | 4,0 s | 27,3 | 600 oro | 150 oro | Tras 10 piratas o cañoneras hundidos en el servidor desde su última muerte; máximo 1 vivo | 0–1 |
 
-Eslora y radio de colisión: Pirata 20 m / 6 m, Mercante 22 m / 7 m, Capitán 30 m / 9 m.
+Eslora y radio de colisión: Pirata 20 m / 6 m, Mercante 22 m / 7 m, Cañonera 28 m / 8 m, Capitán 30 m / 9 m.
+
+**Regla de recompensa** (para que añadir tipos no suba el oro por segundo de combate): hostiles ≈ 0,23 × vida (pirata 105/450; cañonera 210/900) y pasivos ≈ 0,20 × vida (mercante 60/300). El jefe lleva una prima de riesgo (0,33 × vida) porque es raro y exige grupo o una Fragata mejorada.
 
 ### IA del pirata
 ```
@@ -263,6 +280,30 @@ Eslora y radio de colisión: Pirata 20 m / 6 m, Mercante 22 m / 7 m, Capitán 30
 - **Huida**: al recibir daño, se aleja del atacante a 9 m/s durante 12 s desde el último daño, esquivando islas y bordes. Luego vuelve a su ruta por el *waypoint* más cercano.
 - Nunca dispara.
 
+### IA de la cañonera pirata (I2)
+Comportamiento propio: **mantiene la distancia**. Su alcance (65 m) supera al cañón N1 del jugador (60 m), así que obliga a perseguirla o a mejorar los cañones.
+- **Patrulla, represalia, regreso, correa (200 m) y zona prohibida del puerto (130 m):** igual que el pirata.
+- **Combate** (detecta a ≤ 80 m):
+  - si la distancia al objetivo es > 64 m, se acerca a velocidad máxima;
+  - entre 55 y 64 m, orbita a **62 m** a 6 m/s;
+  - por debajo de 55 m, **se aleja** del objetivo a velocidad máxima sin dejar de disparar.
+  - Dispara cuando la distancia es ≤ 65 m.
+- Es más lenta (8 m/s) que cualquier barco del jugador, así que se la puede alcanzar. Si queda acorralada contra una isla o el borde, orbita.
+
+### Capitán pirata: el jefe (I2)
+En Seafight aparece un "almirante" tras hundir 10 NPC de un tipo, y los almirantes son agresivos (REFERENCE §8: S12, S13).
+- **Aparición:** cuando se hunden 10 piratas o cañoneras (no mercantes) desde su última muerte o desde el arranque. Nace en el sector pirata con menos jugadores, en su punto exterior (radio de 440 m), a ≥ 150 m de cualquier jugador. Ese punto es su **guarida**. Nunca hay 2 vivos.
+- **Combate:** detecta a ≤ 90 m, orbita a 50 m y dispara a ≤ 65 m. Elige objetivo y hace represalia como el pirata.
+- **Correa:** 150 m alrededor de la guarida. Si se aleja más o pierde al objetivo, vuelve y recupera el 100 % de la vida, como el pirata. Para hundirlo hay que comprometerse.
+- **Aviso a todos:** al aparecer, "¡El Capitán pirata ha aparecido en el sector NE!" y un marcador propio en el minimapa, visible desde cualquier punto del mapa. Al hundirse, el feed dice "El Capitán pirata ha caído: A, B y C" (hasta 3 nombres, por daño, y "y N más").
+- **Reparto:** proporcional al daño (§10), así que premia ir en grupo.
+
+### Requisitos de arte de los NPC de I2 (qué deben comunicar; el diseño es de `game-ux`)
+| NPC | Debe leerse como | Requisito verificable |
+|---|---|---|
+| Cañonera pirata | Hostil, pesada, de largo alcance | Código hostil (velas oscuras, como el pirata) más una **forma** propia (casco ancho y bajo, batería de cañones visible) que la distinga del pirata y del capitán **en escala de grises** a 1,0× en 390×844. Placa "Cañonera pirata" |
+| Capitán pirata | El más peligroso del mar | Mayor que cualquier pirata (30 m) y con silueta propia. Un rasgo exclusivo (bandera u ornamento) visible a 1,0× en móvil y en grises. Marcador de minimapa distinto de todos los demás. Placa "Capitán pirata" |
+
 ### Reaparición de NPC
 - La reaparición es en su zona (sector pirata o ruta mercante), a **≥100 m de cualquier jugador** y fuera de islas.
 - El temporizador cuenta desde el hundimiento.
@@ -274,6 +315,11 @@ Eslora y radio de colisión: Pirata 20 m / 6 m, Mercante 22 m / 7 m, Capitán 30
 | Balandra N1 vs Mercante | 10–14 s | 0 % |
 | Fragata con todo a N3 vs Capitán pirata | 12–20 s | 10–25 % |
 | Balandra N1 vs Capitán pirata | El jugador pierde en ≥ 95 % de los casos | — |
+| 2 Bergantines (cañones y casco N2) vs Capitán pirata | 14–22 s, sin muertes en ≥ 95 % de los casos | 20–45 % (el objetivo del capitán) |
+| Bergantín (cañones N2) vs Cañonera | 15–22 s | 10–25 % |
+| Balandra N1 vs Cañonera | — | 55–80 % (no es un objetivo para N1) |
+
+*Referencia de `game-product` (Monte Carlo, 1 000 duelos, ambos a tiro): 2 Bergantines contra el Capitán, 18,0 s, 32 % y 0,00 muertes; Bergantín contra Cañonera, 18,0 s y 17 %; Balandra contra Cañonera, 68 %. En el juego real, la cañonera mantiene la distancia y alarga los duelos.*
 
 ## 10. Botín y economía
 
@@ -290,10 +336,15 @@ Eslora y radio de colisión: Pirata 20 m / 6 m, Mercante 22 m / 7 m, Capitán 30
 
 | Hito | Objetivo |
 |---|---|
-| Ingreso medio con Balandra N1 | **Mediana 128 oro/min** (rango 110–167). Medido por desarrollo con el bot del AC-60, semillas 1–5: oro ganado hasta comprar el Bergantín entre los minutos jugados, contando viajes, reparaciones y 1–4 muertes por corrida |
+| Ingreso medio con Balandra N1 | **Mediana 130 oro/min** (125–167). Medido con el bot del AC-60, semillas 1–5, en `182a3d1` (`npx jest economy -t AC-60`): oro ganado hasta comprar el Bergantín entre los minutos jugados, contando viajes, reparaciones y 1–4 muertes por corrida |
 | Primera mejora (≤500 oro) | ≤ 4 min (medido: 3,3) |
-| Bergantín | ≤ 20 min (medido: 17,0) |
-| Todo comprado (12 800 oro) | 45–70 min (medido: 51,7) |
+| Bergantín | ≤ 20 min (medido: 16,2) |
+| Todo comprado (12 800 oro) | 45–70 min (medido: 46,3; por semilla 46,3 · 45,4 · 45,9 · 54,7 · 51,7) |
+
+**Riesgo:** el margen sobre el mínimo es de 1,3 min. **Cómo encaja I2:**
+- La cañonera sustituye a 4 piratas (la población total sigue en 20) y cumple la regla de recompensa de §9. Por eso no debería subir el oro por segundo de combate.
+- El jefe queda fuera de la curva: el bot del AC-60 no lo ataca, no entra a menos de 200 m de su guarida y, si el capitán lo elige, navega al puerto.
+- Si con I2 el AC-60 sale de rango, la palanca es la recompensa de la cañonera (y sus restos), en pasos de 10 oro. No se tocan pirata, mercante ni precios.
 
 ## 11. Puerto, mejoras y barcos
 
@@ -326,10 +377,10 @@ Eslora y radio de colisión: Pirata 20 m / 6 m, Mercante 22 m / 7 m, Capitán 30
 | Jugadores por servidor | 20 (el jugador 21 recibe "Servidor lleno") |
 | Entidades máximas | 20 jugadores + 20 NPC + 1 jefe = 41 |
 | Simulación | 20 Hz, autoritativa en el servidor |
-| Snapshots | 10 Hz, **solo deltas** de las entidades que cambiaron dentro del área de interés (radio de 300 m). Snapshot completo al entrar. **Si no cambia nada, no se envía nada.** |
+| Snapshots | 10 Hz, **solo deltas** de las entidades que cambiaron dentro del área de interés (radio de 300 m alrededor del barco y, en vista libre (I2), también alrededor del centro de la vista). Snapshot completo al entrar. **Si no cambia nada, no se envía nada.** El Capitán pirata vivo se envía siempre, para el marcador del minimapa |
 | Interpolación en el cliente | Búfer de 100 ms. Sin predicción, también para el barco propio. El marcador de clic es inmediato y local. |
 | Latencia del clic al movimiento visible | Entre 0 y 50 ms hasta el tick, entre 0 y 100 ms hasta el snapshot y 100 ms de búfer, más la red y el render. Medido en local: 263–309 ms. En producción hay que sumar el RTT. Es aceptable para un control por clic: "For RTS games, 250 milliseconds of command latency was not even noticed… between 250 and 500 msec was very playable" ([Bettner y Terrano, GDC 2001](https://www.gamedeveloper.com/programming/1500-archers-on-a-28-8-network-programming-in-age-of-empires-and-beyond)). La respuesta inmediata la da el marcador (≤ 50 ms). Por encima de 500 ms con el RTT real, se evalúa la predicción del barco propio (P2). |
-| Presupuesto de bajada | ≤ 10 mensajes/s y ≤ 12 KB/s de media por cliente con el servidor lleno |
+| Presupuesto de bajada | ≤ 10 mensajes/s y ≤ 12 KB/s de media por cliente con el servidor lleno. En vista libre (I2): ≤ 10 mensajes/s y ≤ 16 KB/s |
 | Subida en reposo | **0 mensajes** de juego si el jugador no actúa (el latido de Engine.IO queda excluido) |
 | Límite de intenciones | 10/s por cliente (ráfaga de 20). El exceso se descarta. |
 | Desconexión (P1) | El barco se queda 10 s en el mundo y se le puede atacar. Si el jugador reconecta en ese tiempo, recupera el mismo barco. |
@@ -347,6 +398,7 @@ Eslora y radio de colisión: Pirata 20 m / 6 m, Mercante 22 m / 7 m, Capitán 30
 | `buy` | `{itemId}` | §11 |
 | `selectShip` | `{classId}` | Lo posee y está en la zona segura |
 | `respawn` | — | Está muerto y la cuenta atrás terminó |
+| `viewAt` (I2) | `{x, z}` o `null` | Solo mientras la vista libre se desplaza, como máximo 2/s; `null` al volver al seguimiento. Números finitos, ajustados al mapa |
 
 **Identidad visible**: nombre de usuario de Clerk, hasta 16 caracteres. Invitado: `Invitado-XXXX`.
 
@@ -364,7 +416,9 @@ El layout, la paleta y la forma los define `game-ux`. Aquí solo se fija qué de
 | Anillo de selección y círculo de alcance | Objetivo marcado; alcance propio visible mientras haya objetivo | Fuera de React |
 | Números de daño y salpicaduras | **Un número por andanada** = suma de sus impactos (`impactos × daño`), no uno por bala. Si la andanada no acierta ninguna bala: "Fallo", solo cuando el tirador o el objetivo es el jugador propio. Cada bala fallada deja una salpicadura | Fuera de React |
 | Etiquetas de barcos | Nombre + barra de vida; tipo distinguible **sin depender solo del color** | Fuera de React |
-| Minimapa (P1) | Mapa completo (islas, puerto, zona segura) + entidades dentro del área de interés; propio / jugadores / piratas / mercantes con **color y forma** | ≤ 2 Hz |
+| Minimapa (P1) | Mapa completo (islas, puerto, zona segura) + entidades dentro del área de interés; propio, jugadores, piratas, cañoneras, mercantes y capitán con **color y forma**. Clic o arrastre mueve la vista (I2) | ≤ 2 Hz |
+| Aviso del jefe (I2) | Aviso a todos al aparecer el capitán, con su sector; marcador visible en el minimapa desde cualquier punto; feed al hundirlo | Al cambiar |
+| Vista libre (I2) | Botón **Centrar** visible solo en vista libre e indicador en el borde de la pantalla hacia el barco propio | Fuera de React (el indicador) |
 | Zona segura | Borde visible en el mundo + aviso "Zona segura" en el HUD | Al cambiar |
 | Protección | Indicador sobre el barco + tiempo restante | Al cambiar |
 | Feed de eventos (P1) | "Hundiste a Pirata +105 oro", "X te hundió" (máx. 4 líneas, 5 s cada una) | Al cambiar |
@@ -417,3 +471,4 @@ El layout, la paleta y la forma los define `game-ux`. Aquí solo se fija qué de
 | Q7 | ¿El nombre visible es el usuario de Clerk o un nombre de barco que elige el jugador? | El usuario de Clerk |
 | Q8 | ¿Interfaz solo en español o con i18n? | Solo español |
 | Q9 | ¿Cuál es el portátil de referencia para el AC de 60 fps? | MacBook Air M1 o un portátil con Intel Iris Xe |
+| Q10 | ¿Habrá un monstruo marino en un incremento futuro? En Seafight solo se dañan con arpones (REFERENCE §6). Hay dos caminos: añadir arpones como segunda arma (fiel al referente, más trabajo) o un monstruo que se dañe con cañones (adaptación) | P3. Decidir después de medir I2 |

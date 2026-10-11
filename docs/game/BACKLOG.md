@@ -26,6 +26,17 @@
 | H3 — Progresión y lectura | E6, E7, E8 | Mejorar en el puerto; HUD legible en escritorio y móvil |
 | H4 — Excelencia | P1 de todas las épicas | PvP, persistencia, restos, minimapa, onboarding |
 
+### Incremento I2: orden por impacto frente a Seafight (QA-3 §8, media 7,4)
+| # | Qué | Por qué en este puesto | Responsable |
+|---|---|---|---|
+| **1** | AC-104, lectura del daño | VFX 6/10, la nota más baja; ya está en curso | game-ux (Q16) → dev-render |
+| **1** (en paralelo) | AC-108, bloque 1 (bucle principal) | Blindar el bucle con tests **antes** de tocar combate e IA (lección de H-01) | lead |
+| 2 | H-305 Capitán pirata | NPC 7/10: reto de grupo y de final de progresión. Reutiliza la IA del pirata y `killsSinceBoss` | lead (IA, avisos) + game-ux → dev-render (arte) |
+| 3 | E13 Vista libre | Cámara 8/10: Seafight deja mover la carta | lead (entrada y red) + dev-render (cámara) |
+| 4 | H-306 Cañonera pirata | NPC: segundo hostil, con un comportamiento distinto (mantener la distancia) | lead + game-ux → dev-render |
+| 5 | Escala y detalle de los barcos | Barcos 7/10. Depende de la propuesta de game-ux y choca con AC-24 (decide game-product) | game-ux → game-product |
+| 6 | AC-108 bloques 2 y 3, H-11 (AC-110), portada | Calidad y pulido | lead / dev-render |
+
 Los AC de rendimiento de E9 son una **puerta desde H1**: se mantienen en verde en cada hito, no se dejan para el final.
 
 ## Triaje de QA
@@ -163,7 +174,7 @@ Reportes (el último manda):
 - **AC-103** — Dado `buildIslands(ISLANDS)`, cuando se recorren los vértices con y > 0 de muelles, rocas y palmeras, entonces ninguno queda a más de r + 0,5 m del centro de su isla en XZ. Lo que parece sólido es sólido. Verificación: unitario (ampliar `assets.test.ts`).
 
 ### H-103 Cámara y zoom (§5) · P0
-- **AC-23** — Dado el barco navegando, cuando se muestrean 10 frames, entonces la proyección en pantalla del barco propio está siempre dentro del 10 % central. Verificación: e2e.
+- **AC-23** — Dado el barco navegando **en modo seguimiento**, cuando se muestrean 10 frames, entonces la proyección en pantalla del barco propio está siempre dentro del 10 % central. Verificación: e2e.
 - **AC-24** — Dado el zoom por defecto, cuando se dibuja el círculo de 80 m alrededor del barco, entonces cabe entero en 1440×900 y en 390×844. Verificación: captura.
 - **AC-25** — Dado el juego en escritorio, cuando se gira la rueda del ratón, entonces el zoom pasa por exactamente 3 niveles (0,7×, 1,0× y 1,5×) y la página no hace scroll. Verificación: e2e.
 
@@ -194,7 +205,7 @@ Reportes (el último manda):
 ### H-204 Doble clic para atacar (§5) · P1
 - **AC-42** — Dado un pirata en pantalla, cuando el jugador hace doble clic sobre él, entonces queda seleccionado y atacado con una sola intención `attack`. Verificación: e2e.
 
-## E3 — NPC · P0 (jefe en P2)
+## E3 — NPC · P0 (cañonera y jefe: P1, incremento I2)
 
 ### H-301 Pirata hostil (§9) · P0
 - **AC-43** — Dado un pirata en patrulla, cuando un jugador atacable entra a ≤ 70 m, entonces el pirata pasa a Combate en ≤ 1 tick y dispara su primera andanada cuando la distancia es ≤ 55 m. Verificación: unitario.
@@ -209,15 +220,23 @@ Reportes (el último manda):
 - **AC-50** — Dado un mercante dañado por un atacante quieto, cuando pasan los 12 s siguientes, entonces su distancia al atacante crece de forma monótona a 9 ±0,2 m/s. Al terminar, vuelve a su ruta por el *waypoint* más cercano. Verificación: unitario.
 
 ### H-303 Población y reaparición (§9) · P0
-- **AC-51** — Dado un servidor recién arrancado, cuando se inspecciona el mundo, entonces hay 12 piratas (3 por sector) y 8 mercantes en sus zonas. Verificación: unitario.
-- **AC-52** — Dado un NPC hundido, cuando pasan 30 s (pirata) o 20 s (mercante) ±1 tick, entonces reaparece en su zona, a ≥ 100 m de cualquier jugador y fuera de las islas. Verificación: unitario.
+- **AC-51** — Dado un servidor recién arrancado, cuando se inspecciona el mundo, entonces hay 8 piratas (2 por sector), 4 cañoneras (1 por sector, en el anillo de 400–470 m) y 8 mercantes en sus zonas. Antes de I2 eran 12 piratas (3 por sector). Verificación: unitario.
+- **AC-52** — Dado un NPC hundido, cuando pasan 30 s (pirata), 45 s (cañonera) o 20 s (mercante) ±1 tick, entonces reaparece en su zona, a ≥ 100 m de cualquier jugador y fuera de las islas. Verificación: unitario.
 
 ### H-304 Balance de duelos (§9) · P0
 - **AC-53** — Dados 1 000 duelos con semilla sin reparar, cuando una Balandra N1 se enfrenta a un pirata, entonces la mediana del tiempo hasta hundirlo está en 18–24 s y la vida perdida en 25–40 %. Contra un mercante, 10–14 s. Verificación: unitario. *Referencia: la simulación de `game-product` con las tablas del GDD da 20,5 s / 30 % y 12,5 s.*
 
-### H-305 Capitán pirata (§9) · P2
-- **AC-54** — Dados 10 piratas hundidos desde la última muerte del capitán, cuando se hunde el 10.º, entonces aparece 1 capitán en un sector pirata, y nunca hay 2 vivos. Verificación: unitario.
-- **AC-55** — Dados 1 000 duelos, cuando una Fragata con todo a N3 se enfrenta al capitán, entonces la mediana está en 12–20 s con 10–25 % de vida perdida. Una Balandra N1 pierde en ≥ 95 % de los duelos. Verificación: unitario. *Referencia: 15,5 s / 15 %; la Balandra pierde el 100 %.*
+### H-305 Capitán pirata: el jefe (§9) · P1 (I2; antes P2)
+*Requisitos de arte para game-ux: GDD §9, "Requisitos de arte de los NPC de I2".*
+- **AC-54** — Dados 10 piratas o cañoneras (no mercantes) hundidos desde la última muerte del capitán o desde el arranque, cuando se hunde el 10.º, entonces aparece 1 capitán en el punto exterior (440 m) del sector pirata con menos jugadores, a ≥ 150 m de cualquier jugador, y nunca hay 2 vivos. Verificación: unitario.
+- **AC-55** — Dados 1 000 duelos con semilla, entonces se cumplen tres cotas: una Fragata con todo a N3 hunde al capitán con una mediana de 12–20 s y 10–25 % de vida perdida; 2 Bergantines (cañones y casco N2) lo hunden en 14–22 s sin muertes en ≥ 95 % de los duelos; y una Balandra N1 sola pierde en ≥ 95 %. Verificación: unitario. *Referencia (Monte Carlo de game-product): 15,5 s / 15 %; 18,0 s con 0,00 muertes; la Balandra pierde el 100 %.*
+- **AC-111** — Dado un capitán que aparece, cuando llega el siguiente snapshot, entonces todos los jugadores reciben el aviso "¡El Capitán pirata ha aparecido en el sector <XX>!" y ven su marcador propio en el minimapa desde cualquier punto del mapa (fuera del área de interés). Al hundirse, el feed de todos muestra "El Capitán pirata ha caído: A, B y C" (hasta 3 nombres por daño y "y N más"). Verificación: Jest+socket (aviso y marcador fuera del área de interés) + e2e con 2 contextos.
+- **AC-112** — Dado un capitán en combate, cuando el objetivo lo arrastra a más de 150 m de su guarida o se pierde, entonces el capitán vuelve sin disparar y al llegar tiene el 100 % de la vida. En 10 min simulados nunca está a menos de 130 m del puerto. Verificación: unitario.
+
+### H-306 Cañonera pirata (§9) · P1 (I2)
+*Requisitos de arte para game-ux: GDD §9, "Requisitos de arte de los NPC de I2".*
+- **AC-113** — Dada una cañonera en combate contra un objetivo quieto a 40 m, cuando pasan 20 s, entonces se aleja hasta ≥ 55 m y la mediana de su distancia es 62 ±4 m. Dispara solo a ≤ 65 m. Contra un objetivo que se le acerca a ≥ 10 m/s, la distancia baja, es decir, se la puede alcanzar. Verificación: unitario.
+- **AC-114** — Dados 1 000 duelos con semilla, cuando un Bergantín con cañones N2 se enfrenta a una cañonera, entonces la mediana está en 15–22 s con 10–25 % de vida perdida. Una Balandra N1 pierde entre el 55 y el 80 % de su vida (no es un objetivo para N1). Verificación: unitario. *Referencia (Monte Carlo de game-product): 18,0 s / 17 %; 68 %.*
 
 ## E4 — Botín y economía
 
@@ -230,7 +249,7 @@ Reportes (el último manda):
 - **AC-59** — Dado un NPC hundido, cuando se hunde, entonces aparece una caja en su posición. El primer jugador a ≤ 8 m la recoge (+25 de un pirata, +15 de un mercante); si dos llegan en el mismo tick, la recoge el más cercano. A los 30 s desaparece. Verificación: unitario + captura.
 
 ### H-403 Curva económica (§10) · P1
-- **AC-60** — Dado un bot con una Balandra N1 y 100 de oro que ataca al NPC más cercano, repara por debajo del 40 % de vida y sigue la estrategia **"barco primero"** (no compra nada hasta poder pagar el Bergantín; lo compra y, a partir de ahí, compra siempre el artículo más barato disponible, Fragata incluida), cuando juega en la simulación acelerada con las semillas fijas 1–5, entonces la **mediana de las 5 semillas** cumple tres cosas: acumula ≥ 500 de oro en ≤ 4 min, compra el Bergantín en ≤ 20 min y lo tiene todo comprado (12 800 de oro) en 45–70 min simulados. Verificación: unitario.
+- **AC-60** — Dado un bot con una Balandra N1 y 100 de oro que ataca al NPC más cercano, repara por debajo del 40 % de vida y sigue la estrategia **"barco primero"** (no compra nada hasta poder pagar el Bergantín; lo compra y, a partir de ahí, compra siempre el artículo más barato disponible, Fragata incluida), **no ataca al Capitán pirata, no entra a menos de 200 m de su guarida y, si el capitán lo elige, navega al puerto**, cuando juega en la simulación acelerada con las semillas fijas 1–5 y la población de I2, entonces la **mediana de las 5 semillas** cumple tres cosas: acumula ≥ 500 de oro en ≤ 4 min, compra el Bergantín en ≤ 20 min y lo tiene todo comprado (12 800 de oro) en 45–70 min simulados. Verificación: unitario.
 
 ## E5 — Muerte y reaparición (§12) · P0
 
@@ -278,6 +297,9 @@ Reportes (el último manda):
 ### H-707 El indicador de recarga no tapa placas ajenas (QA H-08) · P3
 - **AC-107** — Dados barcos vecinos en combate en la escena estándar, cuando se dibuja el indicador de recarga propio (18 px), entonces no se cruza con ninguna placa ajena: el *declutter* (AD-11) incluye el indicador en la caja de la placa propia. Verificación: e2e (cajas) + captura.
 
+### H-708 Los NPC de I2 se distinguen de un vistazo · P1 (I2)
+- **AC-115** — Dadas capturas de escritorio y móvil (1,0×) con un pirata, una cañonera, el capitán, un mercante y otro jugador, cuando 5 evaluadores las miran durante 5 s, entonces ≥ 4 de 5 identifican los 5 tipos, también en escala de grises. En el minimapa, los 6 tipos (propio, jugador, pirata, cañonera, mercante y capitán) tienen formas distintas, no solo color. Verificación: captura + prueba con evaluadores (umbrales en ART-DIRECTION).
+
 ### H-702 Minimapa · P1
 - **AC-77** — Dado el juego en marcha, cuando se captura el minimapa, entonces muestra las islas, el puerto, la zona segura y las entidades del área de interés con forma y color por tipo, y se re-renderiza a ≤ 2 Hz. Verificación: captura + perf.
 
@@ -318,6 +340,18 @@ Reportes (el último manda):
 - **AC-91** — Dados 10 min con ciclos de hundimiento y reaparición de NPC, cuando se mide al inicio y al final, entonces el heap del cliente crece ≤ 15 MB y `renderer.info.memory` (geometrías y texturas) no crece de forma monótona. Verificación: perf de **larga duración**, en un harness aparte fuera de `npm run verify` porque dura 10 min, que game-qa ejecuta antes de cada aceptación (plan de AC-108).
 - **AC-92** — Dado otro jugador navegando en línea recta sin pérdida de paquetes, cuando se muestrea su posición renderizada a 60 fps, entonces ningún salto entre frames consecutivos supera 1 m. Verificación: **unitario** sobre el interpolador de `src/client/game-client.ts`, con frames sintéticos a 10 Hz (llegada con *jitter* de ±20 ms) y muestreo cada 16,7 ms. *Justificación (plan de AC-108):* el salto por frame depende del interpolador y del ritmo de snapshots, no de la GPU. Con WebGL por software, un e2e mide la máquina (17,6 fps), no el código. Un e2e con GPU queda como comprobación opcional de QA.
 
+## E13 — Vista libre (§5, §13) · P1 (I2)
+
+### H-1301 Mover la vista sin romper "clic = navegar" · P1
+- **AC-116** — Dado el juego en 1440×900 (ratón) y en 390×844 (un dedo), cuando el jugador pulsa en el agua y arrastra más de 12 px, entonces la vista se desplaza con el puntero y se envían **0** `moveTo`. Si suelta antes de 12 px, se envía exactamente 1 `moveTo` hacia ese punto, como hoy. Con dos dedos solo cambia el zoom (la vista no se desplaza) y la página no hace scroll (AC-81). Verificación: e2e (frames WebSocket y posición de la cámara), con toques reales por CDP en móvil.
+- **AC-117** — Dado el minimapa, cuando el jugador hace clic o arrastra sobre él, entonces la vista se centra en el punto del mundo correspondiente (±5 m) y no se envía ningún `moveTo`. Verificación: e2e.
+- **AC-118** — Dado el juego en escritorio, cuando el jugador mantiene una flecha pulsada durante 2 s, entonces la vista se desplaza 300 ±30 m en esa dirección. `S` sigue deteniendo el barco y no mueve la vista. Verificación: e2e.
+- **AC-119** — Dada la vista libre, cuando ocurre cualquiera de estas cosas: `C` o el botón Centrar, daño al barco propio, muerte o reaparición, entonces la cámara vuelve al seguimiento en ≤ 300 ms y el barco queda en el 10 % central (AC-23). Verificación: e2e (un caso por disparador).
+- **AC-120** — Dada la vista libre a 400 m del barco, cuando el jugador hace clic en el agua, entonces el barco navega hacia ese punto lejano (1 `moveTo` con esas coordenadas). Si hace clic en un barco visible, lo selecciona. El centro de la vista nunca sale de ±500 m, aunque se siga arrastrando. Verificación: e2e.
+- **AC-121** — Dada la vista libre con el barco propio fuera de pantalla, cuando se renderiza, entonces un indicador en el borde apunta hacia el barco (error de ángulo ≤ 10°). Desaparece cuando el barco vuelve a verse. Verificación: e2e (caja y ángulo del indicador) + captura.
+- **AC-122** — Dada la vista libre centrada sobre un sector pirata a más de 400 m del barco propio, cuando han pasado 500 ms desde que la vista se detuvo, entonces se dibujan todos los NPC que el servidor tiene dentro de la zona visible (mismo conjunto de ids). Nunca se ve mar vacío donde hay NPC. Verificación: e2e (ids dibujados frente a ids del servidor en esa zona).
+- **AC-123** — Dada la vista libre quieta, cuando pasan 10 s sin entradas, entonces el cliente emite 0 mensajes. Mientras se arrastra, emite ≤ 2 `viewAt`/s, y al volver al seguimiento, 1 `viewAt(null)`. Con el servidor lleno y la vista libre en otra zona, cada cliente recibe ≤ 10 mensajes/s y ≤ 16 KB/s de media. Verificación: perf (frames) + Jest+socket (presupuesto con clientes sintéticos).
+
 ## E10 — Multijugador y PvP (§7, §13) · P1
 
 ### H-1001 PvP fuera de la zona segura · P1
@@ -347,10 +381,11 @@ Reportes (el último manda):
 
 | Prioridad | Ítem | Nota |
 |---|---|---|
-| P2 | Capitán pirata | Sus AC ya están definidos (AC-54, AC-55) |
 | P2 | Munición especial "Cadena" | −30 % de la velocidad del objetivo durante 5 s; recarga +1 s |
 | P2 | Sonido (cañón, impacto, salpicadura, hundimiento) | Efectos mínimos, con volumen y silencio |
-| P2 | Clic en el minimapa para navegar | Equivale al piloto automático de Seafight (REFERENCE §2) |
+| P2 | Navegar con un clic en el minimapa (piloto automático) | En I2 el minimapa solo mueve la vista (AC-117). Navegar desde él equivale al piloto automático de Seafight (REFERENCE §2) |
+| P2 | Galeón del tesoro con escolta | Mercante raro y de alto valor escoltado por 2 piratas: momentos multijugador. Se decide después de medir I2 |
+| P2 | Corsario rápido | Pirata frágil y más rápido que la Balandra, que ataca y huye. Se decide después de medir I2 |
 | P2 | Varias salas y emparejamiento | Cuando 20 jugadores por sala no basten (GDD Q6) |
 | P2 | Predicción del arranque del barco propio | Solo si las pruebas en Railway miden > 500 ms entre el clic y el movimiento visible (GDD §13) |
-| P3 | Monstruos y arpones · abordaje · chat · ranking · XP, niveles y misiones · colisión entre barcos · viento | Fuera del slice (GDD §3) |
+| P3 | Monstruos y arpones (GDD Q10) · abordaje · chat · ranking · XP, niveles y misiones · colisión entre barcos · viento | Fuera del slice (GDD §3) |
