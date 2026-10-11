@@ -464,8 +464,8 @@ El layout, la paleta y la forma los define `game-ux`. Aquí solo se fija qué de
 | Commits de React en reposo con NPC visibles patrullando | ≤ 2/s (minimapa) |
 | Commits de React en combate | ≤ 10/s |
 | Mensajes cliente → servidor en reposo | 0 en 10 s |
-| Tick de simulación con servidor lleno | p99 ≤ 4 ms (Node 20) |
-| Crecimiento del heap del cliente en 10 min | ≤ 15 MB |
+| Tick de simulación con servidor lleno | p99 ≤ 4 ms (Node 20), el menor de 3 repeticiones de 2 000 ticks (AC-03) |
+| Crecimiento del heap del cliente en 10 min de combate en régimen, tras el calentamiento (AC-91) | ≤ 15 MB |
 
 ## 17. Preguntas abiertas para Jonattan
 

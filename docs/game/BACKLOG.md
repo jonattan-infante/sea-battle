@@ -36,17 +36,17 @@ Hay dos colas en paralelo; dentro de cada una, el orden es estricto.
 | 2 | H-305 Capitán pirata (IA, avisos y marcador) | NPC 7/10: reto de grupo y de final de progresión |
 | 3 | E13 Vista libre + AC-124 (atacante fuera de pantalla) | Cámara 8/10. Los dos indicadores de borde comparten componente |
 | 4 | H-306 Cañonera pirata (IA) | Segundo hostil, con un comportamiento distinto |
-| 5 | AC-108: bloque 2, AC-12, AC-92 y **el harness de AC-91** (dev-tests); AC-110, AC-75, H-13, H-15 y O-3 (lead / dev-tests) | Calidad y pulido. AC-23 y AC-25 van en la cola de dev-render |
+| 5 | AC-108: bloque 2, AC-12, AC-92 y **el harness de AC-91** (dev-tests); AC-110, AC-75, H-13, H-15 y O-3 (lead / dev-tests) | Calidad y pulido. AC-23 y AC-25 van en la cola de dev-render. **Estado en `a422dd1`:** implementados y pendientes de QA el harness de AC-91 (`a422dd1`), H-13 (`0303c02`), H-15 (`6bd7df2`), O-3 (`71fc925`) y O-1 de AC-110 (`aadcdd9`). Queda DT-04 (escenarios) |
 
 **Cola dev-render (render y VFX)**
 | # | Qué | Por qué en este puesto |
 |---|---|---|
-| 1 | Cerrar Q20 / D22 → AC-104 | VFX 6/10, la nota más baja |
-| 2 | Encuadre U8 (R = max(alcance propio, 65 m)) + AC-24 revisado + tests de cámara AC-23 y AC-25 | Barcos 7/10: +51 % de área para la Balandra con un cambio de fórmula y sin coste de rendimiento. Los tests de cámara van justo después de tocar la cámara |
-| 3 | (c) Detalle de los cascos (AS-V18–V20, AD-26) | Barcos: "facetados". Va **antes** del arte de los NPC nuevos, para que el Capitán y la Cañonera nazcan con la misma técnica y no haya que rehacerlos |
+| 1 | Cerrar Q20 / D22 → AC-104 | VFX 6/10, la nota más baja. **Aprobado en 1440×900** (QA-5); el caso de 390×844 es el punto 6 |
+| 2 | Encuadre U8 (R = max(alcance propio, 65 m)) + AC-24 revisado + tests de cámara AC-23 y AC-25 | Barcos 7/10: +51 % de área para la Balandra con un cambio de fórmula y sin coste de rendimiento. Los tests de cámara van justo después de tocar la cámara. **Aprobado** (QA-5 §3.1: AC-24 y AD-06; AC-23 y AC-25 con test que aserta el observable) |
+| 3 | (c) Detalle de los cascos (AS-V18–V20, AD-26) | Barcos: "facetados". Va **antes** del arte de los NPC nuevos, para que el Capitán y la Cañonera nazcan con la misma técnica y no haya que rehacerlos. **Implementado en `3327f5e`, pendiente de QA:** `e2e/hull-detail.spec.ts` aserta AS-V18, AD-26 y el presupuesto por barco; AS-V19 y AS-V20 solo se registran (`hull-detail.spec.ts:11-14`). **Pendiente de game-ux (lo tiene ux): decidir AS-V19** (y la lectura de AS-V20). La Balandra da 49,3 % a 0° y 42,0 % a 90°, frente a ≥ 55 % y un suelo de 50 % (ASSET-SPEC AS-V19). Las demás clases (0° / 90°): Bergantín 45,9 / 45,7 %, Fragata 33,5 / 40,6 %, Pirata 19,0 / 21,2 % y Mercante 65,5 / 51,8 % (`qa-artifacts/render/d23c/logs/despues-hull-detail-final.log:4-21`) |
 | 4 | Arte del Capitán y luego de la Cañonera (cuando game-ux los especifique) | Lo necesitan los puntos 2 y 4 de la otra cola |
 | 5 | AD-27 Espuma natural | Océano 8/10 |
-| 6 | H-12: VFX-09b en 390×844 (código de D32) | Cerrar AC-104 en móvil |
+| 6 | H-12: VFX-09b en 390×844 (código de D32) | Cerrar AC-104 en móvil. **Implementado en `3068eda`, pendiente de QA** |
 
 Los AC de rendimiento de E9 son una **puerta desde H1**: se mantienen en verde en cada hito, no se dejan para el final.
 
@@ -73,21 +73,24 @@ Reportes (el último manda):
 | H-07 | P3 | Tarjeta de muerte en 3 líneas | AC-106 | lead | **Cerrado** |
 | H-08 | P3 | La recarga pisaba placas vecinas | AC-107 | dev-render | **Cerrado** (QA-3: 20/20 muestras, 0 px²) |
 | H-09 | P1 | Huecos del harness | AC-108 | lead / dev-render | **Cerrado en lo que listaba.** Lo que queda de cobertura está en el plan de AC-108 |
-| H-10 | P2 | Carrera de relojes: el primer `respawn` al activarse Zarpar podía rechazarse (QA-2 §7) | **AC-109** (QA lo llamó AC-101b) | lead | **Cerrado** (QA-3: 20/20 con el reloj adelantado 50 ms; tolerancia de 2 ticks, `constants.ts:196`) |
-| DT-01 (dev-tests) | P2 | Esc y Espacio dobles a ≤ 120 ms leen el `targetId` interpolado (150–200 ms de retraso): Esc ×2 → 2 `cancelAttack` y la selección sigue; Espacio ×2 → 2 `attack`. Origen: `GameApp.tsx` (`Escape` y `toggleAttack` leen `client.getShip(myShipId).targetId`). Con el RTT de producción la ventana crece | **AC-125** | lead (el cliente recuerda su última intención hasta que el servidor la confirma) | Pendiente |
-| DT-02 (dev-tests) | P2 | En táctil, el botón Puerto desactivado no explica por qué: solo tiene un `title`, que no se ve, y el aviso solo sale con `P` | AC-66 (ampliado) | lead (HUD): pulsar el botón desactivado muestra el aviso existente | Pendiente |
-| DT-03 (dev-tests) | P3 | "Salir" con el servidor caído lleva a `net::ERR_CONNECTION_REFUSED`, porque la landing la sirve el mismo proceso | **AC-126** | lead | Pendiente |
-| H-11 | P3 | En móvil, los avisos tapan la pista en la ranura `is-alt`. En 844×390 además pisan ~22 px de los paneles del jugador y del objetivo (eso ya pasaba en `614ae0d`) | **AC-110** (QA lo llamó AC-105b) | lead | Pendiente. El arreglo: la pista trata los avisos visibles como obstáculo y se oculta si no hay ninguna ranura libre; en horizontal, los avisos se estrechan para caber entre las dos columnas del HUD |
-| H-12 (QA-4) | P3 | AC-104 exige 390×844, pero VFX-09b solo tenía umbrales para 1440×900 | AC-104 | game-ux (D32) → dev-render | Spec decidida en D32; **falta el código** (`runtime.ts:419` sigue con ×0,5) |
-| O-1 (QA-4) | P3 | Al aparecer un 2.º aviso, la pista lo pisa durante 0–150 ms (8 400 y 12 888 px² en móvil; 0 después) | AC-110 | lead | Pendiente (cola del lead) |
+| H-10 | P2 | Carrera de relojes: el primer `respawn` al activarse Zarpar podía rechazarse (QA-2 §7) | **AC-109** (QA lo llamó AC-101b) | lead | **Cerrado** (QA-3: 20/20 con el reloj adelantado 50 ms; tolerancia de 2 ticks, `constants.ts:196`). El test de AC-109 que QA-5 dejó parcial (solo el unitario de mundo) se completó en `273c376` (Jest+socket con reloj inyectable, `server/__tests__/respawn-race.test.ts`, y e2e, `e2e/respawn-race.spec.ts`): **pendiente de QA** |
+| DT-01 (dev-tests) | P2 | Esc y Espacio dobles a ≤ 120 ms leen el `targetId` interpolado (150–200 ms de retraso): Esc ×2 → 2 `cancelAttack` y la selección sigue; Espacio ×2 → 2 `attack`. Origen: `GameApp.tsx` (`Escape` y `toggleAttack` leen `client.getShip(myShipId).targetId`). Con el RTT de producción la ventana crece | **AC-125** | lead (el cliente recuerda su última intención hasta que el servidor la confirma) | **Implementado en `887ac67`, pendiente de QA** (`src/client/__tests__/intents.test.ts`; `e2e/input-toggle.spec.ts:244-395`, con los 4 Δ × 2 retardos y la repetición de teclas) |
+| DT-02 (dev-tests) | P2 | En táctil, el botón Puerto desactivado no explica por qué: solo tiene un `title`, que no se ve, y el aviso solo sale con `P` | AC-66 (ampliado) | lead (HUD): pulsar el botón desactivado muestra el aviso existente | **Cerrado** (QA-5 §6) |
+| DT-03 (dev-tests) | P3 | "Salir" con el servidor caído lleva a `net::ERR_CONNECTION_REFUSED`, porque la landing la sirve el mismo proceso | **AC-126** | lead | **Implementado en `d4bfa55`, pendiente de QA**, con el sondeo solapado de AC-126 (`src/client/exit-probe.ts`; `exit-probe.test.ts` y `e2e/exit-offline.spec.ts`, casos a–d) |
+| H-11 | P3 | En móvil, los avisos tapan la pista en la ranura `is-alt`. En 844×390 además pisan ~22 px de los paneles del jugador y del objetivo (eso ya pasaba en `614ae0d`) | **AC-110** (QA lo llamó AC-105b) | lead | Arreglo verificado: los dos casos de AC-110 pasan en los 3 tamaños (QA-5 §2). Queda O-1, implementado en `aadcdd9`; se cierra cuando QA vuelva a verificar AC-110 con O-1 |
+| H-12 (QA-4) | P3 | AC-104 exige 390×844, pero VFX-09b solo tenía umbrales para 1440×900 | AC-104 | game-ux (D32) → dev-render | **Implementado en `3068eda`, pendiente de QA en 390×844**: tasa y vida completas, con humo en ≤ 12 barcos y fuego en ≤ 4 (`runtime.ts:425`; `vfx/__tests__/damage-budget.test.ts`; `e2e/damage-vfx.spec.ts`) |
+| O-1 (QA-4) | P3 | Al aparecer un 2.º aviso, la pista lo pisa durante 0–150 ms (8 400 y 12 888 px² en móvil; 0 después) | AC-110 | lead | **Implementado en `aadcdd9`, pendiente de QA**: la pista se recoloca en el mismo commit en el que entra el aviso (`Hud.tsx:354`; `e2e/gameplay.spec.ts:226`, que muestrea cada frame) |
 | O-2 (QA-4) | P3 | En escritorio, la ranura alta de la pista rozaba 4 px el primer aviso | AC-110 | lead | **Cerrado** en `b5dc2c1` |
-| H-13 (QA-5) | P3 | AC-75 (negativo) falla en la suite completa (46/47) y pasa aislado (3/3): depende del orden en el servidor compartido del showcase | AC-75 (verificación) | lead; lo ejecuta dev-tests | Pendiente: pasar los tests de AC-75 a `startOwnServer({ SEA_BATTLE_SCENARIO: 'showcase' })` |
+| H-13 (QA-5) | P3 | AC-75 (negativo) falla en la suite completa (46/47) y pasa aislado (3/3): depende del orden en el servidor compartido del showcase | AC-75 (verificación) | lead; lo ejecuta dev-tests | **Implementado en `0303c02`, pendiente de QA en la suite completa**: cada test de AC-75 arranca su propio servidor con el showcase (`e2e/gameplay.spec.ts:617-618`). Riesgo que queda: DT-04 |
 | H-14 (QA-5) | P3 | `own-server` podía elegir el puerto 3659, que Chrome bloquea (`ERR_UNSAFE_PORT`), dentro del rango de dev-tests | — | lead | **Cerrado** en `3eccd41`: rango [PW_PORT_BASE+500, +599] y excluye los puertos inseguros de Chrome |
-| H-15 (QA-5) | P3 | El e2e de AC-41 no fija el umbral del 30 %: un mutante con 0,25 sobrevive, porque no hay muestras de vida entre 31,25 % y 23 % | AC-41 (verificación) | lead; lo ejecuta dev-tests | Pendiente: unitario con 239/800 (pulsa) y 240/800 (no pulsa) |
-| O-3 (QA-5) | P3 | 4 pulsaciones de Puerto fuera de la zona apilan 3 avisos idénticos (≈ 15 % de la altura en 390×844; `MAX_TOASTS` = 3, `hud-store.ts:73`) | **AC-127** | lead (HUD) | Pendiente |
+| H-15 (QA-5) | P3 | El e2e de AC-41 no fija el umbral del 30 %: un mutante con 0,25 sobrevive, porque no hay muestras de vida entre 31,25 % y 23 % | AC-41 (verificación) | lead; lo ejecuta dev-tests | **Implementado en `6bd7df2`, pendiente de QA**: unitario con 239/800 (pulsa) y 240/800 (no pulsa) en `src/client/__tests__/hud-logic.test.ts`. QA confirma que el mutante con 0,25 muere |
+| O-3 (QA-5) | P3 | 4 pulsaciones de Puerto fuera de la zona apilan 3 avisos idénticos (≈ 15 % de la altura en 390×844; `MAX_TOASTS` = 3, `hud-store.ts:73`) | **AC-127** | lead (HUD) | **Implementado en `71fc925`, pendiente de QA** (`hud-store.ts:99`; `src/client/__tests__/toasts.test.ts`; `e2e/loop.spec.ts:434`) |
+| DT-04 (dev-tests) | P3 | **Escenarios de prueba, no producción.** Un pirata "fijo" de un escenario (`ai.wait = 1e9`, `server/scenarios.ts:69, 91, 108, 119, 131`) que vuelve de un combate a su origen recibe `ai.wait = rand(PIRATE_PATROL_WAIT)` (`src/game/world.ts:943`), pierde el bloqueo y patrulla hasta 120 m (`PIRATE_PATROL_RADIUS`, `constants.ts:165`). Efectos: AC-75 rojo en la suite completa (H-13) y AC-110 rojo porque un pirata itinerante dañó el barco (756/800) | AC-75, AC-110 (verificación) | lead / dev-tests (lo investiga dev-tests) | Pendiente. **Criterio de cierre:** en los 60 s siguientes a volver de un combate, un pirata fijo de cualquier escenario no toma ningún destino de patrulla (`destination` en `null` y `path` vacío) salvo que entre de nuevo en combate (Jest de escenarios); y los piratas de producción siguen patrullando al volver (GDD §9; AC-45 y AC-47 en verde) |
+| DT-05 (verify del lead) | P3 | AC-03 sensible a la carga de la máquina: con otro Jest en paralelo, el p99 del tick dio 4,31 ms (límite 4); aislado, 0,33 ms en 3 corridas, sin cambios en `src/game` (datos del lead). El test toma un solo p99 de 2 000 ticks medidos con `performance.now()` (`src/game/__tests__/architecture.test.ts:70-96`), así que mide también la máquina | AC-03 | game-product (decidido) → lead / dev-tests (test) | **Decidido:** el umbral sigue en 4 ms y cambia la condición de medida: el menor de 3 p99 (ver AC-03). Pendiente el cambio del test |
 
 ### Plan de AC-108 (RECHAZADO en QA-3 §7: 15 AC P0 sin test y 7 parciales)
 **Estado en QA-5:** queda **1 sin test (AC-91, sin harness)** y **1 parcial (AC-109)**. Lo demás tiene ya un test que aserta el observable.
+**Estado en `a422dd1` (pendiente de QA):** AC-91 tiene harness (`npm run test:soak`, `e2e/endurance.spec.ts`, commit `a422dd1`) y AC-109 tiene Jest+socket y e2e (`273c376`). Si QA los confirma, el plan queda sin huecos.
 **Reparto (lead):** `dev-tests` (agente game-developer, copia aislada con `PW_PORT_BASE=3500`, commit `618a633`) escribe los bloques 1 y 2 más AC-12 y AC-92; dev-render, AC-23 y AC-25; el lead, AC-75 y AC-110. **AC-91 pasa a dev-tests** (QA-5), porque dev-render se dedica a los cascos (D23 c).
 
 **Criterio:**
@@ -114,11 +117,11 @@ Reportes (el último manda):
 |---|---|---|---|---|
 | AC-29 | Sin test | En 390×844, un toque a ≤ 24 px de la silueta selecciona, sin red | e2e | dev-tests |
 | AC-80 | Parcial | Añadir 844×390: tamaños de los botones y 0 solapes | e2e | dev-tests |
-| AC-41 | Sin test | Clase de pulso del botón Reparar con vida < 30 % y sin ella con vida ≥ 30 % | e2e | dev-tests |
+| AC-41 | Sin test | Clase de pulso del botón Reparar con vida < 30 % y sin ella con vida ≥ 30 %, más el unitario del umbral (H-15, `6bd7df2`) | e2e + unitario | dev-tests |
 | AC-19 | Sin test | `S` → 1 `stop` y velocidad 0 (añadirlo al e2e de AC-14, que ya pulsa S sin asertarlo) | e2e | dev-tests |
 | AC-65 | Parcial | Añadir que el aviso desaparece al salir de la zona | e2e | dev-tests |
 | AC-99 | Sin test | Parar el servidor → overlay y 3 reintentos (1, 2 y 4 s) → reconexión sin recargar; sin servidor → "Reintentar" / "Salir" | e2e | dev-tests |
-| AC-75 | Parcial | Una salpicadura por bala fallada (contadores de dev-render) y caso negativo: un tercer jugador que no es tirador ni objetivo no ve "Fallo" | e2e | lead (escrito; en verificación con los contadores de dev-render) |
+| AC-75 | Parcial | Una salpicadura por bala fallada (contadores de dev-render) y caso negativo: un tercer jugador que no es tirador ni objetivo no ve "Fallo" | e2e | lead (aprobado en QA-5; en servidor propio desde `0303c02`, H-13) |
 
 **Bloque 3: cámara, render e infraestructura**
 | AC | Estado en QA-3 | Qué tiene que asertar el test | Tipo | Responsable |
@@ -126,18 +129,21 @@ Reportes (el último manda):
 | AC-23 | Sin test | Proyección del barco propio en el 10 % central en 10 frames navegando | e2e | dev-render |
 | AC-25 | Sin test | La rueda da exactamente {0,7; 1,0; 1,5} y `scrollY` sigue en 0 | e2e | dev-render |
 | AC-92 | Sin test | **Cambia a unitario** (ver el AC): interpolador con frames sintéticos | unitario | dev-tests |
-| AC-91 | Sin test | **Corrida larga de perf** de 10 min, fuera de `verify`, con el método escrito en el AC | perf (larga) | dev-tests (harness); game-qa la ejecuta |
+| AC-91 | Sin test | **Corrida larga de perf** de 10 min, fuera de `verify`, con el método escrito en el AC | perf (larga) | dev-tests (harness, hecho en `a422dd1`); game-qa la ejecuta |
 | AC-12 | Parcial | Un 21.º jugador real (20 sockets de invitado + 1 navegador) → landing con "Servidor lleno" (`GameApp.tsx:209`) | e2e | dev-tests |
 
 ### AC sin veredicto final
 | AC | Motivo | Responsable | Estado |
 |---|---|---|---|
 | AC-72 | Exige 5 evaluadores humanos | game-qa + Jonattan | Hay que organizar la prueba de 5 s |
-| AC-75 | Parcial | lead | Escrito, con el caso negativo de dos jugadores y el cruce de salpicaduras e impactos; en verificación |
 | AC-90 | Manual en el portátil de referencia | game-qa | Bloqueado por GDD Q9 (Jonattan) |
-| AC-91 | Sin harness (AC-92 aprobado en QA-5) | dev-tests | Método fijado en el AC (QA-5) |
-| AC-104 | Depende de D20 + D21 | game-ux (Q16) → dev-render | Sin evaluar |
-| AC-110 | Nuevo (H-11) | lead | Aceptados los 3 ajustes; se añade al e2e de AC-105 |
+| AC-91 | Sin corrida de 10 min (el harness existe desde `a422dd1`) | game-qa | Método ajustado por producto el 2026-10-11 (calentamiento, mínimos cuadrados, intervalos de commits, texturas como centinela y carga insuficiente = NO VERIFICADO). Pendiente: `npm run test:soak` (~13 min) |
+| AC-104 | Aprobado en 1440×900 (QA-5); el caso de 390×844 no tiene veredicto | game-qa | Código de D32 en `3068eda` (H-12); pendiente de QA en 390×844 |
+| AC-125 | Nuevo (DT-01) | lead → game-qa | Implementado en `887ac67`; pendiente de QA |
+| AC-126 | Nuevo (DT-03) | lead → game-qa | Implementado en `d4bfa55`; pendiente de QA |
+| AC-127 | Nuevo (O-3) | lead → game-qa | Implementado en `71fc925`; pendiente de QA |
+
+**Aprobados en QA-5 que hay que volver a verificar** por commits posteriores: AC-75 (tests en servidor propio, `0303c02`, H-13), AC-110 (O-1, `aadcdd9`), AC-109 (test completo, `273c376`) y AC-41 (unitario del umbral, `6bd7df2`, H-15). AC-75 y AC-110 dieron rojos en falso por DT-04.
 
 ### Ya conocidos (fuera de este triaje)
 - Persistencia (AC-97): RECHAZADO porque no está implementada. Depende de GDD Q2 (Jonattan).
@@ -147,6 +153,8 @@ Reportes (el último manda):
 - Espacio o Enter estando hundido equivalen a "Zarpar", solo con la cuenta atrás terminada (GDD §5 y §12, AC-101).
 - Tolerancia de reloj en Zarpar (H-10): se **acepta** que el servidor admita el `respawn` hasta 2 ticks (100 ms) antes de que termine la cuenta. El jugador no lo percibe y elimina el rechazo del primer clic (GDD §12, AC-109).
 - Prioridad entre aviso y pista (H-11): manda el **aviso**, que es información del servidor y dura poco. La pista, que solo sale en la primera sesión, cede: se recoloca o se oculta.
+- Método de AC-91 (interpretaciones de dev-tests sobre el harness de `a422dd1`, 2026-10-11): se **aceptan** las 5 y quedan escritas en el AC. (1) Calentamiento hasta la primera reparación completa, con la banda de 45–55 %: la línea base tiene que tener la misma mezcla de carga que el final. (2) Pendiente del heap por mínimos cuadrados sobre las muestras 5 a 10; las dos ventanas comparten la del minuto 5. (3) Commits/s por intervalo; ≤ 10 en los 10 intervalos, y el cociente final/inicial solo se aserta con ventanas de 60 s. (4) Las texturas se **mantienen** como centinela: valen 0 por diseño (no hay `Texture` ni `map:` en `src/`, y `GameCanvas.tsx:202` apaga las sombras). (5) El suelo de 40 ciclos se mantiene: la simulación da 70 en 10 min (`qa-artifacts/qa/a422dd1/logs/verify.log:45`) y la corrida real, ~58 extrapolados (dato de dev-tests, sin confirmar hasta la primera corrida de 10 min), un 45 % por encima. Si no se llega, el AC queda NO VERIFICADO, no RECHAZADO.
+- Tick de la simulación (DT-05, AC-03): el presupuesto de 4 ms no cambia; se mide como el menor de 3 p99, porque la carga ajena solo suma tiempo.
 
 ---
 
@@ -155,7 +163,7 @@ Reportes (el último manda):
 ### H-001 Simulación pura y determinista (§13, §16) · P0
 - **AC-01** — Dado el módulo de simulación, cuando se analizan sus imports, entonces no incluye `react`, `three` ni `@react-three/*`. Verificación: unitario.
 - **AC-02** — Dada una semilla y una secuencia fija de intenciones, cuando se ejecutan 1 200 ticks dos veces, entonces el estado final serializado es idéntico. Verificación: unitario.
-- **AC-03** — Dado un mundo con 20 jugadores con intenciones aleatorias, 20 NPC y el jefe, cuando se miden 2 000 ticks, entonces el p99 del tick es ≤ 4 ms en Node 20. Verificación: unitario.
+- **AC-03** — Dado un mundo con 20 jugadores con intenciones aleatorias, 20 NPC y el jefe (en cuanto exista, H-305), cuando se miden 2 000 ticks **3 veces seguidas**, entonces el **menor de los 3 p99** es ≤ 4 ms en Node 20. Verificación: unitario, dentro de `verify`, con los 3 p99 en el log. *Por qué el menor (DT-05):* la carga ajena de la máquina (p. ej. otro Jest en paralelo) solo puede sumar tiempo a un tick, nunca restarlo, así que el mínimo de varias repeticiones estima el coste de la simulación y un p99 suelto mide la máquina (4,31 ms con otro Jest al lado frente a 0,33 ms aislado, sin cambios en `src/game`). No se sube el umbral, porque eso aflojaría el presupuesto de GDD §16 sin motivo; tampoco se exige correrlo aislado, porque saldría de la puerta de `verify`.
 - **AC-04** — Dado el módulo de constantes, cuando se compara con las tablas del GDD (§4, §6, §7, §8, §9, §10, §11), entonces todos los valores coinciden. Verificación: unitario (tabla de constantes revisada por `game-product`).
 
 ### H-002 Protocolo de intenciones validado (§13) · P0
@@ -372,19 +380,20 @@ Reportes (el último manda):
 ### H-903 Presupuesto de render · P0
 - **AC-89** — Dada la escena estándar (20 barcos, 20 NPC e islas en pantalla), cuando se lee `renderer.info`, entonces hay ≤ 100 draw calls y ≤ 250 000 triángulos. Verificación: perf.
 - **AC-90** — Dado el portátil de referencia (GDD Q9) con Chrome a 1440×900, cuando se juegan 60 s de combate, entonces la media es ≥ 58 fps y el p95 del frame ≤ 20 ms. Verificación: manual (traza de Performance de Chrome adjunta).
-- **AC-91** — Dada una sesión de 10 min en 1440×900 con carga continua, cuando se muestrea cada 60 s, entonces no hay deriva de recursos.
-  - **Carga:** ≥ 40 ciclos de hundimiento y reaparición de NPC en pantalla, con el barco propio atacando, recibiendo daño y reparando. Así se ejercitan VFX de daño, hundimientos, restos, placas y números.
-  - **Muestreo:** cada 60 s, tras forzar el GC por CDP (`HeapProfiler.collectGarbage`). La línea base es la muestra del minuto 1, para excluir el calentamiento.
+- **AC-91** — Dada una sesión de 10 min **en régimen** en 1440×900 con carga continua, cuando se muestrea cada 60 s, entonces no hay deriva de recursos.
+  - **Carga:** ≥ 40 ciclos de hundimiento y reaparición de NPC en pantalla **dentro de los 10 min medidos** (los del calentamiento no cuentan), con el barco propio atacando, recibiendo daño y reparando. Así se ejercitan VFX de daño, hundimientos, restos, placas y números. Política: repara al bajar del 45 % de vida y vuelve a atacar al pasar del 55 %. La banda cruza el 50 %, así que el humo propio entra y sale, y cada minuto tiene la misma mezcla de ataque y reparación. **Si la corrida no llega a 40 ciclos, el AC queda NO VERIFICADO (carga insuficiente), no RECHAZADO:** sin la carga no se puede hablar de deriva.
+  - **Calentamiento:** antes del minuto 0, la carga corre hasta completar la primera reparación (≈ 2–2,5 min; si en 5 min no hay ninguna, la corrida no vale). Medido desde el 100 % de vida, el minuto 1 sería solo ataque y tendría menos commits que el último, que incluye reparación (la barra de vida cambia cada 0,5 s), y el cociente de commits fallaría en falso. Con el calentamiento, la corrida completa dura ~13 min.
+  - **Muestreo:** 10 muestras, al final de cada minuto medido (1 a 10), tras forzar el GC por CDP (`HeapProfiler.collectGarbage`). La línea base es la muestra del minuto 1. "Minutos 1–5" son las muestras 1 a 5 y "minutos 5–10", las muestras 5 a 10: comparten la del minuto 5.
 
   | Métrica (fuente) | Umbral de deriva |
   |---|---|
-  | Heap JS usado (`Runtime.getHeapUsage` o `Performance.getMetrics`) | Final − base ≤ 15 MB **y** pendiente ≤ 1 MB/min en los minutos 5–10 |
+  | Heap JS usado (`Runtime.getHeapUsage` o `Performance.getMetrics`) | Final − base ≤ 15 MB **y** pendiente ≤ 1 MB/min en los minutos 5–10, por **mínimos cuadrados** sobre sus 6 muestras (x = minuto real de cada muestra) |
   | Nodos DOM (`Performance.getMetrics` → `Nodes`) | Final ≤ base × 1,05 |
   | Escuchas de eventos JS (`JSEventListeners`) | Final ≤ base × 1,05 |
-  | Geometrías y texturas (`renderer.info.memory`) | Máximo de los minutos 5–10 ≤ máximo de los minutos 1–5 + 2, cada una |
-  | Commits de React por segundo en combate (contador `onRender`) | Minuto 10 ≤ minuto 1 × 1,2, y siempre ≤ 10 (AC-85) |
+  | Geometrías y texturas (`renderer.info.memory`) | Máximo de los minutos 5–10 ≤ máximo de los minutos 1–5 + 2, cada una. Las texturas valen 0 por diseño (vertex colors sin mapas, ASSET-SPEC; sombras apagadas): se mantienen como **centinela** de la primera textura que se fugue, y QA las anota como "0 por construcción", no como prueba de que no hay fugas |
+  | Commits de React por segundo (contador `onRender`) | Media de cada intervalo entre muestras: **≤ 10 en los 10 intervalos** (AC-85) **e** intervalo 10 ≤ intervalo 1 × 1,2 |
 
-  Verificación: perf de **larga duración**, en un harness aparte fuera de `npm run verify` porque dura 10 min. Lo escribe dev-tests y game-qa lo ejecuta antes de cada aceptación, con las 10 muestras en el log.
+  Verificación: perf de **larga duración** (`npm run test:soak`, `e2e/endurance.spec.ts`), fuera de `npm run verify` porque dura ~13 min. Lo escribe dev-tests y game-qa lo ejecuta antes de cada aceptación, con las 10 muestras en el log. Solo vale la corrida de 10 min. El modo corto (`AC91_MINUTES=2`, ventanas de 12 s) sirve para validar el harness, y en él el cociente de commits solo se registra: el ruido de una ventana de 12 s (±25 %) es mayor que el 20 % que se mide.
 - **AC-92** — Dado otro jugador navegando en línea recta sin pérdida de paquetes, cuando se muestrea su posición renderizada a 60 fps, entonces ningún salto entre frames consecutivos supera 1 m. Verificación: **unitario** sobre el interpolador de `src/client/game-client.ts`, con frames sintéticos a 10 Hz (llegada con *jitter* de ±20 ms) y muestreo cada 16,7 ms. *Justificación (plan de AC-108):* el salto por frame depende del interpolador y del ritmo de snapshots, no de la GPU. Con WebGL por software, un e2e mide la máquina (17,6 fps), no el código. Un e2e con GPU queda como comprobación opcional de QA.
 
 ## E13 — Vista libre (§5, §13) · P1 (I2)
