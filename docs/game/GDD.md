@@ -151,11 +151,13 @@ Lectura de diseño: el **riesgo crece con la distancia al puerto**. Los mercante
 | Mover la vista (I2) | Arrastrar **un** dedo en el agua (> 12 px CSS), o tocar o arrastrar en el minimapa | Un toque sin arrastre sigue navegando; con dos dedos es zoom, nunca desplazamiento |
 | Centrar (I2) | Botón **Centrar** | Vuelve al seguimiento |
 
+**Regla de entrada:** cada pulsación produce como mucho una intención. Los conmutadores (Atacar, Reparar, Esc) alternan sobre la **última intención del jugador**, no sobre el estado que llega del servidor, que va interpolado y con retraso (§13). Mantener una tecla pulsada no la repite.
+
 Orientaciones soportadas: vertical (390×844) y horizontal (844×390). Mientras se juega, el navegador no hace scroll ni zoom.
 
 ### Cámara (qué debe comunicar; los valores exactos los define `game-ux`)
 - Proyección "isométrica" (cenital oblicua).
-- **Modo seguimiento** (por defecto): sigue al barco propio, que queda siempre en el **10 % central** de la pantalla.
+- **Modo seguimiento** (por defecto): sigue al barco propio, que queda siempre en el **10 % central** de la pantalla: la caja centrada de 10 % del ancho × 10 % del alto (|dx| ≤ 0,05·W, |dy| ≤ 0,05·H), medida sobre el pivote del barco.
 - **Encuadre (decisión U8, D23):** con el zoom por defecto cabe entero, a 1440×900 y a 390×844, el círculo de radio **R = max(alcance de tu cañón, 65 m)**. Es decir, 65 / 70 / 80 m con los cañones N1 / N2 / N3 (antes, 80 m fijos).
   - 65 m es el **mayor alcance de los NPC** (cañonera y capitán). Si en el futuro un NPC alcanza más, R sube con él.
   - **Por qué no el alcance propio a secas (60 m con N1):** la cañonera orbita a 62 m y el capitán dispara desde 65 m, así que dispararían desde fuera del encuadre precisamente al jugador novato, que es quien tiene que perseguir a la cañonera.

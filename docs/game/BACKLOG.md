@@ -72,6 +72,9 @@ Reportes (el último manda):
 | H-08 | P3 | La recarga pisaba placas vecinas | AC-107 | dev-render | **Cerrado** (QA-3: 20/20 muestras, 0 px²) |
 | H-09 | P1 | Huecos del harness | AC-108 | lead / dev-render | **Cerrado en lo que listaba.** Lo que queda de cobertura está en el plan de AC-108 |
 | H-10 | P2 | Carrera de relojes: el primer `respawn` al activarse Zarpar podía rechazarse (QA-2 §7) | **AC-109** (QA lo llamó AC-101b) | lead | **Cerrado** (QA-3: 20/20 con el reloj adelantado 50 ms; tolerancia de 2 ticks, `constants.ts:196`) |
+| DT-01 (dev-tests) | P2 | Esc y Espacio dobles a ≤ 120 ms leen el `targetId` interpolado (150–200 ms de retraso): Esc ×2 → 2 `cancelAttack` y la selección sigue; Espacio ×2 → 2 `attack`. Origen: `GameApp.tsx` (`Escape` y `toggleAttack` leen `client.getShip(myShipId).targetId`). Con el RTT de producción la ventana crece | **AC-125** | lead (el cliente recuerda su última intención hasta que el servidor la confirma) | Pendiente |
+| DT-02 (dev-tests) | P2 | En táctil, el botón Puerto desactivado no explica por qué: solo tiene un `title`, que no se ve, y el aviso solo sale con `P` | AC-66 (ampliado) | lead (HUD): pulsar el botón desactivado muestra el aviso existente | Pendiente |
+| DT-03 (dev-tests) | P3 | "Salir" con el servidor caído lleva a `net::ERR_CONNECTION_REFUSED`, porque la landing la sirve el mismo proceso | **AC-126** | lead | Pendiente |
 | H-11 | P3 | En móvil, los avisos tapan la pista en la ranura `is-alt`. En 844×390 además pisan ~22 px de los paneles del jugador y del objetivo (eso ya pasaba en `614ae0d`) | **AC-110** (QA lo llamó AC-105b) | lead | Pendiente. El arreglo: la pista trata los avisos visibles como obstáculo y se oculta si no hay ninguna ranura libre; en horizontal, los avisos se estrechan para caber entre las dos columnas del HUD |
 
 ### Plan de AC-108 (RECHAZADO en QA-3 §7: 15 AC P0 sin test y 7 parciales)
@@ -187,7 +190,7 @@ Reportes (el último manda):
 - **AC-103** — Dado `buildIslands(ISLANDS)`, cuando se recorren los vértices con y > 0 de muelles, rocas y palmeras, entonces ninguno queda a más de r + 0,5 m del centro de su isla en XZ. Lo que parece sólido es sólido. Verificación: unitario (ampliar `assets.test.ts`).
 
 ### H-103 Cámara y zoom (§5) · P0
-- **AC-23** — Dado el barco navegando **en modo seguimiento**, cuando se muestrean 10 frames, entonces la proyección en pantalla del barco propio está siempre dentro del 10 % central. Verificación: e2e.
+- **AC-23** — Dado el barco navegando **en modo seguimiento**, cuando se muestrean 10 frames, entonces la proyección en pantalla del pivote del barco propio (centro en la línea de flotación, ASSET-SPEC) está siempre dentro del **10 % central**, es decir, de la caja centrada de 10 % del ancho × 10 % del alto de la pantalla: |dx| ≤ 0,05·W y |dy| ≤ 0,05·H. Verificación: e2e.
 - **AC-24** — Dado el zoom por defecto con cañones N1, N2 y N3, cuando se dibuja alrededor del barco el círculo de radio R = max(alcance del cañón propio, 65 m), es decir 65 / 70 / 80 m, entonces cabe entero en 1440×900 y en 390×844, y ppm₀ es el máximo que lo permite (±1 px, AD-06): ≈ 6,20 / 5,76 / 5,04 px/m en escritorio y 2,82 / 2,61 / 2,29 en móvil. Decisión U8 (GDD §5); antes eran 80 m fijos. Verificación: captura + e2e (ppm₀ por nivel de cañón).
 - **AC-25** — Dado el juego en escritorio, cuando se gira la rueda del ratón, entonces el zoom pasa por exactamente 3 niveles (0,7×, 1,0× y 1,5×) y la página no hace scroll. Verificación: e2e.
 
@@ -197,7 +200,7 @@ Reportes (el último manda):
 - **AC-26** — Dado un pirata en pantalla, cuando el jugador hace clic sobre él, entonces aparecen el anillo de selección y el panel con nombre, tipo, vida y distancia, y el cliente **no emite ningún mensaje** de red. Verificación: e2e (conteo de frames WebSocket).
 - **AC-27** — Dados NPC atacables a 40, 90, 140 y 170 m, cuando se pulsa `Tab` 4 veces, entonces la selección recorre 40 → 90 → 140 → 40 m (el de 170 m queda fuera del radio de 150 m). Verificación: e2e.
 - **AC-28** — Dado un objetivo seleccionado y atacado, cuando se pulsa `Esc` dos veces, entonces la 1.ª pulsación cancela el ataque (la selección sigue) y la 2.ª deselecciona. Verificación: e2e.
-- **AC-29** — Dado el juego en 390×844, cuando el jugador toca a ≤ 24 px CSS de la silueta de un barco, entonces ese barco queda seleccionado. Verificación: e2e (emulación móvil).
+- **AC-29** — Dado el juego en 390×844, cuando el jugador toca a ≤ 24 px CSS de la silueta de un barco, entonces ese barco queda seleccionado. Verificación: e2e (emulación móvil). La distancia se mide contra la caja de selección `sb_pick`, que contiene la malla, así que la prueba es igual o más estricta que el AC.
 
 ### H-202 Ataque persistente con andanadas (§7) · P0
 - **AC-30** — Dado un objetivo a tiro con el cañón cargado, cuando el jugador pulsa `Espacio`, entonces la primera andanada sale en el siguiente tick (≤ 50 ms de servidor) y las siguientes cada 4,0 s ±1 tick sin más entradas. Verificación: unitario.
@@ -208,6 +211,9 @@ Reportes (el último manda):
 - **AC-35** — Dados un atacante, un tercer barco entre ambos y el objetivo, alineados, cuando el atacante dispara 100 andanadas, entonces solo el objetivo pierde vida. Verificación: unitario.
 - **AC-36** — Dado un ataque activo, cuando el jugador navega, entonces el ataque sigue activo y dispara siempre que el objetivo esté a tiro. Verificación: unitario.
 - **AC-37** — Dado un ataque activo contra el objetivo seleccionado, cuando se pulsa `Espacio` otra vez, entonces el ataque se cancela. Verificación: e2e.
+
+### H-205 Pulsaciones rápidas: cada una cuenta (hallazgo de dev-tests) · P2
+- **AC-125** — Dados un objetivo seleccionado y atacado, y un retardo de red simulado de 0 ms y de 100 ms por sentido, cuando el jugador pulsa dos veces `Espacio` (o el botón Atacar en 390×844) separadas Δ ∈ {80, 120, 200, 300} ms, entonces el cliente emite exactamente `attack` → `cancelAttack` y el servidor termina sin ataque. Dos pulsaciones de `Esc` emiten exactamente 1 `cancelAttack` y la segunda deselecciona sin enviar nada (AC-28). El estado de acción del HUD refleja la última pulsación en ≤ 50 ms. Mantener una tecla pulsada no repite la intención (se ignoran los eventos `repeat`). Verificación: e2e con pulsaciones reales y conteo de frames, en los 4 Δ × 2 retardos.
 
 ### H-203 Reparar (§8) · P0
 - **AC-38** — Dada una Balandra al 50 % de vida navegando, cuando pulsa `R`, entonces frena, empieza a reparar al bajar de 1 m/s y sube +16 HP cada 0,5 s hasta 800, donde la reparación termina sola. Verificación: unitario.
@@ -268,7 +274,7 @@ Reportes (el último manda):
 
 ### H-501 Hundimiento y reaparición · P0
 - **AC-61** — Dado un barco con vida ≤ 0, cuando pasa ese tick, entonces entra en Hundiéndose durante 3 s, no se puede seleccionar y todos los ataques contra él terminan. Verificación: unitario.
-- **AC-62** — Dado un jugador con 455 de oro que es hundido, cuando ve la pantalla de muerte, entonces esta muestra quién lo hundió, "−45 oro" y una cuenta atrás de 8 s. El botón Zarpar está desactivado hasta que la cuenta llega a 0. Verificación: e2e + captura.
+- **AC-62** — Dado un jugador con 455 de oro que es hundido, cuando ve la pantalla de muerte, entonces esta muestra quién lo hundió, "−45 oro" y una cuenta atrás de 8 s. El botón Zarpar está desactivado hasta que la cuenta llega a 0. Verificación: unitario (redondeo: 455 → −45) + e2e (la tarjeta muestra "por <nombre>" y exactamente el −N que envía el servidor; con invitados el oro es múltiplo de 10) + captura.
 - **AC-63** — Dado un jugador muerto con la cuenta atrás terminada, cuando pulsa Zarpar, entonces reaparece en el anillo de 60–90 m del puerto, con el 100 % de la vida y la misma clase y mejoras. Verificación: unitario + e2e con **clic real** en Zarpar (llamar a `respawn()` directamente no cuenta; QA H-01).
 - **AC-101** — Dado un jugador hundido con la cuenta atrás en 0, cuando hace clic en Zarpar, lo toca (móvil) o pulsa Enter o Espacio, entonces el cliente emite **exactamente 1** intención `respawn` y en ≤ 1 s el barco propio existe con el 100 % de la vida. Verificación: e2e con interacción real en 1440×900 y 390×844 (QA H-01).
 - **AC-109** — Dado un jugador hundido, cuando el cliente envía `respawn` en el mismo frame en que Zarpar se activa, con su reloj adelantado hasta 50 ms respecto al servidor, entonces el servidor lo acepta en 20 de 20 corridas y no llega ningún aviso "Aún no puedes zarpar". Verificación: Jest+socket con reloj inyectable + e2e con el clic en la mutación que habilita el botón (QA H-10; QA lo llamó AC-101b).
@@ -283,7 +289,7 @@ Reportes (el último manda):
 - **AC-65** — Dado un barco que cruza el círculo de 110 m, cuando entra o sale, entonces el aviso "Zona segura" aparece o desaparece en el mismo snapshot, y el borde de la zona se ve en el mundo. Verificación: e2e + captura.
 
 ### H-602 Tienda de mejoras · P0
-- **AC-66** — Dado el barco dentro de la zona segura, cuando se renderiza el HUD, entonces el botón Puerto está activo. Fuera de la zona está desactivado y explica por qué. Verificación: e2e.
+- **AC-66** — Dado el barco dentro de la zona segura, cuando se renderiza el HUD, entonces el botón Puerto está activo. Fuera de la zona se ve desactivado y explica por qué **en escritorio y en táctil**: al pulsarlo (clic o toque) o con `P` aparece el aviso "El puerto solo abre en la zona segura". Un `title` no basta, porque en táctil no se ve. Verificación: e2e en 1440×900 y 390×844 (hallazgo DT-02).
 - **AC-67** — Dado un jugador con 600 de oro en el puerto, cuando compra Cañones N2, entonces le quedan 100 de oro y su cañón pasa a daño 38, alcance 70 m y recarga 3,5 s. Con 400 de oro, la compra se rechaza sin cambios. Verificación: unitario + e2e.
 - **AC-68** — Dada una intención `buy` forjada fuera de la zona, de N3 sin N2 o de un artículo ya poseído, cuando llega al servidor, entonces se rechaza y ni el oro ni las mejoras cambian. Verificación: Jest+socket.
 - **AC-69** — Dada una Balandra con 400/800 de vida, cuando compra Casco N2, entonces su vida máxima pasa a 960 y la actual a 480 (mismo porcentaje). Verificación: unitario.
@@ -389,7 +395,8 @@ Reportes (el último manda):
 - **AC-98** — Dado un usuario en la landing, cuando inicia sesión, entonces pasa por "Conectando" y está jugando en ≤ 5 s con el servidor local. Verificación: e2e.
 
 ### H-1202 Desconexión del servidor · P0
-- **AC-99** — Dado un jugador en partida, cuando el servidor se cae, entonces aparece el overlay "Desconectado" y se hacen 3 reintentos (1 s, 2 s y 4 s). Si el servidor vuelve, el jugador entra de nuevo sin recargar la página; si no, se muestran los botones "Reintentar" y "Salir". Verificación: e2e (parar y arrancar el servidor).
+- **AC-99** — Dado un jugador en partida, cuando el servidor se cae, entonces aparece el overlay del estado "Desconectado" (título visible "Sin conexión", ART-DIRECTION §16.2) y se hacen 3 reintentos (1 s, 2 s y 4 s). Si el servidor vuelve, el jugador entra de nuevo sin recargar la página; si no, se muestran los botones "Reintentar" y "Salir". Verificación: e2e (parar y arrancar el servidor).
+- **AC-126** — Dado el overlay "Sin conexión" tras los 3 reintentos, cuando el jugador pulsa "Salir", entonces **nunca** ve una página de error del navegador: si el servidor responde en ≤ 2 s, navega a la landing; si no, se queda en el overlay con el mensaje "El servidor no responde. Vuelve a intentarlo en unos segundos" y "Reintentar" disponible. Verificación: e2e con el servidor parado y arrancado (hallazgo DT-03).
 
 ---
 
