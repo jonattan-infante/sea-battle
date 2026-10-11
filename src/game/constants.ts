@@ -190,6 +190,10 @@ export const MAX_UPGRADE_LEVEL = 3;
 // ---- Muerte y reaparición (§12) ----
 export const SINKING_TIME = 3;
 export const DEATH_COUNTDOWN = 8;
+// El servidor procesa "Zarpar" con el world.time del último tick, que va hasta 1 tick por detrás del reloj real con el
+// que el cliente habilita el botón (QA H-10). Se acepta si la cuenta atrás acaba antes del próximo tick, con 1 tick
+// más de margen por el retraso del setInterval: ≤ 0,1 s antes de los 8 s, imperceptible para el jugador.
+export const RESPAWN_CLOCK_TOLERANCE = 2 / TICK_RATE;
 export const SPAWN_PROTECTION = 15;
 
 // ---- Validación de entradas ----

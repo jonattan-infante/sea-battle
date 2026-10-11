@@ -7,6 +7,7 @@ import {
   CANNON_LEVELS,
   CannonStats,
   DEATH_COUNTDOWN,
+  RESPAWN_CLOCK_TOLERANCE,
   DEATH_GOLD_PENALTY,
   DISCONNECT_GRACE,
   GOLD_CAP,
@@ -392,7 +393,7 @@ export function respawn(world: World, playerId: string): ActionResult {
   const ship = shipOfPlayer(world, playerId);
   if (!player || !ship) return fail('Jugador desconocido');
   if (ship.state === 'alive') return fail('Tu barco está a flote');
-  if (!player.death || world.time - player.death.at < DEATH_COUNTDOWN - EPS) return fail('Aún no puedes zarpar');
+  if (!player.death || world.time - player.death.at < DEATH_COUNTDOWN - RESPAWN_CLOCK_TOLERANCE - EPS) return fail('Aún no puedes zarpar');
   const spot = respawnPoint(world, navClearance(ship.classId));
   ship.state = 'alive';
   ship.stateTimer = 0;

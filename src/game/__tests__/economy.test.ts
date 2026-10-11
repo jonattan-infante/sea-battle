@@ -1,4 +1,4 @@
-import { DEATH_COUNTDOWN, DISCONNECT_GRACE, RESPAWN_RING, SHIP_CLASSES, SINKING_TIME, SPAWN_PROTECTION, TICK_RATE, WRECK_LIFETIME } from '../constants';
+import { DEATH_COUNTDOWN, DISCONNECT_GRACE, RESPAWN_CLOCK_TOLERANCE, RESPAWN_RING, SHIP_CLASSES, SINKING_TIME, SPAWN_PROTECTION, TICK_RATE, WRECK_LIFETIME } from '../constants';
 import { GameEvent, Player, Ship, World } from '../types';
 import { distance } from '../vec';
 import {
@@ -19,7 +19,7 @@ import {
   ShopItem,
   splitReward
 } from '../world';
-import { DT, dummy, emptyWorld, median, placeMerchant, placePirate, placePlayer, run } from './helpers';
+import { DT, dummy, emptyWorld, median, placeMerchant, placePirate, placePlayer, run, runUntil } from './helpers';
 
 // Cola de tiradas: cada valor < precisión es un impacto; al vaciarse, todo falla
 function scriptedRng(world: World, rolls: number[]): void {
@@ -158,6 +158,28 @@ describe('E4 — Muerte y reaparición (§10, §12)', () => {
     expect(respawn(world, 'V').ok).toBe(false);
     run(world, DEATH_COUNTDOWN - 1 - 2 * DT);
     expect(respawn(world, 'V').ok).toBe(false);
+  });
+
+  test('H-10: acepta "Zarpar" enviado al terminar la cuenta atrás en el reloj del cliente aunque world.time vaya hasta 2 ticks por detrás', () => {
+    const sink = () => {
+      const world = emptyWorld();
+      world.rng = () => 0;
+      placePlayer(world, 'K', 300, 300);
+      const victim = placePlayer(world, 'V', 300, 340);
+      victim.hp = 1;
+      attack(world, 'K', victim.id);
+      runUntil(world, 5, () => !!world.players.get('V')!.death);
+      return { world, at: world.players.get('V')!.death!.at };
+    };
+    // 2 ticks antes de los 8 s (el botón del cliente ya está activo): se acepta
+    const early = sink();
+    runUntil(early.world, DEATH_COUNTDOWN + 1, (w) => w.time - early.at >= DEATH_COUNTDOWN - RESPAWN_CLOCK_TOLERANCE - 1e-9);
+    expect(early.world.time - early.at).toBeLessThan(DEATH_COUNTDOWN);
+    expect(respawn(early.world, 'V').ok).toBe(true);
+    // 3 ticks antes: todavía no
+    const tooEarly = sink();
+    runUntil(tooEarly.world, DEATH_COUNTDOWN + 1, (w) => w.time - tooEarly.at >= DEATH_COUNTDOWN - RESPAWN_CLOCK_TOLERANCE - DT - 1e-9);
+    expect(respawn(tooEarly.world, 'V')).toEqual({ ok: false, reason: 'Aún no puedes zarpar' });
   });
 
   test('AC-63: tras la cuenta atrás reaparece a 60–90 m del puerto, con vida llena y la misma clase y mejoras', () => {
