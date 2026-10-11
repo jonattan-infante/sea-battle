@@ -64,6 +64,8 @@ Reportes (el último manda):
 | H-11 | P3 | En móvil, los avisos tapan la pista en la ranura `is-alt`. En 844×390 además pisan ~22 px de los paneles del jugador y del objetivo (eso ya pasaba en `614ae0d`) | **AC-110** (QA lo llamó AC-105b) | lead | Pendiente. El arreglo: la pista trata los avisos visibles como obstáculo y se oculta si no hay ninguna ranura libre; en horizontal, los avisos se estrechan para caber entre las dos columnas del HUD |
 
 ### Plan de AC-108 (RECHAZADO en QA-3 §7: 15 AC P0 sin test y 7 parciales)
+**Reparto (lead):** `dev-tests` (agente game-developer, copia aislada con `PW_PORT_BASE=3500`, commit `618a633`) escribe los bloques 1 y 2 más AC-12 y AC-92; dev-render, AC-23, AC-25 y AC-91; el lead, AC-75 y AC-110.
+
 **Criterio:**
 - Ninguno pasa a "basta un Jest que ya existe": hoy no hay ningún test unitario de lógica de cliente (`hud-logic.ts`, `game-client.ts`), y todos estos AC tienen su observable en el cliente.
 - Los AC de **entrada del jugador** se quedan en e2e por la lección de H-01: el fallo estaba en el cableado del cliente, no en el servidor.
@@ -72,46 +74,46 @@ Reportes (el último manda):
 **Bloque 1: bucle principal (seleccionar → atacar → hundir → oro → mejorar → morir). Hacer primero.**
 | AC | Estado en QA-3 | Qué tiene que asertar el test | Tipo | Responsable |
 |---|---|---|---|---|
-| AC-31 | Sin test | "Fuera de alcance" en el panel, 0 andanadas, y el disparo sin una entrada nueva al entrar en alcance | e2e | lead |
-| AC-37 | Sin test | Espacio con ataque activo → 1 `cancelAttack` y la selección sigue | e2e | lead |
-| AC-17 | Sin test | Clic en el agua mientras ataca → `moveTo`, 0 `cancelAttack`, y la selección y el ataque siguen activos | e2e | lead |
-| AC-27 | Sin test | Orden del ciclo de Tab (40 → 90 → 140 → 40) y 0 frames | e2e | lead |
-| AC-28 | Sin test | Esc 1 → `cancelAttack` y la selección sigue; Esc 2 → deselecciona; 0 frames en la 2.ª | e2e | lead |
-| AC-62 | Parcial | Añadir "por <nombre>" y "−N oro" exactos (10 % del oro) en la tarjeta | e2e | lead |
-| AC-58 | Parcial | Añadir el límite: DOM actualizado ≤ 200 ms después del evento `loot` | e2e | lead |
-| AC-67 | Sin test | Comprar Cañones N2 por la UI (escenario `shipyard`): oro −500 y alcance 70 / recarga 3,5. Botón desactivado con oro insuficiente, que es el patrón de `disabled` de H-01 | e2e | lead |
-| AC-66 | Parcial | Botón Puerto desactivado fuera de la zona, con su explicación | e2e | lead |
-| AC-85 | Sin test | ≤ 10 commits/s en 20 s de combate (contador `onRender`) | perf | lead |
+| AC-31 | Sin test | "Fuera de alcance" en el panel, 0 andanadas, y el disparo sin una entrada nueva al entrar en alcance | e2e | dev-tests |
+| AC-37 | Sin test | Espacio con ataque activo → 1 `cancelAttack` y la selección sigue | e2e | dev-tests |
+| AC-17 | Sin test | Clic en el agua mientras ataca → `moveTo`, 0 `cancelAttack`, y la selección y el ataque siguen activos | e2e | dev-tests |
+| AC-27 | Sin test | Orden del ciclo de Tab (40 → 90 → 140 → 40) y 0 frames | e2e | dev-tests |
+| AC-28 | Sin test | Esc 1 → `cancelAttack` y la selección sigue; Esc 2 → deselecciona; 0 frames en la 2.ª | e2e | dev-tests |
+| AC-62 | Parcial | Añadir "por <nombre>" y "−N oro" exactos (10 % del oro) en la tarjeta | e2e | dev-tests |
+| AC-58 | Parcial | Añadir el límite: DOM actualizado ≤ 200 ms después del evento `loot` | e2e | dev-tests |
+| AC-67 | Sin test | Comprar Cañones N2 por la UI (escenario `shipyard`): oro −500 y alcance 70 / recarga 3,5. Botón desactivado con oro insuficiente, que es el patrón de `disabled` de H-01 | e2e | dev-tests |
+| AC-66 | Parcial | Botón Puerto desactivado fuera de la zona, con su explicación | e2e | dev-tests |
+| AC-85 | Sin test | ≤ 10 commits/s en 20 s de combate (contador `onRender`) | perf | dev-tests |
 
 **Bloque 2: móvil y robustez**
 | AC | Estado en QA-3 | Qué tiene que asertar el test | Tipo | Responsable |
 |---|---|---|---|---|
-| AC-29 | Sin test | En 390×844, un toque a ≤ 24 px de la silueta selecciona, sin red | e2e | lead |
-| AC-80 | Parcial | Añadir 844×390: tamaños de los botones y 0 solapes | e2e | lead |
-| AC-41 | Sin test | Clase de pulso del botón Reparar con vida < 30 % y sin ella con vida ≥ 30 % | e2e | lead |
-| AC-19 | Sin test | `S` → 1 `stop` y velocidad 0 (añadirlo al e2e de AC-14, que ya pulsa S sin asertarlo) | e2e | lead |
-| AC-65 | Parcial | Añadir que el aviso desaparece al salir de la zona | e2e | lead |
-| AC-99 | Sin test | Parar el servidor → overlay y 3 reintentos (1, 2 y 4 s) → reconexión sin recargar; sin servidor → "Reintentar" / "Salir" | e2e | lead |
-| AC-75 | Parcial | Una salpicadura por bala fallada (contadores de dev-render) y caso negativo: un tercer jugador que no es tirador ni objetivo no ve "Fallo" | e2e | lead + dev-render (en curso) |
+| AC-29 | Sin test | En 390×844, un toque a ≤ 24 px de la silueta selecciona, sin red | e2e | dev-tests |
+| AC-80 | Parcial | Añadir 844×390: tamaños de los botones y 0 solapes | e2e | dev-tests |
+| AC-41 | Sin test | Clase de pulso del botón Reparar con vida < 30 % y sin ella con vida ≥ 30 % | e2e | dev-tests |
+| AC-19 | Sin test | `S` → 1 `stop` y velocidad 0 (añadirlo al e2e de AC-14, que ya pulsa S sin asertarlo) | e2e | dev-tests |
+| AC-65 | Parcial | Añadir que el aviso desaparece al salir de la zona | e2e | dev-tests |
+| AC-99 | Sin test | Parar el servidor → overlay y 3 reintentos (1, 2 y 4 s) → reconexión sin recargar; sin servidor → "Reintentar" / "Salir" | e2e | dev-tests |
+| AC-75 | Parcial | Una salpicadura por bala fallada (contadores de dev-render) y caso negativo: un tercer jugador que no es tirador ni objetivo no ve "Fallo" | e2e | lead (escrito; en verificación con los contadores de dev-render) |
 
 **Bloque 3: cámara, render e infraestructura**
 | AC | Estado en QA-3 | Qué tiene que asertar el test | Tipo | Responsable |
 |---|---|---|---|---|
 | AC-23 | Sin test | Proyección del barco propio en el 10 % central en 10 frames navegando | e2e | dev-render |
 | AC-25 | Sin test | La rueda da exactamente {0,7; 1,0; 1,5} y `scrollY` sigue en 0 | e2e | dev-render |
-| AC-92 | Sin test | **Cambia a unitario** (ver el AC): interpolador con frames sintéticos | unitario | lead |
+| AC-92 | Sin test | **Cambia a unitario** (ver el AC): interpolador con frames sintéticos | unitario | dev-tests |
 | AC-91 | Sin test | **Corrida larga de perf** de 10 min, fuera de `verify` (ver el AC) | perf (larga) | dev-render (harness); game-qa la ejecuta |
-| AC-12 | Parcial | Un 21.º jugador real (20 sockets de invitado + 1 navegador) → landing con "Servidor lleno" (`GameApp.tsx:209`) | e2e | lead |
+| AC-12 | Parcial | Un 21.º jugador real (20 sockets de invitado + 1 navegador) → landing con "Servidor lleno" (`GameApp.tsx:209`) | e2e | dev-tests |
 
 ### AC sin veredicto final
 | AC | Motivo | Responsable | Estado |
 |---|---|---|---|
 | AC-72 | Exige 5 evaluadores humanos | game-qa + Jonattan | Hay que organizar la prueba de 5 s |
-| AC-75 | Parcial | lead + dev-render | En curso (plan de AC-108, bloque 2) |
+| AC-75 | Parcial | lead | Escrito, con el caso negativo de dos jugadores y el cruce de salpicaduras e impactos; en verificación |
 | AC-90 | Manual en el portátil de referencia | game-qa | Bloqueado por GDD Q9 (Jonattan) |
-| AC-91, AC-92 | Cambian de método | dev-render / lead | Plan de AC-108, bloque 3 |
+| AC-91, AC-92 | Cambian de método | dev-render / dev-tests | Plan de AC-108, bloque 3 |
 | AC-104 | Depende de D20 + D21 | game-ux (Q16) → dev-render | Sin evaluar |
-| AC-110 | Nuevo (H-11) | lead | Pendiente |
+| AC-110 | Nuevo (H-11) | lead | Aceptados los 3 ajustes; se añade al e2e de AC-105 |
 
 ### Ya conocidos (fuera de este triaje)
 - Persistencia (AC-97): RECHAZADO porque no está implementada. Depende de GDD Q2 (Jonattan).
