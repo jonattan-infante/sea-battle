@@ -50,15 +50,48 @@ test.describe('Rendimiento @perf', () => {
     }
   });
 
-  test('AC-84: con NPC patrullando y el jugador quieto, ≤ 2 commits/s de media en 10 s', async ({ page }) => {
+  test('AC-84: con NPC patrullando en pantalla y el jugador quieto, ≤ 2 commits/s de media en 10 s', async ({ page }) => {
+    test.setTimeout(120_000);
     await installCommitCounter(page);
     await enterGame(page);
+    const moveTo = (x: number, z: number) =>
+      page.evaluate(([px, pz]) => {
+        const rt = window.__SEA_BATTLE__!.runtime() as unknown as { client: { moveTo: (x: number, z: number) => void } };
+        rt.client.moveTo(px, pz);
+      }, [x, z]);
+    const vw = page.viewportSize()!;
+    const npcsOnScreen = async () =>
+      (await ships(page)).filter((s) => s.kind !== 'player' && s.state === 'alive' && s.screen && s.screen.sx >= 0 && s.screen.sx <= vw.width && s.screen.sy >= 0 && s.screen.sy <= vw.height);
+
+    // Acercarse al mercante más cercano (los piratas atacarían al acabar la protección) y parar con un NPC en pantalla
+    await waitFor(
+      async () => {
+        if ((await npcsOnScreen()).length > 0) return true;
+        const mine = await me(page);
+        const npc = (await ships(page))
+          .filter((s) => s.kind === 'merchant' && s.state === 'alive')
+          .sort((a, b) => Math.hypot(a.x - mine!.x, a.z - mine!.z) - Math.hypot(b.x - mine!.x, b.z - mine!.z))[0];
+        await moveTo(npc ? npc.x : 0, npc ? npc.z : 220);
+        return false;
+      },
+      (ok) => ok,
+      60_000,
+      1000
+    );
+    await page.keyboard.press('KeyS');
+    await waitFor(async () => { const a = await me(page); await page.waitForTimeout(300); const b = await me(page); return Math.hypot(a!.x - b!.x, a!.z - b!.z); }, (d) => d < 0.05, 15_000, 0);
     await page.mouse.move(5, 450);
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(1000);
+
+    const start = await npcsOnScreen();
     const c0 = await commits(page);
     await page.waitForTimeout(10_000);
     const rate = ((await commits(page)) - c0) / 10;
-    console.log(`AC-84: ${rate.toFixed(2)} commits/s`);
+    const end = new Map((await ships(page)).map((s) => [s.id, s]));
+    const moved = start.filter((s) => { const e = end.get(s.id); return !!e && Math.hypot(e.x - s.x, e.z - s.z) > 1; }).length;
+    console.log(`AC-84: ${rate.toFixed(2)} commits/s · ${start.length} NPC en pantalla al empezar, ${moved} se movieron`);
+    expect(start.length).toBeGreaterThan(0);
+    expect(moved).toBeGreaterThan(0);
     expect(rate).toBeLessThanOrEqual(2);
   });
 

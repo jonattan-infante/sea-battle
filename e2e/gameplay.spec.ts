@@ -107,7 +107,34 @@ test.describe('Partida como invitado', () => {
     expect(Math.max(...moves)).toBeLessThanOrEqual(350);
   });
 
-  test('AC-26: seleccionar, atacar y comprar no abre ningún diálogo bloqueante', async ({ page }) => {
+  test('AC-26: clic sobre un pirata muestra el panel con nombre, tipo, vida y distancia sin emitir ningún mensaje', async ({ page }) => {
+    test.setTimeout(90_000);
+    const net = trackSocket(page);
+    await enterGame(page, `http://localhost:${PORTS.showcase}`);
+    // Escenario showcase: pirata quieto en (45, 205). El jugador para a 85 m, fuera de su radio de agresión
+    // (70 m): si se acercara más, al acabar la protección el pirata atacaría y dejaría de estar quieto
+    await page.evaluate(() => {
+      const rt = window.__SEA_BATTLE__!.runtime() as unknown as { client: { moveTo: (x: number, z: number) => void } };
+      rt.client.moveTo(-10, 140);
+    });
+    await waitFor(() => me(page), (s) => !!s && Math.hypot(s.x + 10, s.z - 140) < 4, 45_000, 250);
+    await page.waitForTimeout(700);
+    const pirate = (await ships(page)).find((s) => s.kind === 'pirate' && s.state === 'alive' && s.screen && Math.hypot(s.x - 45, s.z - 205) < 10);
+    expect(pirate?.screen).toBeTruthy();
+
+    net.reset();
+    await page.mouse.click(pirate!.screen!.sx, pirate!.screen!.sy);
+    await expect(page.getByTestId('target-frame')).toHaveAttribute('data-target-id', pirate!.id);
+    await expect(page.getByTestId('target-name')).toHaveText('Pirata');
+    await expect(page.locator('.hud-target__meta')).toContainText('Pirata');
+    await expect(page.getByTestId('target-hp')).toBeVisible();
+    await expect(page.getByTestId('target-distance')).toHaveText(/^\d+ m$/);
+    expect((await hud(page)).selectedId).toBe(pirate!.id); // el anillo de selección se dibuja a partir de selectedId
+    await page.waitForTimeout(1000);
+    expect(net.sent).toEqual([]);
+  });
+
+  test('Seleccionar, atacar y abrir el puerto no abre ningún diálogo bloqueante', async ({ page }) => {
     await enterGame(page);
     const all = await ships(page);
     const npc = all.find((s) => s.kind !== 'player' && s.screen);
@@ -126,6 +153,7 @@ test.describe('Partida como invitado', () => {
       const rt = window.__SEA_BATTLE__!.runtime() as unknown as { client: { moveTo: (x: number, z: number) => void } };
       rt.client.moveTo(0, 200);
     });
+    const net = trackSocket(page); // después del moveTo: desde aquí el cliente no debe enviar nada
     const target = await waitFor(
       async () => {
         await page.keyboard.press('Tab');
@@ -139,6 +167,8 @@ test.describe('Partida como invitado', () => {
     await expect(page.getByTestId('target-frame')).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('target-frame')).toHaveCount(0);
+    await page.waitForTimeout(500);
+    expect(net.sent).toEqual([]);
   });
 });
 
@@ -191,12 +221,23 @@ test.describe('Móvil @mobile', () => {
     }
   });
 
-  test('AC-81: deslizar sobre el canvas no hace scroll de la página', async ({ page }) => {
+  test('AC-81: deslizar y pellizcar sobre el canvas no hace scroll ni zoom de la página', async ({ page }) => {
     await enterGame(page);
-    const before = await page.evaluate(() => ({ x: window.scrollX, y: window.scrollY }));
-    await page.touchscreen.tap(195, 500);
-    await page.mouse.wheel(0, 400);
-    const after = await page.evaluate(() => ({ x: window.scrollX, y: window.scrollY }));
+    const view = () => page.evaluate(() => ({ x: window.scrollX, y: window.scrollY, scale: window.visualViewport?.scale ?? 1 }));
+    const before = await view();
+    // Gestos táctiles reales por CDP (page.touchscreen solo sabe hacer tap)
+    const cdp = await page.context().newCDPSession(page);
+    const touch = (type: 'touchStart' | 'touchMove' | 'touchEnd', points: [number, number][]) =>
+      cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points.map(([x, y], id) => ({ x, y, id })) });
+    await touch('touchStart', [[195, 620]]);
+    for (let i = 1; i <= 12; i++) await touch('touchMove', [[195, 620 - i * 30]]);
+    await touch('touchEnd', []);
+    await touch('touchStart', [[170, 420], [220, 420]]);
+    for (let i = 1; i <= 12; i++) await touch('touchMove', [[170 - i * 8, 420 - i * 4], [220 + i * 8, 420 + i * 4]]);
+    await touch('touchEnd', []);
+    await page.waitForTimeout(300);
+    const after = await view();
+    console.log(`AC-81: antes ${JSON.stringify(before)} · después ${JSON.stringify(after)}`);
     expect(after).toEqual(before);
   });
 });
