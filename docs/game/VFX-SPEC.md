@@ -27,7 +27,7 @@
 
 **Orden de render** (`renderOrder`): océano 0 → `P_WATER` 1 → `P_CONTACT` 2 → islas 3 → `RINGS` 4 → barcos 5 → `P_BALL_SHADOW` 6 → `P_BALL` 7 → `P_ALPHA` 8 → `P_ADD` 9. Los anillos se pintan sobre las islas y los barcos los tapan.
 
-**Alfa del framebuffer.** El canvas se crea sin alfa (`gl={{ alpha: false }}`; R3F lo activa por defecto). Si un pool usa `CustomBlending`, fija `blendSrcAlpha = ONE` y `blendDstAlpha = ONE_MINUS_SRC_ALPHA`. Así el alfa del framebuffer sigue en 1 y la página no se transparenta bajo los efectos. `P_WATER` usa `CustomBlending` sin factores de alfa: **HIPÓTESIS** de que hoy deja huecos de alfa; hay que comprobarlo con `gl.readPixels` bajo una estela.
+**Alfa del framebuffer (verificado; D20).** three r180 crea el contexto WebGL **siempre** con `alpha: true` (`node_modules/three/src/renderers/WebGLRenderer.js:345`), así que `gl={{ alpha: false }}` no basta. Regla: todo material con `CustomBlending` fija `blendSrcAlpha = ONE` y `blendDstAlpha = ONE_MINUS_SRC_ALPHA`, y así el alfa del framebuffer se queda en 1. `NormalBlending` ya lo cumple (`WebGLState.js:684`: `ONE, ONE_MINUS_SRC_ALPHA` en alfa) y `AdditiveBlending` satura en 1. Sin esos factores, el humo abría huecos de alfa, el fondo oscuro de la página se veía a través y el humo **oscurecía** lo que debía aclarar (dev-render: 42 254 px con α < 255 antes del arreglo y 0 después; aplicado en `particles.ts:214`, `balls.ts:208` y `rings.ts:157`). Lo comprueba VFX-22.
 
 ### 0.3 Partícula estándar (atributos de instancia)
 | Atributo | Contenido |
@@ -36,13 +36,15 @@
 | `aV0Life` (vec4) | Velocidad inicial xyz (m/s) + vida (s) |
 | `aSize` (vec4) | Tamaño inicial, tamaño final (m), gravedad (m/s², + = sube), arrastre (s⁻¹) |
 | `aC0` / `aC1` (vec4) | Color RGBA inicial y final (lineal) |
-| `aMisc` (vec4) | Forma (0 disco suave · 1 anillo · 2 llama · 3 astilla cuadrada · 4 estela de chispa · 5 espuma ruidosa: disco suave × ruido de valor **interpolado** (bilineal, 3 celdas por diámetro, semilla por instancia). Un `floor()` sin interpolar da bloques pixelados, como en `particles.ts:124-126` · 6 cruz), rotación inicial, velocidad de giro (rad/s), estiramiento |
+| `aMisc` (vec4) | Forma (0 disco suave · 1 anillo · 2 llama · 3 astilla cuadrada · 4 estela de chispa · 5 espuma ruidosa: disco suave × ruido de valor **interpolado** (bilineal, 3 celdas por diámetro, semilla por instancia). Un `floor()` sin interpolar da bloques pixelados, como en `particles.ts:124-126` · 6 cruz · 7 **bocanada** (D20): disco de borde firme `a = 1 − smoothstep(0.6, 1.0, r)` con luz cenital `rgb *= 0.9 + 0.2·smoothstep(−0.6, 0.6, uv.y)`; solo para el humo de vida baja), rotación inicial, velocidad de giro (rad/s), estiramiento |
 
 ```
 τ = uTime − t0 ;  si τ < 0 o τ > life → fuera del clip
 p = p0 + v0 · (1 − e^(−drag·τ)) / drag + ½ · g · τ² · ŷ          (drag = 0 → v0·τ)
 size = max(mix(s0, s1, 1 − (1 − τ/life)²), px_min / uPpm)
 color = mix(c0, c1, τ/life);  alpha *= smoothstep(0, 0.08, τ/life)    (entrada rápida)
+forma 7: alpha = c0.a · (1 − smoothstep(0.55, 1.0, τ/life)) · smoothstep(0, 0.08, τ/life)   (ignora c1.a: opaca y se apaga en el último 45 %)
+forma 7: mvPosition.z += uSmokeBias  (6 m hacia la cámara; en ortográfica no mueve la imagen, solo la profundidad: la cangreja y las velas cercanas no tapan la columna)
 billboard: offset = (uCamRight·x + uCamUp·y)·size (cámara ortográfica: mismos vectores para todos)
 ```
 Las formas son procedurales en el fragment shader. **Sin texturas.**
@@ -121,12 +123,12 @@ En calidad "baja" (media del frame > 20 ms durante 3 s, o en móvil): tasas × 0
 |---|---|
 | Disparador | Vida del barco en el snapshot. **Humo**: se enciende con ≤ 50 % y se apaga con > 53 %. **Fuego**: se enciende con ≤ 25 % y se apaga con > 28 % (histéresis). La reparación lo apaga al cruzar el umbral: las partículas vivas terminan su vida |
 | Duración | Continuo mientras se cumpla la condición |
-| Humo (≤ 50 %) | En `socket_smoke`, 3 discos/s. Velocidad inicial `(0, 0.22·h, 0)` m/s + viento `(0.6, 0, −0.6)` m/s, con flotación `g = +0.035·h` m/s² y `h = sb_mast_height`. En coordenadas de mundo, así que deja un rastro si el barco navega. Vida 3,4 s: **sube hasta ≈ la punta del mástil más alto** (0,75h + 0,20h + la altura del socket). Tamaño de 1,2 a 0,25·h m. **Claro**: `#B8B3AC` α0,5 → `#8E8984` α0 (Q10) |
-| Humo denso (≤ 25 %) | 5/s, con la misma cinemática. Tamaño de 1,5 a 0,30·h m. `#8A8580` α0,75 → `#5E5A56` α0. **Antes era `#45413D` y se fundía con las velas negras del pirata y con el agua**: el humo tiene que aclarar lo que cubre (L\* inicial ≥ 55; vela pirata L\* ≈ 15; agua L\* ≈ 38) (Q10) |
+| Humo (≤ 50 %) | En `socket_smoke`, 3 bocanadas/s (forma 7). Velocidad inicial `(0, 0.22·h, 0)` m/s + viento `(0.6, 0, −0.6)` m/s, con flotación `g = +0.035·h` m/s² y `h = sb_mast_height`. En coordenadas de mundo, así que deja un rastro si el barco navega. Vida 3,4 s: **sube hasta ≈ la punta del mástil más alto** (0,75h + 0,20h + la altura del socket). Tamaño de 0,07·h a 0,25·h m. **Claro**: `#B8B3AC` α0,35 → `#8E8984`, con la curva de alfa de la forma 7 (Q10, D20) |
+| Humo denso (≤ 25 %) | 6 bocanadas/s (forma 7), con la misma cinemática. Tamaño de 0,10·h a 0,32·h m. `#8A8580` α0,8 → `#5E5A56`, con la curva de alfa de la forma 7. **Antes** (forma 0, de 1,5 a 0,30·h m, 5/s, α0,75 → α0 lineal) la columna era una hebra fina: el borde suave y la caída lineal dejaban α ≈ 0,15–0,3 en la mayoría de sus píxeles y VFX-20 dio una mediana de +6,3 (Q15). **Antes era `#45413D` y se fundía con las velas negras del pirata y con el agua**: el humo tiene que aclarar lo que cubre (L\* inicial ≥ 55; vela pirata L\* ≈ 15; agua L\* ≈ 38) (Q10) |
 | Fuego (≤ 25 %) | En `socket_fire_01` y `_02` (y `_03` con ≤ 12 %): 12 llamas/s por socket (forma 2) a 1,8 ±0,4 m/s hacia arriba, de **2,0 a 0,6 m** × (L/24) (**mínimo 8 px al nacer**), vida 0,55 s, `#FFE08A` α1 → `#C2361B` α0. Antes medía de 0,9 a 0,25 m y QA vio una llama de ~2 px (H-05; D19) |
 | Brasas (≤ 25 %) | 2/s por socket de fuego, de 0,12 m (mínimo 2 px), a 3 m/s hacia arriba, vida 1,2 s, `#FFB347` → α0 |
 | Casco dañado | Uniform `uDamage = clamp((0.5 − hp)/0.5, 0, 1)` → difuso × (1 − 0,25·uDamage) |
-| Topes | Por barco: humo ≤ 12 (denso ≤ 18), fuego ≤ 22 y brasas ≤ 7 vivos. Fuego en ≤ 8 barcos a la vez (los más cercanos al centro de la pantalla); el resto, solo humo. Móvil: 4 barcos y tasas × 0,5 |
+| Topes | Por barco: humo ≤ 11 (denso ≤ 21), fuego ≤ 22 y brasas ≤ 7 vivos. Fuego en ≤ 8 barcos a la vez (los más cercanos al centro de la pantalla); el resto, solo humo. Móvil: 4 barcos y tasas × 0,5 |
 | Técnica | `P_ALPHA` (humo) + `P_ADD` (fuego y brasas); la CPU recorre ≤ 41 barcos para acumular los temporizadores |
 
 ## 7. Hundimiento
@@ -258,5 +260,6 @@ Escena de combate estándar = AC-89 (20 barcos + 20 NPC + islas) con ≥ 6 duelo
 | VFX-17 | Coste | Traza de Performance en el portátil de referencia: escena estándar con VFX frente a sin VFX | p95 del frame +≤ 2 ms | AC-90 |
 | VFX-18 | Protección | Captura tras reaparecer | Anillos `#BDEBFF` y escudo durante 15 s o hasta atacar | AC-64 |
 | VFX-19 | Restos (P1) | Captura | Anillo dorado visible; parpadea los últimos 5 s; desaparece a los 30 s | AC-59 |
-| VFX-20 | Humo con vida baja legible | Pirata al 20 % de vida: L\* de los píxeles con humo frente a los mismos píxeles sin VFX, **los dos leídos de la captura de pantalla** (sRGB, mismo pipeline); altura de la columna | El humo denso aclara: ΔL\* ≥ +15 sobre la vela negra; la columna llega a la punta del mástil más alto ±15 % | — |
+| VFX-20 | **Humo con vida baja legible** (D20) | Pirata al 20 % de vida, 1440×900, zoom 1,0×, ≥ 3,4 s en el estado. El mismo frame con el humo y el fuego de vida baja encendidos y apagados (el resto de VFX igual), **los dos leídos de la captura de pantalla** (sRGB). Máscara del humo: píxeles con ΔE76 ≥ 3 cuyo croma no sube (C\*con ≤ C\*sin + 5; así se excluyen llamas y brasas). Rumbo elegido para que ≥ 150 px de la máscara caigan sobre vela (L\*sin ≤ 25); se anota en el reporte. Se mide el núcleo con p75: el borde suave del disco es intencionado y no cuenta | (a) p75 de ΔE76 en la máscara ≥ 20 (agua y vela); (b) sobre vela, p75 de ΔL\* ≥ +20; (c) la columna llega a la punta del mástil más alto ±15 % | — |
 | VFX-21 | Humo de andanada visible | Captura 300 ms después del fogonazo | Hay humo junto a cada boca, ≥ 8 px de diámetro y L\* ≥ 70 | — |
+| VFX-22 | Alfa del framebuffer (§0.2; D20) | Escena estándar con todos los pools activos: `gl.readPixels` del canvas completo | 0 px con α < 255 | — |

@@ -270,6 +270,7 @@ Encima, ruido de valor de 2 octavas (escala 1,6 m y 0,7 m, desplazamiento a 0,3 
 ### 7.2 Color
 ```
 h_c = 0.6·h + 0.4·n                                                    // n = ruido de 2 octavas en [−1, 1]: rompe las bandas
+n   = (vnoise(p/9 + 0.6·drift) + 0.5·vnoise(p/4.5 − 0.4·drift)) / 1.5 · 2 − 1   // longitudes 9 m y 4,5 m (D20); drift el de §7.1
 c = mix(ocean.deep, mix(ocean.trough, ocean.crest, smoothstep(−0.6, 0.8, h_c)), 0.55)   // contraste de ola al 55 %
 s  = 1 − smoothstep(0, 18, d_isla)   → c = mix(c, ocean.shallow, 0.85·s)
 s2 = 1 − smoothstep(0, 4,  d_isla)   → c = mix(c, ocean.shore, s2)
@@ -632,7 +633,7 @@ Captura estándar = `npm run qa:capture` con zoom 1,0×, sin modales y el barco 
 | AD-22 | Recarga monótona | 5 capturas de un ciclo de recarga: ángulo del relleno del indicador | Creciente y en 360° en el frame del disparo | AC-73 |
 | AD-23 | Zona segura visible | Captura en el borde de la zona (r 110 m) | La línea discontinua y ≥ 3 boyas son visibles; aparece el aviso "Zona segura" | AC-65 |
 | AD-25 | Albedo compensado | ΔE76 entre el color medio de la tapa de la playa o de la cubierta en la captura y su token de §4.2.1 | ≤ 6 | — |
-| AD-24 | Olas sin bandas regulares | Percentiles p5 y p95 de L\* en el parche de AD-01 | p95 − p5 entre 4 y 12. Medido el 2026-10-11: 16–21, son bandas | — |
+| AD-24 | Olas sin bandas regulares | Percentiles p5 y p95 de L\* en el parche de AD-01 | p95 − p5 entre 4 y 12. Medido el 2026-10-11: 16–21, son bandas. Con el ruido de 9 m y 4,5 m (D20): 8,8 (dev-render; falta QA) | — |
 
 ---
 
@@ -671,6 +672,7 @@ Captura estándar = `npm run qa:capture` con zoom 1,0×, sin modales y el barco 
 | D17 | Q14: las caras horizontales reciben ×1,15; la arena sale `#F5DDA3` | **Albedo compensado** solo para los materiales que se ven desde arriba (arena, hierba, cubiertas y carga). Ni velas ni cascos | §4.2.1, AD-25 |
 | D18 | Rim de `uShield`: mástiles azulados; dev-render usa `(0,0,1)` como vista ortográfica | **Excluir del rim todo lo que no es casco** con la máscara `_rim_mask`. **Confirmado** `geometryViewDir` (`(0,0,1)` en ortográfica, como hace three) | VFX-SPEC §12, ASSET-SPEC §6 |
 | D19 | H-05 (QA): con el 10 % de vida, un mercante solo muestra una llama de ~2 px y casi nada de humo | Área mínima medible en VFX-09b (fracción de la huella del casco, con contraste en grises) y llamas más grandes (de 2,0 a 0,6 m × L/24, mínimo 8 px). D13 cubre el color y la altura del humo (VFX-20), no el área | VFX-SPEC §6, VFX-09b |
+| D20 | Q15: VFX-20 da mediana +6,3 (p75 +8,5) y solo 113 px sobre vela; la cangreja abierta (D12) tapa la base de la columna. Además dev-render confirmó huecos de alfa en el framebuffer y eligió 9 m y 4,5 m para el ruido de AD-24 | **Las dos cosas, primero el humo** (la causa): forma 7 «bocanada» de borde firme, alfa sostenida hasta el 55 % de la vida, más tamaño (0,10·h → 0,32·h) y 6/s, y sesgo de profundidad de 6 m para que las velas no la tapen. **Métrica**: VFX-20 mide el núcleo (p75 de ΔE76 ≥ 20 y p75 de ΔL\* ≥ +20 sobre vela), porque la mediana castiga el borde suave, que es intencionado; un umbral de α no se puede medir en una captura. Alfa del framebuffer: obligatorio en todo `CustomBlending` (VFX-22). Ruido de AD-24 **fijado** en 9 m y 4,5 m | VFX-SPEC §0.2, §0.3, §6, VFX-20, VFX-22; §7.2, AD-24 |
 
 **Abiertas:**
 
