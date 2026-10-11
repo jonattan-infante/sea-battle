@@ -69,8 +69,14 @@ interface HudState {
 }
 
 let nextId = 1;
-const TOAST_MS = 3500; // ART-DIRECTION §12.5
-const MAX_TOASTS = 3;
+export const TOAST_MS = 3500; // ART-DIRECTION §12.5
+export const MAX_TOASTS = 3;
+const toastTimers = new Map<number, ReturnType<typeof setTimeout>>();
+
+function scheduleDismiss(id: number) {
+  clearTimeout(toastTimers.get(id));
+  toastTimers.set(id, setTimeout(() => useHud.getState().dismissToast(id), TOAST_MS));
+}
 const FEED_MS = 5000; // AC-78
 const MAX_FEED = 4;
 
@@ -90,11 +96,22 @@ export const useHud = create<HudState>((set) => ({
   select: (id) => set({ selectedId: id }),
   setShopOpen: (open) => set({ shopOpen: open }),
   pushToast: (kind, text) => {
+    // AC-127: un aviso con el mismo texto que uno visible no se apila; se queda en su sitio y su vida vuelve a empezar
+    const same = useHud.getState().toasts.find((t) => t.text === text);
+    if (same) {
+      if (same.kind !== kind) set((s) => ({ toasts: s.toasts.map((t) => (t.id === same.id ? { ...t, kind } : t)) }));
+      scheduleDismiss(same.id);
+      return;
+    }
     const id = nextId++;
     set((s) => ({ toasts: [...s.toasts, { id, kind, text }].slice(-MAX_TOASTS) }));
-    setTimeout(() => useHud.getState().dismissToast(id), TOAST_MS);
+    scheduleDismiss(id);
   },
-  dismissToast: (id) => set((s) => (s.toasts.some((t) => t.id === id) ? { toasts: s.toasts.filter((t) => t.id !== id) } : s)),
+  dismissToast: (id) => {
+    clearTimeout(toastTimers.get(id));
+    toastTimers.delete(id);
+    set((s) => (s.toasts.some((t) => t.id === id) ? { toasts: s.toasts.filter((t) => t.id !== id) } : s));
+  },
   pushFeed: (tone, text) => {
     const id = nextId++;
     set((s) => ({ feed: [...s.feed, { id, tone, text }].slice(-MAX_FEED) }));

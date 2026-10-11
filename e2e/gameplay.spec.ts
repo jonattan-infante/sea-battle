@@ -348,12 +348,23 @@ async function expectHintAndToastsInSize(browser: Browser, viewport: { width: nu
         await expectEveryHintFitsLandscape(page, label);
         landscapeChecked = true;
       }
-      // Con uno y con dos avisos (fuera de la zona, P da "El puerto solo abre en la zona segura") la pista tampoco los
-      // tapa, y los avisos se leen enteros sin pisar los paneles ni el minimapa (H-11). La ranura sobre el barco queda
-      // bajo el primer aviso: con uno la pista sigue visible; con dos, si la otra ranura está ocupada, se oculta
+      // Con uno y con dos avisos distintos (dos iguales ya no se apilan, AC-127) la pista tampoco los tapa, y los avisos
+      // se leen enteros sin pisar los paneles ni el minimapa (H-11). Fuera de la zona, P da "El puerto solo abre en la
+      // zona segura" y cambiar de barco da el aviso del servidor "Solo puedes cambiar de barco en el puerto"; los dos
+      // salen siempre, también si un pirata del showcase ya ha dañado el barco (R con el casco entero no serviría). La
+      // ranura sobre el barco queda bajo el primer aviso: con uno la pista sigue visible; con dos, si la otra ranura
+      // está ocupada, se oculta
+      const notices = [
+        () => page.keyboard.press('KeyP'),
+        () =>
+          page.evaluate(() => {
+            const rt = window.__SEA_BATTLE__!.runtime() as unknown as { client: { selectShip: (classId: string) => void } };
+            rt.client.selectShip('sloop');
+          })
+      ];
       for (const count of [1, 2]) {
         await sampleHintOverToasts(page);
-        await page.keyboard.press('KeyP');
+        await notices[count - 1]();
         await expect(page.getByTestId('toasts').locator('.toast:visible')).toHaveCount(count);
         seen.add(await expectHintClear(page, `${label} con ${count} toasts`, merchant!.id));
         await expectToastsClear(page, `${label} con ${count} toasts`, count);

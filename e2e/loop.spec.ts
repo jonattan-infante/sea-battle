@@ -4,12 +4,14 @@
 import { expect, Page, test } from '@playwright/test';
 import { PORTS } from '../playwright.config';
 import { TARGET_FAN, TARGETS_POINT } from '../server/scenarios';
+import { TOAST_MS } from '../src/client/hud-store';
 import { CANNON_LEVELS, SHIP_CLASSES } from '../src/game/constants';
 import { commits, DebugShip, enterGame, hud, installCommitCounter, me, ships, trackSocket, waitFor } from './helpers';
 import { events, intentNames, intents, sailTo, shipName, volleysBy } from './net';
 import { OwnServer, startOwnServer } from './own-server';
 
 const SHIPYARD = `http://localhost:${PORTS.empty}`; // escenario "shipyard": 2 000 de oro y sin NPC
+const PORT_NOTICE = 'El puerto solo abre en la zona segura';
 
 const goldOf = async (page: Page, testId: string) => Number(((await page.getByTestId(testId).textContent()) ?? '').replace(/\D/g, ''));
 
@@ -389,12 +391,14 @@ test.describe('Puerto', () => {
     await expect(port).toBeDisabled(); // aria-disabled (DT-02): se ve desactivado, pero el clic llega al manejador
     await expect(port).toHaveAttribute('title', 'Solo en la zona segura');
     await expect(page.getByTestId('m-port')).toHaveAttribute('title', 'Solo en la zona segura');
-    // El clic por sí solo explica por qué no abre (DT-02: el title no basta) y P da el mismo aviso
-    const notice = page.getByTestId('toasts').locator('.toast:visible', { hasText: 'El puerto solo abre en la zona segura' });
+    // El clic por sí solo explica por qué no abre (DT-02: el title no basta) y P da el mismo aviso. Dos avisos iguales
+    // no se apilan (AC-127), así que P se prueba cuando el del clic ya ha caducado
+    const notice = page.getByTestId('toasts').locator('.toast:visible', { hasText: PORT_NOTICE });
     await port.click({ force: true });
     await expect(notice).toHaveCount(1);
+    await expect(notice).toHaveCount(0, { timeout: TOAST_MS + 2_000 });
     await page.keyboard.press('KeyP');
-    await expect(notice).toHaveCount(2);
+    await expect(notice).toHaveCount(1);
     await expect(page.getByTestId('shop')).toHaveCount(0);
 
     // De vuelta en la zona se activa y un clic abre la tienda
@@ -417,7 +421,7 @@ test.describe('Puerto', () => {
     await expect(port).toBeDisabled();
     // En táctil no hay title visible: el toque es lo único que puede explicarlo (DT-02)
     await port.tap({ force: true });
-    await expect(page.getByTestId('toasts').locator('.toast:visible', { hasText: 'El puerto solo abre en la zona segura' })).toHaveCount(1);
+    await expect(page.getByTestId('toasts').locator('.toast:visible', { hasText: PORT_NOTICE })).toHaveCount(1);
     await expect(page.getByTestId('shop')).toHaveCount(0);
 
     await sailTo(page, 0, 75);
@@ -425,6 +429,49 @@ test.describe('Puerto', () => {
     await expect(port).toBeEnabled();
     await port.tap();
     await expect(page.getByTestId('shop')).toBeVisible();
+  });
+
+  test('AC-127 @mobile: en 390×844, 4 toques en Puerto fuera de la zona dejan un solo aviso, que caduca a TOAST_MS del último toque', async ({ page }) => {
+    test.setTimeout(120_000);
+    await enterGame(page, SHIPYARD);
+    const port = page.getByTestId('m-port');
+    await sailTo(page, 0, 170);
+    await waitFor(() => me(page), (s) => !!s && Math.hypot(s.x, s.z) > 125, 45_000, 250);
+    await expect(port).toBeDisabled();
+    // Hora del último toque y, desde ahí, el instante en que el aviso sale del DOM visible (MutationObserver: no depende
+    // del ritmo de frames del render por software)
+    await page.evaluate(() => {
+      document.addEventListener('click', (e) => {
+        if ((e.target as Element).closest('[data-testid="m-port"]')) (window as unknown as { lastPortTap: number }).lastPortTap = performance.now();
+      }, true);
+    });
+    const notice = page.getByTestId('toasts').locator('.toast:visible', { hasText: PORT_NOTICE });
+    for (let i = 0; i < 4; i++) {
+      await port.tap({ force: true });
+      await expect(notice, `toque ${i + 1}`).toHaveCount(1);
+      await expect(page.getByTestId('toasts').locator('.toast:visible'), `toque ${i + 1}: sin otros avisos`).toHaveCount(1);
+      await page.waitForTimeout(400);
+    }
+    const lifeMs = await page.evaluate(
+      (text) =>
+        new Promise<number>((resolve) => {
+          const box = document.querySelector('[data-testid="toasts"]')!;
+          const shown = () => Array.from(box.querySelectorAll<HTMLElement>('.toast')).some((t) => t.offsetParent !== null && t.textContent?.includes(text));
+          const done = () => {
+            observer.disconnect();
+            resolve(performance.now() - (window as unknown as { lastPortTap: number }).lastPortTap);
+          };
+          const observer = new MutationObserver(() => {
+            if (!shown()) done();
+          });
+          observer.observe(box, { childList: true, subtree: true });
+          if (!shown()) done();
+        }),
+      PORT_NOTICE
+    );
+    console.log(`AC-127: el aviso del Puerto caduca a ${Math.round(lifeMs)} ms del 4.º toque (TOAST_MS ${TOAST_MS})`);
+    expect(lifeMs).toBeGreaterThanOrEqual(TOAST_MS - 100);
+    expect(lifeMs).toBeLessThanOrEqual(TOAST_MS + 100);
   });
 });
 
