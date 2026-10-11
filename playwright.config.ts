@@ -4,7 +4,9 @@
 // y escenario determinista de capturas (3103).
 import { defineConfig, devices } from '@playwright/test';
 
-// PW_PORT_BASE permite correr una copia aislada del harness en paralelo sin chocar con otra corrida (por defecto 3100)
+// PW_PORT_BASE permite correr una copia aislada del harness en paralelo sin chocar con otra corrida (por defecto 3100).
+// Los servidores propios de los specs (e2e/own-server.ts) usan el rango [PW_PORT_BASE + 500, PW_PORT_BASE + 599]
+// (3600–3699 por defecto), o [PW_OWN_PORT_BASE, PW_OWN_PORT_BASE + 99] si se fija; nunca un puerto que Chrome bloquee.
 const BASE = Number(process.env.PW_PORT_BASE ?? 3100);
 export const PORTS = { game: BASE, empty: BASE + 1, auth: BASE + 2, showcase: BASE + 3 } as const;
 
