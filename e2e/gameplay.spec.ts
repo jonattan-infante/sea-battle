@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, Page, test } from '@playwright/test';
 import { PORTS } from '../playwright.config';
 import { AMBUSH_POINT } from '../server/scenarios';
 import { clickWater, dialogsOf, enterGame, hud, me, ships, trackSocket, waitFor } from './helpers';
@@ -292,49 +292,86 @@ test.describe('Combate completo', () => {
   });
 });
 
+// Muerte real en la emboscada de server/scenarios.ts (5 piratas atacan en cuanto acaba la protección inicial)
+async function sinkInAmbush(page: Page) {
+  const net = trackSocket(page);
+  await enterGame(page, `http://localhost:${PORTS.showcase}`);
+  const start = (await me(page))!;
+  await page.evaluate(([x, z]) => {
+    const rt = window.__SEA_BATTLE__!.runtime() as unknown as { client: { moveTo: (x: number, z: number) => void } };
+    rt.client.moveTo(x, z);
+  }, [AMBUSH_POINT.x, AMBUSH_POINT.z]);
+  await expect(page.getByTestId('death-card')).toBeVisible({ timeout: 110_000 });
+  return { net, start, sunkAt: Date.now() };
+}
+
+const respawnsSent = (net: ReturnType<typeof trackSocket>) => net.sent.filter((f) => f.includes('"respawn"')).length;
+
+// AC-106: "por ☠ Pirata" en una sola línea (ART-DIRECTION §15)
+async function expectKillerOnOneLine(page: Page, label: string) {
+  const height = (await page.getByTestId('death-by').boundingBox())!.height;
+  console.log(`AC-106 (${label}): línea "por …" de ${height} px`);
+  expect(height).toBeLessThanOrEqual(24);
+}
+
+// AC-101: el gesto emite exactamente 1 respawn y en ≤ 1 s el barco existe con el 100 % de la vida (AC-63: a 60–90 m)
+async function expectSailWith(page: Page, net: ReturnType<typeof trackSocket>, start: { classId: string }, label: string, gesture: () => Promise<void>) {
+  const button = page.getByTestId('btn-respawn');
+  await expect(button).toBeEnabled({ timeout: 12_000 });
+  await expect(button).toHaveText('Zarpar');
+  net.reset();
+  const t0 = Date.now();
+  await gesture();
+  const ship = await waitFor(() => me(page), (s) => !!s && s.state === 'alive' && s.hp === s.maxHp, 2000, 25);
+  const elapsed = Date.now() - t0;
+  await page.waitForTimeout(1000);
+  const fromPort = Math.hypot(ship!.x, ship!.z);
+  console.log(`AC-101 (${label}): ${respawnsSent(net)} respawn · vivo con ${ship!.hp}/${ship!.maxHp} a los ${elapsed} ms · a ${fromPort.toFixed(1)} m del puerto`);
+  expect(respawnsSent(net)).toBe(1);
+  expect(elapsed).toBeLessThanOrEqual(1000);
+  expect(fromPort).toBeGreaterThanOrEqual(60);
+  expect(fromPort).toBeLessThanOrEqual(90);
+  expect(ship!.classId).toBe(start.classId);
+  await expect(page.getByTestId('death-card')).toHaveCount(0);
+  expect(dialogsOf(page)).toEqual([]);
+}
+
 test.describe('Muerte y reaparición', () => {
-  test('AC-63: hundido, Zarpar está desactivado durante la cuenta atrás y al pulsarlo reaparece a 60–90 m del puerto con la vida llena', async ({ page }) => {
+  test('AC-63, AC-101 (clic) y AC-106: Zarpar desactivado durante la cuenta atrás; al hacer clic reaparece con la vida llena', async ({ page }) => {
     test.setTimeout(150_000);
-    const net = trackSocket(page);
-    await enterGame(page, `http://localhost:${PORTS.showcase}`);
-    const start = (await me(page))!;
+    const { net, start, sunkAt } = await sinkInAmbush(page);
 
-    // Navegar a la emboscada de server/scenarios.ts: 5 piratas atacan en cuanto acaba la protección inicial
-    await page.evaluate(([x, z]) => {
-      const rt = window.__SEA_BATTLE__!.runtime() as unknown as { client: { moveTo: (x: number, z: number) => void } };
-      rt.client.moveTo(x, z);
-    }, [AMBUSH_POINT.x, AMBUSH_POINT.z]);
-    await expect(page.getByTestId('death-card')).toBeVisible({ timeout: 110_000 });
-    const sunkAt = Date.now();
-
-    // Durante la cuenta atrás el botón está desactivado y un clic no envía nada
+    // Durante la cuenta atrás el botón está desactivado y ni un clic ni Espacio envían nada
     const button = page.getByTestId('btn-respawn');
     await expect(button).toBeDisabled();
     await expect(button).toHaveText(/^Zarpar en \d s$/);
-    // H-07: "por ☠ Pirata" en una sola línea (ART-DIRECTION §15)
-    const byHeight = (await page.getByTestId('death-by').boundingBox())!.height;
-    console.log(`H-07: línea "por …" de ${byHeight} px`);
-    expect(byHeight).toBeLessThanOrEqual(24);
+    await expectKillerOnOneLine(page, '1440×900');
     net.reset();
     await button.click({ force: true });
     await page.keyboard.press('Space');
-    expect(net.sent.filter((f) => f.includes('"respawn"'))).toEqual([]);
+    expect(respawnsSent(net)).toBe(0);
 
-    // Se activa al terminar la cuenta atrás y un clic real zarpa
     await expect(button).toBeEnabled({ timeout: 12_000 });
-    await expect(button).toHaveText('Zarpar');
     console.log(`AC-63: Zarpar activo ${((Date.now() - sunkAt) / 1000).toFixed(1)} s después de mostrarse la tarjeta`);
-    await button.click();
-    await waitFor(async () => net.sent.filter((f) => f.includes('"respawn"')).length, (n) => n === 1, 2000, 50);
+    await expectSailWith(page, net, start, 'clic', () => button.click());
+  });
 
-    const ship = await waitFor(() => me(page), (s) => !!s && s.state === 'alive', 5000, 100);
-    const fromPort = Math.hypot(ship!.x, ship!.z);
-    console.log(`AC-63: reaparece a ${fromPort.toFixed(1)} m del puerto con ${ship!.hp}/${ship!.maxHp}`);
-    expect(fromPort).toBeGreaterThanOrEqual(60);
-    expect(fromPort).toBeLessThanOrEqual(90);
-    expect(ship!.hp).toBe(ship!.maxHp);
-    expect(ship!.classId).toBe(start.classId);
-    await expect(page.getByTestId('death-card')).toHaveCount(0);
-    expect(dialogsOf(page)).toEqual([]);
+  test('AC-101 (Enter): al activarse, Zarpar recibe el foco y Enter reaparece', async ({ page }) => {
+    test.setTimeout(150_000);
+    const { net, start } = await sinkInAmbush(page);
+    const button = page.getByTestId('btn-respawn');
+    await expect(button).toBeEnabled({ timeout: 12_000 });
+    await expect(button).toBeFocused();
+    await expectSailWith(page, net, start, 'Enter', () => page.keyboard.press('Enter'));
+  });
+});
+
+test.describe('Muerte y reaparición en móvil @mobile', () => {
+  test('AC-101 (toque) y AC-106 en 390×844', async ({ page }) => {
+    test.setTimeout(150_000);
+    const { net, start } = await sinkInAmbush(page);
+    await expectKillerOnOneLine(page, '390×844');
+    const button = page.getByTestId('btn-respawn');
+    await expectSailWith(page, net, start, 'toque', () => button.tap());
   });
 });
