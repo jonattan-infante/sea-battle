@@ -84,6 +84,8 @@ export default function GameApp({ guest }: { guest: boolean }) {
   const labelsRef = useRef<HTMLDivElement>(null);
   const floatingRef = useRef<HTMLDivElement>(null);
   const getTokenRef = useRef(getToken);
+  // Sincroniza el HUD en el acto tras una intención del jugador (AC-125: refleja la pulsación en ≤ 50 ms)
+  const syncRef = useRef<() => void>(() => {});
   getTokenRef.current = getToken;
 
   // El invitado no depende de Clerk: si el efecto dependiera de isLoaded, al cargar Clerk se recrearía el
@@ -154,7 +156,10 @@ export default function GameApp({ guest }: { guest: boolean }) {
       hudSignals.reloadMs = cannon.reload * 1000;
       let me: MeHud | null = null;
       if (mine) {
-        const attacked = mine.targetId ? client.getShip(mine.targetId) : undefined;
+        // Atacando / reparando según la última intención del jugador, no el estado interpolado (DT-01)
+        const targetId = client.myTargetId();
+        const repairing = client.myRepairing();
+        const attacked = targetId ? client.getShip(targetId) : undefined;
         const inRange = !!attacked && Math.hypot(attacked.x - mine.x, attacked.z - mine.z) <= cannon.range;
         me = {
           shipId: mine.id,
@@ -166,7 +171,7 @@ export default function GameApp({ guest }: { guest: boolean }) {
           state: mine.state,
           inSafeZone: inSafeZone(mine.x, mine.z),
           protectedUntil: mine.protectedUntil,
-          action: mine.repairing ? 'repairing' : mine.targetId ? (inRange ? 'firing' : 'armed') : 'idle',
+          action: repairing ? 'repairing' : targetId ? (inRange ? 'firing' : 'armed') : 'idle',
           underFire: performance.now() - hudSignals.lastHitAt < UNDER_FIRE_MS
         };
       } else if (st.me && player?.death) {
@@ -216,11 +221,13 @@ export default function GameApp({ guest }: { guest: boolean }) {
     const onAttempt = (n: number) => useHud.setState({ reconnectAttempt: n });
     client.socket.io.on('reconnect_attempt', onAttempt);
     const syncId = setInterval(sync, HUD_SYNC_MS);
+    syncRef.current = sync;
     client.connect();
     setRuntime(rt);
 
     return () => {
       clearInterval(syncId);
+      syncRef.current = () => {};
       unsubs.forEach((u) => u());
       client.socket.io.off('reconnect_attempt', onAttempt);
       disposeRuntime(rt);
@@ -249,14 +256,18 @@ export default function GameApp({ guest }: { guest: boolean }) {
         const me = mine();
         if (!me || me.state !== 'alive') return;
         const { selectedId } = useHud.getState();
-        // Alterna sobre el objetivo seleccionado (GDD §7): si ya lo ataca, cancela
-        if (me.targetId && (!selectedId || selectedId === me.targetId)) {
+        // Alterna sobre el objetivo seleccionado (GDD §7): si ya lo ataca, cancela. «Ya lo ataca» es la última
+        // intención del jugador (GDD §5, regla de entrada; DT-01)
+        const current = client.myTargetId();
+        if (current && (!selectedId || selectedId === current)) {
           client.cancelAttack();
+          syncRef.current();
           return;
         }
         const target = client.getShip(selectedId);
         if (target && canAttackClient(client, me, target)) {
           client.attack(target.id);
+          syncRef.current();
           completeHint(2);
         } else if (target) {
           useHud.getState().pushToast('warn', 'No puedes atacar ese objetivo');
@@ -271,7 +282,9 @@ export default function GameApp({ guest }: { guest: boolean }) {
       },
       toggleRepair: () => {
         const me = mine();
-        if (me && me.state === 'alive') client.repair(!me.repairing);
+        if (!me || me.state !== 'alive') return;
+        client.repair(!client.myRepairing());
+        syncRef.current();
       },
       stop: () => {
         client.stop();
@@ -325,6 +338,11 @@ export default function GameApp({ guest }: { guest: boolean }) {
       const el = e.target as HTMLElement | null;
       if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
+      // Una pulsación, como mucho una intención (GDD §5): la autorrepetición de una tecla mantenida no cuenta
+      if (e.repeat) {
+        if (e.code === 'Space' || e.code === 'Tab') e.preventDefault();
+        return;
+      }
       const st = useHud.getState();
       switch (e.code) {
         case 'Space':
@@ -337,11 +355,12 @@ export default function GameApp({ guest }: { guest: boolean }) {
           actions.cycleTarget(e.shiftKey);
           break;
         case 'Escape': {
-          // 1.ª pulsación: cierra la tienda o cancela el ataque; 2.ª: deselecciona
-          const me = runtime?.client.getShip(runtime.client.myShipId);
+          // 1.ª pulsación: cierra la tienda o cancela el ataque; 2.ª: deselecciona (sin red: AC-28, AC-125)
           if (st.shopOpen) st.setShopOpen(false);
-          else if (me?.targetId) runtime?.client.cancelAttack();
-          else st.select(null);
+          else if (runtime?.client.myTargetId()) {
+            runtime.client.cancelAttack();
+            syncRef.current();
+          } else st.select(null);
           break;
         }
         case 'KeyS':

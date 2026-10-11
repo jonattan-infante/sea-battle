@@ -54,6 +54,27 @@ const DELAY_S = INTERPOLATION_DELAY_MS / 1000;
 const EVENT_LEAD_S = 0.05;
 // Reintentos de reconexión: 1 s, 2 s y 4 s (AC-99)
 const RECONNECT_ATTEMPTS = 3;
+// DT-01 (GDD §5, regla de entrada): una intención de ataque o reparación queda pendiente hasta que el servidor la
+// confirma o pasa este tiempo (si la rechaza, vuelve a mandar su estado). Cubre de sobra un RTT de Railway más un tick
+const INTENT_TTL_MS = 1500;
+const MAX_PENDING_INTENTS = 8;
+
+interface Intent<T> {
+  value: T;
+  at: number; // performance.now() al enviarla
+}
+
+// Intenciones pendientes de un conmutador, en el orden en que se enviaron. Se confirman en ese orden: la de cabeza sale
+// cuando el servidor muestra su valor o vence su plazo. Así, con «atacar» y «cancelar» seguidos, un frame viejo sin
+// ataque no confirma la cancelación antes de que llegue el del ataque. El valor efectivo es la última intención
+function settle<T>(pending: Intent<T>[], server: T, nowMs: number): T {
+  while (pending.length > 0 && (pending[0].value === server || nowMs - pending[0].at > INTENT_TTL_MS)) pending.shift();
+  return pending.length > 0 ? pending[pending.length - 1].value : server;
+}
+function push<T>(pending: Intent<T>[], value: T): void {
+  pending.push({ value, at: performance.now() });
+  if (pending.length > MAX_PENDING_INTENTS) pending.shift();
+}
 
 export class GameClient {
   readonly socket: Socket;
@@ -66,6 +87,8 @@ export class GameClient {
   private readonly entities = new Map<string, Entity>();
   private readonly wrecks = new Map<string, WreckView>();
   private pendingEvents: { t: number; event: GameEvent }[] = [];
+  private readonly targetIntents: Intent<string | null>[] = [];
+  private readonly repairIntents: Intent<boolean>[] = [];
 
   private eventListeners = new Set<Listener<GameEvent>>();
   private playerListeners = new Set<Listener<PlayerView>>();
@@ -154,13 +177,31 @@ export class GameClient {
     this.socket.emit(C2S.stop);
   }
   attack(targetId: string): void {
+    push(this.targetIntents, targetId);
     this.socket.emit(C2S.attack, { targetId });
   }
   cancelAttack(): void {
+    push(this.targetIntents, null);
     this.socket.emit(C2S.cancelAttack);
   }
   repair(on: boolean): void {
+    push(this.repairIntents, on);
     this.socket.emit(C2S.repair, { on });
+  }
+
+  // ---- Estado propio para los conmutadores (DT-01) ----
+  // Atacar, Esc, Reparar y el HUD alternan sobre la última intención del jugador mientras el servidor no la confirma, y
+  // si no hay ninguna pendiente, sobre el último estado recibido (sin el retraso de interpolación). El estado
+  // interpolado llega 150–200 ms tarde: dos pulsaciones seguidas leían el mismo valor y repetían la intención
+  myTargetId(nowMs = performance.now()): string | null {
+    return settle(this.targetIntents, this.latestOwn()?.t ?? null, nowMs);
+  }
+  myRepairing(nowMs = performance.now()): boolean {
+    return settle(this.repairIntents, this.latestOwn()?.r ?? false, nowMs);
+  }
+  private latestOwn(): ShipSnapshot | undefined {
+    const samples = this.entities.get(this.myShipId ?? '')?.samples;
+    return samples?.[samples.length - 1]?.snap;
   }
   buy(itemId: string): void {
     this.socket.emit(C2S.buy, { itemId });
