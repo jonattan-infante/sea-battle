@@ -1,6 +1,6 @@
 // Escenarios deterministas para capturas de QA y UX (ART-DIRECTION §18). Solo se aplican con el modo
 // invitado permitido (nunca en Railway); en producción el mundo es siempre el del GDD.
-import { WRECK_LIFETIME } from '../src/game/constants';
+import { SHIP_CLASSES, WRECK_LIFETIME } from '../src/game/constants';
 import { World } from '../src/game/types';
 import { spawnMerchant, spawnPirate } from '../src/game/world';
 
@@ -14,10 +14,19 @@ export const AMBUSH_POINT = { x: 0, z: -420 };
 const AMBUSH_PIRATES = 5;
 const AMBUSH_RADIUS = 30;
 
-export type ScenarioName = 'showcase';
+export const SCENARIOS = ['showcase', 'shipyard'] as const;
+export type ScenarioName = (typeof SCENARIOS)[number];
+
+export function parseScenario(value: string | undefined): ScenarioName | null {
+  return (SCENARIOS as readonly string[]).includes(value ?? '') ? (value as ScenarioName) : null;
+}
 
 export function applyScenario(world: World, name: ScenarioName): void {
-  if (name !== 'showcase') return;
+  if (name === 'shipyard') {
+    // AC-70: cada jugador entra con el oro justo para comprar el Bergantín en el puerto
+    world.startingGold = SHIP_CLASSES.brig.price;
+    return;
+  }
   // Pirata quieto a 45 m del punto de captura: entra en combate cuando el jugador pierde la protección
   const pirate = spawnPirate(world, 3);
   pirate.pos = { x: 45, z: 205 };

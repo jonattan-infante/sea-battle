@@ -113,6 +113,7 @@ export interface World {
   rng: () => number;
   nextId: number;
   killsSinceBoss: number;
+  startingGold?: number; // solo escenarios de prueba (server/scenarios.ts); por defecto STARTING_GOLD
 }
 
 // ---- Red (servidor → cliente) ----

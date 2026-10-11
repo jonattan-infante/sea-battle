@@ -1,6 +1,6 @@
 // Harness e2e, de rendimiento y de capturas. Corre contra un build de producción propio en .next-e2e
 // (`npm run build:e2e`; los scripts test:e2e, test:perf y qa:capture ya lo hacen).
-// Servidores: invitado con NPC (3100), invitado sin NPC para medir reposo (3101), sin invitado (3102)
+// Servidores: invitado con NPC (3100), invitado sin NPC para medir reposo y con 2 000 de oro (3101), sin invitado (3102)
 // y escenario determinista de capturas (3103).
 import { defineConfig, devices } from '@playwright/test';
 
@@ -37,7 +37,7 @@ export default defineConfig({
   },
   webServer: [
     server(PORTS.game, 'AUTH_BYPASS=1'),
-    server(PORTS.empty, 'AUTH_BYPASS=1 SEA_BATTLE_NPCS=0'),
+    server(PORTS.empty, 'AUTH_BYPASS=1 SEA_BATTLE_NPCS=0 SEA_BATTLE_SCENARIO=shipyard'),
     server(PORTS.auth, ''),
     server(PORTS.showcase, 'AUTH_BYPASS=1 SEA_BATTLE_NPCS=0 SEA_BATTLE_SCENARIO=showcase')
   ],

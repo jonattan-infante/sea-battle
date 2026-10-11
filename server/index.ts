@@ -7,7 +7,7 @@ import { Server } from 'socket.io';
 import { authConfigError, isAuthBypassAllowed } from '../src/lib/auth-bypass';
 import { authenticateHandshake } from './auth';
 import { createGameServer } from './game-server';
-import { applyScenario, ScenarioName } from './scenarios';
+import { applyScenario, parseScenario } from './scenarios';
 
 const dev = process.env.NODE_ENV !== 'production';
 loadEnvConfig(process.cwd(), dev);
@@ -46,11 +46,12 @@ app.prepare().then(() => {
     }
   });
 
+  const scenario = parseScenario(process.env.SEA_BATTLE_SCENARIO);
   const game = createGameServer(io, {
     authenticate: (auth) => authenticateHandshake(auth),
     spawnNpcs: process.env.SEA_BATTLE_NPCS !== '0', // servidor de prueba sin NPC (AC-83, AC-87)
-    // Escenario de capturas: solo con el modo invitado permitido, que nunca se activa en Railway
-    setup: isAuthBypassAllowed() && process.env.SEA_BATTLE_SCENARIO === 'showcase' ? (world) => applyScenario(world, process.env.SEA_BATTLE_SCENARIO as ScenarioName) : undefined,
+    // Escenarios de prueba: solo con el modo invitado permitido, que nunca se activa en Railway
+    setup: isAuthBypassAllowed() && scenario ? (world) => applyScenario(world, scenario) : undefined,
     log: (msg) => console.log(msg)
   });
   onlinePlayers = game.onlinePlayers;

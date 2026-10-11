@@ -278,7 +278,7 @@ export function addPlayer(world: World, id: string, name: string): Player {
     id,
     name,
     shipId: '',
-    gold: STARTING_GOLD,
+    gold: world.startingGold ?? STARTING_GOLD,
     upgrades: { cannons: 1, hull: 1, sails: 1 },
     ownedShips: [STARTING_SHIP],
     activeShip: STARTING_SHIP,

@@ -292,6 +292,52 @@ test.describe('Combate completo', () => {
   });
 });
 
+test.describe('Puerto y barcos', () => {
+  test('AC-70: con 2 000 de oro compra el Bergantín, conserva la Balandra, cambia gratis en el puerto y fuera de la zona no', async ({ page }) => {
+    test.setTimeout(90_000);
+    // Servidor 3101 con el escenario "shipyard": el jugador entra con el precio del Bergantín
+    await enterGame(page, `http://localhost:${PORTS.empty}`);
+    const gold = async (id: string) => Number(((await page.getByTestId(id).textContent()) ?? '').replace(/\D/g, ''));
+    expect(await gold('player-gold')).toBe(2000);
+    const shipIs = (classId: string) => waitFor(() => me(page), (s) => s?.classId === classId, 3000, 50);
+
+    await page.keyboard.press('KeyP');
+    await page.getByTestId('tab-ships').click();
+    await page.getByTestId('buy-ship-brig').click();
+    const brig = (await shipIs('brig'))!;
+    console.log(`AC-70: Bergantín con ${brig.hp}/${brig.maxHp}`);
+    expect(brig.maxHp).toBe(1400); // casco nivel 1 (× 1)
+    expect(brig.hp).toBe(brig.maxHp);
+    await waitFor(() => gold('shop-gold'), (g) => g === 0, 3000, 50);
+
+    // La Balandra sigue en propiedad y cambiar entre ambas en el puerto es gratis
+    await page.getByTestId('use-sloop').click();
+    await shipIs('sloop');
+    await page.getByTestId('use-brig').click();
+    await shipIs('brig');
+    expect(await gold('shop-gold')).toBe(0);
+
+    // Fuera de la zona segura (r 110) el puerto no abre y el servidor rechaza el cambio aunque se pida directamente
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('shop')).toHaveCount(0);
+    await page.evaluate(() => {
+      const rt = window.__SEA_BATTLE__!.runtime() as unknown as { client: { moveTo: (x: number, z: number) => void } };
+      rt.client.moveTo(0, 160);
+    });
+    await waitFor(() => me(page), (s) => !!s && Math.hypot(s.x, s.z) > 130, 45_000, 250);
+    await page.keyboard.press('KeyP');
+    await expect(page.getByTestId('toasts')).toContainText('El puerto solo abre en la zona segura');
+    await expect(page.getByTestId('shop')).toHaveCount(0);
+    await page.evaluate(() => {
+      const rt = window.__SEA_BATTLE__!.runtime() as unknown as { client: { selectShip: (c: string) => void } };
+      rt.client.selectShip('sloop');
+    });
+    await page.waitForTimeout(700);
+    expect((await me(page))!.classId).toBe('brig');
+    expect(dialogsOf(page)).toEqual([]);
+  });
+});
+
 // Muerte real en la emboscada de server/scenarios.ts (5 piratas atacan en cuanto acaba la protección inicial)
 async function sinkInAmbush(page: Page) {
   const net = trackSocket(page);

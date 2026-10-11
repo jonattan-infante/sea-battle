@@ -1,6 +1,6 @@
-import { INTEREST_RADIUS, ISLANDS, NAV_LIMIT, PIRATE_PORT_EXCLUSION, RESPAWN_RING, SAFE_ZONE_RADIUS, SHIP_CLASSES } from '../../src/game/constants';
-import { createWorld } from '../../src/game/world';
-import { AMBUSH_POINT, applyScenario, SHOWCASE_POINT } from '../scenarios';
+import { INTEREST_RADIUS, ISLANDS, NAV_LIMIT, PIRATE_PORT_EXCLUSION, RESPAWN_RING, SAFE_ZONE_RADIUS, SHIP_CLASSES, STARTING_GOLD } from '../../src/game/constants';
+import { addPlayer, createWorld } from '../../src/game/world';
+import { AMBUSH_POINT, applyScenario, parseScenario, SHOWCASE_POINT } from '../scenarios';
 
 describe('escenario "showcase" para capturas', () => {
   const world = createWorld({ seed: 1, spawnNpcs: false });
@@ -31,5 +31,22 @@ describe('escenario "showcase" para capturas', () => {
       expect(Math.hypot(s.pos.x, s.pos.z) - RESPAWN_RING.max).toBeGreaterThan(INTEREST_RADIUS);
       expect(Math.hypot(s.pos.x - SHOWCASE_POINT.x, s.pos.z - SHOWCASE_POINT.z)).toBeGreaterThan(INTEREST_RADIUS);
     }
+  });
+});
+
+describe('escenario "shipyard" (AC-70)', () => {
+  test('cada jugador entra con el precio del Bergantín; sin escenario, con el oro inicial del GDD', () => {
+    const rich = createWorld({ seed: 1, spawnNpcs: false });
+    applyScenario(rich, 'shipyard');
+    expect(addPlayer(rich, 'u1', 'Ana').gold).toBe(SHIP_CLASSES.brig.price);
+    expect(rich.ships.size).toBe(1); // solo el barco del jugador: no añade NPC
+    expect(addPlayer(createWorld({ seed: 1, spawnNpcs: false }), 'u1', 'Ana').gold).toBe(STARTING_GOLD);
+  });
+
+  test('parseScenario solo acepta los escenarios conocidos', () => {
+    expect(parseScenario('showcase')).toBe('showcase');
+    expect(parseScenario('shipyard')).toBe('shipyard');
+    expect(parseScenario('rich')).toBeNull();
+    expect(parseScenario(undefined)).toBeNull();
   });
 });
