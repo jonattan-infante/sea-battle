@@ -289,10 +289,10 @@ Eslora y radio de colisión: Pirata 20 m / 6 m, Mercante 22 m / 7 m, Capitán 30
 
 | Hito | Objetivo |
 |---|---|
-| Ingreso medio con Balandra N1 | ≈130–190 oro/min de juego activo (estimación: −12,5 % sobre los 150–218 oro/min que midió desarrollo con 120/70 de recompensa; lo confirma la corrida del AC-60) |
-| Primera mejora (≤500 oro) | ≤ 4 min |
-| Bergantín | ≤ 20 min |
-| Todo comprado (12 800 oro) | 45–70 min |
+| Ingreso medio con Balandra N1 | **Mediana 128 oro/min** (rango 110–167). Medido por desarrollo con el bot del AC-60, semillas 1–5: oro ganado hasta comprar el Bergantín entre los minutos jugados, contando viajes, reparaciones y 1–4 muertes por corrida |
+| Primera mejora (≤500 oro) | ≤ 4 min (medido: 3,3) |
+| Bergantín | ≤ 20 min (medido: 17,0) |
+| Todo comprado (12 800 oro) | 45–70 min (medido: 51,7) |
 
 ## 11. Puerto, mejoras y barcos
 
