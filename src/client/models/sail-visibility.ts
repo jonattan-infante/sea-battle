@@ -63,7 +63,8 @@ void main() {
 const sameColor = (attr: THREE.BufferAttribute | THREE.InterleavedBufferAttribute, v: number, c: THREE.Color) =>
   Math.abs(attr.getX(v) - c.r) + Math.abs(attr.getY(v) - c.g) + Math.abs(attr.getZ(v) - c.b) < 1e-4;
 
-function maskGeometry(geometry: THREE.BufferGeometry, sails: [number, number][], hull?: THREE.Color, stripe?: THREE.Color, deck?: THREE.Color): THREE.BufferGeometry {
+// hull y deck admiten varios colores: las tablas alternas (deck.alt) y la oclusión horneada ×0,85 (D23)
+function maskGeometry(geometry: THREE.BufferGeometry, sails: [number, number][], hull?: THREE.Color[], stripe?: THREE.Color, deck?: THREE.Color[]): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', geometry.getAttribute('position').clone()); // copia: dispose() no toca el buffer del juego
   const count = geometry.getAttribute('position').count;
@@ -75,9 +76,9 @@ function maskGeometry(geometry: THREE.BufferGeometry, sails: [number, number][],
   const stripeFlags = new Float32Array(count);
   const deckFlags = new Float32Array(count);
   for (let v = 0; v < count; v++) {
-    if (hull && sameColor(color, v, hull)) hullFlags[v] = 1;
+    if (hull?.some((c) => sameColor(color, v, c))) hullFlags[v] = 1;
     if (stripe && flags[v] === 1 && sameColor(color, v, stripe)) stripeFlags[v] = 1;
-    if (deck && sameColor(color, v, deck)) deckFlags[v] = 1;
+    if (deck?.some((c) => sameColor(color, v, c))) deckFlags[v] = 1;
   }
   g.setAttribute('aHull', new THREE.BufferAttribute(hullFlags, 1));
   g.setAttribute('aStripe', new THREE.BufferAttribute(stripeFlags, 1));
@@ -258,7 +259,8 @@ export function measureShipValues(
     const lod: 0 | 1 = model.extras.sb_length * ppm >= LOD_PX[0] ? 0 : 1;
     const geometry = model.lods[lod];
     const look = SHIP_LOOKS[model.recipe.look];
-    const mask = maskGeometry(geometry, model.sails[lod], new THREE.Color(look.hull), look.sailStripe ? new THREE.Color(look.sailStripe) : undefined, new THREE.Color(look.deck));
+    const withAo = (...hex: string[]) => hex.flatMap((h) => [new THREE.Color(h), new THREE.Color(h).multiplyScalar(0.85)]);
+    const mask = maskGeometry(geometry, model.sails[lod], withAo(look.hull), look.sailStripe ? new THREE.Color(look.sailStripe) : undefined, withAo(look.deck, look.deckAlt));
     const { camera, size } = framing(geometry, ppm, elevation);
     const maskMesh = new THREE.Mesh(mask, maskMaterial);
     const litMesh = new THREE.Mesh(geometry, litMaterial);

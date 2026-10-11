@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { ShipKind } from '../../game/constants';
 import { RING_COLORS, SHIP_LOOKS, ShipLook } from '../art';
-import { GeoBuilder, lin, trs, Vec3 } from './geometry-utils';
+import { creaseNormals, GeoBuilder, lin, trs, Vec3 } from './geometry-utils';
 
 const deg = Math.PI / 180;
 
@@ -26,23 +26,41 @@ const PROFILES: Record<'standard' | 'fine' | 'full', readonly ProfileRow[]> = {
   ]
 };
 
+// D23: 13 estaciones (u cada 1/12) en LOD0; antes, las 7 filas de la tabla, que daban 6 facetas a lo largo de la eslora
+const LOD0_STATIONS = Array.from({ length: 13 }, (_, i) => -0.5 + i / 12);
 const LOD1_STATIONS = [-0.5, -0.25, 0, 0.36, 0.5]; // §7
+
+// Oclusión horneada (D23): multiplicador de COLOR_0 en la tira de cubierta junto a la borda, en los primeros 0,4 m de
+// mástiles y castillos y en el borde inferior de la cara V2–V3 del casco
+const AO = 0.85;
+const AO_HEIGHT = 0.4;
+const ao = (c: THREE.Color) => c.clone().multiplyScalar(AO);
 
 interface Station { a: number; b: number; s: number; k: number }
 
+// D23: la tabla de perfiles se interpola con Catmull-Rom (Hermite con las tangentes por diferencias finitas sobre el
+// paso no uniforme de u); las filas de la tabla se respetan. Antes era lineal entre filas
 function sample(profile: readonly ProfileRow[], u: number): Station {
-  const last = profile[profile.length - 1];
-  if (u <= profile[0][0]) return { a: profile[0][1], b: profile[0][2], s: profile[0][3], k: profile[0][4] };
-  if (u >= last[0]) return { a: last[1], b: last[2], s: last[3], k: last[4] };
-  for (let i = 0; i < profile.length - 1; i++) {
-    const p = profile[i];
-    const q = profile[i + 1];
-    if (u <= q[0]) {
-      const t = (u - p[0]) / (q[0] - p[0]);
-      return { a: p[1] + (q[1] - p[1]) * t, b: p[2] + (q[2] - p[2]) * t, s: p[3] + (q[3] - p[3]) * t, k: p[4] + (q[4] - p[4]) * t };
-    }
-  }
-  return { a: last[1], b: last[2], s: last[3], k: last[4] };
+  const n = profile.length;
+  const row = (p: ProfileRow): Station => ({ a: p[1], b: p[2], s: p[3], k: p[4] });
+  if (u <= profile[0][0]) return row(profile[0]);
+  if (u >= profile[n - 1][0]) return row(profile[n - 1]);
+  let i = 0;
+  while (u > profile[i + 1][0]) i++;
+  const p = profile[i];
+  const q = profile[i + 1];
+  const h = q[0] - p[0];
+  const t = (u - p[0]) / h;
+  const slope = (j: number, c: number) => {
+    const lo = profile[Math.max(0, j - 1)];
+    const hi = profile[Math.min(n - 1, j + 1)];
+    return (hi[c] - lo[c]) / (hi[0] - lo[0]);
+  };
+  const t2 = t * t;
+  const t3 = t2 * t;
+  const v = (c: number) =>
+    (2 * t3 - 3 * t2 + 1) * p[c] + (t3 - 2 * t2 + t) * h * slope(i, c) + (-2 * t3 + 3 * t2) * q[c] + (t3 - t2) * h * slope(i + 1, c);
+  return { a: Math.max(0, v(1)), b: Math.max(0, v(2)), s: v(3), k: Math.max(0, v(4)) };
 }
 
 // ---- §8.4 Recetas por clase ----
@@ -105,7 +123,7 @@ const SLOOP: ShipRecipe = {
   boxes: [{ size: [2.6, 0.7, 2.4], pos: [0, 2.1, -6.6], kind: 'castle' }],
   barrels: [],
   fire: [undefined, undefined, { z: -4.4 }], // _03 fuera de la camareta (13 % de solape con la fórmula)
-  cannonZ: [-4.5, -1.5, 1.5, 4.5], cannonY: 0.9, cannon: [0.12, 0.16, 1.2],
+  cannonZ: [-4.5, -1.5, 1.5, 4.5], cannonY: 0.9, cannon: [0.22, 0.28, 1.2], // D23: radios ≈ ×1,7
   sailStyle: 'plain', flagStyle: 'pennant', trimRail: false, cannonScale: 0.8,
   radius: 9, mastHeight: 14.5, pick: [3.2, 14.5, 8.0]
 };
@@ -122,7 +140,7 @@ const BRIGANTINE: ShipRecipe = {
   boxes: [{ size: [4.0, 1.0, 4.0], pos: [0, 2.8, -9.6], kind: 'castle' }],
   barrels: [],
   fire: [undefined, undefined, { z: -6.0 }], // _03 fuera de la camareta (33 %)
-  cannonZ: [-7.5, -4.5, -1.5, 1.5, 4.5, 7.5], cannonY: 1.2, cannon: [0.14, 0.18, 1.4],
+  cannonZ: [-7.5, -4.5, -1.5, 1.5, 4.5, 7.5], cannonY: 1.2, cannon: [0.24, 0.3, 1.4], // D23: radios ≈ ×1,7
   sailStyle: 'plain', flagStyle: 'pennant', trimRail: false, cannonScale: 1.0,
   radius: 13, mastHeight: 19.5, pick: [4.8, 19.5, 12.0]
 };
@@ -152,7 +170,7 @@ const FRIGATE: ShipRecipe = {
   barrels: [],
   // _01 fuera del castillo de proa (20 %); _03 sobre el alcázar, en su tapa (4,76) + 0,3 (estaba dentro al 100 %)
   fire: [{ z: 7.4 }, undefined, { z: -12.5, y: 5.06 }],
-  cannonZ: [-11.5, -8.5, -5.5, -2.5, 0.5, 3.5, 6.5, 9.5], cannonY: 1.68, cannon: [0.16, 0.21, 1.6],
+  cannonZ: [-11.5, -8.5, -5.5, -2.5, 0.5, 3.5, 6.5, 9.5], cannonY: 1.68, cannon: [0.26, 0.32, 1.6], // D23: radios ≈ ×1,7
   sailStyle: 'plain', flagStyle: 'pennant', trimRail: true, cannonScale: 1.2,
   radius: 18, mastHeight: 27, pick: [7.0, 27.0, 17.0]
 };
@@ -168,7 +186,7 @@ const PIRATE: ShipRecipe = {
   jibs: [{ H: [0, 13.1, 4.8], T: [0, 4.39, 15.58], C: [0, 2.96, 9.65] }],
   boxes: [],
   barrels: [],
-  cannonZ: [-5.6, -2.4, 0.8, 4.0], cannonY: 0.96, cannon: [0.13, 0.17, 1.3],
+  cannonZ: [-5.6, -2.4, 0.8, 4.0], cannonY: 0.96, cannon: [0.23, 0.29, 1.3], // D23: radios ≈ ×1,7
   sailStyle: 'notched', flagStyle: 'flag', trimRail: false, cannonScale: 1.0,
   radius: 11, mastHeight: 17.5, pick: [4.1, 17.5, 10.0]
 };
@@ -244,8 +262,13 @@ export interface ShipModel {
 
 // ---- Construcción ----
 
-function deckY(r: ShipRecipe, u: number): number {
+export function deckY(r: ShipRecipe, u: number): number {
   return sample(PROFILES[r.profile], u).s * r.F;
+}
+
+// Semimanga en cubierta en u (m): las portas y los cañones van en a(u)·B/2
+export function deckHalfBeam(r: ShipRecipe, u: number): number {
+  return (sample(PROFILES[r.profile], u).a * r.B) / 2;
 }
 
 function section(r: ShipRecipe, u: number, side: 1 | -1): Vec3[] {
@@ -266,20 +289,31 @@ function section(r: ShipRecipe, u: number, side: 1 | -1): Vec3[] {
   ];
 }
 
-function loftHull(g: GeoBuilder, r: ShipRecipe, look: ShipLook, stations: readonly number[]): void {
+function loftHull(g: GeoBuilder, r: ShipRecipe, look: ShipLook, stations: readonly number[], planks: boolean): void {
   const cHull = lin(look.hull);
   const cRail = lin(r.trimRail ? look.trim : look.rail);
-  const strips: [number, number, THREE.Color][] = [
-    [1, 0, cRail], [1, 2, cHull], [2, 3, lin(look.band)], [3, 4, cHull], [4, 5, lin(look.bottom)]
+  // [de, a, color arriba, color abajo]: la cara V2–V3 lleva la oclusión en su borde inferior (la flotación, D23)
+  const strips: [number, number, THREE.Color, THREE.Color][] = [
+    [1, 0, cRail, cRail], [1, 2, cHull, cHull], [2, 3, lin(look.band), lin(look.band)], [3, 4, cHull, ao(cHull)], [4, 5, lin(look.bottom), lin(look.bottom)]
   ];
+  // Cubierta (D23): en LOD0, n = 2·ceil(B/2 / 0,5) tablas longitudinales alternas deck / deck.alt de ≈ 0,5 m, con las
+  // tiras junto a la borda oscurecidas; en LOD1, una sola cara
+  const n = planks ? 2 * Math.ceil(r.B / 2 / 0.5) : 1;
+  const deck = [lin(look.deck), lin(look.deckAlt)];
+  const plankColor = (j: number) => (planks && (j === 0 || j === n - 1) ? ao(deck[j % 2]) : deck[j % 2]);
+  const across = (p: Vec3, q: Vec3, f: number): Vec3 => [p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f, p[2] + (q[2] - p[2]) * f];
   const secs = stations.map((u) => ({ port: section(r, u, 1), stbd: section(r, u, -1) }));
   for (let i = 0; i < secs.length - 1; i++) {
     const s0 = secs[i];
     const s1 = secs[i + 1];
     for (const [a, b] of [[s0.port, s1.port], [s0.stbd, s1.stbd]]) {
-      for (const [p, q, c] of strips) g.quad(a[p], a[q], b[q], b[p], c);
+      for (const [p, q, cp, cq] of strips) g.quad(a[p], a[q], b[q], b[p], cp, cq, cq, cp);
     }
-    g.quad(s0.port[1], s0.stbd[1], s1.stbd[1], s1.port[1], lin(look.deck));
+    for (let j = 0; j < n; j++) {
+      const f0 = j / n;
+      const f1 = (j + 1) / n;
+      g.quad(across(s0.port[1], s0.stbd[1], f0), across(s0.port[1], s0.stbd[1], f1), across(s1.port[1], s1.stbd[1], f1), across(s1.port[1], s1.stbd[1], f0), plankColor(j));
+    }
   }
   // Tapas: espejo de popa y proa (solo si la proa tiene manga en u = +0,5)
   cap(g, secs[0], cHull);
@@ -335,7 +369,8 @@ function opened(group: THREE.Matrix4, p: Vec3, axis: Vec3, free: Vec3, open: num
 const dist3 = (a: Vec3, b: Vec3) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 
 function squareSail(g: GeoBuilder, r: ShipRecipe, look: ShipLook, group: THREE.Matrix4, mast: MastDef, sail: SquareSail, lod: 0 | 1, rm: number): void {
-  const segs: [number, number] = r.sailStyle === 'notched' ? [4, 2] : r.sailStyle === 'striped' ? [2, 5] : [2, 2];
+  // 4 columnas (paneles de lona, D23) × 3 filas; las franjas del mercante, 5 filas
+  const segs: [number, number] = r.sailStyle === 'striped' ? [4, 5] : [4, 3];
   const plane = new THREE.PlaneGeometry(sail.w, sail.h, segs[0], segs[1]);
   const pos = plane.getAttribute('position');
   for (let i = 0; i < pos.count; i++) {
@@ -351,11 +386,16 @@ function squareSail(g: GeoBuilder, r: ShipRecipe, look: ShipLook, group: THREE.M
   const brace = new THREE.Matrix4().makeTranslation(0, 0, mast.z).multiply(new THREE.Matrix4().makeRotationY(20 * deg));
   const sailM = group.clone().multiply(brace).multiply(trs(0, sail.yb + sail.h / 2, 0.45));
   const cSail = lin(look.sail);
+  const cAlt = lin(look.sailAlt);
   const stripe = look.sailStripe ? lin(look.sailStripe) : cSail;
-  // PlaneGeometry ordena las filas de arriba abajo: filas 1 y 3 desde arriba en el color de franja
-  const color = r.sailStyle === 'striped'
-    ? (_x: number, _y: number, _z: number, t: number) => { const row = Math.floor(t / (2 * segs[0])); return row === 1 || row === 3 ? stripe : cSail; }
-    : cSail;
+  // PlaneGeometry: 2 triángulos por celda, filas de arriba abajo. Filas 1 y 3 desde arriba en el color de franja; en
+  // LOD0, las columnas impares de las filas de lona en sail.alt (paneles, D23)
+  const color = (_x: number, _y: number, _z: number, t: number) => {
+    const cell = Math.floor(t / 2);
+    const row = Math.floor(cell / segs[0]);
+    if (r.sailStyle === 'striped' && (row === 1 || row === 3)) return stripe;
+    return lod === 0 && (cell % segs[0]) % 2 === 1 ? cAlt : cSail;
+  };
   g.mark(() => g.add(plane, sailM, color));
   if (lod === 0) {
     const yard = group.clone().multiply(brace).multiply(trs(0, sail.yb + sail.h, 0.35, 0, 0, Math.PI / 2));
@@ -370,6 +410,25 @@ function boxColors(look: ShipLook, kind: BoxDef['kind']): (x: number, y: number,
   return (_x, _y, _z, t) => (Math.floor(t / 2) === 2 ? lin(look.deck) : side);
 }
 
+// Castillos y camaretas: costados en `rail` con sus primeros 0,4 m oscurecidos (oclusión horneada, D23) y tapa en
+// `deck`; sin cara inferior, que queda dentro del casco. Normales hacia afuera
+function castle(g: GeoBuilder, look: ShipLook, box: BoxDef): void {
+  const [w, h, d] = box.size;
+  const [x, y, z] = box.pos;
+  const [x0, x1, y0, y1, z0, z1] = [x - w / 2, x + w / 2, y - h / 2, y + h / 2, z - d / 2, z + d / 2];
+  const ya = Math.min(y1, y0 + AO_HEIGHT);
+  const side = lin(look.rail);
+  const dark = ao(side);
+  const corners: [number, number][] = [[x0, z1], [x1, z1], [x1, z0], [x0, z0], [x0, z1]];
+  for (let i = 0; i < 4; i++) {
+    const [ax, az] = corners[i];
+    const [bx, bz] = corners[i + 1];
+    g.quad([ax, y0, az], [bx, y0, bz], [bx, ya, bz], [ax, ya, az], dark);
+    g.quad([ax, ya, az], [bx, ya, bz], [bx, y1, bz], [ax, y1, az], side);
+  }
+  g.quad([x0, y1, z0], [x0, y1, z1], [x1, y1, z1], [x1, y1, z0], lin(look.deck));
+}
+
 function buildLod(r: ShipRecipe, lod: 0 | 1): { geometry: THREE.BufferGeometry; hullBox: THREE.Box3; triangles: number; sails: [number, number][] } {
   const look = SHIP_LOOKS[r.look];
   const g = new GeoBuilder({ rim: true });
@@ -381,7 +440,7 @@ function buildLod(r: ShipRecipe, lod: 0 | 1): { geometry: THREE.BufferGeometry; 
   // _rim_mask = 1 solo en el casco: loft (con borda y cubierta), castillos y camaretas (D18, ASSET-SPEC §6)
   g.beginBox();
   g.rim = 1;
-  loftHull(g, r, look, lod === 0 ? PROFILES[r.profile].map((row) => row[0]) : LOD1_STATIONS);
+  loftHull(g, r, look, lod === 0 ? LOD0_STATIONS : LOD1_STATIONS, lod === 0);
   g.rim = 0;
   const hullBox = g.endBox();
 
@@ -400,7 +459,11 @@ function buildLod(r: ShipRecipe, lod: 0 | 1): { geometry: THREE.BufferGeometry; 
       .multiply(new THREE.Matrix4().makeRotationX(-r.rake))
       .multiply(new THREE.Matrix4().makeTranslation(0, -baseY, -mast.z));
     const len = mast.h - baseY;
-    g.add(new THREE.CylinderGeometry(0.6 * rm, rm, len, 6), group.clone().multiply(trs(0, baseY + len / 2, mast.z)), cMast);
+    // Collar de 0,4 m oscurecido en la base (oclusión horneada, D23) y el resto sin la tapa inferior, que quedaba
+    // dentro de la cubierta. CylinderGeometry no indexada: torso (12 triángulos), tapa superior (6) e inferior (6)
+    const rAt = (y: number) => rm + (0.6 * rm - rm) * (y / len);
+    g.add(new THREE.CylinderGeometry(rAt(AO_HEIGHT), rm, AO_HEIGHT, 6, 1, true), group.clone().multiply(trs(0, baseY + AO_HEIGHT / 2, mast.z)), ao(cMast));
+    g.add(new THREE.CylinderGeometry(0.6 * rm, rAt(AO_HEIGHT), len - AO_HEIGHT, 6), group.clone().multiply(trs(0, baseY + AO_HEIGHT + (len - AO_HEIGHT) / 2, mast.z)), cMast, (t) => t >= 18);
     for (const sail of mast.squares ?? []) squareSail(g, r, look, group, mast, sail, lod, rm);
     if (mast.gaff) {
       // Cangreja: vela + botavara + pico giran alrededor del eje del mástil (gratil A→B)
@@ -435,11 +498,13 @@ function buildLod(r: ShipRecipe, lod: 0 | 1): { geometry: THREE.BufferGeometry; 
 
   for (const box of r.boxes) {
     if (lod === 1 && box.kind !== 'castle') continue;
-    const geo = new THREE.BoxGeometry(...box.size);
-    // La cara inferior de los castillos queda dentro del casco: no se dibuja
-    g.rim = box.kind === 'castle' ? 1 : 0;
-    g.add(geo, trs(...box.pos), boxColors(look, box.kind), box.kind === 'castle' ? (t) => Math.floor(t / 2) === 3 : undefined);
-    g.rim = 0;
+    if (box.kind === 'castle') {
+      g.rim = 1;
+      castle(g, look, box);
+      g.rim = 0;
+    } else {
+      g.add(new THREE.BoxGeometry(...box.size), trs(...box.pos), boxColors(look, box.kind));
+    }
   }
 
   if (lod === 0) {
@@ -451,12 +516,17 @@ function buildLod(r: ShipRecipe, lod: 0 | 1): { geometry: THREE.BufferGeometry; 
         const x = side * (a * r.B / 2 + 0.3);
         // La boca (radio superior) mira hacia afuera de la banda
         g.add(new THREE.CylinderGeometry(rTop, rBot, len, 6), trs(x - side * (len / 2), r.cannonY, z, 0, 0, -side * Math.PI / 2), lin(look.cannon));
-        g.add(new THREE.BoxGeometry(0.06, 0.5, 0.6), trs(side * (a * r.B / 2 + 0.02), r.cannonY, z), lin(look.gunport));
+        // Porta de 0,8 × 0,8 m (D23; antes 0,5 × 0,6: 1,5 px de alto a 1,0×), bajo el canto de cubierta (AS-V20)
+        g.add(new THREE.BoxGeometry(0.06, 0.8, 0.8), trs(side * (a * r.B / 2 + 0.02), r.cannonY, z), lin(look.gunport));
       }
     }
   }
 
-  return { geometry: g.build(), hullBox, triangles: g.triangles, sails: g.marks };
+  // Normales con pliegue de 40° (D23): sin bandas de facetas en el casco ni en la panza de las velas; los cantos de
+  // cubierta, borda y franjas siguen duros
+  const geometry = g.build();
+  creaseNormals(geometry, 40 * deg);
+  return { geometry, hullBox, triangles: g.triangles, sails: g.marks };
 }
 
 function flag(g: GeoBuilder, r: ShipRecipe, look: ShipLook, group: THREE.Matrix4, mast: MastDef): void {
@@ -607,7 +677,7 @@ function shipOnBeforeCompile(this: THREE.Material, shader: THREE.WebGLProgramPar
 export function createShipMaterial(): ShipMaterial {
   const material = new THREE.MeshStandardMaterial({
     vertexColors: true,
-    flatShading: true,
+    flatShading: false, // D23: normales con pliegue de 40° en la geometría
     roughness: 0.85,
     metalness: 0,
     side: THREE.DoubleSide

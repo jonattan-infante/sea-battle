@@ -9,7 +9,7 @@ import { createRng } from '../game/vec';
 import type { RenderShip } from './game-client';
 import type { RenderSource } from './runtime';
 
-export type SceneName = 'hero' | 'standard' | 'showcase' | 'damage';
+export type SceneName = 'hero' | 'standard' | 'showcase' | 'damage' | 'gallery';
 
 export interface SceneShip {
   id: string;
@@ -168,6 +168,15 @@ export class SyntheticSource implements RenderSource {
     return id ? this.byId.get(id) : undefined;
   }
 
+  // QA: deja un barco quieto en (x, z) con un rumbo; la escena recalcula la posición desde su origen en cada tick
+  setPose(id: string, x: number, z: number, heading: number): void {
+    const m = this.motions.find((q) => q.ship.id === id);
+    if (!m) return;
+    m.x0 = m.ship.x = x;
+    m.z0 = m.ship.z = z;
+    m.heading0 = m.ship.heading = heading;
+  }
+
   onMembership(l: (list: RenderShip[]) => void): () => void {
     l(this.ships);
     return () => undefined;
@@ -300,6 +309,23 @@ export function showcaseScene(): SceneSpec {
       { id: 'merchant', kind: 'merchant', classId: 'merchant', name: 'Mercante', x: fx - 60, z: fz + 45, heading: Math.PI / 2 + 0.25, hp: 1, speed: 6, orbit: 0 },
       { id: 'sloop', kind: 'player', classId: 'sloop', name: 'Balandra', x: fx + 45, z: fz + 40, heading: 0, hp: 0.25, speed: 0, orbit: 0 }
     ],
+    duels: []
+  };
+}
+
+// AS-V18–V20 y AD-26 (D23 c): las 5 clases quietas, con la vida entera y sin efectos, en el mar abierto de la escena
+// de daño. La prueba pone una en el foco con setPose (con su rumbo) y deja las otras a 2 km
+export function galleryScene(): SceneSpec {
+  const fx = -120;
+  const fz = 260;
+  const classes: [string, ShipKind][] = [['sloop', 'player'], ['brig', 'player'], ['frigate', 'player'], ['pirate', 'pirate'], ['merchant', 'merchant']];
+  return {
+    name: 'gallery',
+    focus: { x: fx, z: fz },
+    seed: 23,
+    ships: classes.map(([classId, kind], i): SceneShip => ({
+      id: `g-${classId}`, kind, classId, name: classId, x: fx + (i === 0 ? 0 : 2000 * i), z: fz, heading: Math.PI / 2, hp: 1, speed: 0, orbit: 0
+    })),
     duels: []
   };
 }

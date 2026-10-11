@@ -72,9 +72,10 @@ export class GeoBuilder {
     this.push(vc, colorC);
   }
 
-  quad(a: Vec3, b: Vec3, c: Vec3, d: Vec3, color: THREE.Color): void {
-    this.tri(a, b, c, color);
-    this.tri(a, c, d, color);
+  // Color fijo o por vértice (a, b, c, d): la oclusión horneada oscurece solo un borde de la cara (D23)
+  quad(a: Vec3, b: Vec3, c: Vec3, d: Vec3, color: THREE.Color, colorB = color, colorC = color, colorD = color): void {
+    this.tri(a, b, c, color, colorB, colorC);
+    this.tri(a, c, d, color, colorC, colorD);
   }
 
   // Añade una geometría de three transformada; el color es fijo o por vértice
@@ -117,6 +118,51 @@ export class GeoBuilder {
     this.rimValues?.push(this.rim);
     if (this.boxTracking) this.box.expandByPoint(v);
   }
+}
+
+// Normales con pliegue (ASSET-SPEC §6, D23): cada vértice promedia las normales de las caras que comparten su posición
+// (rejilla de 1 cm) y forman con la suya menos de `angle`; los cantos más agudos siguen duros. Es el algoritmo de
+// BufferGeometryUtils.toCreasedNormals de three, que es ESM y no carga en Jest. Geometría no indexada
+export function creaseNormals(geometry: THREE.BufferGeometry, angle: number): void {
+  const pos = geometry.getAttribute('position');
+  const tris = pos.count / 3;
+  const face = new Float32Array(tris * 3);
+  const shared = new Map<string, number[]>();
+  const key = (i: number) => `${~~(pos.getX(i) * 100)},${~~(pos.getY(i) * 100)},${~~(pos.getZ(i) * 100)}`;
+  for (let t = 0; t < tris; t++) {
+    va.fromBufferAttribute(pos, 3 * t);
+    vb.fromBufferAttribute(pos, 3 * t + 1);
+    vc.fromBufferAttribute(pos, 3 * t + 2);
+    ab.subVectors(vc, vb).cross(ac.subVectors(va, vb)).normalize();
+    face[3 * t] = ab.x;
+    face[3 * t + 1] = ab.y;
+    face[3 * t + 2] = ab.z;
+    for (let k = 0; k < 3; k++) {
+      const h = key(3 * t + k);
+      const list = shared.get(h);
+      if (list) list.push(t);
+      else shared.set(h, [t]);
+    }
+  }
+  const cos = Math.cos(angle);
+  const normals = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) {
+    const t = Math.floor(i / 3);
+    let x = 0;
+    let y = 0;
+    let z = 0;
+    for (const o of shared.get(key(i))!) {
+      if (face[3 * t] * face[3 * o] + face[3 * t + 1] * face[3 * o + 1] + face[3 * t + 2] * face[3 * o + 2] < cos) continue;
+      x += face[3 * o];
+      y += face[3 * o + 1];
+      z += face[3 * o + 2];
+    }
+    const len = Math.hypot(x, y, z) || 1;
+    normals[3 * i] = x / len;
+    normals[3 * i + 1] = y / len;
+    normals[3 * i + 2] = z / len;
+  }
+  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
 }
 
 const m4 = new THREE.Matrix4();

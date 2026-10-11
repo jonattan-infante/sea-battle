@@ -46,6 +46,8 @@ export const TOP_FACE = {
   grass: { albedo: '#589444', target: PALETTE.grass },
   deck: { albedo: '#BD8D59', target: '#C9965E' }, // jugador y mercante
   deckPirate: { albedo: '#67462D', target: '#6E4B30' },
+  deckAlt: { albedo: '#A17442', target: '#AC7C46' }, // tablas alternas (D23), jugador y mercante
+  deckAltPirate: { albedo: '#56371F', target: '#5C3B21' },
   cargo: { albedo: '#A5723B', target: PALETTE.cargo }
 } as const;
 
@@ -55,9 +57,11 @@ export interface ShipLook {
   band: string;
   bottom: string;
   deck: string;
+  deckAlt: string; // tablas de cubierta alternas (D23)
   rail: string;
   mast: string;
   sail: string;
+  sailAlt: string; // paneles de lona alternos (D23); en el mercante, solo en las filas crema
   sailStripe: string | null;
   cannon: string;
   gunport: string;
@@ -73,16 +77,16 @@ const SHARED = { cannon: '#26282B', gunport: '#1A1410', trim: '#D9A93F', lantern
 
 export const SHIP_LOOKS: Record<ShipKind, ShipLook> = {
   player: {
-    ...SHARED, hull: '#4A2F1C', band: '#D4A548', bottom: '#3A2416', deck: TOP_FACE.deck.albedo, rail: '#6B4426', mast: '#6B4426',
-    sail: '#F2EADB', sailStripe: null, flag: '#F2C14E', flagMark: null
+    ...SHARED, hull: '#4A2F1C', band: '#D4A548', bottom: '#3A2416', deck: TOP_FACE.deck.albedo, deckAlt: TOP_FACE.deckAlt.albedo, rail: '#6B4426', mast: '#6B4426',
+    sail: '#F2EADB', sailAlt: '#E1D9CA', sailStripe: null, flag: '#F2C14E', flagMark: null
   },
   pirate: {
-    ...SHARED, hull: '#2A2523', band: '#B3261E', bottom: '#1C1817', deck: TOP_FACE.deckPirate.albedo, rail: '#3A2A20', mast: '#3A2A20',
-    sail: '#2B2A2E', sailStripe: null, flag: '#111111', flagMark: '#F5F1E6'
+    ...SHARED, hull: '#2A2523', band: '#B3261E', bottom: '#1C1817', deck: TOP_FACE.deckPirate.albedo, deckAlt: TOP_FACE.deckAltPirate.albedo, rail: '#3A2A20', mast: '#3A2A20',
+    sail: '#2B2A2E', sailAlt: '#363539', sailStripe: null, flag: '#111111', flagMark: '#F5F1E6'
   },
   merchant: {
-    ...SHARED, hull: '#6E4A2C', band: '#E8DCC0', bottom: '#3A2416', deck: TOP_FACE.deck.albedo, rail: '#6B4426', mast: '#6B4426',
-    sail: '#EADFC6', sailStripe: '#2F7FB8', flag: '#2F7FB8', flagMark: '#F5F1E6'
+    ...SHARED, hull: '#6E4A2C', band: '#E8DCC0', bottom: '#3A2416', deck: TOP_FACE.deck.albedo, deckAlt: TOP_FACE.deckAlt.albedo, rail: '#6B4426', mast: '#6B4426',
+    sail: '#EADFC6', sailAlt: '#D9CEB6', sailStripe: '#2F7FB8', flag: '#2F7FB8', flagMark: '#F5F1E6'
   }
 };
 

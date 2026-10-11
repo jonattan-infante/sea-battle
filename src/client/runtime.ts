@@ -17,7 +17,7 @@ import { FloatingTextLayer, LabelLayer, LabelTarget, OverlayHost, ReloadState, S
 import { DAMAGE_FX, Effects, RENDER_ORDER, rgba } from './vfx/effects';
 import { makeRing, RING_MODE, RingSpec } from './vfx/rings';
 import { VolleyRandom, volleySide } from './vfx/volley';
-import { damageScene, heroScene, SceneName, showcaseScene, standardScene, SyntheticSource } from './synthetic-scene';
+import { damageScene, galleryScene, heroScene, SceneName, showcaseScene, standardScene, SyntheticSource } from './synthetic-scene';
 
 const deg = Math.PI / 180;
 const CAM_RIGHT = new THREE.Vector3(1, 0, 0); // guiñada 0: derecha en pantalla = +X
@@ -1058,7 +1058,7 @@ export class GameRuntime implements OverlayHost {
     const view = name === 'standard'
       ? { w: 1440, h: 900, ppm: computePpm0(1440, 900, MAX_CANNON_RANGE), sinT: this.sinT }
       : { w: this.viewW, h: this.viewH, ppm: this.targetPpm(), sinT: this.sinT };
-    const spec = name === 'hero' ? heroScene(view) : name === 'showcase' ? showcaseScene() : name === 'damage' ? damageScene() : standardScene(view);
+    const spec = name === 'hero' ? heroScene(view) : name === 'showcase' ? showcaseScene() : name === 'damage' ? damageScene() : name === 'gallery' ? galleryScene() : standardScene(view);
     const source = new SyntheticSource(options.myShipId ? { ...spec, myShipId: options.myShipId } : spec);
     this.setSource(source);
     return source;
@@ -1104,10 +1104,11 @@ export class GameRuntime implements OverlayHost {
     return measureSailVisibility(this.gl, computePpm0(1440, 900, MAX_CANNON_RANGE) / ZOOM.levels[0], CAMERA.elevation, classIds, { sheet, lod });
   }
 
-  // AD-10 / D8: L* de velas y casco por rumbo con el nivel más cercano (0,7×) de 1440×900 y la cámara del juego
-  measureShipValues(classIds: string[] = ['sloop', 'brig', 'frigate', 'pirate', 'merchant'], headingsDeg?: number[]): ShipValues[] {
+  // AD-10 / D8: L* de velas y casco por rumbo con el nivel más cercano (0,7×) de 1440×900 y la cámara del juego.
+  // ppm opcional (AD-26: el de una sesión nueva, N1 a 1,0×)
+  measureShipValues(classIds: string[] = ['sloop', 'brig', 'frigate', 'pirate', 'merchant'], headingsDeg?: number[], ppm?: number): ShipValues[] {
     if (!this.gl) return [];
-    return measureShipValues(this.gl, computePpm0(1440, 900, MAX_CANNON_RANGE) / ZOOM.levels[0], CAMERA.elevation, classIds, headingsDeg);
+    return measureShipValues(this.gl, ppm ?? computePpm0(1440, 900, MAX_CANNON_RANGE) / ZOOM.levels[0], CAMERA.elevation, classIds, headingsDeg);
   }
 
   // QA: congela la simulación y los efectos (R3F sigue dibujando el último estado) para comparar dos capturas del

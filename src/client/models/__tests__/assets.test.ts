@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { ISLANDS } from '../../../game/constants';
 import { buildBuoyGeometry, buildIslands, buildLootGeometry, buildPalmGeometry } from '../island-geometry';
 import { SHIP_LOOKS } from '../../art';
-import { buildShipAsset, getShipModel, ShipExtras } from '../ship-geometry';
+import { buildShipAsset, deckHalfBeam, deckY, getShipModel, ShipExtras } from '../ship-geometry';
 
 const CLASSES = ['sloop', 'brig', 'frigate', 'pirate', 'merchant'] as const;
 const BUDGET = { ship: [2500, 800], npc: [2000, 700] } as const;
@@ -123,10 +123,10 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
     });
   });
 
-  test('AS-V14 (base): los rangos de vela de cada LOD solo contienen vértices del color de vela o de franja', () => {
+  test('AS-V14 (base): los rangos de vela de cada LOD solo contienen vértices del color de vela o de franja (y de los paneles en LOD0)', () => {
     const look = SHIP_LOOKS[model.recipe.look];
-    const allowed = [look.sail, look.sailStripe].filter((c): c is string => !!c).map((hex) => new THREE.Color(hex));
     model.lods.forEach((geometry, lod) => {
+      const allowed = [look.sail, look.sailStripe, lod === 0 ? look.sailAlt : null].filter((c): c is string => !!c).map((hex) => new THREE.Color(hex));
       const ranges = model.sails[lod];
       expect(ranges.length).toBeGreaterThan(0);
       const color = geometry.getAttribute('color');
@@ -138,6 +138,63 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
         }
       }
     });
+  });
+
+  // D23 (ASSET-SPEC §6, §7, §8.1, §8.2): detalle interno dentro del presupuesto
+  const colorCount = (geometry: THREE.BufferGeometry, hex: string, k = 1) => {
+    const c = new THREE.Color(hex).multiplyScalar(k);
+    const color = geometry.getAttribute('color');
+    let n = 0;
+    for (let v = 0; v < color.count; v++) if (Math.abs(c.r - color.getX(v)) + Math.abs(c.g - color.getY(v)) + Math.abs(c.b - color.getZ(v)) < 1e-4) n++;
+    return n;
+  };
+
+  test('D23: tablas de cubierta (deck.alt) y paneles de lona (sail.alt) en LOD0, no en LOD1; oclusión ×0,85 en LOD0', () => {
+    const look = SHIP_LOOKS[model.recipe.look];
+    const [lod0, lod1] = model.lods;
+    expect(colorCount(lod0, look.deckAlt)).toBeGreaterThan(0);
+    expect(colorCount(lod1, look.deckAlt)).toBe(0);
+    expect(colorCount(lod1, look.deckAlt, 0.85)).toBe(0);
+    expect(colorCount(lod0, look.hull, 0.85)).toBeGreaterThan(0); // borde inferior de V2–V3
+    expect(colorCount(lod0, look.mast, 0.85)).toBeGreaterThan(0); // collar de 0,4 m de los mástiles
+    // Las velas cuadras llevan paneles; el mercante solo en las filas crema
+    if (model.recipe.masts.some((m) => m.squares?.length)) {
+      expect(colorCount(lod0, look.sailAlt)).toBeGreaterThan(0);
+      expect(colorCount(lod1, look.sailAlt)).toBe(0);
+    }
+  });
+
+  test('D23: normales con pliegue de 40° (material sin flat shading): el costado es continuo y el canto de cubierta, duro', () => {
+    const material = (root.children[0] as THREE.Mesh).material as THREE.MeshStandardMaterial;
+    expect(material.flatShading).toBe(false);
+    // En el centro de la eslora: el vértice V1 del costado (entre la cara V0–V1 y la franja) tiene una sola normal, y
+    // el canto de cubierta V0 (costado frente a tablas) tiene más de una
+    const r = model.recipe;
+    const geometry = model.lods[0];
+    const pos = geometry.getAttribute('position');
+    const nor = geometry.getAttribute('normal');
+    const at = (x: number, y: number, z: number) => {
+      const set = new Set<string>();
+      for (let v = 0; v < pos.count; v++) {
+        if (Math.abs(pos.getX(v) - x) + Math.abs(pos.getY(v) - y) + Math.abs(pos.getZ(v) - z) < 1e-4) set.add(`${nor.getX(v).toFixed(3)},${nor.getY(v).toFixed(3)},${nor.getZ(v).toFixed(3)}`);
+      }
+      return set.size;
+    };
+    const yd = deckY(r, 0);
+    const a = deckHalfBeam(r, 0) * 2 / r.B;
+    expect(at(a * r.B / 2, yd, 0)).toBeGreaterThan(1);
+    // V1: x(y₁) con y₁ = yd − 0,3·F, sobre la recta entre la flotación V3 (el vértice de babor con y = 0 en z = 0) y el canto
+    let b = 0;
+    for (let v = 0; v < pos.count; v++) if (Math.abs(pos.getY(v)) < 1e-6 && Math.abs(pos.getZ(v)) < 1e-6 && pos.getX(v) > b) b = pos.getX(v);
+    const y1 = yd - 0.3 * r.F;
+    const x1 = b + ((a * r.B / 2 - b) * y1) / yd;
+    expect(at(x1, y1, 0)).toBe(1);
+  });
+
+  test('D23: portas de 0,8 m bajo el canto de cubierta (0,60·F + 0,4 ≤ yd(u)) y cañones con radio ≥ 0,22 m', () => {
+    const r = model.recipe;
+    for (const z of r.cannonZ) expect(r.cannonY + 0.4).toBeLessThanOrEqual(deckY(r, z / r.L) + 1e-9);
+    if (r.cannonZ.length) expect(r.cannon[0]).toBeGreaterThanOrEqual(0.22);
   });
 
   test('AS-V17 (D22): la elipse de fuego de cada socket se solapa ≤ 5 % con objetos de cubierta que sobresalen > 0,5 m', () => {
