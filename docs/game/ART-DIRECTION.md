@@ -108,11 +108,12 @@ El estado analizado es el commit `f3f1345`, antes de la reescritura en curso.
 | `hull` | — | `#4A2F1C` | `#2A2523` | `#6E4A2C` |
 | `hull.band` (franja de portas) | — | `#D4A548` ocre | `#B3261E` rojo | `#E8DCC0` marfil |
 | `hull.bottom` (bajo la flotación) | `#3A2416` | ✓ | `#1C1817` | ✓ |
-| `deck` | — | `#C9965E` | `#6E4B30` | `#C9965E` |
+| `deck` (tabla clara, D36) | — | `#DDA970` | `#805C40` | `#DDA970` |
+| `deck.alt` (tabla oscura, D36) | — | `#B5844D` | `#5C3B21` | `#B5844D` |
+| Cubierta en pantalla (media de las tablas: `deck` y `deck.alt` quedan a ±7 de L\* de este valor; AD-25) | — | `#C9965E` | `#6E4B30` | `#C9965E` |
 | `rail` / `mast` | — | `#6B4426` | `#3A2A20` | `#6B4426` |
 | `sail` | — | `#F2EADB` | `#2B2A2E` | `#EADFC6` + franjas `#2F7FB8` |
-| `sail.alt` (paneles de lona, D23) | — | `#E1D9CA` (ΔL\* −6) | `#363539` (+5; L\* 22 ≤ AD-10) | `#D9CEB6` (solo en las franjas crema) |
-| `deck.alt` (tablas alternas, D23) | — | `#AC7C46` (ΔL\* −10) | `#5C3B21` (−7) | `#AC7C46` |
+| `sail.alt` (paños alternos, D23 → D36) | — | `#D0C8BA` (ΔL\* −12) | `#0D0D0F` (−13,6; L\* 3,7) | `#D9CEB6` (−6; solo en las franjas crema. No sube a −12: la lona crema bajaría a L\* 79,9 < 80 de AD-10, y las franjas azules ya dan la textura) |
 | `cannon` / `gunport` | `#26282B` / `#1A1410` | ✓ | ✓ | (sin cañones) |
 | `flag` | — | `#F2C14E` gallardete | `#111111` + `#F5F1E6` | `#2F7FB8` + `#F5F1E6` |
 | `trim` (Fragata) | `#D9A93F` | ✓ | — | — |
@@ -126,10 +127,11 @@ Los hex de §4.1–4.2 son el **color que se ve en pantalla** en la cara dominan
 |---|---|---|
 | `sand` (tapa de la playa) | `#E6CF9A` | `#D8C392` |
 | `grass` (meseta) | `#5E9E48` | `#589444` |
-| `deck` (jugador y mercante) | `#C9965E` | `#BD8D59` |
-| `deck` (pirata) | `#6E4B30` | `#67462D` |
-| `deck.alt` (jugador y mercante) | `#AC7C46` | `#A17442` |
-| `deck.alt` (pirata) | `#5C3B21` | `#56371F` |
+| `deck`, tabla clara (jugador y mercante; D36) | `#DDA970` | `#CF9F6A` |
+| `deck`, tabla clara (pirata; D36) | `#805C40` | `#78563C` |
+| `deck.alt`, tabla oscura (jugador y mercante; D36) | `#B5844D` | `#AA7C49` |
+| `deck.alt`, tabla oscura (pirata) | `#5C3B21` | `#56371F` |
+| Cubierta, media de las tablas (referencia de AD-25) | `#C9965E` / pirata `#6E4B30` | — |
 | `cargo` | `#B07A3E` | `#A5723B` |
 
 ### 4.3 Relación (etiquetas, minimapa, barras)
@@ -371,6 +373,48 @@ Balandra            Bergantín                  Fragata
   \________/==      \______________/==    \_______________________/==
  1 palo, cangreja   cuadras proa + cangreja   3 palos cuadras + alcázar
 ```
+
+### 9.1 Detalle interno (D36): paños, tablas y franja de portas
+**AS-V19 se queda en ≥ 55 % en las 5 clases, el pirata incluido, sin excepción de clase.** Se llega con 5 palancas, todas en geometría con vertex colors, con el material único y sin draw calls nuevas. Recetas exactas en ASSET-SPEC §8.1–8.2.
+
+**Por qué 55 % y no el 70 % de Seafight.** Las capturas de Seafight son JPEG, y su ruido de bloque cuenta como textura. Mismo método de AS-V19 sobre `qa-artifacts/render/escala/ref-seafight-1297031307.jpg` (script `qa-artifacts/render/d36-modelo/seafight.py`):
+
+| AS-V19 (\|∇L\*\| ≥ 4) | Seafight, jugador | Seafight, Rackham (velas oscuras) | Nuestra Balandra 90° (D23) |
+|---|---|---|---|
+| Imagen tal cual | 70,2 % | 80,1 % | 42,0 % |
+| Gauss σ 0,6 (quita el ruido JPEG) | 58,7 % | 69,4 % | 35,6 % |
+| Mediana 3×3 | 48,1 % | 59,1 % | 33,2 % |
+
+Sin el ruido de compresión, el barco del jugador de Seafight queda en 48–59 %, y 55 % es paridad con él. Nuestro render no tiene ruido: los filtros solo le quitan bordes reales de 1 px. **Pirata**: la referencia de velas oscuras es Rackham (**HIPÓTESIS**: NPC pirata, por el nombre y por el color de NPC de su etiqueta, R4). Su lona (croma < 15, L\* 16–46) da 69 % tal cual y 54 % con σ 0,6, así que el pirata no necesita un umbral propio.
+
+**Palancas** (modelo, mínimo de 0° y 90° por clase, acumulado; `out/S2–S5.log` y `FIN.log`):
+
+| Paso | Balandra | Bergantín | Fragata | Pirata | Mercante |
+|---|---|---|---|---|---|
+| D23 (hoy) | 42,4 | 45,1 | 33,8 | 19,2 | 52,2 |
+| 1. Paleta: tablas a ±7 de L\* del token, `sail.alt` del jugador −12 y del pirata −13,6 | 44,8 | 50,6 | 37,1 | 38,5 | 56,5 |
+| 2. Tablas en las tapas de castillos y camaretas | 47,3 | 50,8 | 43,9 | 38,5 | 59,8 |
+| 3. Paños de ≈ 0,7 m en las cuadras | 47,2 | 51,1 | 50,8 | 38,9 | 59,8 |
+| 4. Paños en cangrejas, latinas y foques | **66,0** | **63,6** | **58,2** | **57,2** | 60,4 |
+| 5. Franja de portas de 1,0 m (la pide AS-V20, D36 a) | 65,8 | 63,6 | 58,1 | 59,2 | 60,4 |
+
+La palanca grande es la 4: a 90° la vela visible es sobre todo la de cuchillo, que no tenía paños (37–58 % del interior y 5–35 % de textura, causa 2 de dev-render). Las tablas pasan de −10 a ±7 alrededor del token porque, con diferencia central, ΔL\* ≥ 8 solo basta si el borde cae entre dos píxeles. Cuando el antialias lo parte, hace falta más contraste: con ΔL\* 14, en el desglose del modelo la cubierta (tapas incluidas) pasa del 22–58 % al 63–76 % de píxeles con textura. Con el token como media, AD-25 se mantiene.
+
+**Previsión final (HIPÓTESIS hasta el render)**:
+
+| Clase | 0° | 90° | 180° | 270° | Tris LOD0 (presupuesto §5) | AD-10, L\* de vela a 0,7× y rumbo N |
+|---|---|---|---|---|---|---|
+| Balandra | 67,0 | 65,8 | 66,2 | 68,6 | 985 (2 500) | 83,4 |
+| Bergantín | 63,6 | 64,3 | 61,9 | 67,6 | 1 473 (2 500) | 82,8 |
+| Fragata | 58,1 | 59,9 | 57,5 | 63,2 | 2 370 (2 500) | 82,6 |
+| Pirata | 59,5 | 59,2 | 60,8 | 62,9 | 1 077 (2 000) | 9,8 |
+| Mercante | 69,5 | 60,4 | 57,2 | 66,5 | 1 645 (2 000) | 82,8 (lona crema) |
+
+**El modelo** (`qa-artifacts/render/d36-modelo/`) es un rasterizador por software con la geometría real exportada con `tsx`, la iluminación de §5 (Lambert de three, sin tone mapping), supermuestreo 4×4 y el fondo y la alineación de las capturas de `d23c/`. Lo validé contra 40 medidas de dev-render (`despues` y `experimento-dL10`): sesgo −0,08 puntos, \|e\| medio 0,89 y máximo 2,67. El peor caso (Fragata a 0°, 58,1) deja 3,1 puntos sobre 55, más que el error máximo. Límites (HIPÓTESIS): sin balanceo (±3°) y sin el especular GGX (rugosidad 0,85). AS-V14 en el modelo no empeora (mín./máx. 0,294 → 0,303, 0,510 → 0,513, 0,492 → 0,496, 0,349 → 0,364 y 0,385 → 0,387). AD-26 no cambia, porque la silueta es la misma. VFX-09b tampoco: el humo claro se separa de la cubierta por croma, con ΔE76 ≈ 36 sobre cualquiera de las dos tablas, igual que hoy sobre `#C9965E`.
+
+**Descartadas**: damero de paños (+3 a +5 puntos a 90°, pero se lee como un mantel: `out/B.log` frente a `A.log`), paños de 0,6 m (Fragata con 2 533 tris > 2 500), paños de 1,0 m (Fragata a 0° con 52–54 %), `sail.alt` del jugador a −14/−16 (AD-10 con < 2 puntos de margen) y texturas (V3: sin texturas en el MVP).
+
+**Vigilancia (HIPÓTESIS)**: en 390×844 con N1, la Fragata va en LOD0 (96 px) y muestra tablas de 1,4 px CSS y paños de 2,0 px CSS, que son 2,1 y 3,0 px físicos con DPR 1,5. Con MSAA no debería verse moiré. Si QA lo ve al girar en `qa:capture`, la palanca es exigir además ppm ≥ 4 para LOD0 (ASSET-SPEC §7).
 
 ---
 
@@ -688,7 +732,7 @@ Captura estándar = `npm run qa:capture` con zoom 1,0×, sin modales y el barco 
 | AD-22 | Recarga monótona | 5 capturas de un ciclo de recarga: ángulo del relleno del indicador | Creciente y en 360° en el frame del disparo | AC-73 |
 | AD-23 | Zona segura visible | Captura en el borde de la zona (r 110 m) | La línea discontinua y ≥ 3 boyas son visibles; aparece el aviso "Zona segura" | AC-65 |
 | AD-24 | Olas sin bandas regulares | Percentiles p5 y p95 de L\* en el parche de AD-01 | p95 − p5 entre 4 y 12. Medido el 2026-10-11: 16–21, son bandas. Con el ruido de 9 m y 4,5 m (D20): 8,8 (dev-render; falta QA) | — |
-| AD-25 | Albedo compensado | ΔE76 entre el color medio de la tapa de la playa o de la cubierta en la captura y su token de §4.2.1 | ≤ 6 | — |
+| AD-25 | Albedo compensado | ΔE76 entre el color medio de la tapa de la playa o de la cubierta en la captura y su token de §4.2.1. La cubierta, con tablas, se compara con la media de sus tablas (`#C9965E`; pirata `#6E4B30`; D36) | ≤ 6 | — |
 | AD-26 | **Escala del barco inicial** (D23; U8 cerrado, D26) | `measureShipValues` (vela + cubierta + casco) con el zoom por defecto de una sesión nueva (Balandra, cañón de 8 lb) en 1440×900, rumbos 0/90/180/270° | ≥ 1 900 px en el peor rumbo: paridad con el barco del jugador en Seafight (2 000–2 018 px² en dos capturas, `qa-artifacts/render/escala/`), con un margen del 5 % por la incertidumbre de la máscara de un JPEG. Hoy: 1 310 px a 0°. Con R = 65: 1 980 px | AC-24 (revisado) |
 | AD-28 | **Hostiles distinguibles en grises** (I2; AC-115) | 390×844, zoom 1,0×, rumbos 45 / 135 / 225 / 315°, captura en L\*. Máscara de cada barco = píxeles que cambian al ocultarlo. Firmas: área (px), fracción oscura (L\* ≤ 25) y fracción clara (L\* ≥ 65) | En cada rumbo y para cada par de {pirata, cañonera, capitán}, al menos una firma difiere ≥ 30 % (\|x − y\| / máx ≥ 0,30). Además: el estandarte del capitán da ≥ 20 px con L\* ≥ 80 en cada rumbo, y en 1440×900 se cuentan ≥ 8 cañones de la cañonera (manchas con L\* ≤ 25 y ≥ 4 px de largo sobre su cubierta) | AC-115 |
 | AD-29 | **Minimapa: 6 formas** (I2; AC-115) | Plantilla de cada marcador de §4.3 dibujada aparte a 4×. En una captura del minimapa (escritorio y móvil), correlación cruzada normalizada en grises de cada marcador con las 6 plantillas | Con la suya ≥ 0,90 y con cada una de las otras ≤ 0,80. El capitán se ve en el minimapa desde cualquier punto del mapa | AC-115, AC-111 |
@@ -750,6 +794,7 @@ Captura estándar = `npm run qa:capture` con zoom 1,0×, sin modales y el barco 
 | D33 | D31 en verde (Mercante con N1 a 0,036·A; VFX-23 al 5,7 / 8,1 %). VFX-20 (c) con el método de D32 da de 1,06 a 1,53 según el rumbo: ruido por el balanceo (±5 px sobre 50–58) y una dependencia del rumbo por la caída del mástil | **Denominador de diseño**, independiente del rumbo y del balanceo: `D = ((h_tope − y_socket)·cos 55° + 0,6·vida·sen 55°)·ppm`, es decir, la altura en pantalla de una columna que llega justo a la punta, viento incluido. `y_s` se toma de la pose sin balanceo. Pasa si cada uno de los 8 rumbos queda entre 0,85 y 1,15. **Palanca: vida del humo de 3,4 a 3,1 s** (retirada en D34: no hace falta). La cinemática de D13 subía 0,95h y no restaba la altura del socket; con 3,1 s sube 0,85h, y 0,85h + socket ≈ punta (pirata: 14,9 + 2,1 = 17,0 m frente a 17,5). Previsión ≈ 1,07 (HIPÓTESIS). Coste: el área del humo baja ≈ 9 % (VFX-09b); el caso más justo es el claro en móvil (previsión 0,09–0,10 → ≈ 0,08–0,09·A frente a 0,07). Topes: 10 / 19 por socket | VFX-SPEC §0.4, §6, VFX-20 |
 | D34 | QA midió VFX-20 (c) con el método de D33 (máscara ΔE ≥ 15) sobre b5dc2c1: 1,03–1,06 en los 8 rumbos con la vida de 3,4 s. La palanca de D33 no hace falta y cuesta ≈ 9 % de área, justo en el humo claro de móvil (hoy 0,063·A frente a 0,07, antes de D32) | **Retiro los 3,1 s: la vida sigue en 3,4 s.** Error mío en la previsión de 1,19: saqué el numerador (≈ 63 px) multiplicando el cociente de dev-render por el denominador viejo. Su script no usa la máscara de ΔE ≥ 15, y según QA esos 63 px equivalen a la cima con ΔE ≥ 3. Mezclé dos métodos de medida. Queda como **palanca condicionada**: solo si, tras D32, VFX-20 (c) da > 1,15 en algún rumbo con el método de D33. Confirmado después por dev-render con 12 capturas por rumbo: la columna mide 67,3–70,1 px en los 8 rumbos y el denominador de D33 es 54,7 + 10,4 (viento) ≈ 65,1 px, lo que da ≈ 1,03–1,08, igual que QA. VFX-20 (c) se mide con 12 capturas. Los topes vuelven a 11 / 21 por socket y el pool de móvil a 332. El método de D33 (denominador de diseño) se mantiene | VFX-SPEC §0.4, §6, VFX-20 |
 | D35 | Q24 (tras D32, todo en verde salvo esto): Balandra en 390×844 con N3 y ≤ 25 %, tapado de 19,9–20,7 % frente a ≤ 20 % (de 18,2 a 23,3 % por captura). Causa medida: la llama nativa de 4,6 px se infla ×2,2 hasta el mínimo de 10 px, sobre un casco de ≈ 37 × 10 px | **El mínimo en px de la llama pasa a ser relativo a la eslora en pantalla**: cuerpo `min(10, 0,22·L·ppm)` y núcleo `min(5, 0,11·L·ppm)`. Se calcula al emitir, con el ppm actual. Ataca la causa (un mínimo fijo sobre un casco diminuto) sin una regla aparte para móvil. En escritorio no cambia nada (0,22·L·ppm ≥ 17 px en todas las clases con 5,04). En el caso medido da 8 px, la variante de dev-render: tapado del 15,7 % y fuego de 0,138·A y 42 px² CSS ≥ 25. Con N1 en móvil (2,82) da 9,9 px sobre un casco ×1,5 mayor en área; previsión ≈ 13 % de tapado (HIPÓTESIS). Descartadas: (b) volver la llama a ×0,5 en móvil contradice D32, porque el daño es información; (c) un tope propio para móvil relaja el criterio sin arreglar la causa. §0.4 pasa a 336 partículas en el pico (4 × 21 llamas) | VFX-SPEC §0.4, §6 |
+| D36 | QA-5 §9 (Pareto n.º 1: detalle interno). dev-render implementó D23 c y AS-V19 no llega: 0° / 90° = 50,7/41,6 · 45,6/45,6 · 33,7/40,9 · 18,4/21,1 · 66,0/51,2 frente a ≥ 55 %. Causas medidas: alternos con ΔL\* < 8, velas de cuchillo sin paños y tapas de castillo lisas. Ambigüedades (a)–(e) | **AS-V19 ≥ 55 % en las 5 clases, sin excepción, y deja de ser provisional** (cierra la HIPÓTESIS de D23). Se calibra con Seafight sin su ruido JPEG: el barco del jugador da 48–59 % y Rackham, de velas oscuras, 59–69 %. **Receta (§9.1; ASSET-SPEC §8.1–8.2)**: tablas a ±7 de L\* del token de cubierta, `sail.alt` del jugador `#D0C8BA` y del pirata `#0D0D0F`, tablas en las tapas de castillos, paños de ≈ 0,7 m en cuadras y cangrejas, paños de ≈ 0,9 m en foques y latinas, y franja de portas de 1,0 m. La Fragata cabe en 2 370 tris porque la porta pasa a 1 quad y el cañón pierde la tapa interior (−256 tris). **Previsión (HIPÓTESIS; modelo validado con 40 medidas de dev-render, error máximo 2,67 puntos)**: 0° / 90° = 67,0/65,8 · 63,6/64,3 · 58,1/59,9 · 59,5/59,2 · 69,5/60,4. **(a) AS-V20** exige contraste local, no un L\* absoluto: cada porta debe romper la franja con ΔL\* ≥ 15 frente a los píxeles de franja que la rodean. Con la franja de 0,25·F, a N3 la franja mide ≈ 1 px y ni siquiera hay píxeles puros de franja junto a la porta (modelo: Balandra 1/4, Bergantín 0/6, Pirata 1/4). Por eso la franja pasa a 1,0 m centrada en la línea de cañones y contiene la porta de 0,8 m (modelo a N3: 4/4, 6/6, 8/8 con ΔL\* 39–51; Pirata 4/4 con 20–25; Mercante 0). Es la franja ocre con portas negras de los navíos de guerra, y se lee igual que las portas oscuras sobre casco claro de Seafight. **(b)** AS-V18 y AS-V19 se miden solo en 1440×900 con N1 a 1,0× (LOD0), y AS-V20 en 1440×900 con N3 (D28). En 390×844, LOD1 quita a propósito tablas, paños y portas (§7): a 2,3–2,8 px/m serían patrones de 1–2 px, que dan moiré y no detalle. Además, la referencia de Seafight es de escritorio. **(c)** Las rejillas (4, 2) del pirata y (2, 5) del mercante de §8.4 eran restos anteriores a D23, y dev-render hizo bien en aplicar D23. En LOD0, D36 las sustituye por la fórmula de paños; en LOD1 quedan (4, 3) y (4, 5). **(d)** Las velas de LOD1 siguen en `PlaneGeometry(w, h, 4, 3)` (franjas: 4, 5), no en 2×2. Las muescas del pirata necesitan vértices en u' = 0,25 y 0,75, y con 2 filas la panza forma un pico de ≈ 59° entre las dos mitades, más que el pliegue de 40°: saldría una arista horizontal (AS-V18). Con 3 filas son 36,5°. LOD1 usa ≤ 419 tris de 700–800 posibles. **(e)** Acepto los parámetros del arnés de AS-V18: borde de albedo con ΔE76 ≥ 2 dilatado ±1 px, vela visible con ≥ 50 px y caja ≥ 6 × 6, y líneas en k/6. Quedan escritos en AS-V18. Con paños de 4,3 px, las líneas horizontales sobre las velas quedan casi enteras en la máscara, y miden las verticales y el costado. Basta, porque una faceta de sombreado que cruce los paños aparece en las verticales. Pendiente de I2: la franja más ancha del pirata y del capitán baja un poco su fracción oscura (AD-28). La cañonera no tiene portas en el costado y conserva 0,30–0,55·F | §4.2, §4.2.1, §9.1, AD-25; ASSET-SPEC §5, §6, §7, §8.1, §8.2, §8.4, AS-V18–V20 |
 
 **Abiertas:**
 

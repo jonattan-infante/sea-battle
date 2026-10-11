@@ -171,7 +171,7 @@ Margen de 43 draw calls. Si alguna vez hay > 60 barcos, se pasa a un `InstancedM
 | Material por barco | Se clona por instancia de barco (mismo programa de shader, uniforms propios) para el destello de impacto `uHit` y el oscurecimiento `uDamage` (VFX-SPEC §5) vía `onBeforeCompile` |
 | Espacio de color | Los hex de ART-DIRECTION §4 son sRGB. **`COLOR_0` es lineal**: "COLOR_0 … acts as an additional linear multiplier to base color" ([glTF 2.0](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html)). En el procedural, `new THREE.Color(hex)` ya convierte a lineal (`ColorManagement.enabled = true` por defecto, `ColorManagement.js:21`), así que se escriben `c.r, c.g, c.b` en el atributo |
 | Máscara de borde (D18) | Atributo por vértice `_rim_mask` (escalar float; en el GLB se llama `_RIM_MASK`, que `GLTFLoader` pasa a minúsculas, `GLTFLoader.js:4836`). Vale **1** en el casco (*loft*, borda, castillos y camaretas) y **0** en todo lo demás (mástiles, vergas, botavaras, picos, bauprés, cofas, velas, cañones, portas, banderas, carga). Lo usa el borde de protección (VFX-SPEC §12) |
-| Color por pieza | Cada pieza tiene un único color; las caras de una pieza no mezclan colores. Excepciones: el casco (por banda, §8.1), las cajas con tapa (tapa = `deck`), las velas a franjas (por fila de vértices), las **tablas de cubierta** (`deck` / `deck.alt` por tira) y los **paneles de lona** (`sail` / `sail.alt` por columna) (D23). **Oclusión horneada** (D23): multiplicador de `COLOR_0` ×0,85 en la tira de cubierta junto a la borda, en la base de mástiles y castillos (primeros 0,4 m) y en el vértice inferior de la cara V2–V3 del casco |
+| Color por pieza | Cada pieza tiene un único color; las caras de una pieza no mezclan colores. Excepciones: el casco (por banda, §8.1), las cajas con tapa (tapa = `deck`), las velas a franjas (por fila de vértices), las **tablas de cubierta y de las tapas de castillos y camaretas** (`deck` / `deck.alt` por tira) y los **paños de lona** (`sail` / `sail.alt` por columna en cuadras y cangrejas, y por fila en foques y latinas) (D23, D36; recetas en §8.1–8.2). **Oclusión horneada** (D23): multiplicador de `COLOR_0` ×0,85 en la tira de cubierta junto a la borda, en la base de mástiles y castillos (primeros 0,4 m) y en el vértice inferior de la cara V2–V3 del casco |
 | Emisivos | No hay: los faroles y ventanas usan el vertex color `#FFE9A8`, que con el *tone mapping* se lee como luz |
 | Transparencia | Prohibida en los assets. Toda la transparencia es de VFX |
 | GLB futuro | `baseColorFactor` = 1 y (opcional) 1 atlas `baseColorTexture` en sRGB. Sin mapas de normales, rugosidad ni oclusión en el MVP. Si el GLB trae textura y vertex colors, se multiplican (comportamiento estándar de glTF) |
@@ -185,7 +185,7 @@ Margen de 43 draw calls. Si alguna vez hay > 60 barcos, se pasa a un `InstancedM
 | Criterio | Eslora proyectada en px = `L · ppm` (`ppm = camera.zoom`). Con una cámara ortográfica la distancia no cambia el tamaño, así que **no se usa `THREE.LOD`** |
 | Umbrales | LOD0 si `L·ppm ≥ 72`; LOD1 si `L·ppm < 64`; entre 64 y 72 se mantiene el actual (histéresis). Al aparecer un barco dentro de esa banda, arranca en LOD1 |
 | Resultado por defecto | Escritorio (6,20 ppm con N1; 5,04 con N3): todas las clases en LOD0. Móvil vertical con N1 (2,82 ppm): Balandra (45 px), Pirata (56) y Mercante (62) en LOD1; Bergantín (68, dentro de la banda) arranca en LOD1; Cañonera (79), Capitán (84) y Fragata (96) en LOD0. Con N3 (2,29 ppm): la Cañonera (64) y el Capitán (69) caen en la banda y arrancan en LOD1 |
-| Qué quita LOD1 | Cañones, portas, vergas (el borde superior de la vela hace de verga), cofas, faroles, ventanas, carga, barriles, tablas de cubierta y paneles de lona (D23). **Se quedan** el mortero de la cañonera y el estandarte del capitán, porque son rasgos de identidad (AD-28). El casco pasa a 5 estaciones (u = −0.5, −0.25, 0, +0.36, +0.5). **Las velas, los mástiles, los castillos y los colores de franja se quedan**: son la silueta y la facción |
+| Qué quita LOD1 | Cañones, portas, vergas (el borde superior de la vela hace de verga), cofas, faroles, ventanas, carga, barriles, tablas de cubierta y de las tapas de castillos y paños de lona (D23, D36). Las velas de LOD1 son lisas: cuadras en `PlaneGeometry(w, h, 4, 3)` (franjas del mercante: `(w, h, 4, 5)`) y velas de cuchillo en abanico (§8.2). No bajan a 2×2: las muescas del pirata necesitan vértices en u' = 0,25 y 0,75, y con 2 filas la panza forma un pico de ≈ 59° entre las dos mitades, más que el pliegue de 40°, que se vería como una arista (D36 d). **Se quedan** el mortero de la cañonera y el estandarte del capitán, porque son rasgos de identidad (AD-28). El casco pasa a 5 estaciones (u = −0.5, −0.25, 0, +0.36, +0.5). **Las velas, los mástiles, los castillos y los colores de franja se quedan**: son la silueta y la facción |
 | GLB | Nodos hermanos `<id>_lod0` y `<id>_lod1`. No se usa `MSFT_lod` (three no lo soporta de forma nativa) |
 
 ---
@@ -210,10 +210,13 @@ Cada barco = **casco por *loft*** (§8.1) + **aparejo** (§8.2) + **piezas** (§
  V0 (a·B/2, s·F)           ← canto de cubierta
  V1 x(y₁), y₁ = s·F − 0.30·F  ← arriba de la franja de portas
  V2 x(y₂), y₂ = s·F − 0.55·F  ← abajo de la franja
+   Con portas en el costado (D36): y₁ = s·F − (F − c_y − 0.5) · y₂ = s·F − (F − c_y + 0.5)
  V3 (b·B/2, 0)             ← flotación
  V4 (0, −k·D)              ← quilla (compartido entre bandas)
  x(y) = B/2 · (b + (a − b) · y / (s·F))   (interpolación lineal entre V3 y V0)
 ```
+
+**Franja de portas (D36)**: en las clases con portas en el costado (Balandra, Bergantín, Fragata, Pirata y Capitán), la franja mide **1,0 m** y se centra en la línea de cañones `c_y` (= `cannonY`) en la maestra (s = 1). Sigue el arrufo. Así **la porta de 0,8 m queda dentro de la franja**, con 0,1 m de franja arriba y abajo, y se lee como un hueco oscuro en un color claro (AS-V20). En la maestra, la franja va de 0,40 a 1,40 m en la Balandra (cubierta a 1,50), de 0,70 a 1,70 en el Bergantín (2,00), de 1,18 a 2,18 en la Fragata y el Capitán (2,80) y de 0,46 a 1,46 en el Pirata (1,60). El Mercante y la Cañonera (sin portas en el costado) conservan 0,30·F y 0,55·F. Con 0,25·F, a N3 la franja medía ≈ 1 px y la porta del Pirata no se distinguía del casco (D36 a).
 
 **Caras entre estaciones i → i+1** (por banda, todo quads de 2 triángulos):
 
@@ -228,7 +231,7 @@ Cada barco = **casco por *loft*** (§8.1) + **aparejo** (§8.2) + **piezas** (§
 
 **Tapas:** espejo de popa = polígono V5…V4…V5' triangulado con `THREE.ShapeUtils.triangulateShape`, en `hull`. Proa = lo mismo si `a > 0` en `u = +0.5`. Si `a = b = 0`, los quads degeneran a triángulos: se eliminan los de área < 1e-6.
 
-**Estaciones (D23)**: 13, con u cada 1/12. La tabla de perfiles se interpola con Catmull-Rom; antes eran las 7 filas con interpolación lineal, que daban 6 facetas a lo largo de la eslora. **Cubierta en tablas (D23)**: la cara V0 babor – V0 estribor se divide en `n = 2·ceil(B/2 / 0.5)` tiras longitudinales (≈ 0,5 m; 3,1 px con N1 en escritorio, ppm 6,20), alternando `deck` y `deck.alt`. ≈ 22 tris por tramo × 12 + tablas (`n` × 12 × 2) + tapas ≈ **530 tris en la Balandra y 730 en la Fragata** (LOD1: sin tablas y con las 5 estaciones de §7, ≈ 100).
+**Estaciones (D23)**: 13, con u cada 1/12. La tabla de perfiles se interpola con Catmull-Rom; antes eran las 7 filas con interpolación lineal, que daban 6 facetas a lo largo de la eslora. **Cubierta en tablas (D23)**: la cara V0 babor – V0 estribor se divide en `n = 2·ceil(B/2 / 0.5)` tiras longitudinales (≈ 0,5 m; 3,1 px con N1 en escritorio, ppm 6,20), alternando `deck` y `deck.alt`. Las dos tablas quedan a ±7 de L\* del color de cubierta (D36; hex en ART-DIRECTION §4.2.1): con −10, los bordes de tabla que el antialias parte entre dos píxeles no llegan a \|∇L\*\| ≥ 4. **Tapas de castillos y camaretas (D36, solo LOD0)**: la misma regla, con `n = 2·ceil(w/2 / 0.5)` tiras a lo largo de Z sobre el ancho `w` de la caja. Sin ellas, la Fragata a 0° solo ve cubierta lisa (causa 3 de dev-render). Las tapas de la carga siguen en un solo `deck`. ≈ 22 tris por tramo × 12 + tablas (`n` × 12 × 2) + tapas ≈ **530 tris en la Balandra y 730 en la Fragata** (LOD1: sin tablas y con las 5 estaciones de §7, ≈ 100).
 
 **Perfiles** (interpolación lineal entre filas):
 
@@ -249,15 +252,15 @@ Con `rm = 0.022·L` (radio de la base del mástil):
 |---|---|---|---|
 | Mástil | `CylinderGeometry(0.6·rm, rm, h − yd(u), 6)` | Base en `(0, yd(u_m), z_m)`. Con caída: grupo del mástil y sus velas rotado `rotation.x = −rake` alrededor de la base (la punta va a popa) | `mast` |
 | Verga (LOD0) | `CylinderGeometry(0.35·rm, 0.35·rm, w + 0.6, 5)`, `rotation.z = π/2` | Borde superior de cada vela cuadra, en `z_m + 0.35` | `mast` |
-| **Vela cuadra** | `PlaneGeometry(w, h, 4, 3)` (pirata: `(w, h, 4, 3)` con el borde raído; franjas: `(w, h, 4, 5)`). **Paneles (D23)**: columnas de caras alternas `sail` / `sail.alt` | Centro en `(0, y_b + h/2, z_m + 0.45)`. **Panza**: `z += 0.12·w·sin(πu')·sin(πv')`, con u', v' ∈ [0, 1] a lo ancho y alto. **Braza**: vela + verga rotadas `+20°` en Y alrededor del eje del mástil (todas igual) | `sail` |
-| Vela cangreja / cangrejo | 5 vértices en el plano YZ (x = 0): amura A, puño de driza B, pico C, puño de escota D y centro E desplazado `x += 0.08·pie` (panza) → 4 triángulos en abanico. **Apertura de 25°** (D12): vela + botavara + pico giran 25° alrededor del eje del mástil (gratil A→B) | Coordenadas (z, y) en la tabla de clase | `sail` |
+| **Vela cuadra** | LOD0 (D36): `PlaneGeometry(w, h, nx, 3)` con **paños de ≈ 0,7 m**: `nx = max(4, 2·round(w / 1.4))`. Pirata: `nx = max(4, 4·round(w / 2.8))`, múltiplo de 4 para que haya vértices en u' = 0,25 y 0,75 (borde raído). Franjas del mercante: 5 filas. Capitán: 4 filas, con la inferior roja. Las columnas impares van en `sail.alt`; en el mercante, solo en las filas crema. LOD1: `(w, h, 4, 3)` (franjas: `(4, 5)`), lisa. Con 4,3 px por paño a N1, cada borde de paño cuenta en AS-V19 | Centro en `(0, y_b + h/2, z_m + 0.45)`. **Panza**: `z += 0.12·w·sin(πu')·sin(πv')`, con u', v' ∈ [0, 1] a lo ancho y alto. **Braza**: vela + verga rotadas `+20°` en Y alrededor del eje del mástil (todas igual) | `sail` / `sail.alt` |
+| Vela cangreja / cangrejo | LOD0 (D36): **parche bilineal** en el plano YZ (x = 0) sobre amura A, puño de driza B, pico C y puño de escota D: `P(u, v) = (1−v)·((1−u)·A + u·D) + v·((1−u)·B + u·C)`, más la panza `x += 0.08·|AD|·sin(πu)·sin(πv)`. Rejilla de `nu = max(2, round(|AD| / 0.7))` columnas (paños casi verticales, alternos `sail` / `sail.alt`) × 3 filas. LOD1: los 4 triángulos en abanico desde el centro E desplazado `x += 0.08·|AD|`, lisa. **Apertura de 25°** (D12): vela + botavara + pico giran 25° alrededor del eje del mástil (gratil A→B) | Coordenadas (z, y) en la tabla de clase | `sail` / `sail.alt` |
 | Botavara y pico (LOD0) | `CylinderGeometry(0.3·rm, 0.3·rm, len, 5)` alineados de A→D y de B→C | — | `mast` |
-| Vela latina | Triángulo A (amura) · B (escota) · C (pico) + centro con panza `0.06·len`. **Apertura de 25°** alrededor del eje vertical que pasa por A, con la entena incluida (D12) | Tabla de clase | `sail` |
-| Foque | Triángulo: puño de driza H, amura T (punta del bauprés o un punto intermedio) y puño de escota C, + centro con panza `0.06·\|HT\|`. **Apertura de 25°** alrededor del estay T→H (D12) | Tabla de clase | `sail` |
+| Vela latina | LOD0 (D36): el parche de la cangreja con A = amura, D = escota B y los dos vértices superiores en el pico C (los triángulos degenerados se eliminan). Lleva 3 columnas × `nv = max(2, round(|AC| / 0.9))` **filas paralelas al pujamen**, alternas (corte horizontal), y panza `0.06·|AC|·sin(πu)·sin(πv)`. LOD1: triángulo A · B · C + centro con panza `0.06·len`, liso. **Apertura de 25°** alrededor del eje vertical que pasa por A, con la entena incluida (D12) | Tabla de clase | `sail` / `sail.alt` |
+| Foque | LOD0 (D36): el mismo parche con A = amura T, D = escota C y los dos vértices superiores en el puño de driza H. Lleva 3 columnas × `nv = max(2, round(|TH| / 0.9))` filas paralelas al pujamen, alternas, y panza `0.06·|HT|·sin·sin`. LOD1: triángulo H · T · C + centro con panza `0.06·\|HT\|`, liso. **Apertura de 25°** alrededor del estay T→H (D12) | Tabla de clase | `sail` / `sail.alt` |
 | Bauprés | `CylinderGeometry(0.25·rm, 0.45·rm, bs + 1, 5)`, `rotation.x = +70°` (eje a 20° sobre el horizonte hacia +Z) | Arranque `S = (0, 1.25·F, L/2 − 1)`; centro = `S + (0, 0.342, 0.940)·(bs + 1)/2`; punta `T = S + (0, 0.342, 0.940)·(bs + 1)` | `mast` |
 | Cofa (LOD0) | `CylinderGeometry(0.045·L, 0.04·L, 0.5, 6)` | En el mástil, a la altura del borde superior de la vela baja + 0,1 | `rail` |
-| Cañón (LOD0) | Balandra `(0.22, 0.28, 1.2, 6)` · Bergantín `(0.24, 0.30, 1.4, 6)` · Fragata `(0.26, 0.32, 1.6, 6)` · Pirata `(0.23, 0.29, 1.3, 6)`; `rotation.z = π/2`. Radios ≈ ×1,7 (D23): con los de antes, 0,12–0,21 m ocupaban 1 px a 1,0×. Exageración deliberada, como en los sprites de Seafight | La boca en el socket; centro = socket − signo·(len/2) en X | `cannon` |
-| Porta (LOD0) | `BoxGeometry(0.06, 0.8, 0.8)` (D23; antes 0,5 × 0,6: 1,5 px de alto a 1,0×). Debe quedar bajo el canto de cubierta: `0.60·F + 0.4 ≤ yd(u)` | `x = ±(a(u)·B/2 + 0.02)`, misma y, z que el cañón | `gunport` |
+| Cañón (LOD0) | Balandra `(0.22, 0.28, 1.2, 6)` · Bergantín `(0.24, 0.30, 1.4, 6)` · Fragata `(0.26, 0.32, 1.6, 6)` · Pirata `(0.23, 0.29, 1.3, 6)`; `rotation.z = π/2`. Radios ≈ ×1,7 (D23): con los de antes, 0,12–0,21 m ocupaban 1 px a 1,0×. Exageración deliberada, como en los sprites de Seafight. **Sin la tapa interior** (D36), que queda dentro del casco: 18 tris en lugar de 24 | La boca en el socket; centro = socket − signo·(len/2) en X | `cannon` |
+| Porta (LOD0) | **Un quad de 0,8 × 0,8 m** (D36; 2 tris). Antes era `BoxGeometry(0.06, 0.8, 0.8)`, de 12 tris, de los que solo se ve la cara exterior. Entre portas y cañones, la Fragata ahorra 256 tris y cabe en su presupuesto con los paños. Va dentro de la franja de portas (§8.1) y bajo el canto de cubierta: `0.60·F + 0.4 ≤ yd(u)` | Cara exterior en `x = ±(a(u)·B/2 + 0.05)`, misma y, z que el cañón | `gunport` |
 | Bandera | `PlaneGeometry(1.0·kf, 0.65·kf)`, `kf = L/16`, en el plano YZ (`rotation.y = π/2`) | Punta del palo mayor, desplazada `−Z` media anchura (ondea a popa) | `flag` |
 | Gallardete (jugador) | Triángulo de `2.4·kf × 0.5·kf` en el plano YZ | Punta del palo mayor | `flag` |
 
@@ -299,7 +302,7 @@ Notación: vela cuadra = `w × h @ y_b` (ancho × alto en la altura de su borde 
 | Cañones por banda | 4: z = −4,5, −1,5, +1,5, +4,5 → x = ±2,48, ±2,50, ±2,47, ±2,15; y = 0,9 |
 | Bandera | Gallardete `flag` |
 | `extras` | `sb_radius` 9,0 · `sb_mast_height` 14,5 · `sb_pick` [3,2, 14,5, 8,0] |
-| Tris estimados | LOD0 ≈ 560 · LOD1 ≈ 190 |
+| Tris estimados | LOD0 ≈ 560 · LOD1 ≈ 190. Con D36 (modelo, `d36-modelo/out/FIN.log`): LOD0 985 · LOD1 196 |
 
 #### `ship_brigantine` — Bergantín (perfil estándar)
 | Parámetro | Valor |
@@ -313,7 +316,7 @@ Notación: vela cuadra = `w × h @ y_b` (ancho × alto en la altura de su borde 
 | Cofa | Trinquete, y = 8,1 |
 | Cañones por banda | 6: z = −7,5, −4,5, −1,5, +1,5, +4,5, +7,5; y = 1,2 |
 | `extras` | `sb_radius` 13,0 · `sb_mast_height` 19,5 · `sb_pick` [4,8, 19,5, 12,0] |
-| Tris estimados | LOD0 ≈ 900 · LOD1 ≈ 230 |
+| Tris estimados | LOD0 ≈ 900 · LOD1 ≈ 230. Con D36: LOD0 1 473 · LOD1 298 |
 
 #### `ship_frigate` — Fragata (perfil estándar)
 | Parámetro | Valor |
@@ -332,28 +335,28 @@ Notación: vela cuadra = `w × h @ y_b` (ancho × alto en la altura de su borde 
 | Borda | Color `trim` (filete dorado) |
 | Cañones por banda | 8: z = −11,5, −8,5, −5,5, −2,5, +0,5, +3,5, +6,5, +9,5; y = 1,68 |
 | `extras` | `sb_radius` 18,0 · `sb_mast_height` 27,0 · `sb_pick` [7,0, 27,0, 17,0] |
-| Tris estimados | LOD0 ≈ 1 200 · LOD1 ≈ 270 |
+| Tris estimados | LOD0 ≈ 1 200 · LOD1 ≈ 270. Con D36: LOD0 2 370 (≤ 2 500 gracias a la porta de 1 quad y al cañón sin tapa interior, §8.2) · LOD1 419 |
 
 #### `npc_pirate` — Pirata (perfil fino, caída 8°)
 | Parámetro | Valor |
 |---|---|
 | L / B / F / D / bauprés / railH | 20 / 5,0 / 1,6 / 0,9 / 6,0 / 0,56 m |
 | Mástiles | Trinquete z = +4,5, h = 16 · Mayor z = −2,5, h = 17,5 · `rake` = 8° |
-| Trinquete (cuadras con muescas) | 7,6 × 3,2 @ 3,6 · 6,0 × 2,8 @ 7,2. `PlaneGeometry(w, h, 4, 2)`: los vértices inferiores en u' = 0,25 y 0,75 suben 0,6 m (borde raído) |
+| Trinquete (cuadras con muescas) | 7,6 × 3,2 @ 3,6 · 6,0 × 2,8 @ 7,2. LOD0: `PlaneGeometry(w, h, nx, 3)` con `nx = max(4, 4·round(w / 2.8))` (12 y 8 columnas; D36). LOD1: `(w, h, 4, 3)`. La rejilla `(w, h, 4, 2)` que había aquí era anterior a D23 (D36 c). Los vértices inferiores en u' = 0,25 y 0,75 suben 0,6 m (borde raído) |
 | Mayor | Cangreja A (−2,9, 3,4) · B (−2,9, 12,0) · C (−9,4, 13,4) · D (−10,4, 3,9) |
 | Foque | H (0, 13,1, 4,8) · T (0, 4,39, 15,58) · C (0, 2,96, 9,65) |
 | Colores | `hull #2A2523` · `band #B3261E` · `bottom #1C1817` · `deck #6E4B30` · `rail/mast #3A2A20` · `sail #2B2A2E` |
 | Bandera | `#111111` de 1,25 × 0,81 + cuadro `#F5F1E6` de 0,4 × 0,4 en las 2 caras (desplazado ±0,01 en X) |
 | Cañones por banda | 4: z = −5,6, −2,4, +0,8, +4,0; y = 0,96 |
 | `extras` | `sb_radius` 11,0 · `sb_mast_height` 17,5 · `sb_pick` [4,1, 17,5, 10,0] |
-| Tris estimados | LOD0 ≈ 640 · LOD1 ≈ 200 |
+| Tris estimados | LOD0 ≈ 640 · LOD1 ≈ 200. Con D36: LOD0 1 077 · LOD1 236 |
 
 #### `npc_merchant` — Mercante (perfil lleno)
 | Parámetro | Valor |
 |---|---|
 | L / B / F / D / bauprés / railH | 22 / 7,6 / 2,4 / 1,2 / 4,0 / 0,84 m |
 | Mástiles | Trinquete z = +5,0, h = 16 · Mayor z = −2,5, h = 17,5 · Mesana z = −8,0, h = 12 (base sobre el castillo, y = 4,65) |
-| Trinquete (a franjas) | 8,6 × 3,6 @ 4,6 · 7,0 × 3,0 @ 8,6. `PlaneGeometry(w, h, 2, 5)`: las bandas de caras 1 y 3, **contando desde 0** desde arriba, en `#2F7FB8`; el resto en `#EADFC6` (patrón crema-azul-crema-azul-crema; D9) |
+| Trinquete (a franjas) | 8,6 × 3,6 @ 4,6 · 7,0 × 3,0 @ 8,6. LOD0: `PlaneGeometry(w, h, nx, 5)` con `nx = max(4, 2·round(w / 1.4))` (D36). LOD1: `(w, h, 4, 5)`. La rejilla `(w, h, 2, 5)` que había aquí era anterior a D23 (D36 c). Las bandas de caras 1 y 3, **contando desde 0** desde arriba, en `#2F7FB8`; el resto en `#EADFC6`, con las columnas impares en `sail.alt` (patrón crema-azul-crema-azul-crema; D9) |
 | Mayor (a franjas) | 9,2 × 3,8 @ 4,6 · 7,4 × 3,2 @ 8,8 |
 | Mesana latina | A (−5,0, 4,5) · B (−11,4, 4,8) · C (−12,4, 11,5); entena de A a C |
 | Foque (D12) | H (0, 13,1, 5,3) · T = punta del bauprés (0, 4,71, 14,7) · C (0, 3,96, 9,53) |
@@ -363,24 +366,24 @@ Notación: vela cuadra = `w × h @ y_b` (ancho × alto en la altura de su borde 
 | Bandera | `#2F7FB8` + cuadro `#F5F1E6` |
 | Cañones por banda | 0 (sin sockets de cañón) |
 | `extras` | `sb_radius` 12,0 · `sb_mast_height` 17,5 · `sb_pick` [4,9, 17,5, 11,0] |
-| Tris estimados | LOD0 ≈ 620 · LOD1 ≈ 260 |
+| Tris estimados | LOD0 ≈ 620 · LOD1 ≈ 260. Con D36: LOD0 1 645 · LOD1 405 |
 
 #### `npc_pirate_gunboat` — Cañonera pirata (I2; perfil chato, D25)
 | Parámetro | Valor |
 |---|---|
 | L / B / F / D / bauprés / railH | 28 / 10,0 / 1,5 / 1,2 / 3,0 / 0,9 m |
 | Mástil | Uno: z = −1,0, h = 16, `rake` = 4° |
-| Velas (negras `#2B2A2E`) | Cuadra 11,0 × 5,6 @ 3,4 · gavia 7,0 × 2,6 @ 9,6 (`PlaneGeometry(w, h, 4, 3)`, paneles `sail.alt`) · foque H (0, 12,0, −0,6) · T = punta del bauprés · C (0, 2,6, 8,0) |
+| Velas (negras `#2B2A2E`) | Cuadra 11,0 × 5,6 @ 3,4 · gavia 7,0 × 2,6 @ 9,6 (paños de §8.2 en LOD0, D36; `PlaneGeometry(w, h, 4, 3)` en LOD1) · foque H (0, 12,0, −0,6) · T = punta del bauprés · C (0, 2,6, 8,0) |
 | Batería | 6 cañones por banda **sobre cubierta**: `CylinderGeometry(0.34, 0.40, 2.4, 6)` `cannon`, eje en X apuntando afuera, sobre una cureña `Box(1.0, 0.5, 1.4)` `rail`; centro en x = ±(a(u)·B/2 − 1.0), y = yd + 0.45, z = −10,0, −6,0, −2,0, +2,0, +6,0, +10,0. Los sockets de cañón, en las bocas |
 | Mortero | `CylinderGeometry(1.1, 1.3, 1.2, 8)` `cannon` en (0, yd + 0,6, +3,5): disco oscuro de 2,6 m visto desde arriba |
-| Colores | `hull #2A2523` · `band #B3261E` · `bottom #1C1817` · `deck #9A8466` / `deck.alt #857053` (albedo `#907C61` / `#7D694F`) · `rail/mast #3A2A20` |
+| Colores | `hull #2A2523` · `band #B3261E` · `bottom #1C1817` · cubierta `#9A8466` en pantalla, con tablas a ±7 de L\* (D36): `deck #AD9678` / `deck.alt #877255` (albedo `#A28D72` / `#7E6B51`). La franja de portas sigue en 0,30–0,55·F, porque sus cañones van sobre cubierta · `rail/mast #3A2A20` |
 | Bandera | La del pirata (negra con cuadro blanco), `kf = L/16` |
 | Sockets de fuego | Fórmula de §3; solape con cureñas y mortero ≤ 1 % (AS-V17) |
 | `extras` | `sb_radius` 14,0 · `sb_mast_height` 16,0 · `sb_pick` [5,5, 16,0, 13,0] |
 | Tris estimados | LOD0 ≈ 1 300 · LOD1 ≈ 300 |
 
 #### `npc_pirate_captain` — Capitán pirata (I2, jefe; perfil fino, caída 6°)
-L / B / F / D / bauprés = 30 / 8,0 / 2,8 / 1,5 / 8,0 (eslora del GDD §9). Mástiles: +9,0 / h 21; 0 / h 24; −8,5 / h 18. Cuadras negras `PlaneGeometry(w, h, 4, 4)` con la fila inferior en `#B3261E`: trinquete 10,4 × 4,2 @ 5,2 · 8,4 × 3,6 @ 9,8; mayor 11,4 × 4,6 @ 5,2 · 9,4 × 4,0 @ 10,2 · 7,0 × 2,8 @ 14,6; mesana con cangreja A (−8,9, 5,2) · B (−8,9, 12,0) · C (−15,0, 13,4) · D (−16,4, 5,8). Alcázar `Box(6.4, 1.6, 8.0)` en (0, 3,96, −11,0). Mascarón `Box(0.6, 1.0, 1.2)` `#D9A93F` en (0, 3,2, 15,3). 6 cañones por banda: z = −8,5, −5,1, −1,7, +1,7, +5,1, +8,5; y = 1,68. **Estandarte** (rasgo exclusivo, D25): `PlaneGeometry(6.0, 4.0)` `#F5F1E6` con un cuadro `#111111` de 2,0 × 2,0 m centrado (separado ±0,01 en X a las dos caras), en la punta del palo mayor (y = 24) y desplazado −Z media anchura. **Regala** en `trim #D9A93F`. `sb_radius` 16 · `sb_mast_height` 24 · `sb_pick` [6,0, 24,0, 15,0].
+L / B / F / D / bauprés = 30 / 8,0 / 2,8 / 1,5 / 8,0 (eslora del GDD §9). Mástiles: +9,0 / h 21; 0 / h 24; −8,5 / h 18. Cuadras negras con la fila inferior en `#B3261E`: en LOD0, `PlaneGeometry(w, h, nx, 4)` con los paños de §8.2 (D36) alternos en las filas negras; en LOD1, `(w, h, 4, 4)`. Franja de portas de 1,0 m (§8.1): trinquete 10,4 × 4,2 @ 5,2 · 8,4 × 3,6 @ 9,8; mayor 11,4 × 4,6 @ 5,2 · 9,4 × 4,0 @ 10,2 · 7,0 × 2,8 @ 14,6; mesana con cangreja A (−8,9, 5,2) · B (−8,9, 12,0) · C (−15,0, 13,4) · D (−16,4, 5,8). Alcázar `Box(6.4, 1.6, 8.0)` en (0, 3,96, −11,0). Mascarón `Box(0.6, 1.0, 1.2)` `#D9A93F` en (0, 3,2, 15,3). 6 cañones por banda: z = −8,5, −5,1, −1,7, +1,7, +5,1, +8,5; y = 1,68. **Estandarte** (rasgo exclusivo, D25): `PlaneGeometry(6.0, 4.0)` `#F5F1E6` con un cuadro `#111111` de 2,0 × 2,0 m centrado (separado ±0,01 en X a las dos caras), en la punta del palo mayor (y = 24) y desplazado −Z media anchura. **Regala** en `trim #D9A93F`. `sb_radius` 16 · `sb_mast_height` 24 · `sb_pick` [6,0, 24,0, 15,0].
 
 ---
 
@@ -465,9 +468,9 @@ Se ejecuta con un script de desarrollo (`npm run assets:validate`, dependencia d
 | AS-V15 | El procedural cumple el contrato: AS-V02…V09 en Jest para las 5 recetas P0 | `npm test` en verde |
 | AS-V16 | Islas: radio visual en la flotación de cada columna de vértices de la playa; y ningún vértice sobre el agua (y > 0) de la isla, rocas, muelles o palmeras fuera de r + 0,5 m en XZ | Playa entre 0,94r y 1,00r en el 100 %; 0 vértices fuera |
 | AS-V17 | **Fuego sin obstáculos** (D22): para cada `socket_fire_NN`, la elipse de semiejes 0,06·L (eslora) × 0,15·B (manga) no se solapa en planta con ningún objeto de cubierta que sobresalga > 0,5 m de la superficie del socket (carga, barriles, camaretas, castillos, botes). Quedan fuera mástiles, velas y jarcia: no tapan el fuego porque las llamas llevan el sesgo de profundidad (VFX-SPEC §0.3, forma 8; D24). Si el socket cae sobre una superestructura, va en su tapa + 0,3 m | Solape ≤ 5 % del área de cada elipse |
-| AS-V18 | **Sin facetas** (D23): capturas de cada clase a rumbos 0° y 90° con el zoom por defecto, más la misma vista con una pasada de solo albedo (vertex colors sin luz) para localizar los bordes de color. En 5 líneas horizontales y 5 verticales sobre el costado y sobre cada vela visible se cuentan los escalones \|ΔL\*\| ≥ 5 entre píxeles vecinos que no están a ±1 px de un borde de la pasada de albedo | ≤ 1 escalón por línea; media ≤ 0,5 |
-| AS-V19 | **Textura interna** (D23): mismas capturas. Silueta = píxeles que cambian (ΔE76 ≥ 3) al ocultar el barco en el mismo frame, erosionada 1 px; se cuenta la fracción de píxeles interiores con \|∇L\*\| ≥ 4 (diferencia central). Seafight: 70 % (barco del jugador) y 80 % (galeón). Hoy: 30–49 % | ≥ 55 % en cada clase y rumbo (provisional; se calibra con el primer render y nunca baja de 50 %) |
-| AS-V20 | **Cañones legibles** (D23): captura a 90° y 270° con el zoom por defecto; manchas oscuras (L\* ≤ 30) de ≥ 3 × 2 px sobre el costado visible | Número = cañones por banda de la clase (4 / 6 / 8; Pirata 4; Mercante 0) |
+| AS-V18 | **Sin facetas** (D23, D36): capturas de cada clase a rumbos 0° y 90° en **1440×900 con N1 a 1,0×** (6,20 px/m; todas en LOD0), más la misma vista con una pasada de solo albedo (vertex colors sin luz) para localizar los bordes de color. Parámetros del arnés (D36 e): borde de albedo = ΔE76 ≥ 2 con un vecino, dilatado ±1 px (8 vecinos); región = cada vela visible y el costado, con ≥ 50 px y caja ≥ 6 × 6; 5 líneas horizontales y 5 verticales en k/6 de la caja (k = 1…5); escalón = \|ΔL\*\| ≥ 5 entre píxeles vecinos de la misma región fuera de la máscara de bordes. Con paños de 4,3 px, las líneas horizontales sobre las velas quedan casi enteras en la máscara: miden las verticales y el costado. No se mide en 390×844 (D36 b) | ≤ 1 escalón por línea; media ≤ 0,5 |
+| AS-V19 | **Textura interna** (D23, D36): las capturas de AS-V18 (1440×900, N1 a 1,0×, rumbos 0° y 90°), 3 por rumbo separadas 0,5 s. Silueta = píxeles que cambian (ΔE76 ≥ 3) al ocultar el barco en el mismo frame, erosionada 1 px (4 vecinos); se cuenta la fracción de píxeles interiores con \|∇L\*\| ≥ 4 (diferencia central). 180° y 270° se registran sin asertar. No se mide en 390×844 (D36 b). Calibración (ART-DIRECTION §9.1): Seafight da 70 % (jugador) y 80 % (Rackham) tal cual, y 48–59 % y 59–69 % sin el ruido JPEG. Con D23: 18–66 %. Previsión con D36: 58,1–69,5 % en 0° y 90° (modelo, HIPÓTESIS) | Media de las 3 capturas ≥ 55 % en cada clase y rumbo (definitivo, D36) |
+| AS-V20 | **Cañones legibles** (D23, D36): rumbos 90° y 270° en **1440×900 con N3 a 1,0×** (5,04 px/m, D28), 3 capturas. Componentes conexas (8 vecinos) de píxeles de cañón o porta del pase de ids, con caja ≥ 2 × 2 px y a ≤ 3 px de píxeles de franja (pase de albedo a ΔE76 ≤ 8 de `hull.band`). **Contraste** = mediana de L\* de esos píxeles de franja en la captura − mediana de L\* de la componente. No se usa un L\* absoluto, porque el casco del jugador (L\* 22) y el del pirata (15) ya quedan por debajo de 30 (D36 a). No se mide en 390×844: LOD1 quita cañones y portas (§7). Previsión con la franja de 1,0 m (modelo, N3): 4/4, 6/6 y 8/8 con contraste 39–51; Pirata 4/4 con 20–25; Mercante 0. Con la franja de 0,25·F: 1/4, 0/6 y 1/4 | En cada captura, componentes con contraste ≥ 15 = cañones por banda de la clase (4 / 6 / 8; Pirata 4); Mercante, 0 componentes |
 
 ---
 
