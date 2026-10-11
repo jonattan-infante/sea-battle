@@ -7,7 +7,7 @@
 ## 0. Decisiones clave
 
 1. **Cámara ortográfica a 55° de elevación, con el norte (−Z) arriba y sin rotación isométrica a 45°.** Sigue al barco propio de forma rígida y no se limita al borde del mapa (AC-23).
-2. **Zoom por defecto calculado** para que el círculo de 80 m quepa en el área libre de HUD: **5,04 px/m** en escritorio y **2,29 px/m** en móvil. Tiene 3 niveles de extensión visible: 0,7× (más cerca), 1,0× y 1,5× (más lejos) (AC-24, AC-25).
+2. **Zoom por defecto calculado** para que el círculo de alcance de radio R = máx(alcance del cañón propio, 65 m) quepa en el área libre de HUD (U8): con el cañón inicial, **6,20 px/m** en escritorio y **2,82 px/m** en móvil (con N3, 5,04 y 2,29). Tiene 3 niveles de extensión visible: 0,7× (más cerca), 1,0× y 1,5× (más lejos) (AC-24, AC-25).
 3. **Océano de valor medio (#1A5F86, L\* 38).** No es el azul marino casi negro de Seafight (#03243D): las velas negras del pirata y los cascos oscuros necesitan contraste de valor.
 4. **Se identifica por 3 canales redundantes**, nunca solo por el color: la **silueta** da la clase, el **valor de las velas** la facción (negras = pirata, claras = resto) y un **icono + color en la etiqueta**. El par de colores hostil/pasivo es coral #FF7A7A / cielo #6CC3F5, que se distingue con las 3 formas de daltonismo (§4.4).
 5. **Etiquetas debajo del casco** (como en Seafight), sobre una placa oscura al 85 %. El contraste es ≥ 4,5:1 sobre agua, arena o espuma, y un *declutter* garantiza que no se solapen nunca.
@@ -262,7 +262,7 @@ top/bottom = reserva de HUD del layout (§12): escritorio 120/108 · móvil vert
 | **65 (propuesta con N1)** | **6,20** · 65 × 114 m | 99 / 124 / 174 / 186 / 211 | **1 980 px** (+51 %) | 2,82 · 133 × 65 m · 45 / 79 / 84 | Todos (pirata 55, cañonera y capitán 65) |
 | 60 | 6,71 · 60 × 105 m | 107 / 134 / 188 / 201 / 228 | 2 330 px | 3,05 · 122 × 60 m · 49 / 85 / 92 | ✗ Cañonera y capitán disparan desde fuera |
 
-Con la propuesta: cañón N1 → R 65 (+23 % de eslora en px frente a hoy); N2 → R 70 (+14 %); N3 → R 80 (igual que hoy). Lo que se pierde con N1 es ver entre 65 y 80 m hacia arriba y abajo. A los lados se siguen viendo 114 m en escritorio. La cañonera detecta a 80 m y se acerca: se ve a los lados desde 114 m y arriba o abajo desde 65 m, que es cuando ya puede disparar.
+Con la decisión: cañón N1 → R 65 (+23 % de eslora en px frente a hoy); N2 → R 70 (+14 %); N3 → R 80 (igual que hoy). Lo que se pierde con N1 es ver entre 65 y 80 m hacia arriba y abajo. A los lados se siguen viendo 114 m en escritorio. La cañonera detecta a 80 m y se acerca: se ve a los lados desde 114 m y arriba o abajo desde 65 m, que es cuando ya puede disparar.
 
 **No hay que codificar 5,04 ni 2,29.** ppm₀ se calcula en tiempo de ejecución con la fórmula, a partir de θ y de las reservas `top`/`bottom` definidas como constantes del layout del HUD. En escritorio, el eje vertical del círculo queda exactamente en el borde del área útil (660 px frente a 660 px). Por eso cambiar θ o la altura del HUD solo exige actualizar esas constantes, y AD-06 lo verifica.
 
@@ -444,7 +444,7 @@ y:104 └───────────────────────�
                                      y:96 ┌ Toast / Zona segura 360×36 ┐            │              │
                                           └────────────────────────────┘            └──────────────┘ y:248
                                                                                      Sector E5 · X 12 Z −40
-                           ··· círculo de 80 m (r 403 px × 330 px) ···
+                     ··· círculo de alcance R (r 403 × 330 px con cualquier R: manda el eje vertical) ···
                                          ⛵ (centro 720, 450)
 
 y:772 ┌─ Feed (P1) 360×112 ──┐            ┌──── Acciones 336×76 ────┐
@@ -478,7 +478,7 @@ y:60 ┌─ Objetivo 262×48 ───────────────┐ �
 y:108└─────────────────────────────────┘ └─────────┘ y:148
 y:156      ┌ Toast / Zona segura 358×36 ┐
            └────────────────────────────┘
-                 ··· círculo de 80 m (r 183 × 150 px) ···
+          ··· círculo de alcance R (r 183 × 150 px con cualquier R: manda el ancho) ···
                               ⛵ (195, 422)
                                                    ┌Rep 52┐ y:684
                                                    └──────┘
@@ -501,7 +501,7 @@ y:776└──52──┘                       └──────┘  └─
 Los botones táctiles miden ≥ 48×48 px y están separados ≥ 8 px. Ninguno se solapa con el panel ni con el minimapa (AC-80).
 
 ### 12.3 Móvil horizontal 844×390
-La columna izquierda (x 12–264) tiene la barra de vida 252×44 y debajo el objetivo 252×48. La derecha (x 580–832) tiene el oro y el minimapa de 72×72 arriba y los botones abajo: Atacar 72×72 en (748, 306), Objetivo y Reparar de 52 en (684, 326) y (768, 238), y Puerto en (12, 326). El centro queda libre para el juego. El círculo de 80 m puede pasar por debajo de las esquinas (AC-24 solo exige 390×844 en vertical).
+La columna izquierda (x 12–264) tiene la barra de vida 252×44 y debajo el objetivo 252×48. La derecha (x 580–832) tiene el oro y el minimapa de 72×72 arriba y los botones abajo: Atacar 72×72 en (748, 306), Objetivo y Reparar de 52 en (684, 326) y (768, 238), y Puerto en (12, 326). El centro queda libre para el juego. El círculo de alcance R puede pasar por debajo de las esquinas (AC-24 solo exige 1440×900 y 390×844).
 
 ### 12.4 Estados del HUD
 | Estado (GDD §7–8) | Línea del panel del jugador | Ranura Atacar | Placa propia |
@@ -663,7 +663,7 @@ Captura estándar = `npm run qa:capture` con zoom 1,0×, sin modales y el barco 
 | AD-03 | El agua está viva | Diferencia absoluta media entre dos capturas separadas 1 s en un parche de océano | ≥ 1,5/255 y ≤ 12/255 | — |
 | AD-04 | Aguas someras visibles | L\* medio de un parche de 10×10 px a 5 m de la costa de una isla | ≥ 50 | — |
 | AD-05 | Cámara | Leer `camera` en e2e: `isOrthographicCamera`, ángulo de elevación y dirección de vista | Ortográfica · 55° ±0,5 · vista con componente X = 0 y Z < 0 | AC-23 |
-| AD-06 | Círculo de 80 m en pantalla | Dibujar un círculo de 80 m en el mundo y proyectarlo | Cabe dentro de [12, W−12] × [top, H−bottom] de §6.2 (±1 px) en 1440×900 y 390×844 | AC-24 |
+| AD-06 | Círculo de alcance en pantalla (U8) | Dibujar en el mundo un círculo de radio R = máx(alcance del cañón propio, 65 m) para N1, N2 y N3 (65 / 70 / 80 m) y proyectarlo con el ppm₀ de cada nivel | En 1440×900 y 390×844 cabe dentro de [12, W−12] × [top, H−bottom] de §6.2, y el eje que manda toca su borde (±1 px): el vertical en escritorio y el horizontal en móvil vertical | AC-24 |
 | AD-07 | Barco centrado | Proyección del origen del barco propio en 10 frames navegando | A ≤ 4 px del centro del viewport, salvo durante la sacudida (≤ 4 px más) | AC-23 |
 | AD-08 | Zoom | `ppm₀ / camera.zoom` tras girar la rueda | Exactamente {0,7; 1,0; 1,5}; 0,7 = más cerca | AC-25 |
 | AD-09 | Tamaño de los barcos | Ancho proyectado de lado de una Balandra con el zoom por defecto | ≥ 78 px en escritorio y ≥ 35 px en móvil | — |
