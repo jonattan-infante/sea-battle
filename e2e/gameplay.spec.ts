@@ -1,5 +1,6 @@
-import { expect, Page, test } from '@playwright/test';
+import { Browser, expect, Page, test } from '@playwright/test';
 import { PORTS } from '../playwright.config';
+import { HINTS } from '../src/client/hints';
 import { SHIP_CLASSES } from '../src/game/constants';
 import { AMBUSH_POINT, BLIND_GUNNER_POINT, SHOWCASE_POINT } from '../server/scenarios';
 import { clickWater, dialogsOf, enterGame, hud, me, ships, trackSocket, waitFor } from './helpers';
@@ -221,6 +222,97 @@ async function expectToastsClear(page: Page, label: string, count: number) {
   }
 }
 
+// AC-110 (ART-DIRECTION §12.3): en horizontal la ranura alta queda entre la columna izquierda (jugador y objetivo) y el
+// oro, que la esquiva dinámica no cuenta como obstáculos. Cada una de las pistas, en las dos ranuras, cabe sin pisar
+// ningún panel ni botón. Se pinta cada texto en la pista y se mide en el mismo tick (el ticker de la pista no puede
+// intercalarse); al final se deja el texto y la ranura como estaban
+async function expectEveryHintFitsLandscape(page: Page, label: string) {
+  const ids = ['player-frame', 'target-frame', 'player-gold-panel', 'minimap', 'm-port', 'm-target', 'm-attack', 'm-repair'];
+  const rows = await page.evaluate(
+    ([texts, ids]) => {
+      const el = document.querySelector<HTMLElement>('[data-testid="hint"]')!;
+      const span = el.querySelector<HTMLElement>('.hint-touch')!;
+      const before = { text: span.textContent, cls: el.className };
+      const out: { text: string; slot: string; box: number[]; hits: string[] }[] = [];
+      for (const alt of [false, true]) for (const text of texts) {
+        span.textContent = text;
+        el.classList.toggle('is-alt', alt);
+        el.classList.remove('is-hidden');
+        const b = el.getBoundingClientRect();
+        const hits = ids.filter((id) => {
+          const o = document.querySelector(`[data-testid="${id}"]`)?.getBoundingClientRect();
+          return !!o && o.width > 0 && b.left < o.right && o.left < b.right && b.top < o.bottom && o.top < b.bottom;
+        });
+        out.push({ text, slot: alt ? 'alta' : 'normal', box: [b.left, b.top, b.width, b.height].map(Math.round), hits });
+      }
+      span.textContent = before.text;
+      el.className = before.cls;
+      return out;
+    },
+    [HINTS.map((h) => h.touch), ids] as const
+  );
+  for (const r of rows) {
+    console.log(`AC-110 ${label}, pista ${r.slot} «${r.text}»: caja ${r.box.join(', ')}${r.hits.length ? ` · pisa ${r.hits.join(', ')}` : ''}`);
+    expect(r.hits, `${label}: la pista «${r.text}» en la ranura ${r.slot} pisa un panel`).toEqual([]);
+  }
+}
+
+// AC-105 + AC-110 en un tamaño de pantalla. Mercante quieto del showcase en (−40, 195); el jugador para 60 m al norte
+// (placa del objetivo bajo el barco, el caso de H-06b) o 60 m al sur (sobre el barco). A 78 m al sur (z 117), en
+// vertical la placa del objetivo cae bajo el barco y empuja la pista a la ranura alta (H-11). Los tres puntos quedan a
+// > 70 m de los piratas del escenario. Exige que, con avisos en pantalla, la pista se haya visto en las dos ranuras.
+// browser.newContext hereda las opciones del proyecto: el caso táctil corre en el proyecto móvil y el de ratón en el de
+// escritorio (en el móvil, un contexto de 1440×900 sigue con puntero táctil y muestra las pistas de toque)
+async function expectHintAndToastsInSize(browser: Browser, viewport: { width: number; height: number }, touch: boolean) {
+  const size = `${viewport.width}×${viewport.height}`;
+  const seen = new Set<HintSlot>();
+  for (const { side, z } of [{ side: 'sur', z: 135 }, { side: 'norte', z: 255 }, { side: 'sur a 78 m', z: 117 }]) {
+    const ctx = await browser.newContext(touch ? { viewport, isMobile: true, hasTouch: true, deviceScaleFactor: 2 } : { viewport });
+    try {
+      const page = await ctx.newPage();
+      await enterGame(page, `http://localhost:${PORTS.showcase}`);
+      await expect(page.getByTestId('hint')).toBeVisible();
+      // La pista muestra la variante de la entrada del contexto (toque o ratón)
+      await expect(page.getByTestId('hint').locator(touch ? '.hint-touch' : '.hint-mouse'), `${size}: pista de ${touch ? 'toque' : 'ratón'}`).toBeVisible();
+      // En puerto: la pista con un aviso ("Zona segura")
+      seen.add(await expectHintClear(page, `en puerto con "Zona segura", ${size}`));
+      await expectToastsClear(page, `en puerto, ${size}`, 1);
+      await sailTo(page, -40, z);
+      await waitFor(() => me(page), (s) => !!s && Math.hypot(s.x + 40, s.z - z) < 4, 45_000, 250);
+      await page.waitForTimeout(700);
+      const merchant = (await ships(page)).find((s) => s.kind === 'merchant' && s.screen && Math.hypot(s.x + 40, s.z - 195) < 5);
+      expect(merchant?.screen).toBeTruthy();
+      if (touch) await page.touchscreen.tap(merchant!.screen!.sx, merchant!.screen!.sy);
+      else await page.mouse.click(merchant!.screen!.sx, merchant!.screen!.sy);
+      await expect(page.getByTestId('target-frame')).toHaveAttribute('data-target-id', merchant!.id);
+      await expect(page.getByTestId('hint')).toBeVisible();
+      const label = `objetivo al ${side}, ${size}`;
+      await expectHintClear(page, label, merchant!.id);
+      if (viewport.height < 500 && side === 'sur') await expectEveryHintFitsLandscape(page, label);
+      // Con uno y con dos avisos (fuera de la zona, P da "El puerto solo abre en la zona segura") la pista tampoco los
+      // tapa, y los avisos se leen enteros sin pisar los paneles ni el minimapa (H-11). La ranura sobre el barco queda
+      // bajo el primer aviso: con uno la pista sigue visible; con dos, si la otra ranura está ocupada, se oculta
+      for (const count of [1, 2]) {
+        await page.keyboard.press('KeyP');
+        await expect(page.getByTestId('toasts').locator('.toast:visible')).toHaveCount(count);
+        seen.add(await expectHintClear(page, `${label} con ${count} toasts`, merchant!.id));
+        await expectToastsClear(page, `${label} con ${count} toasts`, count);
+      }
+    } finally {
+      await ctx.close();
+    }
+  }
+  console.log(`AC-110 ranuras con avisos en pantalla, ${size}: ${[...seen].join(', ')}`);
+  expect([...seen], `${size}: la pista se ha comprobado con avisos en las dos ranuras`).toEqual(expect.arrayContaining(['bajo el barco', 'sobre el barco']));
+}
+
+test.describe('HUD de escritorio', () => {
+  test('AC-105 + AC-110: con el objetivo a 60 m al sur o al norte, la pista no tapa su placa, la propia ni los avisos, y los avisos se leen enteros sin pisar los paneles (1440×900, ratón)', async ({ browser }) => {
+    test.setTimeout(240_000);
+    await expectHintAndToastsInSize(browser, { width: 1440, height: 900 }, false);
+  });
+});
+
 test.describe('Móvil @mobile', () => {
   test('AC-80: botones táctiles de ≥ 48 px (Atacar ≥ 64) sin solaparse', async ({ page }) => {
     await enterGame(page);
@@ -270,59 +362,9 @@ test.describe('Móvil @mobile', () => {
     }
   });
 
-  test('AC-105 + AC-110: con el objetivo a 60 m al sur o al norte, la pista no tapa su placa, la propia ni los avisos, y los avisos se leen enteros sin pisar los paneles (844×390, 390×844 y 1440×900)', async ({ browser }) => {
-    test.setTimeout(540_000);
-    // Mercante quieto del showcase en (−40, 195); el jugador para 60 m al norte (placa del objetivo bajo el barco, el
-    // caso de H-06b) o 60 m al sur (sobre el barco). Los dos puntos quedan a > 70 m de los piratas del escenario.
-    // A 78 m al sur (z 117), en vertical la placa del objetivo cae bajo el barco y empuja la pista a la ranura alta,
-    // que comparte altura con los toasts (H-11)
-    const cases = [{ side: 'sur', z: 135 }, { side: 'norte', z: 255 }, { side: 'sur a 78 m', z: 117 }];
-    const viewports = [
-      { width: 844, height: 390, touch: true },
-      { width: 390, height: 844, touch: true },
-      { width: 1440, height: 900, touch: false }
-    ];
-    // Ranuras en las que se ha visto la pista con avisos en pantalla, por tamaño (AC-110: «con la pista en las dos ranuras»)
-    const slots: Record<string, Set<HintSlot>> = {};
-    for (const { side, z } of cases) for (const { touch, ...viewport } of viewports) {
-      const ctx = await browser.newContext(touch ? { viewport, isMobile: true, hasTouch: true, deviceScaleFactor: 2 } : { viewport });
-      const size = `${viewport.width}×${viewport.height}`;
-      const seen = (slots[size] ??= new Set());
-      try {
-        const page = await ctx.newPage();
-        await enterGame(page, `http://localhost:${PORTS.showcase}`);
-        await expect(page.getByTestId('hint')).toBeVisible();
-        // En puerto: la pista con un aviso ("Zona segura")
-        seen.add(await expectHintClear(page, `en puerto con "Zona segura", ${size}`));
-        await expectToastsClear(page, `en puerto, ${size}`, 1);
-        await sailTo(page, -40, z);
-        await waitFor(() => me(page), (s) => !!s && Math.hypot(s.x + 40, s.z - z) < 4, 45_000, 250);
-        await page.waitForTimeout(700);
-        const merchant = (await ships(page)).find((s) => s.kind === 'merchant' && s.screen && Math.hypot(s.x + 40, s.z - 195) < 5);
-        expect(merchant?.screen).toBeTruthy();
-        if (touch) await page.touchscreen.tap(merchant!.screen!.sx, merchant!.screen!.sy);
-        else await page.mouse.click(merchant!.screen!.sx, merchant!.screen!.sy);
-        await expect(page.getByTestId('target-frame')).toHaveAttribute('data-target-id', merchant!.id);
-        await expect(page.getByTestId('hint')).toBeVisible();
-        const label = `objetivo al ${side}, ${size}`;
-        await expectHintClear(page, label, merchant!.id);
-        // Con uno y con dos avisos (fuera de la zona, P da "El puerto solo abre en la zona segura") la pista tampoco
-        // los tapa, y los avisos se leen enteros sin pisar los paneles ni el minimapa (H-11). La ranura sobre el barco
-        // queda bajo el primer aviso: con uno la pista sigue visible; con dos, si la otra ranura está ocupada, se oculta
-        for (const count of [1, 2]) {
-          await page.keyboard.press('KeyP');
-          await expect(page.getByTestId('toasts').locator('.toast:visible')).toHaveCount(count);
-          seen.add(await expectHintClear(page, `${label} con ${count} toasts`, merchant!.id));
-          await expectToastsClear(page, `${label} con ${count} toasts`, count);
-        }
-      } finally {
-        await ctx.close();
-      }
-    }
-    console.log(`AC-110 ranuras con avisos en pantalla: ${Object.entries(slots).map(([size, s]) => `${size} → ${[...s].join(', ')}`).join(' · ')}`);
-    for (const [size, s] of Object.entries(slots)) {
-      expect([...s], `${size}: la pista se ha comprobado con avisos en las dos ranuras`).toEqual(expect.arrayContaining(['bajo el barco', 'sobre el barco']));
-    }
+  test('AC-105 + AC-110: con el objetivo a 60 m al sur o al norte, la pista no tapa su placa, la propia ni los avisos, y los avisos se leen enteros sin pisar los paneles (844×390 y 390×844)', async ({ browser }) => {
+    test.setTimeout(420_000);
+    for (const viewport of [{ width: 844, height: 390 }, { width: 390, height: 844 }]) await expectHintAndToastsInSize(browser, viewport, true);
   });
 
   test('AC-81: deslizar y pellizcar sobre el canvas no hace scroll ni zoom de la página', async ({ page }) => {

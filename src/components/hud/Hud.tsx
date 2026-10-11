@@ -4,6 +4,7 @@
 import React, { useEffect, useRef } from 'react';
 import { LOW_HP_WARNING, REPAIR_RATE, REPAIR_RATE_UNDER_FIRE } from '../../game/constants';
 import type { GameClient } from '../../client/game-client';
+import { HINTS } from '../../client/hints';
 import { addTicker, hudSignals } from '../../client/hud-logic';
 import { MeHud, Relation, TargetHud, useHud } from '../../client/hud-store';
 import { Alert, Anchor, Close, Coins, Crosshair, Sailboat, Shield, Skull, Star, Stop, Store, Swords, Target, Wrench } from './icons';
@@ -343,14 +344,7 @@ function MobileButtons({ actions }: { actions: HudActions }) {
   );
 }
 
-// ---------- Pistas de primera sesión (AC-79) ----------
-
-// Texto según la entrada: ratón o pantalla táctil (ART-DIRECTION §12.1)
-const HINTS: { mouse: string; touch: string }[] = [
-  { mouse: 'Haz clic en el agua para navegar', touch: 'Toca el agua para navegar' },
-  { mouse: 'Haz clic en un barco para seleccionarlo', touch: 'Toca un barco para seleccionarlo' },
-  { mouse: 'Pulsa Espacio o Atacar para disparar al objetivo', touch: 'Pulsa Atacar para disparar al objetivo' }
-];
+// ---------- Pistas de primera sesión (AC-79; textos en src/client/hints.ts) ----------
 
 // AC-105: la pista no tapa la placa propia, la del objetivo ni los toasts. Tiene dos ranuras, bajo el barco y sobre él
 // (CSS `.is-alt`), y cambia de ranura cuando se cruza con uno de esos elementos; si las dos se cruzan, se oculta
