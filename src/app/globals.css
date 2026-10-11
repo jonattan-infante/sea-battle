@@ -163,12 +163,12 @@ body {
   position: relative; width: 56px; height: 56px; flex: none; border-radius: 8px; background: var(--ui-panel); border: 1px solid var(--ui-line);
   color: var(--ui-text); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; overflow: hidden; cursor: pointer;
 }
-.slot:hover:not(:disabled) { border-color: var(--ui-gold); }
+.slot:hover:not(:disabled):not([aria-disabled="true"]) { border-color: var(--ui-gold); }
 .slot__key { position: absolute; left: 4px; top: 2px; font-size: 11px; color: var(--ui-text-dim); }
 .slot__label { font-size: 11px; line-height: 1; }
 .slot__icon { margin-top: 6px; }
-.slot:disabled { cursor: not-allowed; }
-.slot:disabled .slot__icon, .slot:disabled .slot__label { opacity: 0.4; }
+.slot:disabled, .slot[aria-disabled="true"] { cursor: not-allowed; }
+.slot:disabled .slot__icon, .slot:disabled .slot__label, .slot[aria-disabled="true"] .slot__icon, .slot[aria-disabled="true"] .slot__label { opacity: 0.4; }
 .slot.is-active { background: rgba(242, 193, 78, 0.2); border: 2px solid var(--ui-gold); }
 .slot.is-armed { border: 2px dashed var(--ui-gold); }
 .slot.is-pulse { animation: danger-border 1s steps(2, jump-none) infinite; }
@@ -191,7 +191,7 @@ body {
     display: flex; position: absolute; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
     width: 52px; height: 52px; border-radius: 12px; background: var(--ui-panel); border: 1px solid var(--ui-line); color: var(--ui-text); font-size: 10px;
   }
-  .hud-mobile-btn:disabled { opacity: 0.45; }
+  .hud-mobile-btn:disabled, .hud-mobile-btn[aria-disabled="true"] { opacity: 0.45; }
   .hud-mobile-btn.is-active { background: rgba(242, 193, 78, 0.22); border: 2px solid var(--ui-gold); }
   .hud-mobile-btn.is-pulse { animation: danger-border 1s steps(2, jump-none) infinite; }
   .hud-mobile-btn--attack { width: 72px; height: 72px; border-radius: 50%; font-size: 12px; font-weight: 700; }

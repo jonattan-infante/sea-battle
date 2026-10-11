@@ -300,10 +300,12 @@ function ActionBar({ actions }: { actions: HudActions }) {
         <span className="slot__icon"><Stop size={28} /></span>
         <span className="slot__label">Detener</span>
       </button>
+      {/* DT-02 (AC-66): fuera de la zona se ve desactivado con aria-disabled y no con disabled, para que el clic
+          o el toque lleguen a togglePort y muestren el aviso "El puerto solo abre en la zona segura" */}
       <button
         type="button"
         className="slot"
-        disabled={!m.portEnabled}
+        aria-disabled={!m.portEnabled}
         onClick={actions.togglePort}
         title={m.portEnabled ? 'Puerto (P)' : 'Solo en la zona segura'}
         data-testid="btn-port"
@@ -336,7 +338,7 @@ function MobileButtons({ actions }: { actions: HudActions }) {
         <Wrench size={22} />
         Reparar
       </button>
-      <button type="button" className="hud-mobile-btn hud-mobile-btn--port" disabled={!m.portEnabled} onClick={actions.togglePort} data-testid="m-port" aria-label="Puerto" title={m.portEnabled ? 'Puerto' : 'Solo en la zona segura'}>
+      <button type="button" className="hud-mobile-btn hud-mobile-btn--port" aria-disabled={!m.portEnabled} onClick={actions.togglePort} data-testid="m-port" aria-label="Puerto" title={m.portEnabled ? 'Puerto' : 'Solo en la zona segura'}>
         <Store size={22} />
         Puerto
       </button>

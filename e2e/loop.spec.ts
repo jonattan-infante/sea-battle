@@ -386,12 +386,15 @@ test.describe('Puerto', () => {
 
     await sailTo(page, 0, 170);
     await waitFor(() => me(page), (s) => !!s && Math.hypot(s.x, s.z) > 125, 45_000, 250);
-    await expect(port).toBeDisabled();
+    await expect(port).toBeDisabled(); // aria-disabled (DT-02): se ve desactivado, pero el clic llega al manejador
     await expect(port).toHaveAttribute('title', 'Solo en la zona segura');
     await expect(page.getByTestId('m-port')).toHaveAttribute('title', 'Solo en la zona segura');
+    // El clic por sí solo explica por qué no abre (DT-02: el title no basta) y P da el mismo aviso
+    const notice = page.getByTestId('toasts').locator('.toast:visible', { hasText: 'El puerto solo abre en la zona segura' });
     await port.click({ force: true });
+    await expect(notice).toHaveCount(1);
     await page.keyboard.press('KeyP');
-    await expect(page.getByTestId('toasts')).toContainText('El puerto solo abre en la zona segura');
+    await expect(notice).toHaveCount(2);
     await expect(page.getByTestId('shop')).toHaveCount(0);
 
     // De vuelta en la zona se activa y un clic abre la tienda
@@ -400,6 +403,27 @@ test.describe('Puerto', () => {
     await expect(port).toBeEnabled();
     await expect(port).toHaveAttribute('title', 'Puerto (P)');
     await port.click();
+    await expect(page.getByTestId('shop')).toBeVisible();
+  });
+
+  test('AC-66 @mobile: en 390×844, tocar Puerto fuera de la zona muestra el aviso y no abre la tienda; dentro la abre', async ({ page }) => {
+    test.setTimeout(120_000);
+    await enterGame(page, SHIPYARD);
+    const port = page.getByTestId('m-port');
+    await expect(port).toBeEnabled();
+
+    await sailTo(page, 0, 170);
+    await waitFor(() => me(page), (s) => !!s && Math.hypot(s.x, s.z) > 125, 45_000, 250);
+    await expect(port).toBeDisabled();
+    // En táctil no hay title visible: el toque es lo único que puede explicarlo (DT-02)
+    await port.tap({ force: true });
+    await expect(page.getByTestId('toasts').locator('.toast:visible', { hasText: 'El puerto solo abre en la zona segura' })).toHaveCount(1);
+    await expect(page.getByTestId('shop')).toHaveCount(0);
+
+    await sailTo(page, 0, 75);
+    await waitFor(() => me(page), (s) => !!s && Math.hypot(s.x, s.z) < 100, 45_000, 250);
+    await expect(port).toBeEnabled();
+    await port.tap();
     await expect(page.getByTestId('shop')).toBeVisible();
   });
 });
