@@ -36,7 +36,7 @@ Hay dos colas en paralelo; dentro de cada una, el orden es estricto.
 | 2 | H-305 Capitán pirata (IA, avisos y marcador) | NPC 7/10: reto de grupo y de final de progresión |
 | 3 | E13 Vista libre + AC-124 (atacante fuera de pantalla) | Cámara 8/10. Los dos indicadores de borde comparten componente |
 | 4 | H-306 Cañonera pirata (IA) | Segundo hostil, con un comportamiento distinto |
-| 5 | AC-108: bloque 2, AC-12 y AC-92 (dev-tests); AC-110 y AC-75 (lead) | Calidad y pulido. AC-23, AC-25 y AC-91 van en la cola de dev-render |
+| 5 | AC-108: bloque 2, AC-12, AC-92 y **el harness de AC-91** (dev-tests); AC-110, AC-75, H-13, H-15 y O-3 (lead / dev-tests) | Calidad y pulido. AC-23 y AC-25 van en la cola de dev-render |
 
 **Cola dev-render (render y VFX)**
 | # | Qué | Por qué en este puesto |
@@ -46,7 +46,7 @@ Hay dos colas en paralelo; dentro de cada una, el orden es estricto.
 | 3 | (c) Detalle de los cascos (AS-V18–V20, AD-26) | Barcos: "facetados". Va **antes** del arte de los NPC nuevos, para que el Capitán y la Cañonera nazcan con la misma técnica y no haya que rehacerlos |
 | 4 | Arte del Capitán y luego de la Cañonera (cuando game-ux los especifique) | Lo necesitan los puntos 2 y 4 de la otra cola |
 | 5 | AD-27 Espuma natural | Océano 8/10 |
-| 6 | AC-91 (memoria, 10 min) | Guarda de fugas, después de añadir modelos y VFX |
+| 6 | H-12: VFX-09b en 390×844 (código de D32) | Cerrar AC-104 en móvil |
 
 Los AC de rendimiento de E9 son una **puerta desde H1**: se mantienen en verde en cada hito, no se dejan para el final.
 
@@ -57,7 +57,9 @@ Reportes (el último manda):
 |---|---|---|---|
 | [`QA-REPORT-2026-10-11.md`](./qa/QA-REPORT-2026-10-11.md) | `614ae0d` | RECHAZADO | P0 H-01 |
 | [`QA-REPORT-2026-10-11-2.md`](./qa/QA-REPORT-2026-10-11-2.md) | `c631272` + `9b4bda3` | APROBADO CON OBSERVACIONES | 91 A · 1 R · 6 NV |
-| [`QA-REPORT-2026-10-11-3.md`](./qa/QA-REPORT-2026-10-11-3.md) | `190d3cb` | **APROBADO CON OBSERVACIONES** | **98 A · 2 R (AC-97 conocido, AC-108) · 5 NV · AC-104 sin evaluar. No queda ningún P0 abierto** |
+| [`QA-REPORT-2026-10-11-3.md`](./qa/QA-REPORT-2026-10-11-3.md) | `190d3cb` | **APROBADO CON OBSERVACIONES** | 98 A · 2 R (AC-97 conocido, AC-108) · 5 NV · AC-104 sin evaluar. No queda ningún P0 abierto |
+| [`QA-REPORT-2026-10-11-4.md`](./qa/QA-REPORT-2026-10-11-4.md) | `3154045` + `b5dc2c1` | APROBADO CON OBSERVACIONES | 102 A · 2 R (AC-97, AC-108) · 4 NV |
+| [`QA-REPORT-2026-10-11-5.md`](./qa/QA-REPORT-2026-10-11-5.md) | `474e437` | **APROBADO CON OBSERVACIONES** | **103 A · 2 R (AC-97 conocido, AC-108) · 3 NV (AC-72, AC-90, AC-91). U8 cumple; AC-104 aprobado en 1440×900 con N1 y N3. No queda ningún P0 abierto** |
 
 ### Hallazgos
 | Hallazgo | Sev. | Qué pasa | AC | Responsable | Estado |
@@ -66,7 +68,7 @@ Reportes (el último manda):
 | H-02 | P1 | El casco entraba en las islas | AC-20, AC-21 | — | **Cerrado** (QA-2) |
 | H-03 | P1 | Velas invisibles de proa y de popa | AC-102 | game-ux → dev-render | **Cerrado** (QA-3: ratio mínimo 0,282 en la Balandra; `sail-visibility.spec.ts:18`) |
 | H-04 | P2 | Decorado fuera del colisionador | AC-103 | dev-render | **Cerrado** (QA-3: 0 vértices fuera de r + 0,5 m) |
-| H-05 | P2 | Humo y fuego de vida baja casi invisibles | AC-104 | game-ux (Q16, D20 + D21) → dev-render | **Sin evaluar.** VFX-09b falla por un orden de magnitud |
+| H-05 | P2 | Humo y fuego de vida baja casi invisibles | AC-104 | game-ux (Q16, D20–D31) → dev-render | **Cerrado en 1440×900** con N1 y N3 (QA-5: VFX-09b 15/15; fuego del Mercante 0,034·A y 0,037·A). El caso de 390×844 sigue en H-12 |
 | H-06 / H-06b | P2 / P3 | La pista tapaba las placas propia y del objetivo en móvil | AC-105 | lead | **Cerrado** (QA-3: 0 px² en 10 posiciones; `gameplay.spec.ts:230`) |
 | H-07 | P3 | Tarjeta de muerte en 3 líneas | AC-106 | lead | **Cerrado** |
 | H-08 | P3 | La recarga pisaba placas vecinas | AC-107 | dev-render | **Cerrado** (QA-3: 20/20 muestras, 0 px²) |
@@ -76,9 +78,17 @@ Reportes (el último manda):
 | DT-02 (dev-tests) | P2 | En táctil, el botón Puerto desactivado no explica por qué: solo tiene un `title`, que no se ve, y el aviso solo sale con `P` | AC-66 (ampliado) | lead (HUD): pulsar el botón desactivado muestra el aviso existente | Pendiente |
 | DT-03 (dev-tests) | P3 | "Salir" con el servidor caído lleva a `net::ERR_CONNECTION_REFUSED`, porque la landing la sirve el mismo proceso | **AC-126** | lead | Pendiente |
 | H-11 | P3 | En móvil, los avisos tapan la pista en la ranura `is-alt`. En 844×390 además pisan ~22 px de los paneles del jugador y del objetivo (eso ya pasaba en `614ae0d`) | **AC-110** (QA lo llamó AC-105b) | lead | Pendiente. El arreglo: la pista trata los avisos visibles como obstáculo y se oculta si no hay ninguna ranura libre; en horizontal, los avisos se estrechan para caber entre las dos columnas del HUD |
+| H-12 (QA-4) | P3 | AC-104 exige 390×844, pero VFX-09b solo tenía umbrales para 1440×900 | AC-104 | game-ux (D32) → dev-render | Spec decidida en D32; **falta el código** (`runtime.ts:419` sigue con ×0,5) |
+| O-1 (QA-4) | P3 | Al aparecer un 2.º aviso, la pista lo pisa durante 0–150 ms (8 400 y 12 888 px² en móvil; 0 después) | AC-110 | lead | Pendiente (cola del lead) |
+| O-2 (QA-4) | P3 | En escritorio, la ranura alta de la pista rozaba 4 px el primer aviso | AC-110 | lead | **Cerrado** en `b5dc2c1` |
+| H-13 (QA-5) | P3 | AC-75 (negativo) falla en la suite completa (46/47) y pasa aislado (3/3): depende del orden en el servidor compartido del showcase | AC-75 (verificación) | lead; lo ejecuta dev-tests | Pendiente: pasar los tests de AC-75 a `startOwnServer({ SEA_BATTLE_SCENARIO: 'showcase' })` |
+| H-14 (QA-5) | P3 | `own-server` podía elegir el puerto 3659, que Chrome bloquea (`ERR_UNSAFE_PORT`), dentro del rango de dev-tests | — | lead | **Cerrado** en `3eccd41`: rango [PW_PORT_BASE+500, +599] y excluye los puertos inseguros de Chrome |
+| H-15 (QA-5) | P3 | El e2e de AC-41 no fija el umbral del 30 %: un mutante con 0,25 sobrevive, porque no hay muestras de vida entre 31,25 % y 23 % | AC-41 (verificación) | lead; lo ejecuta dev-tests | Pendiente: unitario con 239/800 (pulsa) y 240/800 (no pulsa) |
+| O-3 (QA-5) | P3 | 4 pulsaciones de Puerto fuera de la zona apilan 3 avisos idénticos (≈ 15 % de la altura en 390×844; `MAX_TOASTS` = 3, `hud-store.ts:73`) | **AC-127** | lead (HUD) | Pendiente |
 
 ### Plan de AC-108 (RECHAZADO en QA-3 §7: 15 AC P0 sin test y 7 parciales)
-**Reparto (lead):** `dev-tests` (agente game-developer, copia aislada con `PW_PORT_BASE=3500`, commit `618a633`) escribe los bloques 1 y 2 más AC-12 y AC-92; dev-render, AC-23, AC-25 y AC-91; el lead, AC-75 y AC-110.
+**Estado en QA-5:** queda **1 sin test (AC-91, sin harness)** y **1 parcial (AC-109)**. Lo demás tiene ya un test que aserta el observable.
+**Reparto (lead):** `dev-tests` (agente game-developer, copia aislada con `PW_PORT_BASE=3500`, commit `618a633`) escribe los bloques 1 y 2 más AC-12 y AC-92; dev-render, AC-23 y AC-25; el lead, AC-75 y AC-110. **AC-91 pasa a dev-tests** (QA-5), porque dev-render se dedica a los cascos (D23 c).
 
 **Criterio:**
 - Ninguno pasa a "basta un Jest que ya existe": hoy no hay ningún test unitario de lógica de cliente (`hud-logic.ts`, `game-client.ts`), y todos estos AC tienen su observable en el cliente.
@@ -116,7 +126,7 @@ Reportes (el último manda):
 | AC-23 | Sin test | Proyección del barco propio en el 10 % central en 10 frames navegando | e2e | dev-render |
 | AC-25 | Sin test | La rueda da exactamente {0,7; 1,0; 1,5} y `scrollY` sigue en 0 | e2e | dev-render |
 | AC-92 | Sin test | **Cambia a unitario** (ver el AC): interpolador con frames sintéticos | unitario | dev-tests |
-| AC-91 | Sin test | **Corrida larga de perf** de 10 min, fuera de `verify` (ver el AC) | perf (larga) | dev-render (harness); game-qa la ejecuta |
+| AC-91 | Sin test | **Corrida larga de perf** de 10 min, fuera de `verify`, con el método escrito en el AC | perf (larga) | dev-tests (harness); game-qa la ejecuta |
 | AC-12 | Parcial | Un 21.º jugador real (20 sockets de invitado + 1 navegador) → landing con "Servidor lleno" (`GameApp.tsx:209`) | e2e | dev-tests |
 
 ### AC sin veredicto final
@@ -125,7 +135,7 @@ Reportes (el último manda):
 | AC-72 | Exige 5 evaluadores humanos | game-qa + Jonattan | Hay que organizar la prueba de 5 s |
 | AC-75 | Parcial | lead | Escrito, con el caso negativo de dos jugadores y el cruce de salpicaduras e impactos; en verificación |
 | AC-90 | Manual en el portátil de referencia | game-qa | Bloqueado por GDD Q9 (Jonattan) |
-| AC-91, AC-92 | Cambian de método | dev-render / dev-tests | Plan de AC-108, bloque 3 |
+| AC-91 | Sin harness (AC-92 aprobado en QA-5) | dev-tests | Método fijado en el AC (QA-5) |
 | AC-104 | Depende de D20 + D21 | game-ux (Q16) → dev-render | Sin evaluar |
 | AC-110 | Nuevo (H-11) | lead | Aceptados los 3 ajustes; se añade al e2e de AC-105 |
 
@@ -219,7 +229,7 @@ Reportes (el último manda):
 - **AC-38** — Dada una Balandra al 50 % de vida navegando, cuando pulsa `R`, entonces frena, empieza a reparar al bajar de 1 m/s y sube +16 HP cada 0,5 s hasta 800, donde la reparación termina sola. Verificación: unitario.
 - **AC-39** — Dado un barco reparando, cuando recibe daño, entonces durante los 3 s siguientes repara al 1,5 %/s y después vuelve al 4 %/s. Verificación: unitario.
 - **AC-40** — Dado un barco reparando, cuando recibe `moveTo` o `attack`, entonces la reparación se cancela. Dado un barco atacando, cuando empieza a reparar, entonces el ataque se cancela. Verificación: unitario.
-- **AC-41** — Dada una vida < 30 %, cuando se renderiza el HUD, entonces el botón Reparar pulsa. Con vida ≥ 30 %, no pulsa. Verificación: e2e (estado del botón) + captura.
+- **AC-41** — Dada una vida < 30 %, cuando se renderiza el HUD, entonces el botón Reparar pulsa. Con vida ≥ 30 %, no pulsa. Verificación: e2e (estado del botón) + captura + **unitario del umbral**: 239/800 (29,9 %) pulsa y 240/800 (30 %) no pulsa. El e2e solo no fija el umbral (QA-5 H-15).
 
 ### H-204 Doble clic para atacar (§5) · P1
 - **AC-42** — Dado un pirata en pantalla, cuando el jugador hace doble clic sobre él, entonces queda seleccionado y atacado con una sola intención `attack`. Verificación: e2e.
@@ -304,7 +314,7 @@ Reportes (el último manda):
 - **AC-72** — Dadas capturas de escritorio y móvil con el barco propio, otro jugador, un pirata, un mercante y un objetivo seleccionado, cuando 5 evaluadores las miran durante 5 s, entonces ≥ 4 de 5 identifican correctamente los 5 elementos, también con las capturas en escala de grises. Verificación: captura + prueba con evaluadores (umbrales en `ART-DIRECTION.md`).
 - **AC-73** — Dado un ataque activo, cuando se capturan 5 frames en un ciclo de recarga, entonces el indicador junto al barco propio avanza de forma monótona y se ve lleno en el instante del disparo. Verificación: captura secuencial.
 - **AC-74** — Dado un objetivo seleccionado, cuando se captura, entonces el anillo de selección se ve sobre el agua y junto a una isla, y el círculo de alcance propio distingue "en alcance" de "fuera de alcance". Verificación: captura.
-- **AC-75** — Dada una andanada con k impactos, cuando llega la primera bala que acierta, entonces aparece **un único** número igual a k × daño, y cada bala fallada deja una salpicadura. Con k = 0 aparece "Fallo", pero solo si el tirador o el objetivo es el jugador propio. Todo debe leerse con el zoom por defecto. Verificación: captura + e2e (se cuenta un número por cada evento de andanada).
+- **AC-75** — Dada una andanada con k impactos, cuando llega la primera bala que acierta, entonces aparece **un único** número igual a k × daño, y cada bala fallada deja una salpicadura. Con k = 0 aparece "Fallo", pero solo si el tirador o el objetivo es el jugador propio. Todo debe leerse con el zoom por defecto. Verificación: captura + e2e (se cuenta un número por cada evento de andanada), en un **servidor propio** (`startOwnServer` con el escenario showcase), no en el compartido, para que no dependa del orden de los tests (QA-5 H-13).
 - **AC-76** — Dados dos barcos separados por al menos el umbral que defina `game-ux`, cuando se captura, entonces sus etiquetas de nombre y vida no se solapan. Verificación: captura.
 
 ### H-705 Velas legibles con cualquier rumbo (QA H-03) · P1
@@ -321,6 +331,9 @@ Reportes (el último manda):
 
 ### H-709 Ver quién te dispara aunque no esté en pantalla · P1 (I2)
 - **AC-124** — Dado un barco que dispara al jugador desde fuera de pantalla (p. ej. un jugador con cañón N3 a 80 m contra una Balandra N1, cuyo encuadre es de 65 m), cuando llega cada andanada, entonces un indicador en el borde apunta hacia el atacante (error de ángulo ≤ 10°) mientras dure el ataque y 3 s después. Si el atacante está en pantalla, no aparece. El indicador de atacante usa el código de la **relación** del atacante (hostil para los NPC, jugador para el PvP; diseño en ART-DIRECTION §12.8 y AD-31) y no se confunde con el chip de barco propio de la vista libre (AC-121), tampoco en escala de grises. Verificación: e2e (caja y ángulo del indicador) + captura.
+
+### H-710 Los avisos no se duplican (QA-5 O-3) · P3
+- **AC-127** — Dado un aviso visible, cuando se emite otro **con el mismo texto** (de cualquier tipo: sistema, compra u oro), entonces sigue habiendo uno solo, en la misma posición, y su tiempo de vida se reinicia desde la última emisión. Los avisos con textos distintos siguen apilándose hasta `MAX_TOASTS` (3). La información repetida no se pierde: el contador de oro y el feed ya la llevan. Verificación: unitario del store (emitir A, A, A y B → 2 avisos, con la caducidad de A contada desde la 3.ª emisión) + e2e en 390×844 (4 toques en Puerto fuera de la zona → 1 solo aviso visible, que desaparece a la duración de un aviso, ±100 ms, contada desde el último toque).
 
 ### H-702 Minimapa · P1
 - **AC-77** — Dado el juego en marcha, cuando se captura el minimapa, entonces muestra las islas, el puerto, la zona segura y las entidades del área de interés con forma y color por tipo, y se re-renderiza a ≤ 2 Hz. Verificación: captura + perf.
@@ -359,7 +372,19 @@ Reportes (el último manda):
 ### H-903 Presupuesto de render · P0
 - **AC-89** — Dada la escena estándar (20 barcos, 20 NPC e islas en pantalla), cuando se lee `renderer.info`, entonces hay ≤ 100 draw calls y ≤ 250 000 triángulos. Verificación: perf.
 - **AC-90** — Dado el portátil de referencia (GDD Q9) con Chrome a 1440×900, cuando se juegan 60 s de combate, entonces la media es ≥ 58 fps y el p95 del frame ≤ 20 ms. Verificación: manual (traza de Performance de Chrome adjunta).
-- **AC-91** — Dados 10 min con ciclos de hundimiento y reaparición de NPC, cuando se mide al inicio y al final, entonces el heap del cliente crece ≤ 15 MB y `renderer.info.memory` (geometrías y texturas) no crece de forma monótona. Verificación: perf de **larga duración**, en un harness aparte fuera de `npm run verify` porque dura 10 min, que game-qa ejecuta antes de cada aceptación (plan de AC-108).
+- **AC-91** — Dada una sesión de 10 min en 1440×900 con carga continua, cuando se muestrea cada 60 s, entonces no hay deriva de recursos.
+  - **Carga:** ≥ 40 ciclos de hundimiento y reaparición de NPC en pantalla, con el barco propio atacando, recibiendo daño y reparando. Así se ejercitan VFX de daño, hundimientos, restos, placas y números.
+  - **Muestreo:** cada 60 s, tras forzar el GC por CDP (`HeapProfiler.collectGarbage`). La línea base es la muestra del minuto 1, para excluir el calentamiento.
+
+  | Métrica (fuente) | Umbral de deriva |
+  |---|---|
+  | Heap JS usado (`Runtime.getHeapUsage` o `Performance.getMetrics`) | Final − base ≤ 15 MB **y** pendiente ≤ 1 MB/min en los minutos 5–10 |
+  | Nodos DOM (`Performance.getMetrics` → `Nodes`) | Final ≤ base × 1,05 |
+  | Escuchas de eventos JS (`JSEventListeners`) | Final ≤ base × 1,05 |
+  | Geometrías y texturas (`renderer.info.memory`) | Máximo de los minutos 5–10 ≤ máximo de los minutos 1–5 + 2, cada una |
+  | Commits de React por segundo en combate (contador `onRender`) | Minuto 10 ≤ minuto 1 × 1,2, y siempre ≤ 10 (AC-85) |
+
+  Verificación: perf de **larga duración**, en un harness aparte fuera de `npm run verify` porque dura 10 min. Lo escribe dev-tests y game-qa lo ejecuta antes de cada aceptación, con las 10 muestras en el log.
 - **AC-92** — Dado otro jugador navegando en línea recta sin pérdida de paquetes, cuando se muestrea su posición renderizada a 60 fps, entonces ningún salto entre frames consecutivos supera 1 m. Verificación: **unitario** sobre el interpolador de `src/client/game-client.ts`, con frames sintéticos a 10 Hz (llegada con *jitter* de ±20 ms) y muestreo cada 16,7 ms. *Justificación (plan de AC-108):* el salto por frame depende del interpolador y del ritmo de snapshots, no de la GPU. Con WebGL por software, un e2e mide la máquina (17,6 fps), no el código. Un e2e con GPU queda como comprobación opcional de QA.
 
 ## E13 — Vista libre (§5, §13) · P1 (I2)
