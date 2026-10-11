@@ -23,7 +23,7 @@ export interface HudActions {
   buy: (itemId: string) => void;
   selectShip: (classId: 'sloop' | 'brig' | 'frigate') => void;
   retry: () => void;
-  exit: () => void;
+  exit: () => Promise<boolean>; // false si el servidor no responde en 2 s (AC-126): no se sale de la partida
 }
 
 const RELATION_COLOR: Record<Relation, string> = {

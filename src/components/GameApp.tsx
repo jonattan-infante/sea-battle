@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth, useUser } from '@clerk/nextjs';
 import { PlayerShipClass } from '../game/constants';
 import { GameEvent, Welcome } from '../game/types';
+import { probeServer } from '../client/exit-probe';
 import { GameClient } from '../client/game-client';
 import { canAttackClient, cannonFor, classLabel, cycleTarget, hudSignals, inSafeZone, relationOf } from '../client/hud-logic';
 import { MeHud, TargetHud, sameShallow, useHud } from '../client/hud-store';
@@ -306,7 +307,13 @@ export default function GameApp({ guest }: { guest: boolean }) {
       buy: (itemId: string) => client.buy(itemId),
       selectShip: (classId: PlayerShipClass) => client.selectShip(classId),
       retry: () => client.retry(),
-      exit: () => router.push('/')
+      // AC-126 (DT-03): con el servidor caído, router.push acabaría en la página de error del navegador; antes se sondea
+      // /healthz (exit-probe.ts): si responde, se navega; si no, el overlay lo explica y sigue Reintentar
+      exit: async () => {
+        const ok = await probeServer('/healthz');
+        if (ok) router.push('/');
+        return ok;
+      }
     };
   }, [runtime, router]);
 

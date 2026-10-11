@@ -1,6 +1,6 @@
 'use client';
 // Muerte (ART-DIRECTION §15) y estados de conexión (§16.2). La cuenta atrás corre por ref (sin commits).
-import React, { useLayoutEffect, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { DEATH_COUNTDOWN } from '../../game/constants';
 import type { GameClient } from '../../client/game-client';
 import { addTicker } from '../../client/hud-logic';
@@ -73,7 +73,16 @@ export function DeathOverlay({ client, actions }: { client: GameClient; actions:
 export function ConnectionOverlay({ actions }: { actions: HudActions }) {
   const connection = useHud((s) => s.connection);
   const attempt = useHud((s) => s.reconnectAttempt);
+  // AC-126: "Salir" sondea el servidor 2 s antes de navegar; si no responde, se queda aquí y lo explica
+  const [exit, setExit] = useState<'idle' | 'probing' | 'unreachable'>('idle');
+  useEffect(() => {
+    if (connection === 'connected') setExit('idle');
+  }, [connection]);
   if (connection === 'connected' || connection === 'connecting' || connection === 'full') return null;
+  const onExit = async () => {
+    setExit('probing');
+    setExit((await actions.exit()) ? 'idle' : 'unreachable');
+  };
   let title = 'Sin conexión';
   let body: React.ReactNode = `Reintentando (${Math.max(1, attempt)}/3)…`;
   let buttons = false;
@@ -94,12 +103,15 @@ export function ConnectionOverlay({ actions }: { actions: HudActions }) {
       <section className="panel offline" role="alertdialog" aria-labelledby="offline-title">
         <h2 id="offline-title" className="font-pirate">{title}</h2>
         <p>{body}</p>
+        {exit === 'unreachable' && <p className="offline__notice" role="status" data-testid="exit-unreachable">El servidor no responde. Vuelve a intentarlo en unos segundos</p>}
         {buttons && (
           <div className="flex gap-3">
             {connection !== 'kicked' && connection !== 'unauthorized' && (
               <button type="button" className="btn btn--primary" onClick={actions.retry} data-testid="btn-retry">Reintentar</button>
             )}
-            <button type="button" className="btn btn--secondary" onClick={actions.exit} data-testid="btn-exit">Salir</button>
+            <button type="button" className="btn btn--secondary" onClick={onExit} aria-busy={exit === 'probing'} data-testid="btn-exit">
+              {exit === 'probing' ? 'Saliendo…' : 'Salir'}
+            </button>
           </div>
         )}
       </section>
