@@ -352,16 +352,16 @@ const HINTS: { mouse: string; touch: string }[] = [
   { mouse: 'Pulsa Espacio o Atacar para disparar al objetivo', touch: 'Pulsa Atacar para disparar al objetivo' }
 ];
 
-// AC-105: la pista no tapa la placa propia ni la del objetivo. Tiene dos ranuras, bajo el barco y sobre él (CSS
-// `.is-alt`), y cambia de ranura cuando se cruza con una de esas placas; si las dos se cruzan, se queda donde está.
-// Por ref a ≤ 10 Hz y solo mientras hay pista: sin commits de React.
+// AC-105: la pista no tapa la placa propia, la del objetivo ni los toasts. Tiene dos ranuras, bajo el barco y sobre él
+// (CSS `.is-alt`), y cambia de ranura cuando se cruza con uno de esos elementos; si las dos se cruzan, se oculta
+// (`.is-hidden`) mientras dure el cruce. Por ref a ≤ 10 Hz y solo mientras hay pista: sin commits de React.
 const overlaps = (a: DOMRect, b: DOMRect) => a.width > 0 && b.width > 0 && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
 
-function platesToAvoid(): HTMLElement[] {
-  const plates = Array.from(document.querySelectorAll<HTMLElement>('[data-plate][data-relation="self"]'));
+function hintObstacles(): HTMLElement[] {
+  const els = Array.from(document.querySelectorAll<HTMLElement>('[data-plate][data-relation="self"], [data-testid="toasts"] > .toast'));
   const selected = useHud.getState().selectedId;
-  if (selected) plates.push(...Array.from(document.querySelectorAll<HTMLElement>(`[data-plate][data-ship-id="${CSS.escape(selected)}"]`)));
-  return plates;
+  if (selected) els.push(...Array.from(document.querySelectorAll<HTMLElement>(`[data-plate][data-ship-id="${CSS.escape(selected)}"]`)));
+  return els;
 }
 
 function Hint() {
@@ -377,11 +377,17 @@ function Hint() {
       last = now;
       const el = ref.current;
       if (!el) return;
-      const plates = platesToAvoid().map((p) => p.getBoundingClientRect());
-      const covers = () => plates.some((p) => overlaps(el.getBoundingClientRect(), p));
-      if (!covers()) return;
-      el.classList.toggle('is-alt');
-      if (covers()) el.classList.toggle('is-alt');
+      const obstacles = hintObstacles().map((o) => o.getBoundingClientRect());
+      const covers = () => obstacles.some((o) => overlaps(el.getBoundingClientRect(), o));
+      let hidden = false;
+      if (covers()) {
+        el.classList.toggle('is-alt');
+        if (covers()) {
+          el.classList.toggle('is-alt');
+          hidden = true;
+        }
+      }
+      el.classList.toggle('is-hidden', hidden);
     });
   }, [visible]);
 

@@ -178,6 +178,24 @@ test.describe('Partida como invitado', () => {
   });
 });
 
+type Box = { x: number; y: number; width: number; height: number };
+const boxesOverlap = (a: Box, b: Box) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+
+// AC-105 / H-11: la pista visible no se cruza con la placa propia, la del objetivo ni ningún toast (oculta, vale)
+async function expectHintClear(page: Page, label: string, targetId?: string) {
+  await page.waitForTimeout(400); // la pista revisa los obstáculos a 10 Hz
+  const hint = page.getByTestId('hint');
+  const cls = (await hint.getAttribute('class')) ?? '';
+  const h = (await hint.boundingBox())!;
+  const obstacles: Record<string, Box> = { 'placa propia': (await page.locator('[data-plate][data-relation="self"]').boundingBox())! };
+  if (targetId) obstacles['placa del objetivo'] = (await page.locator(`[data-plate][data-ship-id="${targetId}"]`).boundingBox())!;
+  const toasts = await page.getByTestId('toasts').locator('.toast').all();
+  for (let i = 0; i < toasts.length; i++) obstacles[`toast ${i + 1}`] = (await toasts[i].boundingBox())!;
+  console.log(`AC-105 ${label}: ${cls.includes('is-hidden') ? 'oculta' : cls.includes('is-alt') ? 'ranura sobre el barco' : 'ranura bajo el barco'} · ${toasts.length} toasts`);
+  if (cls.includes('is-hidden')) return;
+  for (const [id, b] of Object.entries(obstacles)) expect(boxesOverlap(h, b), `${label}: la pista se cruza con ${id}`).toBe(false);
+}
+
 test.describe('Móvil @mobile', () => {
   test('AC-80: botones táctiles de ≥ 48 px (Atacar ≥ 64) sin solaparse', async ({ page }) => {
     await enterGame(page);
@@ -231,12 +249,16 @@ test.describe('Móvil @mobile', () => {
     test.setTimeout(300_000);
     // Mercante quieto del showcase en (−40, 195); el jugador para 60 m al norte (placa del objetivo bajo el barco, el
     // caso de H-06b) o 60 m al sur (sobre el barco). Los dos puntos quedan a > 70 m de los piratas del escenario.
-    const cases = [{ side: 'sur', z: 135 }, { side: 'norte', z: 255 }];
+    // A 78 m al sur (z 117), en vertical la placa del objetivo cae bajo el barco y empuja la pista a la ranura alta,
+    // que comparte altura con los toasts (H-11)
+    const cases = [{ side: 'sur', z: 135 }, { side: 'norte', z: 255 }, { side: 'sur a 78 m', z: 117 }];
     for (const { side, z } of cases) for (const viewport of [{ width: 844, height: 390 }, { width: 390, height: 844 }]) {
       const ctx = await browser.newContext({ viewport, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
       try {
         const page = await ctx.newPage();
         await enterGame(page, `http://localhost:${PORTS.showcase}`);
+        await expect(page.getByTestId('hint')).toBeVisible();
+        await expectHintClear(page, `en puerto con "Zona segura", ${viewport.width}×${viewport.height}`);
         await sailTo(page, -40, z);
         await waitFor(() => me(page), (s) => !!s && Math.hypot(s.x + 40, s.z - z) < 4, 45_000, 250);
         await page.waitForTimeout(700);
@@ -244,20 +266,21 @@ test.describe('Móvil @mobile', () => {
         expect(merchant?.screen).toBeTruthy();
         await page.touchscreen.tap(merchant!.screen!.sx, merchant!.screen!.sy);
         await expect(page.getByTestId('target-frame')).toHaveAttribute('data-target-id', merchant!.id);
-        const hint = page.getByTestId('hint');
-        await expect(hint).toBeVisible();
-        await page.waitForTimeout(500); // la pista revisa las placas a 10 Hz
-        const boxes = {
-          hint: (await hint.boundingBox())!,
-          own: (await page.locator('[data-plate][data-relation="self"]').boundingBox())!,
-          target: (await page.locator(`[data-plate][data-ship-id="${merchant!.id}"]`).boundingBox())!
-        };
-        console.log(`AC-105 objetivo al ${side}, ${viewport.width}×${viewport.height}: ranura ${(await hint.getAttribute('class'))?.includes('is-alt') ? 'sobre el barco' : 'bajo el barco'} · ${JSON.stringify(boxes)}`);
-        for (const id of ['own', 'target'] as const) {
-          const a = boxes.hint;
-          const b = boxes[id];
-          const overlap = a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
-          expect(overlap, `objetivo al ${side}, ${viewport.width}×${viewport.height}: la pista se cruza con la placa ${id}`).toBe(false);
+        await expect(page.getByTestId('hint')).toBeVisible();
+        const label = `objetivo al ${side}, ${viewport.width}×${viewport.height}`;
+        await expectHintClear(page, label, merchant!.id);
+        // Con dos toasts (fuera de la zona, P da "El puerto solo abre en la zona segura") tampoco los tapa, y los
+        // toasts no pisan los paneles del jugador ni del objetivo (H-11)
+        await page.keyboard.press('KeyP');
+        await page.waitForTimeout(150);
+        await page.keyboard.press('KeyP');
+        await expect(page.getByTestId('toasts').locator('.toast')).toHaveCount(2);
+        await expectHintClear(page, `${label} con 2 toasts`, merchant!.id);
+        for (const t of await page.getByTestId('toasts').locator('.toast').all()) {
+          const tb = (await t.boundingBox())!;
+          for (const panel of ['player-frame', 'target-frame']) {
+            expect(boxesOverlap(tb, (await page.getByTestId(panel).boundingBox())!), `${label}: un toast pisa ${panel}`).toBe(false);
+          }
         }
       } finally {
         await ctx.close();
