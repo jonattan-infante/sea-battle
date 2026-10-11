@@ -461,7 +461,7 @@ Se ejecuta con un script de desarrollo (`npm run assets:validate`, dependencia d
 | AS-V11 | Tamaño del archivo | ≤ §5 |
 | AS-V12 | Contenido prohibido | 0 cámaras, luces, skins, morph targets y animaciones en la raíz |
 | AS-V13 | Equivalencia GLB ↔ procedural | Cajas envolventes a ±5 % por eje y sockets a ≤ 0,2 m de distancia |
-| AS-V14 | Velas visibles con cualquier rumbo: `runtime.measureSails` con zoom 0,7×, rumbos de 0° a 345° cada 15°, en LOD0 y LOD1, para las 5 clases P0 | Mínimo/máximo ≥ 0,25 en todas (objetivo ≥ 0,28) |
+| AS-V14 | Velas visibles con cualquier rumbo: `runtime.measureSails` con zoom 0,7×, rumbos de 0° a 345° cada 15°, en LOD0 y LOD1, para las 5 clases P0 y el Capitán. **No aplica a la cañonera** (D27): lleva poca vela a propósito, su identidad es el casco y la batería, y la distingue AD-28 | Mínimo/máximo ≥ 0,25 en todas (objetivo ≥ 0,28) |
 | AS-V15 | El procedural cumple el contrato: AS-V02…V09 en Jest para las 5 recetas P0 | `npm test` en verde |
 | AS-V16 | Islas: radio visual en la flotación de cada columna de vértices de la playa; y ningún vértice sobre el agua (y > 0) de la isla, rocas, muelles o palmeras fuera de r + 0,5 m en XZ | Playa entre 0,94r y 1,00r en el 100 %; 0 vértices fuera |
 | AS-V17 | **Fuego sin obstáculos** (D22): para cada `socket_fire_NN`, la elipse de semiejes 0,06·L (eslora) × 0,15·B (manga) no se solapa en planta con ningún objeto de cubierta que sobresalga > 0,5 m de la superficie del socket (carga, barriles, camaretas, castillos, botes). Quedan fuera mástiles, velas y jarcia: no tapan el fuego porque las llamas llevan el sesgo de profundidad (VFX-SPEC §0.3, forma 8; D24). Si el socket cae sobre una superestructura, va en su tapa + 0,3 m | Solape ≤ 5 % del área de cada elipse |
