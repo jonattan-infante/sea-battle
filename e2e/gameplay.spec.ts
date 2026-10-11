@@ -421,6 +421,16 @@ async function recordFloats(page: Page) {
 }
 const floatsOf = (page: Page) => page.evaluate(() => (window as unknown as { __FLOATS__: { kind: string; text: string }[] }).__FLOATS__);
 
+// Contadores acumulados del runtime: una salpicadura por bala fallada y un impacto por bala que acierta, en pantalla
+type Runtime = { resetCounters: () => void; stats: () => Record<string, number> };
+const resetVfxCounters = (page: Page) => page.evaluate(() => (window.__SEA_BATTLE__!.runtime() as unknown as Runtime).resetCounters());
+const vfxCounters = (page: Page) =>
+  page.evaluate(() => {
+    const s = (window.__SEA_BATTLE__!.runtime() as unknown as Runtime).stats();
+    return { splashes: s.splashes, hits: s.hits };
+  });
+const sum = (list: ImpactEvent[], key: 'hits' | 'misses') => list.reduce((acc, e) => acc + e[key], 0);
+
 interface ImpactEvent { type: 'impact'; shipId: string; byShipId: string; damage: number; hits: number; misses: number }
 function impactsOn(net: ReturnType<typeof trackSocket>, shipId: string): ImpactEvent[] {
   return net.received
@@ -438,9 +448,11 @@ function impactsOn(net: ReturnType<typeof trackSocket>, shipId: string): ImpactE
 // Espera n impactos sobre el jugador y devuelve los impactos y los textos flotantes ya mostrados
 async function impactsAndFloats(page: Page, net: ReturnType<typeof trackSocket>, myId: string, n: number) {
   await waitFor(async () => impactsOn(net, myId).length, (k) => k >= n, 120_000, 250);
-  const before = impactsOn(net, myId).length;
+  const settled = impactsOn(net, myId);
   await page.waitForTimeout(600); // el texto sale cuando la bala llega en el reloj interpolado (~100 ms después)
-  return { before, after: impactsOn(net, myId), floats: (await floatsOf(page)).filter((f) => f.kind !== 'gold') };
+  const floats = (await floatsOf(page)).filter((f) => f.kind !== 'gold');
+  const counters = await vfxCounters(page);
+  return { before: settled.length, settled, after: impactsOn(net, myId), floats, counters };
 }
 
 const sailTo = (page: Page, x: number, z: number) =>
@@ -455,15 +467,54 @@ test.describe('Números de daño', () => {
     const net = trackSocket(page);
     await enterGame(page, `http://localhost:${PORTS.showcase}`);
     await recordFloats(page);
+    await resetVfxCounters(page);
     const myId = (await me(page))!.id;
     // Artillero ciego de server/scenarios.ts: precisión 0, ataca en cuanto acaba la protección inicial
     await sailTo(page, BLIND_GUNNER_POINT.x, BLIND_GUNNER_POINT.z - 45);
-    const { before, after, floats } = await impactsAndFloats(page, net, myId, 3);
-    console.log(`AC-75 (k = 0): ${after.length} impactos · textos ${JSON.stringify(floats)}`);
+    const { before, settled, after, floats, counters } = await impactsAndFloats(page, net, myId, 3);
+    console.log(`AC-75 (k = 0): ${after.length} impactos · textos ${JSON.stringify(floats)} · salpicaduras ${counters.splashes} (balas falladas ${sum(settled, 'misses')}–${sum(after, 'misses')}) · impactos de bala ${counters.hits}`);
+    // Cada bala fallada deja una salpicadura (las del artillero son las únicas andanadas a la vista)
+    expect(counters.splashes).toBeGreaterThanOrEqual(sum(settled, 'misses'));
+    expect(counters.splashes).toBeLessThanOrEqual(sum(after, 'misses') + SHIP_CLASSES.pirate.cannonsPerSide);
+    expect(counters.hits).toBe(0);
     expect(after.every((e) => e.hits === 0 && e.damage === 0 && e.misses === SHIP_CLASSES.pirate.cannonsPerSide)).toBe(true);
     expect(floats.every((f) => f.kind === 'miss' && f.text === 'Fallo')).toBe(true);
     expect(floats.length).toBeGreaterThanOrEqual(before);
     expect(floats.length).toBeLessThanOrEqual(after.length);
+  });
+
+  test('AC-75 (negativo): quien no es tirador ni objetivo no ve "Fallo" de una andanada ajena, aunque vea sus salpicaduras', async ({ browser }) => {
+    test.setTimeout(180_000);
+    const showcase = `http://localhost:${PORTS.showcase}`;
+    const ctxA = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const ctxB = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    try {
+      const a = await ctxA.newPage();
+      const b = await ctxB.newPage();
+      const netB = trackSocket(b);
+      await enterGame(a, showcase);
+      await enterGame(b, showcase);
+      for (const p of [a, b]) {
+        await recordFloats(p);
+        await resetVfxCounters(p);
+      }
+      const bId = (await me(b))!.id;
+      // B se acerca al artillero ciego (k = 0); A mira desde 95 m, fuera de su radio de agresión (70 m)
+      await sailTo(b, BLIND_GUNNER_POINT.x, BLIND_GUNNER_POINT.z - 45);
+      await sailTo(a, BLIND_GUNNER_POINT.x, BLIND_GUNNER_POINT.z - 95);
+      await waitFor(async () => impactsOn(netB, bId).length, (k) => k >= 3, 120_000, 250);
+      await a.waitForTimeout(600); // el texto saldría al llegar la bala en el reloj interpolado
+      const floatsA = await floatsOf(a);
+      const floatsB = await floatsOf(b);
+      const countersA = await vfxCounters(a);
+      console.log(`AC-75 (negativo): B recibió ${impactsOn(netB, bId).length} impactos y vio ${floatsB.filter((f) => f.kind === 'miss').length} "Fallo"; A vio ${floatsA.filter((f) => f.kind === 'miss').length} "Fallo" y ${countersA.splashes} salpicaduras`);
+      expect(floatsB.filter((f) => f.kind === 'miss').length).toBeGreaterThanOrEqual(3);
+      expect(countersA.splashes).toBeGreaterThan(0); // A tenía la andanada en pantalla
+      expect(floatsA.filter((f) => f.kind === 'miss')).toEqual([]);
+    } finally {
+      await ctxA.close();
+      await ctxB.close();
+    }
   });
 
   test('AC-75 (k > 0): cada andanada contra el jugador muestra un único número igual a k × daño', async ({ page }) => {
@@ -471,10 +522,17 @@ test.describe('Números de daño', () => {
     const net = trackSocket(page);
     await enterGame(page, `http://localhost:${PORTS.showcase}`);
     await recordFloats(page);
+    await resetVfxCounters(page);
     const myId = (await me(page))!.id;
     // Pirata quieto del punto de captura (precisión 0,6): ataca al acabar la protección
     await sailTo(page, SHOWCASE_POINT.x, SHOWCASE_POINT.z);
-    const { before, after, floats } = await impactsAndFloats(page, net, myId, 4);
+    const { before, settled, after, floats, counters } = await impactsAndFloats(page, net, myId, 4);
+    console.log(`AC-75 (k > 0): impactos de bala ${counters.hits} (aciertos ${sum(settled, 'hits')}–${sum(after, 'hits')}) · salpicaduras ${counters.splashes} (falladas ${sum(settled, 'misses')}–${sum(after, 'misses')})`);
+    const cannons = SHIP_CLASSES.pirate.cannonsPerSide;
+    expect(counters.hits).toBeGreaterThanOrEqual(sum(settled, 'hits'));
+    expect(counters.hits).toBeLessThanOrEqual(sum(after, 'hits') + cannons);
+    expect(counters.splashes).toBeGreaterThanOrEqual(sum(settled, 'misses'));
+    expect(counters.splashes).toBeLessThanOrEqual(sum(after, 'misses') + cannons);
     const damage = SHIP_CLASSES.pirate.cannon!.damage;
     const expected = after.map((e) => (e.hits === 0 ? 'Fallo' : `−${e.hits * damage}`));
     console.log(`AC-75 (k > 0): impactos k = ${after.map((e) => e.hits).join(', ')} · textos ${floats.map((f) => f.text).join(', ')}`);
