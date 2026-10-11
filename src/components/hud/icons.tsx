@@ -1,4 +1,5 @@
-// Iconos de línea 24×24, trazo de 2 px y currentColor (ART-DIRECTION §13). Dibujos propios, sin dependencias.
+// Iconos de línea 24×24, trazo de 2 px y currentColor (ART-DIRECTION §13). Sin dependencias. Swords copia el de
+// Lucide (ISC) y Coins y Wrench siguen su construcción; el resto son dibujos propios.
 import React from 'react';
 
 type IconProps = { size?: number; className?: string; title?: string };
@@ -83,7 +84,7 @@ export const Sailboat = (p: IconProps) => (
 export const Swords = (p: IconProps) => (
   <Svg {...p}>
     <path d="M14.5 17.5 3 6V3h3l11.5 11.5M13 19l6-6M16 16l4 4M19 21l2-2" />
-    <path d="M9.5 6.5 13 3h3v3l-3.5 3.5M5 14l4 4M7 17l-3 3M4 19l1 1" />
+    <path d="M14.5 6.5 18 3h3v3l-3.5 3.5M5 14l4 4M7 17l-3 3M3 19l2 2" />
   </Svg>
 );
 
