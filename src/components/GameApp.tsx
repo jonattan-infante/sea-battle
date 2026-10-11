@@ -284,7 +284,12 @@ export default function GameApp({ guest }: { guest: boolean }) {
         else st.pushToast('warn', 'El puerto solo abre en la zona segura');
       },
       deselect: () => useHud.getState().select(null),
-      respawn: () => client.respawn(),
+      respawn: () => {
+        // Cero tráfico inútil: antes de que acabe la cuenta atrás el servidor lo rechazaría
+        const death = useHud.getState().player?.death;
+        if (!death || client.serverTime() < death.respawnAt) return;
+        client.respawn();
+      },
       buy: (itemId: string) => client.buy(itemId),
       selectShip: (classId: PlayerShipClass) => client.selectShip(classId),
       retry: () => client.retry(),
@@ -324,7 +329,8 @@ export default function GameApp({ guest }: { guest: boolean }) {
       switch (e.code) {
         case 'Space':
           e.preventDefault();
-          actions.toggleAttack();
+          if (st.player?.death) actions.respawn(); // hundido: Espacio zarpa (Enter, con el foco en Zarpar)
+          else actions.toggleAttack();
           break;
         case 'Tab':
           e.preventDefault();

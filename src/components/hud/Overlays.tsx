@@ -1,6 +1,6 @@
 'use client';
 // Muerte (ART-DIRECTION §15) y estados de conexión (§16.2). La cuenta atrás corre por ref (sin commits).
-import React, { useEffect, useRef } from 'react';
+import React, { useLayoutEffect, useRef } from 'react';
 import { DEATH_COUNTDOWN } from '../../game/constants';
 import type { GameClient } from '../../client/game-client';
 import { addTicker } from '../../client/hud-logic';
@@ -17,12 +17,15 @@ export function DeathOverlay({ client, actions }: { client: GameClient; actions:
   const numberRef = useRef<HTMLSpanElement>(null);
   const ringRef = useRef<SVGCircleElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const respawnAt = death?.respawnAt ?? null;
 
-  useEffect(() => {
-    if (!death) return;
+  // `disabled` vive solo en el DOM: si fuera una prop, React descartaría el clic aunque el ticker habilite el
+  // botón (decide con sus props, no con el DOM). Se pinta antes del primer frame para que no parpadee activo.
+  useLayoutEffect(() => {
+    if (respawnAt === null) return;
     let last = -1;
-    return addTicker((now) => {
-      const left = Math.max(0, death.respawnAt - client.serverTime(now));
+    const paint = (now: number) => {
+      const left = Math.max(0, respawnAt - client.serverTime(now));
       const secs = Math.ceil(left);
       ringRef.current?.setAttribute('stroke-dashoffset', String(RING * (1 - left / DEATH_COUNTDOWN)));
       if (secs === last) return;
@@ -32,9 +35,12 @@ export function DeathOverlay({ client, actions }: { client: GameClient; actions:
       if (btn) {
         btn.disabled = secs > 0;
         btn.textContent = secs > 0 ? `Zarpar en ${secs} s` : 'Zarpar';
+        if (secs === 0) btn.focus(); // Enter zarpa sin buscar el botón
       }
-    });
-  }, [death, client]);
+    };
+    paint(performance.now());
+    return addTicker(paint);
+  }, [respawnAt, client]);
 
   if (!death) return null;
   const color = killedBy ? RELATION_COLOR[killedBy.relation] : 'var(--ui-text)';
@@ -56,7 +62,7 @@ export function DeathOverlay({ client, actions }: { client: GameClient; actions:
           </svg>
           <span ref={numberRef} data-testid="death-countdown">{DEATH_COUNTDOWN}</span>
         </div>
-        <button ref={buttonRef} type="button" className="btn-sail" disabled onClick={actions.respawn} data-testid="btn-respawn">
+        <button ref={buttonRef} type="button" className="btn-sail" onClick={actions.respawn} data-testid="btn-respawn">
           Zarpar en {DEATH_COUNTDOWN} s
         </button>
       </section>

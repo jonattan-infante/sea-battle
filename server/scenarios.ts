@@ -7,6 +7,13 @@ import { spawnMerchant, spawnPirate } from '../src/game/world';
 // Punto de captura en mar abierto, fuera de la zona segura (r 110) y a ≥ 60 m de cualquier isla
 export const SHOWCASE_POINT = { x: 0, z: 200 };
 
+// Emboscada para el e2e de muerte → Zarpar (AC-63): 5 piratas hunden una Balandra en ~15 s. A 420 m del puerto
+// queda fuera del radio de interés (300 m) desde todo el anillo de reaparición (≤ 90 m) y desde el punto de
+// captura, así que no aparece en las capturas estándar ni en su minimapa.
+export const AMBUSH_POINT = { x: 0, z: -420 };
+const AMBUSH_PIRATES = 5;
+const AMBUSH_RADIUS = 30;
+
 export type ScenarioName = 'showcase';
 
 export function applyScenario(world: World, name: ScenarioName): void {
@@ -39,4 +46,16 @@ export function applyScenario(world: World, name: ScenarioName): void {
 
   // Restos flotantes cerca del punto de captura (VFX §14)
   world.wrecks.push({ id: `wreck-${world.nextId++}`, pos: { x: 12, z: 182 }, gold: 30, expiresAt: world.time + WRECK_LIFETIME * 100 });
+
+  // Emboscada: piratas quietos en corro alrededor de AMBUSH_POINT; atacan a quien llegue sin protección
+  for (let i = 0; i < AMBUSH_PIRATES; i++) {
+    const a = (2 * Math.PI * i) / AMBUSH_PIRATES;
+    const p = spawnPirate(world, 0);
+    p.pos = { x: AMBUSH_POINT.x + Math.cos(a) * AMBUSH_RADIUS, z: AMBUSH_POINT.z + Math.sin(a) * AMBUSH_RADIUS };
+    p.heading = a + Math.PI / 2;
+    p.ai!.origin = { ...p.pos };
+    p.ai!.wait = 1e9;
+    p.destination = null;
+    p.path = [];
+  }
 }

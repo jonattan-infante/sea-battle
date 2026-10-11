@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { PORTS } from '../playwright.config';
-import { clickWater, dialogsOf, enterGame, hud, me, ships, waitFor } from './helpers';
+import { AMBUSH_POINT } from '../server/scenarios';
+import { clickWater, dialogsOf, enterGame, hud, me, ships, trackSocket, waitFor } from './helpers';
 
 test.describe('Landing', () => {
   test('AC-10: con AUTH_BYPASS aparece "Jugar como invitado"; sin él no existe en el DOM', async ({ page }) => {
@@ -223,6 +224,49 @@ test.describe('Combate completo', () => {
     await expect(page.getByTestId('feed')).toContainText(/Hundiste a Mercante \+60 oro/, { timeout: 3000 });
     const gold1 = await waitFor(goldText, (g) => g > gold0, 3000, 50);
     console.log(`AC-58/78: oro ${gold0} → ${gold1}`);
+    expect(dialogsOf(page)).toEqual([]);
+  });
+});
+
+test.describe('Muerte y reaparición', () => {
+  test('AC-63: hundido, Zarpar está desactivado durante la cuenta atrás y al pulsarlo reaparece a 60–90 m del puerto con la vida llena', async ({ page }) => {
+    test.setTimeout(150_000);
+    const net = trackSocket(page);
+    await enterGame(page, `http://localhost:${PORTS.showcase}`);
+    const start = (await me(page))!;
+
+    // Navegar a la emboscada de server/scenarios.ts: 5 piratas atacan en cuanto acaba la protección inicial
+    await page.evaluate(([x, z]) => {
+      const rt = window.__SEA_BATTLE__!.runtime() as unknown as { client: { moveTo: (x: number, z: number) => void } };
+      rt.client.moveTo(x, z);
+    }, [AMBUSH_POINT.x, AMBUSH_POINT.z]);
+    await expect(page.getByTestId('death-card')).toBeVisible({ timeout: 110_000 });
+    const sunkAt = Date.now();
+
+    // Durante la cuenta atrás el botón está desactivado y un clic no envía nada
+    const button = page.getByTestId('btn-respawn');
+    await expect(button).toBeDisabled();
+    await expect(button).toHaveText(/^Zarpar en \d s$/);
+    net.reset();
+    await button.click({ force: true });
+    await page.keyboard.press('Space');
+    expect(net.sent.filter((f) => f.includes('"respawn"'))).toEqual([]);
+
+    // Se activa al terminar la cuenta atrás y un clic real zarpa
+    await expect(button).toBeEnabled({ timeout: 12_000 });
+    await expect(button).toHaveText('Zarpar');
+    console.log(`AC-63: Zarpar activo ${((Date.now() - sunkAt) / 1000).toFixed(1)} s después de mostrarse la tarjeta`);
+    await button.click();
+    await waitFor(async () => net.sent.filter((f) => f.includes('"respawn"')).length, (n) => n === 1, 2000, 50);
+
+    const ship = await waitFor(() => me(page), (s) => !!s && s.state === 'alive', 5000, 100);
+    const fromPort = Math.hypot(ship!.x, ship!.z);
+    console.log(`AC-63: reaparece a ${fromPort.toFixed(1)} m del puerto con ${ship!.hp}/${ship!.maxHp}`);
+    expect(fromPort).toBeGreaterThanOrEqual(60);
+    expect(fromPort).toBeLessThanOrEqual(90);
+    expect(ship!.hp).toBe(ship!.maxHp);
+    expect(ship!.classId).toBe(start.classId);
+    await expect(page.getByTestId('death-card')).toHaveCount(0);
     expect(dialogsOf(page)).toEqual([]);
   });
 });
