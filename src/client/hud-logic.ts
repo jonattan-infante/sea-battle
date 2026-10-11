@@ -62,9 +62,9 @@ export function cycleTarget(client: GameClient, currentId: string | null, backwa
 
 // Señales que cambian con el reloj y se pintan por ref, sin pasar por React
 export const hudSignals = {
-  lastVolleyAt: 0, // performance.now() de la última andanada propia
+  lastVolleyAt: -Infinity, // performance.now() de la última andanada propia (−∞: ninguna)
   reloadMs: CANNON_LEVELS[0].reload * 1000,
-  lastHitAt: 0 // performance.now() del último daño recibido
+  lastHitAt: -Infinity // performance.now() del último daño recibido (−∞: ninguno; con 0, los 3 primeros s tras cargar contaban como "bajo fuego")
 };
 
 // Un único requestAnimationFrame para todos los elementos del HUD que se actualizan por ref

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { PORTS } from '../playwright.config';
-import { commits, enterGame, installCommitCounter, me, renderInfo, ships, trackSocket, waitFor } from './helpers';
+import { commits, enterGame, hud, installCommitCounter, me, renderInfo, ships, trackSocket, waitFor } from './helpers';
 
 const EMPTY = `http://localhost:${PORTS.empty}`;
 
@@ -9,6 +9,8 @@ test.describe('Rendimiento @perf', () => {
     await installCommitCounter(page);
     const socket = trackSocket(page);
     await enterGame(page, EMPTY);
+    // Recién entrado no está bajo fuego: si lo estuviera, el estado cambiaría solo a los 3 s (commit en reposo)
+    expect(((await hud(page)).me as { underFire: boolean }).underFire).toBe(false);
     await page.mouse.move(5, 450); // fuera del HUD y sin hover sobre barcos
     await page.waitForTimeout(2000); // asentarse tras la entrada
     const c0 = await commits(page);
