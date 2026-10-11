@@ -65,6 +65,11 @@ export interface BulletTargets {
   npcHealth: Map<string, number>;
 }
 
+// Vida actual de un NPC; 0 es un valor válido (muerto), no "sin dato"
+export function getNpcHealth(npcHealth: Map<string, number>, npc: NPC): number {
+  return npcHealth.get(npc.id) ?? npc.health;
+}
+
 // Primer objetivo alcanzado por una bala; nunca el barco que la disparó (ownerId)
 export function findBulletHit(
   position: Position,
@@ -79,8 +84,7 @@ export function findBulletHit(
   }
 
   for (const npc of targets.npcs) {
-    const health = targets.npcHealth.get(npc.id) || npc.health;
-    if (health > 0 && calculateDistance(position, npc.position) < BULLET_HIT_RADIUS) {
+    if (getNpcHealth(targets.npcHealth, npc) > 0 && calculateDistance(position, npc.position) < BULLET_HIT_RADIUS) {
       return { id: npc.id, type: 'npc' };
     }
   }

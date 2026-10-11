@@ -11,6 +11,7 @@ import useGameStore from '../stores/gameStore';
 import Shop from './Shop';
 import { useSocket } from '../hooks/useSocket';
 import { useUser } from '@clerk/nextjs';
+import { getNpcHealth } from '../lib/game-utils';
 
 interface GameMapProps {
   gameMap: GameMap;
@@ -27,6 +28,7 @@ const GameMapComponent: React.FC<GameMapProps> = ({ gameMap, ships, npcs, onShip
   const [bullets, setBullets] = useState<Array<{id: string, ownerId: string, position: Position, direction: Position}>>([]);
   const [flashes, setFlashes] = useState<Array<{id: string, position: Position, direction?: Position}>>([]);
   const [npcHealth, setNpcHealth] = useState<Map<string, number>>(new Map());
+  const [deadNpcIds, setDeadNpcIds] = useState<Set<string>>(new Set());
   const [showShop, setShowShop] = useState(false);
   const [selectedShipId, setSelectedShipId] = useState<string | null>(null);
   const [otherPlayers, setOtherPlayers] = useState<Map<string, Ship>>(new Map());
@@ -168,20 +170,11 @@ const GameMapComponent: React.FC<GameMapProps> = ({ gameMap, ships, npcs, onShip
       const impactId = `impact-${Date.now()}-${Math.random()}`;
       setFlashes(prev => [...prev, { id: impactId, position }]);
 
+      // La muerte (oro + evento al servidor) se procesa una sola vez en handleNpcDeath
       setNpcHealth(prev => {
         const newHealth = new Map(prev);
-        const current = newHealth.get(targetId) || 0;
-        const newHealthValue = current - 10; // daño fijo
-        newHealth.set(targetId, newHealthValue);
-
-        // Si el NPC muere, enviar evento de destrucción
-        if (newHealthValue <= 0) {
-          const npc = npcs.find(n => n.id === targetId);
-          if (npc && user) {
-            destroyNpc(targetId, npc.rewardGold, user.id);
-          }
-        }
-
+        const current = newHealth.get(targetId) ?? 0;
+        newHealth.set(targetId, current - 10); // daño fijo
         return newHealth;
       });
     }
@@ -196,8 +189,17 @@ const GameMapComponent: React.FC<GameMapProps> = ({ gameMap, ships, npcs, onShip
   };
 
   const handleNpcDeath = (id: string, gold: number) => {
+    if (deadNpcIds.has(id)) return;
+    setDeadNpcIds(prev => new Set(prev).add(id));
+    setSelectedShipId(prev => (prev === id ? null : prev));
     onGoldEarned?.(gold);
+    if (user) {
+      destroyNpc(id, gold, user.id);
+    }
   };
+
+  // Los NPC muertos salen de la escena y dejan de ser objetivo de las balas
+  const liveNpcs = npcs.filter(npc => !deadNpcIds.has(npc.id));
 
   const handleRepair = () => {
     if (playerShip) {
@@ -344,11 +346,11 @@ const GameMapComponent: React.FC<GameMapProps> = ({ gameMap, ships, npcs, onShip
         ))}
 
         {/* Renderizar NPCs */}
-        {npcs.map(npc => (
+        {liveNpcs.map(npc => (
           <NPCComponent
             key={npc.id}
             npc={npc}
-            currentHealth={npcHealth.get(npc.id) || npc.health}
+            currentHealth={getNpcHealth(npcHealth, npc)}
             onDeath={handleNpcDeath}
             mapWidth={width}
             mapHeight={height}
@@ -368,7 +370,7 @@ const GameMapComponent: React.FC<GameMapProps> = ({ gameMap, ships, npcs, onShip
             speed={20}
             mapWidth={width}
             mapHeight={height}
-            targets={{ ships, npcs, npcHealth }}
+            targets={{ ships, npcs: liveNpcs, npcHealth }}
             onHit={handleBulletHit}
             onDestroy={handleBulletDestroy}
           />

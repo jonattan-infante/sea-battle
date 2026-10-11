@@ -19,9 +19,12 @@ const NPCComponent: React.FC<NPCProps> = React.memo(({ npc, currentHealth, onDea
   const meshRef = useRef<THREE.Group>(null);
   const [direction, setDirection] = useState({ x: Math.random() * 2 - 1, y: Math.random() * 2 - 1 });
   const [changeDirectionTimer, setChangeDirectionTimer] = useState(Math.random() * 2 + 3); // 3-5 segundos
+  const hasDiedRef = useRef(false);
 
   useEffect(() => {
-    if (currentHealth <= 0) {
+    // La muerte es un evento único: onDeath cambia de referencia en cada render del padre
+    if (currentHealth <= 0 && !hasDiedRef.current) {
+      hasDiedRef.current = true;
       onDeath(npc.id, npc.rewardGold);
     }
   }, [currentHealth, npc.id, npc.rewardGold, onDeath]);

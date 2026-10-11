@@ -5,7 +5,8 @@ import {
   calculateDamage,
   clearOccupiedPositions,
   getOccupiedPositions,
-  findBulletHit
+  findBulletHit,
+  getNpcHealth
 } from '../lib/game-utils';
 import { NPC, NPCType, Ship, ShipClass } from '../types/game';
 
@@ -154,6 +155,21 @@ describe('Game Utils', () => {
     });
   });
 
+  describe('getNpcHealth', () => {
+    test('should return the tracked health, including 0', () => {
+      const npc = makeNpc('npc1', 0, 0, 30);
+
+      expect(getNpcHealth(new Map([['npc1', 0]]), npc)).toBe(0);
+      expect(getNpcHealth(new Map([['npc1', 20]]), npc)).toBe(20);
+    });
+
+    test('should fall back to max health when untracked', () => {
+      const npc = makeNpc('npc1', 0, 0, 30);
+
+      expect(getNpcHealth(new Map(), npc)).toBe(30);
+    });
+  });
+
   describe('findBulletHit', () => {
     const shooter = makeShip('ship-a', 0, 0);
 
@@ -184,6 +200,15 @@ describe('Game Utils', () => {
       const npc = makeNpc('npc1', 5, 5);
 
       const hit = findBulletHit({ x: 5, y: 5 }, shooter.id, { ships: [], npcs: [npc], npcHealth: new Map([['npc1', -10]]) });
+
+      expect(hit).toBeNull();
+    });
+
+    test('should ignore an NPC with exactly 0 health', () => {
+      // Antes `|| npc.health` trataba 0 como "sin dato" y el NPC muerto seguía recibiendo balas
+      const npc = makeNpc('npc1', 5, 5);
+
+      const hit = findBulletHit({ x: 5, y: 5 }, shooter.id, { ships: [], npcs: [npc], npcHealth: new Map([['npc1', 0]]) });
 
       expect(hit).toBeNull();
     });
