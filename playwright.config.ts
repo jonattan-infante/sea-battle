@@ -4,7 +4,9 @@
 // y escenario determinista de capturas (3103).
 import { defineConfig, devices } from '@playwright/test';
 
-export const PORTS = { game: 3100, empty: 3101, auth: 3102, showcase: 3103 } as const;
+// PW_PORT_BASE permite correr una copia aislada del harness en paralelo sin chocar con otra corrida (por defecto 3100)
+const BASE = Number(process.env.PW_PORT_BASE ?? 3100);
+export const PORTS = { game: BASE, empty: BASE + 1, auth: BASE + 2, showcase: BASE + 3 } as const;
 
 const server = (port: number, env: string) => ({
   command: `${env} PORT=${port} NEXT_DIST_DIR=.next-e2e NODE_ENV=production node dist/server/index.js`,
