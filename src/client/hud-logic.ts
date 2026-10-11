@@ -2,6 +2,7 @@
 // el servidor vuelve a validar cada intención (GDD §13).
 import {
   CANNON_LEVELS,
+  LOW_HP_WARNING,
   PORT_POSITION,
   PVP_ENABLED,
   SAFE_ZONE_RADIUS,
@@ -10,7 +11,7 @@ import {
 } from '../game/constants';
 import { PlayerView } from '../game/types';
 import type { GameClient, RenderShip } from './game-client';
-import type { Relation } from './hud-store';
+import type { MeHud, Relation } from './hud-store';
 
 export function inSafeZone(x: number, z: number): boolean {
   return Math.hypot(x - PORT_POSITION.x, z - PORT_POSITION.z) <= SAFE_ZONE_RADIUS;
@@ -27,6 +28,11 @@ export function cannonFor(player: PlayerView | null) {
 
 export function classLabel(classId: string): string {
   return SHIP_CLASSES[classId]?.label ?? classId;
+}
+
+// Vida baja (< 30 %, AC-41): el panel propio avisa y el botón Reparar pulsa
+export function isLowHp(me: Pick<MeHud, 'state' | 'hp' | 'maxHp'>): boolean {
+  return me.state === 'alive' && me.hp / me.maxHp < LOW_HP_WARNING;
 }
 
 // Misma regla que canAttack en src/game/world.ts, con los datos interpolados del cliente

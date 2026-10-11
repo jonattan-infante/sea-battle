@@ -2,10 +2,10 @@
 // HUD (ART-DIRECTION §12). React solo pinta cuando cambian los datos del store; lo que avanza con el reloj
 // (recarga, protección, cuenta atrás) se actualiza por ref desde un único requestAnimationFrame.
 import React, { useEffect, useLayoutEffect, useRef } from 'react';
-import { LOW_HP_WARNING, REPAIR_RATE, REPAIR_RATE_UNDER_FIRE } from '../../game/constants';
+import { REPAIR_RATE, REPAIR_RATE_UNDER_FIRE } from '../../game/constants';
 import type { GameClient } from '../../client/game-client';
 import { HINTS } from '../../client/hints';
-import { addTicker, hudSignals } from '../../client/hud-logic';
+import { addTicker, hudSignals, isLowHp } from '../../client/hud-logic';
 import { MeHud, Relation, TargetHud, useHud } from '../../client/hud-store';
 import { Alert, Anchor, Close, Coins, Crosshair, Sailboat, Shield, Skull, Star, Stop, Store, Swords, Target, Wrench } from './icons';
 import Minimap, { ViewRect } from './Minimap';
@@ -79,7 +79,7 @@ function PlayerPanel({ client }: { client: GameClient }) {
   }, [me, client]);
 
   if (!me) return null;
-  const low = me.state === 'alive' && me.hp / me.maxHp < LOW_HP_WARNING;
+  const low = isLowHp(me);
   let base: React.ReactNode = 'Listo';
   let tone = '';
   if (me.state !== 'alive') base = 'Hundido';
@@ -231,7 +231,7 @@ function useActionModel(): ActionModel | null {
     attackEnabled: alive && (attacking || !!target?.attackable),
     repairing: me.action === 'repairing',
     repairEnabled: alive && (me.action === 'repairing' || me.hp < me.maxHp),
-    low: alive && me.hp / me.maxHp < LOW_HP_WARNING,
+    low: isLowHp(me),
     portEnabled: alive && me.inSafeZone
   };
 }
