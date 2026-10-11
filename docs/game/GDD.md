@@ -155,7 +155,13 @@ Orientaciones soportadas: vertical (390×844) y horizontal (844×390). Mientras 
 
 ### Cámara (qué debe comunicar; los valores exactos los define `game-ux`)
 - Proyección "isométrica" (cenital oblicua).
-- **Modo seguimiento** (por defecto): sigue al barco propio, que queda siempre en el **10 % central** de la pantalla. Con el zoom por defecto, el **círculo de alcance máximo (80 m)** cabe entero a 1440×900 y a 390×844.
+- **Modo seguimiento** (por defecto): sigue al barco propio, que queda siempre en el **10 % central** de la pantalla.
+- **Encuadre (decisión U8, D23):** con el zoom por defecto cabe entero, a 1440×900 y a 390×844, el círculo de radio **R = max(alcance de tu cañón, 65 m)**. Es decir, 65 / 70 / 80 m con los cañones N1 / N2 / N3 (antes, 80 m fijos).
+  - 65 m es el **mayor alcance de los NPC** (cañonera y capitán). Si en el futuro un NPC alcanza más, R sube con él.
+  - **Por qué no el alcance propio a secas (60 m con N1):** la cañonera orbita a 62 m y el capitán dispara desde 65 m, así que dispararían desde fuera del encuadre precisamente al jugador novato, que es quien tiene que perseguir a la cañonera.
+  - **Ganancia:** la Balandra inicial pasa de 1 310 a ≈1 984 px² en su peor rumbo (+51 %), frente a los ≈2 000 px² del barco del jugador en Seafight.
+  - Al comprar cañones, R cambia (65 → 70 → 80 m) con una transición de 600 ms al cerrar la tienda.
+  - Los jugadores con más alcance (PvP, hasta 80 m) pueden quedar fuera del encuadre. Para eso está el indicador de atacante fuera de pantalla (§14).
 - **Vista libre** (I2, P1). En Seafight el minimapa y unas teclas mueven la carta, y "To the Ship" la devuelve al barco (REFERENCE §2 y §12).
   - **Entrar:** arrastrar en el agua más de 12 px (botón izquierdo o un dedo); hacer clic o arrastrar en el minimapa (la vista se centra en ese punto); o usar las flechas (150 m/s).
   - **Soltar antes de 12 px es un clic normal:** navega o selecciona. Dos dedos son zoom, nunca desplazamiento.
@@ -419,6 +425,7 @@ El layout, la paleta y la forma los define `game-ux`. Aquí solo se fija qué de
 | Minimapa (P1) | Mapa completo (islas, puerto, zona segura) + entidades dentro del área de interés; propio, jugadores, piratas, cañoneras, mercantes y capitán con **color y forma**. Clic o arrastre mueve la vista (I2) | ≤ 2 Hz |
 | Aviso del jefe (I2) | Aviso a todos al aparecer el capitán, con su sector; marcador visible en el minimapa desde cualquier punto; feed al hundirlo | Al cambiar |
 | Vista libre (I2) | Botón **Centrar** visible solo en vista libre e indicador en el borde de la pantalla hacia el barco propio | Fuera de React (el indicador) |
+| Atacante fuera de pantalla (I2) | Si un barco que te está disparando no se ve, un indicador en el borde apunta hacia él mientras dure el ataque y 3 s después. Comparte componente con el indicador de vista libre | Fuera de React |
 | Zona segura | Borde visible en el mundo + aviso "Zona segura" en el HUD | Al cambiar |
 | Protección | Indicador sobre el barco + tiempo restante | Al cambiar |
 | Feed de eventos (P1) | "Hundiste a Pirata +105 oro", "X te hundió" (máx. 4 líneas, 5 s cada una) | Al cambiar |

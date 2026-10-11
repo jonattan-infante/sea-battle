@@ -139,7 +139,8 @@ Los hex de §4.1–4.2 son el **color que se ve en pantalla** en la cara dominan
 | **Otro jugador** | `#F5F1E6` | `#F5F1E6` | ancla | ● 5 px |
 | **Pirata (hostil)** | `#FF7A7A` | `#FF7A7A` | calavera | ◆ 7 px |
 | **Mercante (pasivo)** | `#6CC3F5` | `#6CC3F5` | moneda | ■ 6 px |
-| **Capitán pirata (P2)** | `#FF7A7A` | `#FF7A7A` | calavera + corona | ★ 10 px |
+| **Cañonera pirata (I2)** | `#FF7A7A` | `#FF7A7A` | calavera + bomba (Lucide `bomb`) | ▬ 11 × 5 px (ancha y baja, como su casco) |
+| **Capitán pirata (I2, jefe)** | `#FF7A7A` | `#FF7A7A` | calavera + corona | ★ 11 px con halo que late (anillo de r 7 → 12 px, α 0,6 → 0, 1 Hz). **Siempre visible**, también fuera del área de interés (GDD §9) |
 
 ### 4.4 Interfaz (tokens CSS en `:root`)
 | Token | Valor | Uso |
@@ -243,16 +244,19 @@ top/bottom = reserva de HUD del layout (§12): escritorio 120/108 · móvil vert
 
 (px = eslora del casco de lado. El suelo visible mide `W/ppm` × `H/(ppm·sin θ)`.)
 
-**Propuesta D23: encuadre por alcance propio (pendiente de `game-product`, U8).** `R` = alcance del **cañón propio** (60 / 70 / 80 m, GDD §6) en lugar de 80 m fijos. Se mantiene la garantía que importa: tu círculo de alcance siempre cabe entero. Al cambiar de cañón (solo en la tienda del puerto), ppm₀ pasa al valor nuevo con una transición *ease-in-out* de 600 ms al cerrar la tienda, que además comunica la mejora. Esto sustituye el motivo de «R fijo» (que el zoom no cambie al mejorar), porque el cambio ocurre una sola vez y en un momento tranquilo.
+**Propuesta D23, corregida en D25: encuadre por alcance (pendiente de `game-product`, U8).** `R = máx(alcance del cañón propio, 65 m)`. 65 m es el mayor alcance de disparo hostil (cañonera y capitán, GDD §9). Así se cumplen dos garantías: **tu círculo de alcance cabe entero** y **todo lo que te puede disparar está en pantalla**. Con R = 60 m no se cumpliría la segunda, porque la cañonera orbita a 62 m y dispara a 65. Al cambiar de cañón (solo en la tienda del puerto), ppm₀ pasa al valor nuevo con una transición *ease-in-out* de 600 ms al cerrar la tienda, que además comunica la mejora. Esto sustituye el motivo de «R fijo» (que el zoom no cambie al mejorar), porque el cambio ocurre una sola vez y en un momento tranquilo.
 
-| Viewport | R = 60 m (cañón de 8 lb, sesión nueva) | R = 70 m | R = 80 m (= hoy) |
-|---|---|---|---|
-| 1440×900 | **6,71** | 5,75 | 5,04 |
-| 390×844 | 3,05 | 2,61 | 2,29 |
-| 844×390 | 3,72 | 3,19 | 2,79 |
-| Balandra en 1440×900, peor rumbo (px de vela + cubierta + casco, `measureShipValues`) | **2 330** | 1 710 | 1 310 |
+**Intercambio para producto** (cálculo con la fórmula de arriba; eslora en px de lado; «vertical × horizontal» = alcance en pantalla hacia arriba y abajo × hacia los lados, dentro de las reservas del HUD):
 
-El enemigo hostil de más alcance del P0 es el pirata, con 55 m, que queda dentro con R = 60. El capitán (P2) tiene 65 m: con el cañón de 8 lb puede disparar desde 5 m fuera del borde vertical. Se resuelve en P2 con un indicador de borde o con R = máx(alcance propio, 65).
+| R | 1440×900: ppm₀ · alcance en pantalla | Eslora en px (Balandra / Pirata / Cañonera / Capitán / Fragata) | Balandra, peor rumbo (`measureShipValues`) | 390×844: ppm₀ · alcance en pantalla · Balandra / Cañonera / Capitán en px | Hostiles que te pueden disparar, en pantalla |
+|---|---|---|---|---|---|
+| **80 (hoy)** | 5,04 · 80 × 141 m | 81 / 101 / 141 / 151 / 171 | 1 310 px | 2,29 · 163 × 80 m · 37 / 64 / 69 | Todos |
+| 75 | 5,37 · 75 × 132 m | 86 / 107 / 150 / 161 / 183 | 1 490 px | 2,44 · 153 × 75 m · 39 / 68 / 73 | Todos |
+| 70 | 5,76 · 70 × 123 m | 92 / 115 / 161 / 173 / 196 | 1 710 px | 2,61 · 143 × 70 m · 42 / 73 / 78 | Todos |
+| **65 (propuesta con N1)** | **6,20** · 65 × 114 m | 99 / 124 / 174 / 186 / 211 | **1 980 px** (+51 %) | 2,82 · 133 × 65 m · 45 / 79 / 84 | Todos (pirata 55, cañonera y capitán 65) |
+| 60 | 6,71 · 60 × 105 m | 107 / 134 / 188 / 201 / 228 | 2 330 px | 3,05 · 122 × 60 m · 49 / 85 / 92 | ✗ Cañonera y capitán disparan desde fuera |
+
+Con la propuesta: cañón N1 → R 65 (+23 % de eslora en px frente a hoy); N2 → R 70 (+14 %); N3 → R 80 (igual que hoy). Lo que se pierde con N1 es ver entre 65 y 80 m hacia arriba y abajo. A los lados se siguen viendo 114 m en escritorio. La cañonera detecta a 80 m y se acerca: se ve a los lados desde 114 m y arriba o abajo desde 65 m, que es cuando ya puede disparar.
 
 **No hay que codificar 5,04 ni 2,29.** ppm₀ se calcula en tiempo de ejecución con la fórmula, a partir de θ y de las reservas `top`/`bottom` definidas como constantes del layout del HUD. En escritorio, el eje vertical del círculo queda exactamente en el borde del área útil (660 px frente a 660 px). Por eso cambiar θ o la altura del HUD solo exige actualizar esas constantes, y AD-06 lo verifica.
 
@@ -361,18 +365,18 @@ Balandra            Bergantín                  Fragata
 
 ## 10. NPC
 
-| | **Pirata** (hostil) | **Mercante** (pasivo) | **Capitán pirata** (P2, jefe) |
-|---|---|---|---|
-| Eslora × manga | 20 × 5,0 m (fino, L/B 4,0) | 22 × 7,6 m (panzudo, L/B 2,9) | 30 × 8,0 m |
-| Francobordo / bauprés | 1,6 / 6,0 m | 2,4 / 4,0 m | 2,8 / 8,0 m |
-| Mástiles | 2, **inclinados 8° a popa**: 16 y 17,5 m | 3 verticales: 16, 17,5 y mesana latina 12 m | 3, inclinados 6°: 21, 24 y 18 m |
-| Velas | **Negras** `#2B2A2E`: trinquete cuadro con muescas + mayor de cangreja + foque | **Crema con 2 franjas azules** (`#EADFC6` / `#2F7FB8`) + mesana latina | Negras con franja inferior roja `#B3261E` |
-| Casco | Negro `#2A2523`, franja roja | Marrón claro `#6E4A2C`, franja marfil, popa alta y redondeada | Negro, franja roja, mascarón dorado |
-| Cubierta | Despejada | **Carga**: 6 cajas + 3 barriles | Despejada |
-| Bandera | Negra con un cuadro blanco (calavera a esta escala) | Azul con un cuadro blanco | Negra de 3 × 2 m |
-| Cañones por banda (GDD §9) | 4 | 0 | 6 |
-| Etiqueta | Calavera + coral | Moneda + cielo | Calavera y corona + coral |
-| `sb_radius` / colisión (GDD) | 11 m / 6 m | 12 m / 7 m | 16 m / 9 m |
+| | **Pirata** (hostil) | **Mercante** (pasivo) | **Capitán pirata** (I2, jefe) | **Cañonera pirata** (I2, hostil) |
+|---|---|---|---|---|
+| Eslora × manga | 20 × 5,0 m (fino, L/B 4,0) | 22 × 7,6 m (panzudo, L/B 2,9) | 30 × 8,0 m | 28 × 10,0 m (**ancha y baja**, L/B 2,8; perfil chato) |
+| Francobordo / bauprés | 1,6 / 6,0 m | 2,4 / 4,0 m | 2,8 / 8,0 m | **1,5** / 3,0 m |
+| Mástiles | 2, **inclinados 8° a popa**: 16 y 17,5 m | 3 verticales: 16, 17,5 y mesana latina 12 m | 3, inclinados 6°: 21, 24 y 18 m | **1**, inclinado 4°: 16 m |
+| Velas | **Negras** `#2B2A2E`: trinquete cuadro con muescas + mayor de cangreja + foque | **Crema con 2 franjas azules** (`#EADFC6` / `#2F7FB8`) + mesana latina | Negras con franja inferior roja `#B3261E` | Negras `#2B2A2E`: **una sola cuadra grande** (11 × 5,6 m) + gavia pequeña + foque. Es la hostil con menos vela |
+| Casco | Negro `#2A2523`, franja roja | Marrón claro `#6E4A2C`, franja marfil, popa alta y redondeada | Negro, franja roja, **regala dorada** `#D9A93F` y mascarón dorado | Negro, franja roja, proa y popa romas |
+| Cubierta | Despejada | **Carga**: 6 cajas + 3 barriles | Despejada | **Clara** `#9A8466` (L\* 56), con tablas. **Batería de 6 cañones por banda sobre cubierta**, oscuros (L\* 16) sobre claro, y un **mortero** central (disco oscuro de 2,6 m) |
+| Bandera | Negra con un cuadro blanco (calavera a esta escala) | Azul con un cuadro blanco | **Estandarte blanco de 6 × 4 m** `#F5F1E6` con un cuadro negro de 2 m: es el **rasgo exclusivo** (≈ 17 × 6 px a 1,0× en 390×844, L\* 95 sobre velas de L\* 17) | Negra con un cuadro blanco |
+| Cañones por banda (GDD §9) | 4 | 0 | 6 | 6 |
+| Etiqueta | Calavera + coral | Moneda + cielo | Calavera y corona + coral: "Capitán pirata" | Calavera y bomba + coral: "Cañonera pirata" |
+| `sb_radius` / colisión (GDD) | 11 m / 6 m | 12 m / 7 m | 16 m / 9 m | 14 m / 8 m |
 
 **Matriz de distinción.** Cada par se distingue por ≥ 2 canales que no son el tono:
 
@@ -514,6 +518,14 @@ canvas 0 · placas 10 · números de daño 15 · HUD 20 · toasts 30 · modal (t
 ### 12.7 Cursor (escritorio)
 Sobre el agua: flecha por defecto. Sobre un barco atacable: mira SVG de 32 px (coral, punto caliente en el centro). Sobre un barco no atacable (zona segura o protegido): `not-allowed`.
 
+### 12.8 Vista libre (I2; GDD §5, AC-119 y AC-121)
+| Elemento | Escritorio 1440×900 | Móvil vertical 390×844 | Móvil horizontal 844×390 |
+|---|---|---|---|
+| **Botón Centrar** (solo en vista libre; aparece con un fundido de 150 ms) | 1240, 276, 184, 40, bajo las coordenadas y junto al minimapa con el que se mueve la vista: icono Lucide `locate-fixed` + "Centrar" + tecla `C` | 322, 616, 52, 52, encima de Reparar (684) con 16 px de separación: solo el icono | 704, 238, 52, 52, a la izquierda de Reparar (768, 238) |
+| **Indicador del barco propio** (solo si el barco propio queda fuera de la pantalla, con 24 px de margen) | Chip circular de 44 px | 48 px (se puede tocar) | 48 px |
+
+**Indicador**: círculo `--ui-panel` con borde de 2 px `--rel-self` (`#FFD166`), una estrella de 18 px en el centro, un triángulo de 10 px fuera del círculo que apunta hacia el barco y debajo la distancia ("320 m", 12 px tabular). **Posición**: sobre el rayo que va del centro de la pantalla a la proyección del barco, recortado contra el marco útil (escritorio: 16 px a los lados, 120 arriba y 108 abajo; móvil vertical: 12 / 116 / 104). Si cae sobre un bloque del HUD (minimapa, paneles, botones), se desliza por el marco hasta el punto libre más cercano. **Ángulo**: el triángulo apunta desde la posición **real** del chip hacia el barco (no desde el centro), así que no hay error aunque el chip se haya deslizado (AC-121: ≤ 10°). Se mueve por ref en cada frame, fuera de React (GDD §13). Al pulsarlo se centra como con `C`. Desaparece en 150 ms cuando el barco vuelve a verse.
+
 ---
 
 ## 13. Tipografía e iconos
@@ -649,7 +661,10 @@ Captura estándar = `npm run qa:capture` con zoom 1,0×, sin modales y el barco 
 | AD-23 | Zona segura visible | Captura en el borde de la zona (r 110 m) | La línea discontinua y ≥ 3 boyas son visibles; aparece el aviso "Zona segura" | AC-65 |
 | AD-24 | Olas sin bandas regulares | Percentiles p5 y p95 de L\* en el parche de AD-01 | p95 − p5 entre 4 y 12. Medido el 2026-10-11: 16–21, son bandas. Con el ruido de 9 m y 4,5 m (D20): 8,8 (dev-render; falta QA) | — |
 | AD-25 | Albedo compensado | ΔE76 entre el color medio de la tapa de la playa o de la cubierta en la captura y su token de §4.2.1 | ≤ 6 | — |
-| AD-26 | **Escala del barco inicial** (D23; depende de U8) | `measureShipValues` (vela + cubierta + casco) con el zoom por defecto de una sesión nueva (Balandra, cañón de 8 lb) en 1440×900, rumbos 0/90/180/270° | ≥ 2 000 px en el peor rumbo. Referencia: el barco del jugador en Seafight ocupa ≈ 2 000 px² (`qa-artifacts/render/escala/ref-seafight-1297031307.jpg`). Hoy: 1 310 px a 0° | AC-24 (revisado) |
+| AD-26 | **Escala del barco inicial** (D23; depende de U8) | `measureShipValues` (vela + cubierta + casco) con el zoom por defecto de una sesión nueva (Balandra, cañón de 8 lb) en 1440×900, rumbos 0/90/180/270° | ≥ 1 900 px en el peor rumbo: paridad con el barco del jugador en Seafight (2 000–2 018 px² en dos capturas, `qa-artifacts/render/escala/`), con un margen del 5 % por la incertidumbre de la máscara de un JPEG. Hoy: 1 310 px a 0°. Con R = 65: 1 980 px | AC-24 (revisado) |
+| AD-28 | **Hostiles distinguibles en grises** (I2; AC-115) | 390×844, zoom 1,0×, rumbos 45 / 135 / 225 / 315°, captura en L\*. Máscara de cada barco = píxeles que cambian al ocultarlo. Firmas: área (px), fracción oscura (L\* ≤ 25) y fracción clara (L\* ≥ 65) | En cada rumbo y para cada par de {pirata, cañonera, capitán}, al menos una firma difiere ≥ 30 % (\|x − y\| / máx ≥ 0,30). Además: el estandarte del capitán da ≥ 20 px con L\* ≥ 80 en cada rumbo, y en 1440×900 se cuentan ≥ 8 cañones de la cañonera (manchas con L\* ≤ 25 y ≥ 4 px de largo sobre su cubierta) | AC-115 |
+| AD-29 | **Minimapa: 6 formas** (I2; AC-115) | Plantilla de cada marcador de §4.3 dibujada aparte a 4×. En una captura del minimapa (escritorio y móvil), correlación cruzada normalizada en grises de cada marcador con las 6 plantillas | Con la suya ≥ 0,90 y con cada una de las otras ≤ 0,80. El capitán se ve en el minimapa desde cualquier punto del mapa | AC-115, AC-111 |
+| AD-30 | **Vista libre** (I2) | e2e con el barco propio fuera de pantalla en 8 direcciones y en los 3 viewports | El indicador es visible y apunta al barco con ≤ 10° de error, no se cruza con ningún bloque del HUD, y el botón Centrar solo existe en vista libre | AC-119, AC-121 |
 | AD-27 | **Espuma natural** (D23) | Capturas de mar abierto a 1,0× (`desktop-open-sea`, `d-ocean-a/b`), sin HUD, barcos ni islas. Espuma = píxeles de agua con L\* ≥ mediana + 10. Celdas de 240×110 px con ≥ 85 % de agua | Cobertura entre 0,3 % y 1,2 %; **≥ 40 % de las celdas sin espuma** (< 0,1 %); mediana de ΔL\* de la espuma ≤ 20. Hoy: 1,8–3,0 %, 0–17 % de celdas sin espuma y ΔL\* 22–26 | — |
 
 ---
@@ -693,6 +708,8 @@ Captura estándar = `npm run qa:capture` con zoom 1,0×, sin modales y el barco 
 | D21 | Q16: VFX-09b falla por un orden de magnitud (con \|ΔL\*\| ≥ 8, 0,01–0,08·A frente a 0,35·A y 0,60·A; fuego 18–66 px²). Mi 0,60·A suponía cuadrados opacos (dev-render tenía razón) | **Una sola versión, coherente con D20**, calibrada con un modelo de partículas realista: perfil y α del shader, mezcla sRGB de 8 bits y fondo real de `tanda-d15-d19`. La medición del modelo, aplicada a las capturas reales, reproduce las cifras de dev-render (73 / 104 / 308 px frente a 76 / 93 / 277). (1) **Humo**: el de D20, sin el 0,40·h. (2) **Llamas**: cuerpo en mezcla normal (`#FF9E2C` → `#D9381A`), de 3,0 a 0,9 m × L/24 (mínimo 10 px), nacidas en una elipse de 0,06·L × 0,15·B por socket, más un núcleo aditivo pequeño. En aditivo puro, la llama se vuelve blanca sobre la cubierta y cian sobre el agua. (3) **VFX-09b** mide ΔE76 ≥ 15, porque el humo gris sobre el agua azul es contraste de croma: \|ΔL\*\| no pasa de +16 ni con α 1 (L\* 56 frente a 40). Umbrales: 0,07·A y 0,25·A, fuego ≥ 0,03·A y ≥ 60 px², grises ≥ 0,04·A y tope del 20 % del barco tapado. Todos quedan ≥ 20 % por debajo de la previsión en la peor clase (el Mercante, ancho para su `h`) y por encima de lo que daba el D19 real, que fallaba (Mercante: 0,01·A con ≤ 50 % y 0,08·A con ≤ 25 %). **0,60·A no se alcanza sin tapar el barco**: con 0,14·h → 0,48·h el Mercante llega solo a 0,52·A y la Balandra queda tapada un 22 %, con la vela mayor oculta. **Legibilidad frente a Seafight**: el referente lee la vida en la línea bajo el nombre y en el panel del objetivo (R4, R7), y la evidencia R1–R13 no registra humo de daño. Aquí el humo y el fuego refuerzan la placa: avisan a primera vista sin competir con la identidad del barco (el color de la vela da la relación) | VFX-SPEC §0.2, §6, VFX-09b; modelo y capturas en `qa-artifacts/render/q16-modelo/` |
 | D22 | Medición de D20 + D21 (`qa-artifacts/render/d20-d21/`): pasan VFX-20, VFX-22 y el tope de barco tapado. VFX-09b falla en 4 casillas (Q17 ≤ 50 % en Balandra y Mercante; Q18 fuego del Mercante; Q19 grises de la Fragata). El sesgo de 6 m pinta 506 px sobre barcos ajenos | (Q17) Humo claro con α0,42 y **color constante**: oscurecerse con la edad le restaba contraste sobre el agua. (Q18) La carga del Mercante pasa de z +1,0 a −3,0, y se corrigen **6 sockets de fuego** que caían dentro de objetos (dos de ellos al 93–100 %), con la regla nueva AS-V17. (Q19) Humo denso `#A29D97` (L\* 65), constante: ΔL\* +19,7 sobre el agua frente a +12,2. **Sesgo: opción A, se mantiene 6 m**. El 85 % de lo que cambia es la columna propia, visible desde la base en todos los frames. Lo ajeno (10,5 %) solo aparece con las arboladuras ya cruzadas y se ve como gris claro sobre el borde de una vela. B no lo elimina (el pirata necesita ≥ 5,5 m) y C cambia el contrato sin quitar la oclusión de la vela propia (de 3,4 a 13,4 m). Guarda: VFX-23 ≤ 15 %. **Corrijo** mi cota de «barcos casi tocándose»: valía para cascos, no para foques ni baupreses. Previsión del modelo (5 semillas, fondo de d20-d21; HIPÓTESIS hasta el render): ≤ 50 % 0,12 / 0,12 / 0,19·A; ≤ 25 % 0,56 / 0,34 / 0,43·A; grises 0,42 / 0,24 / 0,22·A. Confirmados los supuestos de dev-render: núcleo con forma 2 y subida de 1,8 ±0,4 m/s; tono = `h_ab` de CIELab. **ROI resuelta**: dev-render usa la misma ROI y su medida coincide con la mía (0,053 / 0,096 / 0,160 frente a 0,053 / 0,096 / 0,159). La diferencia ×1,5 venía de una pausa que no detenía el reloj de VFX; ya está arreglado. **Render con D22** (dev-render, 12 capturas): ≤ 50 % da 0,146–0,156 / 0,130–0,135 / 0,186–0,199·A (pasa; previsión 0,12 / 0,12 / 0,19) y el Mercante con ≤ 25 % da 0,305–0,354·A | VFX-SPEC §0.3, §6, VFX-09b, VFX-23; ASSET-SPEC §3, §8.4, AS-V17 |
 | D23 | QA-REPORT-2026-10-11-3 §8: Barcos 7/10, «a 1,0× se ven pequeños y facetados frente a los sprites de Seafight». Además, la espuma se ve repetida y procedural | **Medición** (`qa-artifacts/render/escala/`). Seafight: barco del jugador de 64–68 × 84–85 px y ≈ 2 000 px²; galeón de 81 × 81 px y 2 200 px²; pirata de 52 × 49 px y 1 014 px², en un área de juego de ≈ 800×565. Nuestro (vela + cubierta + casco a 1,0×): Balandra 1 310–2 100 px, Bergantín 2 750–3 980, Fragata 5 400–7 210, Pirata 1 770–2 670 y Mercante 2 680–3 090, en 1440×900. **En px absolutos ya estamos cerca. Lo que falla es la Balandra inicial**, que sale al 65–105 % del barco de Seafight según el rumbo, sobre un mar con 2,9× más píxeles, y además **el detalle interno**: píxeles interiores con \|∇L\*\| ≥ 4, 70–80 % en Seafight frente a 30–49 % aquí. **Opciones**: (a) subir ppm a todos: con 6,2 ya no cabe el círculo de 80 m en 1440×900 (rompe GDD §5) ✗. (b) Escalar los modelos: rompe eslora y radio del GDD, navClearance y sockets ✗. **(a') Encuadre por alcance propio** (R = 60 m con el cañón inicial → ppm 6,71): la Balandra pasa a 2 330 px en el peor rumbo, el círculo propio sigue cabiendo y no cuesta rendimiento ✓. Necesita U8. **(c) Detalle dentro del presupuesto** ✓: normales con pliegue de 40°, loft de 13 estaciones, tablas de cubierta, paneles de vela, oclusión horneada y cañones y portas legibles; 0 draw calls y entre +400 (Balandra) y +700 tris (Fragata, ≈ 1 900 ≤ 2 500) por barco en LOD0. **Recomendación: (a') + (c)**, con las reglas AD-26 (escala), AS-V18 (sin facetas), AS-V19 (textura interna ≥ 55 %) y AS-V20 (cañones legibles). **Espuma**: vetas a lo largo del viento, agrupadas por rachas y con opacidad 0,25 (§7.3; AD-27). El umbral de AS-V19 es provisional (HIPÓTESIS): se calibra con el primer render y no baja de 50 % | §6.2, §7.3, §4.2, AD-26, AD-27, U8; ASSET-SPEC §6, §8.1, §8.2, AS-V18–V20 |
+| D24 | Q20: el fuego del Mercante da 72–81 px² = 0,021–0,023·A (pide ≥ 0,03·A). Lo tapan sus cuadras braceadas a 20° (dev-render: 79 px² con velas, 125 plegadas, 143 sin prueba de profundidad) | **(a) Sesgo también en las llamas**: forma 8 (perfil de la 2 con el sesgo de la 7), en el cuerpo y en el núcleo, con los mismos 6 m que el humo (`uFxBias`). Previsión: ≈ 125–143 px², ≥ 0,036·A. Es la misma razón que en D20: el efecto de daño de un barco no lo tapa su propio aparejo. La vela que tapa puede estar hasta ≈ 6,7 m por delante a lo largo de la vista. Descartadas: (b) mover `_01` y la carga o los barriles solo arregla un rumbo de una clase; (c) aceptar el criterio absoluto en el Mercante daría por buena una llama que en otros rumbos tampoco se ve. VFX-23 pasa a medir humo y llamas juntos (≤ 15 %); las llamas son pequeñas frente a la columna, así que se espera poco cambio | VFX-SPEC §0.3, §6, VFX-23; ASSET-SPEC AS-V17 |
+| D25 | Requisitos de arte de I2 (GDD §9: cañonera y capitán; GDD §5: vista libre; AC-115 y AC-121) y petición de product: las cifras del intercambio de escala | **Cañonera**: casco ancho y bajo (28 × 10 m, francobordo 1,5), **un solo mástil** con una sola cuadra grande negra, **cubierta clara con la batería de 6 + 6 cañones oscuros a la vista** y un mortero central. Es la hostil con menos vela y la única con la cubierta clara. **Capitán**: el mayor de los piratas (30 m, 3 mástiles de hasta 24 m), con **estandarte blanco de 6 × 4 m** como rasgo exclusivo y regala dorada. Firmas en grises previstas (HIPÓTESIS, estimadas por áreas proyectadas): área del capitán ≈ 1,35× la de la cañonera y 2,3× la del pirata; fracción oscura de la cañonera ≈ 0,18 frente a ≈ 0,4 del pirata y del capitán. AD-28 lo verifica. **Minimapa**: ▬ para la cañonera y ★ con halo para el capitán (AD-29). **Vista libre**: botón Centrar y chip indicador (§12.8, AD-30). **Escala (corrige D23)**: R = máx(alcance propio, 65 m), porque con R = 60 la cañonera y el capitán dispararían desde fuera de la pantalla. AD-26 baja a ≥ 1 900 px (paridad con Seafight, con un margen del 5 % por la medida) | §4.3, §6.2, §10, §12.8, AD-26, AD-28–AD-30, U8; ASSET-SPEC §3, §8.1, §8.4, §10 |
 
 **Abiertas:**
 
@@ -700,4 +717,4 @@ Captura estándar = `npm run qa:capture` con zoom 1,0×, sin modales y el barco 
 |---|---|---|---|
 | U6 | `game-developer` | Preset de cámara de `qa:capture` para generar las imágenes de la landing | §16.1 |
 | U7 | Jonattan | Licencia: fuentes de Google (OFL) e iconos Lucide (ISC) | Aceptables |
-| U8 | `game-product` | GDD §5: «el círculo de alcance máximo (80 m) cabe entero» → «el círculo de **tu alcance actual** (60 / 70 / 80 m) cabe entero», y AC-24 en consecuencia (D23) | Hasta que se decida, sigue R = 80 m (§6.2) y AD-26 no se evalúa |
+| U8 | `game-product` | GDD §5: «el círculo de alcance máximo (80 m) cabe entero» → «cabe entero el círculo de radio máx(tu alcance, 65 m)», y AC-24 en consecuencia (D23, corregida en D25). Cifras del intercambio en §6.2 | Hasta que se decida, sigue R = 80 m (§6.2) y AD-26 no se evalúa |

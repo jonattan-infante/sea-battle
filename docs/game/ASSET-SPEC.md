@@ -86,6 +86,7 @@ Vista superior del asset (desde +Y)           En pantalla (cámara de ART-DIRECT
 | `socket_cannon_port_NN` | `x = +(a(u)·B/2 + 0.30)`, `y = 0.60·F`, `z` de la tabla de clase (§8.4); `u = z/L` | Hacia afuera: `rotation.y = +π/2` (+Z → +X) | Fogonazo, humo, salida de la bala |
 | `socket_cannon_stbd_NN` | Igual, con `x` negativa | `rotation.y = −π/2` (+Z → −X) | Igual |
 | `socket_smoke` | `(0, yd(−0.15) + 0.5, −0.15·L)` | — | VFX-SPEC §6 |
+| `socket_smoke_02` (opcional; solo la cañonera, D25) | `(0, yd(+0.20) + 0.5, +0.20·L)` | — | Segunda columna de humo: su huella `L·B` (280 m²) es grande para su mástil de 16 m |
 | `socket_fire_01` / `_02` / `_03` | `(+0.2·B, yd(+0.25)+0.3, +0.25·L)` / `(−0.2·B, yd(0)+0.3, 0)` / `(0, yd(−0.30)+0.3, −0.30·L)`, salvo las excepciones de abajo (AS-V17) | — | VFX-SPEC §6 |
 | `socket_label` | `(0, h_max + 1.5, 0)`; `h_max` = mástil más alto | — | Números de daño, icono de protección (VFX-SPEC §9) |
 | `socket_wake` | `(0, 0, −L/2)` | +Z hacia proa | Estela (VFX-SPEC §8) |
@@ -231,15 +232,15 @@ Cada barco = **casco por *loft*** (§8.1) + **aparejo** (§8.2) + **piezas** (§
 
 **Perfiles** (interpolación lineal entre filas):
 
-| u | Estándar a / b / s / k | Fino (pirata y capitán) a / b / s / k | Lleno (mercante) a / b / s / k |
-|---|---|---|---|
-| −0.50 | 0.80 / 0.62 / 1.30 / 0.35 | 0.62 / 0.48 / 1.18 / 0.35 | 0.92 / 0.80 / 1.40 / 0.45 |
-| −0.40 | 0.96 / 0.85 / 1.15 / 0.75 | 0.88 / 0.78 / 1.08 / 0.75 | 1.00 / 0.93 / 1.22 / 0.85 |
-| −0.25 | 1.00 / 0.93 / 1.04 / 1.00 | 1.00 / 0.92 / 1.02 / 1.00 | 1.00 / 0.97 / 1.05 / 1.00 |
-| 0.00 | 1.00 / 0.95 / 1.00 / 1.00 | 1.00 / 0.94 / 1.00 / 1.00 | 1.00 / 0.97 / 1.00 / 1.00 |
-| +0.20 | 0.97 / 0.88 / 1.03 / 1.00 | 0.92 / 0.82 / 1.02 / 1.00 | 1.00 / 0.95 / 1.04 / 1.00 |
-| +0.36 | 0.72 / 0.56 / 1.12 / 0.85 | 0.55 / 0.42 / 1.10 / 0.85 | 0.88 / 0.78 / 1.15 / 0.90 |
-| +0.50 | 0.00 / 0.00 / 1.28 / 0.30 | 0.00 / 0.00 / 1.25 / 0.30 | 0.30 / 0.18 / 1.30 / 0.50 |
+| u | Estándar a / b / s / k | Fino (pirata y capitán) a / b / s / k | Lleno (mercante) a / b / s / k | Chato (cañonera) a / b / s / k |
+|---|---|---|---|---|
+| −0.50 | 0.80 / 0.62 / 1.30 / 0.35 | 0.62 / 0.48 / 1.18 / 0.35 | 0.92 / 0.80 / 1.40 / 0.45 | 0.86 / 0.78 / 1.10 / 0.40 |
+| −0.40 | 0.96 / 0.85 / 1.15 / 0.75 | 0.88 / 0.78 / 1.08 / 0.75 | 1.00 / 0.93 / 1.22 / 0.85 | 0.98 / 0.94 / 1.04 / 0.80 |
+| −0.25 | 1.00 / 0.93 / 1.04 / 1.00 | 1.00 / 0.92 / 1.02 / 1.00 | 1.00 / 0.97 / 1.05 / 1.00 | 1.00 / 0.98 / 1.00 / 1.00 |
+| 0.00 | 1.00 / 0.95 / 1.00 / 1.00 | 1.00 / 0.94 / 1.00 / 1.00 | 1.00 / 0.97 / 1.00 / 1.00 | 1.00 / 0.98 / 1.00 / 1.00 |
+| +0.20 | 0.97 / 0.88 / 1.03 / 1.00 | 0.92 / 0.82 / 1.02 / 1.00 | 1.00 / 0.95 / 1.04 / 1.00 | 1.00 / 0.97 / 1.00 / 1.00 |
+| +0.36 | 0.72 / 0.56 / 1.12 / 0.85 | 0.55 / 0.42 / 1.10 / 0.85 | 0.88 / 0.78 / 1.15 / 0.90 | 0.92 / 0.85 / 1.04 / 0.90 |
+| +0.50 | 0.00 / 0.00 / 1.28 / 0.30 | 0.00 / 0.00 / 1.25 / 0.30 | 0.30 / 0.18 / 1.30 / 0.50 | 0.45 / 0.30 / 1.12 / 0.50 |
 
 ### 8.2 Aparejo genérico
 Con `rm = 0.022·L` (radio de la base del mástil):
@@ -364,8 +365,22 @@ Notación: vela cuadra = `w × h @ y_b` (ancho × alto en la altura de su borde 
 | `extras` | `sb_radius` 12,0 · `sb_mast_height` 17,5 · `sb_pick` [4,9, 17,5, 11,0] |
 | Tris estimados | LOD0 ≈ 620 · LOD1 ≈ 260 |
 
-#### `npc_pirate_captain` — Capitán pirata (P2; perfil fino, caída 6°)
-L / B / F / D / bauprés = 30 / 8,0 / 2,8 / 1,5 / 8,0 (eslora del GDD §9). Mástiles: +9,0 / h 21; 0 / h 24; −8,5 / h 18. Cuadras negras `PlaneGeometry(w, h, 4, 4)` con la fila inferior en `#B3261E`: trinquete 10,4 × 4,2 @ 5,2 · 8,4 × 3,6 @ 9,8; mayor 11,4 × 4,6 @ 5,2 · 9,4 × 4,0 @ 10,2 · 7,0 × 2,8 @ 14,6; mesana con cangreja A (−8,9, 5,2) · B (−8,9, 12,0) · C (−15,0, 13,4) · D (−16,4, 5,8). Alcázar `Box(6.4, 1.6, 8.0)` en (0, 3,96, −11,0). Mascarón `Box(0.6, 1.0, 1.2)` `#D9A93F` en (0, 3,2, 15,3). 6 cañones por banda: z = −8,5, −5,1, −1,7, +1,7, +5,1, +8,5; y = 1,68. Bandera de 3 × 2 m. `sb_radius` 16 · `sb_mast_height` 24 · `sb_pick` [6,0, 24,0, 15,0].
+#### `npc_pirate_gunboat` — Cañonera pirata (I2; perfil chato, D25)
+| Parámetro | Valor |
+|---|---|
+| L / B / F / D / bauprés / railH | 28 / 10,0 / 1,5 / 1,2 / 3,0 / 0,9 m |
+| Mástil | Uno: z = −1,0, h = 16, `rake` = 4° |
+| Velas (negras `#2B2A2E`) | Cuadra 11,0 × 5,6 @ 3,4 · gavia 7,0 × 2,6 @ 9,6 (`PlaneGeometry(w, h, 4, 3)`, paneles `sail.alt`) · foque H (0, 12,0, −0,6) · T = punta del bauprés · C (0, 2,6, 8,0) |
+| Batería | 6 cañones por banda **sobre cubierta**: `CylinderGeometry(0.34, 0.40, 2.4, 6)` `cannon`, eje en X apuntando afuera, sobre una cureña `Box(1.0, 0.5, 1.4)` `rail`; centro en x = ±(a(u)·B/2 − 1.0), y = yd + 0.45, z = −10,0, −6,0, −2,0, +2,0, +6,0, +10,0. Los sockets de cañón, en las bocas |
+| Mortero | `CylinderGeometry(1.1, 1.3, 1.2, 8)` `cannon` en (0, yd + 0,6, +3,5): disco oscuro de 2,6 m visto desde arriba |
+| Colores | `hull #2A2523` · `band #B3261E` · `bottom #1C1817` · `deck #9A8466` / `deck.alt #857053` (albedo `#907C61` / `#7D694F`) · `rail/mast #3A2A20` |
+| Bandera | La del pirata (negra con cuadro blanco), `kf = L/16` |
+| Sockets de fuego | Fórmula de §3; solape con cureñas y mortero ≤ 1 % (AS-V17) |
+| `extras` | `sb_radius` 14,0 · `sb_mast_height` 16,0 · `sb_pick` [5,5, 16,0, 13,0] |
+| Tris estimados | LOD0 ≈ 1 300 · LOD1 ≈ 300 |
+
+#### `npc_pirate_captain` — Capitán pirata (I2, jefe; perfil fino, caída 6°)
+L / B / F / D / bauprés = 30 / 8,0 / 2,8 / 1,5 / 8,0 (eslora del GDD §9). Mástiles: +9,0 / h 21; 0 / h 24; −8,5 / h 18. Cuadras negras `PlaneGeometry(w, h, 4, 4)` con la fila inferior en `#B3261E`: trinquete 10,4 × 4,2 @ 5,2 · 8,4 × 3,6 @ 9,8; mayor 11,4 × 4,6 @ 5,2 · 9,4 × 4,0 @ 10,2 · 7,0 × 2,8 @ 14,6; mesana con cangreja A (−8,9, 5,2) · B (−8,9, 12,0) · C (−15,0, 13,4) · D (−16,4, 5,8). Alcázar `Box(6.4, 1.6, 8.0)` en (0, 3,96, −11,0). Mascarón `Box(0.6, 1.0, 1.2)` `#D9A93F` en (0, 3,2, 15,3). 6 cañones por banda: z = −8,5, −5,1, −1,7, +1,7, +5,1, +8,5; y = 1,68. **Estandarte** (rasgo exclusivo, D25): `PlaneGeometry(6.0, 4.0)` `#F5F1E6` con un cuadro `#111111` de 2,0 × 2,0 m centrado (separado ±0,01 en X a las dos caras), en la punta del palo mayor (y = 24) y desplazado −Z media anchura. **Regala** en `trim #D9A93F`. `sb_radius` 16 · `sb_mast_height` 24 · `sb_pick` [6,0, 24,0, 15,0].
 
 ---
 
@@ -414,7 +429,8 @@ Isla genérica (r = 30, sin colina) más:
 | `ship_frigate` | Fragata | Procedural | `ship_frigate.glb` | 8 | 1 200 / 270 | P0 |
 | `npc_pirate` | Pirata | Procedural | `npc_pirate.glb` | 4 | 640 / 200 | P0 |
 | `npc_merchant` | Mercante | Procedural | `npc_merchant.glb` | 0 | 620 / 260 | P0 |
-| `npc_pirate_captain` | Capitán pirata | Procedural | `npc_pirate_captain.glb` | 6 | ≈ 1 100 / 270 | P2 |
+| `npc_pirate_gunboat` | Cañonera pirata | Procedural §8.4 | `npc_pirate_gunboat.glb` | 6 | ≈ 1 300 / 300 | P1 (I2) |
+| `npc_pirate_captain` | Capitán pirata | Procedural | `npc_pirate_captain.glb` | 6 | ≈ 1 700 / 300 | P1 (I2) |
 | `island_i1`…`island_i6` | Islas | Procedural §9.1 con semilla | Opcional | — | ≤ 900 cada una | P0 |
 | `island_port` | Puerto | Procedural §9.2 | Opcional | — | ≤ 2 000 | P0 |
 | `prop_palm` / `prop_buoy` | Decoración y límite de la zona segura | Procedural §9.3 | Opcional | — | 84 / 42 | P0 |
@@ -448,7 +464,7 @@ Se ejecuta con un script de desarrollo (`npm run assets:validate`, dependencia d
 | AS-V14 | Velas visibles con cualquier rumbo: `runtime.measureSails` con zoom 0,7×, rumbos de 0° a 345° cada 15°, en LOD0 y LOD1, para las 5 clases P0 | Mínimo/máximo ≥ 0,25 en todas (objetivo ≥ 0,28) |
 | AS-V15 | El procedural cumple el contrato: AS-V02…V09 en Jest para las 5 recetas P0 | `npm test` en verde |
 | AS-V16 | Islas: radio visual en la flotación de cada columna de vértices de la playa; y ningún vértice sobre el agua (y > 0) de la isla, rocas, muelles o palmeras fuera de r + 0,5 m en XZ | Playa entre 0,94r y 1,00r en el 100 %; 0 vértices fuera |
-| AS-V17 | **Fuego sin obstáculos** (D22): para cada `socket_fire_NN`, la elipse de semiejes 0,06·L (eslora) × 0,15·B (manga) no se solapa en planta con ningún objeto de cubierta que sobresalga > 0,5 m de la superficie del socket (carga, barriles, camaretas, castillos, botes). Quedan fuera mástiles y jarcia. Si el socket cae sobre una superestructura, va en su tapa + 0,3 m | Solape ≤ 5 % del área de cada elipse |
+| AS-V17 | **Fuego sin obstáculos** (D22): para cada `socket_fire_NN`, la elipse de semiejes 0,06·L (eslora) × 0,15·B (manga) no se solapa en planta con ningún objeto de cubierta que sobresalga > 0,5 m de la superficie del socket (carga, barriles, camaretas, castillos, botes). Quedan fuera mástiles, velas y jarcia: no tapan el fuego porque las llamas llevan el sesgo de profundidad (VFX-SPEC §0.3, forma 8; D24). Si el socket cae sobre una superestructura, va en su tapa + 0,3 m | Solape ≤ 5 % del área de cada elipse |
 | AS-V18 | **Sin facetas** (D23): capturas de cada clase a rumbos 0° y 90° con el zoom por defecto, más la misma vista con una pasada de solo albedo (vertex colors sin luz) para localizar los bordes de color. En 5 líneas horizontales y 5 verticales sobre el costado y sobre cada vela visible se cuentan los escalones \|ΔL\*\| ≥ 5 entre píxeles vecinos que no están a ±1 px de un borde de la pasada de albedo | ≤ 1 escalón por línea; media ≤ 0,5 |
 | AS-V19 | **Textura interna** (D23): mismas capturas. Silueta = píxeles que cambian (ΔE76 ≥ 3) al ocultar el barco en el mismo frame, erosionada 1 px; se cuenta la fracción de píxeles interiores con \|∇L\*\| ≥ 4 (diferencia central). Seafight: 70 % (barco del jugador) y 80 % (galeón). Hoy: 30–49 % | ≥ 55 % en cada clase y rumbo (provisional; se calibra con el primer render y nunca baja de 50 %) |
 | AS-V20 | **Cañones legibles** (D23): captura a 90° y 270° con el zoom por defecto; manchas oscuras (L\* ≤ 30) de ≥ 3 × 2 px sobre el costado visible | Número = cañones por banda de la clase (4 / 6 / 8; Pirata 4; Mercante 0) |

@@ -27,15 +27,26 @@
 | H4 — Excelencia | P1 de todas las épicas | PvP, persistencia, restos, minimapa, onboarding |
 
 ### Incremento I2: orden por impacto frente a Seafight (QA-3 §8, media 7,4)
-| # | Qué | Por qué en este puesto | Responsable |
-|---|---|---|---|
-| **1** | AC-104, lectura del daño | VFX 6/10, la nota más baja; ya está en curso | game-ux (Q16) → dev-render |
-| **1** (en paralelo) | AC-108, bloque 1 (bucle principal) | Blindar el bucle con tests **antes** de tocar combate e IA (lección de H-01) | lead |
-| 2 | H-305 Capitán pirata | NPC 7/10: reto de grupo y de final de progresión. Reutiliza la IA del pirata y `killsSinceBoss` | lead (IA, avisos) + game-ux → dev-render (arte) |
-| 3 | E13 Vista libre | Cámara 8/10: Seafight deja mover la carta | lead (entrada y red) + dev-render (cámara) |
-| 4 | H-306 Cañonera pirata | NPC: segundo hostil, con un comportamiento distinto (mantener la distancia) | lead + game-ux → dev-render |
-| 5 | Escala y detalle de los barcos | Barcos 7/10. Depende de la propuesta de game-ux y choca con AC-24 (decide game-product) | game-ux → game-product |
-| 6 | AC-108 bloques 2 y 3, H-11 (AC-110), portada | Calidad y pulido | lead / dev-render |
+Hay dos colas en paralelo; dentro de cada una, el orden es estricto.
+
+**Cola lead / dev-tests (lógica, red y HUD)**
+| # | Qué | Por qué en este puesto |
+|---|---|---|
+| 1 | AC-108, bloque 1 (dev-tests) | Blindar el bucle con tests **antes** de tocar combate e IA (lección de H-01) |
+| 2 | H-305 Capitán pirata (IA, avisos y marcador) | NPC 7/10: reto de grupo y de final de progresión |
+| 3 | E13 Vista libre + AC-124 (atacante fuera de pantalla) | Cámara 8/10. Los dos indicadores de borde comparten componente |
+| 4 | H-306 Cañonera pirata (IA) | Segundo hostil, con un comportamiento distinto |
+| 5 | AC-108: bloque 2, AC-12 y AC-92 (dev-tests); AC-110 y AC-75 (lead) | Calidad y pulido. AC-23, AC-25 y AC-91 van en la cola de dev-render |
+
+**Cola dev-render (render y VFX)**
+| # | Qué | Por qué en este puesto |
+|---|---|---|
+| 1 | Cerrar Q20 / D22 → AC-104 | VFX 6/10, la nota más baja |
+| 2 | Encuadre U8 (R = max(alcance propio, 65 m)) + AC-24 revisado + tests de cámara AC-23 y AC-25 | Barcos 7/10: +51 % de área para la Balandra con un cambio de fórmula y sin coste de rendimiento. Los tests de cámara van justo después de tocar la cámara |
+| 3 | (c) Detalle de los cascos (AS-V18–V20, AD-26) | Barcos: "facetados". Va **antes** del arte de los NPC nuevos, para que el Capitán y la Cañonera nazcan con la misma técnica y no haya que rehacerlos |
+| 4 | Arte del Capitán y luego de la Cañonera (cuando game-ux los especifique) | Lo necesitan los puntos 2 y 4 de la otra cola |
+| 5 | AD-27 Espuma natural | Océano 8/10 |
+| 6 | AC-91 (memoria, 10 min) | Guarda de fugas, después de añadir modelos y VFX |
 
 Los AC de rendimiento de E9 son una **puerta desde H1**: se mantienen en verde en cada hito, no se dejan para el final.
 
@@ -177,7 +188,7 @@ Reportes (el último manda):
 
 ### H-103 Cámara y zoom (§5) · P0
 - **AC-23** — Dado el barco navegando **en modo seguimiento**, cuando se muestrean 10 frames, entonces la proyección en pantalla del barco propio está siempre dentro del 10 % central. Verificación: e2e.
-- **AC-24** — Dado el zoom por defecto, cuando se dibuja el círculo de 80 m alrededor del barco, entonces cabe entero en 1440×900 y en 390×844. Verificación: captura.
+- **AC-24** — Dado el zoom por defecto con cañones N1, N2 y N3, cuando se dibuja alrededor del barco el círculo de radio R = max(alcance del cañón propio, 65 m), es decir 65 / 70 / 80 m, entonces cabe entero en 1440×900 y en 390×844, y ppm₀ es el máximo que lo permite (±1 px, AD-06): ≈ 6,20 / 5,76 / 5,04 px/m en escritorio y 2,82 / 2,61 / 2,29 en móvil. Decisión U8 (GDD §5); antes eran 80 m fijos. Verificación: captura + e2e (ppm₀ por nivel de cañón).
 - **AC-25** — Dado el juego en escritorio, cuando se gira la rueda del ratón, entonces el zoom pasa por exactamente 3 niveles (0,7×, 1,0× y 1,5×) y la página no hace scroll. Verificación: e2e.
 
 ## E2 — Combate · P0
@@ -301,6 +312,9 @@ Reportes (el último manda):
 
 ### H-708 Los NPC de I2 se distinguen de un vistazo · P1 (I2)
 - **AC-115** — Dadas capturas de escritorio y móvil (1,0×) con un pirata, una cañonera, el capitán, un mercante y otro jugador, cuando 5 evaluadores las miran durante 5 s, entonces ≥ 4 de 5 identifican los 5 tipos, también en escala de grises. En el minimapa, los 6 tipos (propio, jugador, pirata, cañonera, mercante y capitán) tienen formas distintas, no solo color. Verificación: captura + prueba con evaluadores (umbrales en ART-DIRECTION).
+
+### H-709 Ver quién te dispara aunque no esté en pantalla · P1 (I2)
+- **AC-124** — Dado un barco que dispara al jugador desde fuera de pantalla (p. ej. un jugador con cañón N3 a 80 m contra una Balandra N1, cuyo encuadre es de 65 m), cuando llega cada andanada, entonces un indicador en el borde apunta hacia el atacante (error de ángulo ≤ 10°) mientras dure el ataque y 3 s después. Si el atacante está en pantalla, no aparece. Verificación: e2e (caja y ángulo del indicador) + captura.
 
 ### H-702 Minimapa · P1
 - **AC-77** — Dado el juego en marcha, cuando se captura el minimapa, entonces muestra las islas, el puerto, la zona segura y las entidades del área de interés con forma y color por tipo, y se re-renderiza a ≤ 2 Hz. Verificación: captura + perf.
