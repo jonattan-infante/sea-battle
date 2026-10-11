@@ -37,8 +37,13 @@ const AO_HEIGHT = 0.4;
 const ao = (c: THREE.Color) => c.clone().multiplyScalar(AO);
 
 const BAND = 1.0; // franja de portas (D36), m: contiene la porta de 0,8 m con 0,1 m de franja arriba y abajo en la maestra
-const CLOTH = 0.7; // paño de las cuadras y cangrejas (D36), m
-const CLOTH_ROW = 0.9; // fila de los foques y latinas (D36), m
+// Paños (D36): ancho de paño de cuadras y cangrejas (w) y alto de fila de foques y latinas (row), m. La paleta pirata,
+// de lona casi negra, lleva paños más finos para dejar AS-V19 fuera de la dispersión entre capturas (D37)
+const CLOTH: Record<ShipKind, { w: number; row: number }> = {
+  player: { w: 0.7, row: 0.9 },
+  merchant: { w: 0.7, row: 0.9 },
+  pirate: { w: 0.6, row: 0.75 }
+};
 
 interface Station { a: number; b: number; s: number; k: number }
 
@@ -376,10 +381,10 @@ function opened(group: THREE.Matrix4, p: Vec3, axis: Vec3, free: Vec3, open: num
 const dist3 = (a: Vec3, b: Vec3) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 
 function squareSail(g: GeoBuilder, r: ShipRecipe, look: ShipLook, group: THREE.Matrix4, mast: MastDef, sail: SquareSail, lod: 0 | 1, rm: number): void {
-  // LOD0 (D36): paños de ≈ CLOTH m, nx = max(4, 2·round(w / 1,4)); el pirata, múltiplo de 4 para conservar los vértices
-  // de las muescas en u' = 0,25 y 0,75. LOD1: 4 columnas, lisa. 3 filas; las franjas del mercante, 5
+  // LOD0 (D36, D37): paños de CLOTH.w m, nx = max(4, 2·round(w / 2·CLOTH.w)); con muescas, múltiplo de 4 para conservar
+  // los vértices en u' = 0,25 y 0,75. LOD1: 4 columnas, lisa. 3 filas; las franjas del mercante, 5
   const q = r.sailStyle === 'notched' ? 4 : 2;
-  const segs: [number, number] = [lod === 0 ? Math.max(4, q * Math.round(sail.w / (CLOTH * q))) : 4, r.sailStyle === 'striped' ? 5 : 3];
+  const segs: [number, number] = [lod === 0 ? Math.max(4, q * Math.round(sail.w / (q * CLOTH[r.look].w))) : 4, r.sailStyle === 'striped' ? 5 : 3];
   const plane = new THREE.PlaneGeometry(sail.w, sail.h, segs[0], segs[1]);
   const pos = plane.getAttribute('position');
   for (let i = 0; i < pos.count; i++) {
@@ -512,8 +517,8 @@ function buildLod(r: ShipRecipe, lod: 0 | 1): { geometry: THREE.BufferGeometry; 
       const axis: Vec3 = [0, B[1] - A[1], B[0] - A[0]];
       const m = opened(group, zy(A), axis, zy(D), open);
       const foot = dist3(zy(A), zy(D));
-      // LOD0 (D36): paños casi verticales de ≈ CLOTH m × 3 filas; LOD1: abanico liso desde el centro con panza
-      if (lod === 0) clothSail(g, m, [zy(A), zy(B), zy(C), zy(D)], 0.08 * foot, Math.max(2, Math.round(foot / CLOTH)), 3, false, look);
+      // LOD0 (D36): paños casi verticales de CLOTH.w m × 3 filas; LOD1: abanico liso desde el centro con panza
+      if (lod === 0) clothSail(g, m, [zy(A), zy(B), zy(C), zy(D)], 0.08 * foot, Math.max(2, Math.round(foot / CLOTH[r.look].w)), 3, false, look);
       else fanSail(g, m, [zy(A), zy(B), zy(C), zy(D)], 0.08 * foot, cSail);
       if (lod === 0) {
         spar(g, m, zy(A), zy(D), 0.3 * rm, cMast);
@@ -525,8 +530,8 @@ function buildLod(r: ShipRecipe, lod: 0 | 1): { geometry: THREE.BufferGeometry; 
       const { A, B, C } = mast.lateen;
       const m = opened(group, zy(A), [0, 1, 0], zy(B), open);
       const len = dist3(zy(A), zy(C));
-      // LOD0 (D36): A = amura, D = escota B y los dos vértices superiores en el pico C; 3 columnas × filas de ≈ CLOTH_ROW m
-      if (lod === 0) clothSail(g, m, [zy(A), zy(C), zy(C), zy(B)], 0.06 * len, 3, Math.max(2, Math.round(len / CLOTH_ROW)), true, look);
+      // LOD0 (D36): A = amura, D = escota B y los dos vértices superiores en el pico C; 3 columnas × filas de CLOTH.row m
+      if (lod === 0) clothSail(g, m, [zy(A), zy(C), zy(C), zy(B)], 0.06 * len, 3, Math.max(2, Math.round(len / CLOTH[r.look].row)), true, look);
       else fanSail(g, m, [zy(A), zy(B), zy(C)], 0.06 * len, cSail);
       if (lod === 0) spar(g, m, zy(A), zy(C), 0.3 * rm, cMast);
     }
@@ -541,8 +546,8 @@ function buildLod(r: ShipRecipe, lod: 0 | 1): { geometry: THREE.BufferGeometry; 
     const T = jib.T === 'tip' ? tip : jib.T;
     const m = opened(new THREE.Matrix4(), T, [jib.H[0] - T[0], jib.H[1] - T[1], jib.H[2] - T[2]], jib.C, open);
     const stay = dist3(jib.H, T);
-    // LOD0 (D36): A = amura T, D = escota C y los dos vértices superiores en el puño de driza H; filas de ≈ CLOTH_ROW m
-    if (lod === 0) clothSail(g, m, [T, jib.H, jib.H, jib.C], 0.06 * stay, 3, Math.max(2, Math.round(stay / CLOTH_ROW)), true, look);
+    // LOD0 (D36): A = amura T, D = escota C y los dos vértices superiores en el puño de driza H; filas de CLOTH.row m
+    if (lod === 0) clothSail(g, m, [T, jib.H, jib.H, jib.C], 0.06 * stay, 3, Math.max(2, Math.round(stay / CLOTH[r.look].row)), true, look);
     else fanSail(g, m, [jib.H, T, jib.C], 0.06 * stay, cSail);
   }
 

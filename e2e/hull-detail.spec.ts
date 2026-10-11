@@ -31,10 +31,13 @@ interface Region {
 }
 
 interface Port {
+  x: number; // esquina de la caja, px del canvas
+  y: number;
   w: number;
   h: number;
   band: number; // px de franja a ≤ 3 px
-  contrast: number; // mediana de L* de esa franja − mediana de L* de la componente
+  core: number; // núcleo (D38): px de la componente con cobertura ≥ 75 %
+  contrast: number; // mediana de L* de esa franja − mediana de L* del núcleo (NaN con núcleo < 2 px: no legible)
 }
 
 interface Shot {
@@ -47,6 +50,7 @@ interface Shot {
   calls: number; // draw calls del barco: con − sin
   triangles: number; // triángulos del barco: con − sin
   ports: Port[]; // AS-V20: componentes de cañón o porta junto a la franja
+  rejected: { x: number; y: number; w: number; h: number; why: 'caja' | 'sin franja' }[]; // AS-V20: las descartadas
   crops?: Record<string, string>;
 }
 
@@ -55,9 +59,10 @@ async function measurePose([id, keep, bandHex]: [string, boolean, string]): Prom
   type V3 = { x: number; y: number; z: number };
   type Attr = { count: number; array: Float32Array; clone(): Attr; getX(i: number): number; getY(i: number): number; getZ(i: number): number };
   type Light = { isLight?: boolean; isHemisphereLight?: boolean; intensity: number; color: { clone(): unknown; copy(c: unknown): void; setRGB(r: number, g: number, b: number): void }; groundColor?: Light['color'] };
+  type Node = Light & { visible: boolean; isMesh?: boolean; isPoints?: boolean; isLine?: boolean; isSprite?: boolean };
   interface Loose {
     views: Map<string, { lod: number; model: { sails: [number, number][][] }; mesh: { visible: boolean; geometry: { getAttribute(n: string): Attr; setAttribute(n: string, a: Attr): void } } }>;
-    rootScene: { traverse(fn: (o: Light) => void): void };
+    rootScene: { traverse(fn: (o: Node) => void): void };
     stats(): { ppm: number };
     setPaused(p: boolean): void;
     captureImage(type: string): string | null;
@@ -91,8 +96,10 @@ async function measurePose([id, keep, bandHex]: [string, boolean, string]): Prom
   const rim = geo.getAttribute('_rim_mask');
   // El pase de ids no depende de la pose: uno por geometría (clase y LOD)
   const cache = ((window as unknown as { __d23ids?: Map<unknown, Attr> }).__d23ids ??= new Map());
+  const portCache = ((window as unknown as { __d23ports?: Map<unknown, Attr> }).__d23ports ??= new Map());
   const cached = cache.get(geo);
   const ids = cached ?? color.clone();
+  const portIds = portCache.get(geo) ?? color.clone();
   const lin = (hex: string) => [1, 3, 5].map((i) => { const c = parseInt(hex.slice(i, i + 2), 16) / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; });
   const dark = [lin('#26282B'), lin('#1A1410')]; // cannon, gunport
   const near = (v: number, c: number[]) => Math.abs(color.getX(v) - c[0]) + Math.abs(color.getY(v) - c[1]) + Math.abs(color.getZ(v) - c[2]) < 1e-4;
@@ -100,8 +107,10 @@ async function measurePose([id, keep, bandHex]: [string, boolean, string]): Prom
   const sails = view.model.sails[view.lod];
   const tris = pos.count / 3;
   const set = (t: number, r: number, g: number, b: number) => { for (let k = 0; k < 3; k++) ids.array.set([r, g, b], (3 * t + k) * 3); };
+  const setPort = (t: number, v: number) => { for (let k = 0; k < 3; k++) portIds.array.set([v, v, v], (3 * t + k) * 3); };
   const p = (i: number): V3 => ({ x: pos.getX(i), y: pos.getY(i), z: pos.getZ(i) });
   for (let t = 0; t < (cached ? 0 : tris); t++) {
+    setPort(t, near(3 * t, dark[0]) || near(3 * t, dark[1]) ? 1 : 0);
     const s = sails.findIndex(([a, b]) => t >= a && t < b);
     if (s >= 0) { set(t, 1, LEVELS[(s >> 2) & 3], LEVELS[s & 3]); continue; }
     if (near(3 * t, dark[0]) || near(3 * t, dark[1])) { set(t, 0, 1, 1); continue; }
@@ -117,8 +126,22 @@ async function measurePose([id, keep, bandHex]: [string, boolean, string]): Prom
     set(t, 0, 0, 0);
   }
   cache.set(geo, ids);
+  portCache.set(geo, portIds);
   geo.setAttribute('color', ids);
   const idsImg = shot();
+  // Cobertura de cañones y portas (AS-V20, D37): solo el barco, con cañones y portas en blanco y el resto en negro. Con la
+  // luz de albedo, cada píxel vale su cobertura (el MSAA promedia los valores ya codificados), y se toma ≥ 50 % como el
+  // modelo de game-ux
+  const hidden: Node[] = [];
+  rt.rootScene.traverse((o) => {
+    if ((o.isMesh || o.isPoints || o.isLine || o.isSprite) && o !== (view.mesh as unknown) && o.visible) {
+      o.visible = false;
+      hidden.push(o);
+    }
+  });
+  geo.setAttribute('color', portIds);
+  const portsImg = shot();
+  for (const o of hidden) o.visible = true;
   geo.setAttribute('color', color);
   for (const s of saved) {
     s.l.intensity = s.i;
@@ -139,7 +162,7 @@ async function measurePose([id, keep, bandHex]: [string, boolean, string]): Prom
     x.drawImage(im, 0, 0);
     return x.getImageData(0, 0, c.width, c.height);
   };
-  const [A, B, C, D] = await Promise.all([con, sin, alb, idsImg].map(decode));
+  const [A, B, C, D, E] = await Promise.all([con, sin, alb, idsImg, portsImg].map(decode));
   const W = A.width;
   const H = A.height;
   const N = W * H;
@@ -187,7 +210,8 @@ async function measurePose([id, keep, bandHex]: [string, boolean, string]): Prom
     }
   }
 
-  // Regiones del pase de ids (los píxeles mezclados por el antialias no coinciden con ningún id y quedan fuera)
+  // Regiones. Costado y velas, del pase de ids: solo píxeles puros (los mezclados por el antialias quedan fuera). Cañón o
+  // porta (AS-V20), del pase de cobertura: ≥ 50 %
   const region = new Int16Array(N).fill(-1); // -2 costado, -3 cañón/porta, ≥ 0 vela
   const lvl = (v: number) => [0, 89, 160, 255].findIndex((q) => Math.abs(v - q) <= 10);
   for (let i = 0; i < N; i++) {
@@ -195,7 +219,8 @@ async function measurePose([id, keep, bandHex]: [string, boolean, string]): Prom
     if (r > 215) {
       const gi = lvl(g), bi = lvl(b);
       if (gi >= 0 && bi >= 0) region[i] = gi * 4 + bi;
-    } else if (r < 40 && g > 215) region[i] = b > 215 ? -3 : b < 40 ? -2 : -1;
+    } else if (r < 40 && g > 215 && b < 40) region[i] = -2;
+    if (mask[i] && E.data[4 * i] >= 128) region[i] = -3; // en la silueta: fuera solo queda el color de fondo
   }
 
   // AS-V18: bordes de la pasada de albedo (ΔE76 ≥ 2 con un vecino) dilatados ±1 px; escalones |ΔL*| ≥ 5 entre vecinos
@@ -246,9 +271,13 @@ async function measurePose([id, keep, bandHex]: [string, boolean, string]): Prom
     regions.push({ name: r === -2 ? 'costado' : `vela${r}`, pixels: q.n, steps });
   }
 
-  // AS-V20 (D36): componentes conexas (8 vecinos) de píxeles de cañón o porta del pase de ids con caja ≥ 2 × 2 y píxeles
-  // de franja (pase de albedo a ΔE76 ≤ 8 de hull.band) a ≤ 3 px. Contraste = mediana de L* de esa franja − mediana de L*
-  // de la componente, en la captura
+  // AS-V20 (D36, D37, D38): componentes conexas (8 vecinos) de píxeles de cañón o porta con cobertura ≥ 50 % (con solo
+  // los píxeles puros del pase de ids, la porta de ≈ 2,3 px de alto con N3 quedaba a veces en una fila de 3 × 1 y caía por
+  // la caja), con caja ≥ 2 × 2 y píxeles de franja (pase de albedo a ΔE76 ≤ 4 de hull.band; con ≤ 8 entraba el filete de
+  // la Fragata, #D9A93F a 5,8) a ≤ 3 px. Contraste = mediana de L* de esa franja − mediana de L* del núcleo, los píxeles
+  // de la componente con cobertura ≥ 75 % (sin los de borde, que mezclan porta y franja), en la captura. Con MSAA 4× la
+  // cobertura sale en 0/64/128/191/255, así que 128 = 2 de 4 muestras y 191 = 3 de 4
+  const BAND_DE = 4;
   const band = new Uint8Array(N);
   {
     const [r, g, b] = [1, 3, 5].map((k) => LUT[parseInt(bandHex.slice(k, k + 2), 16)]);
@@ -259,7 +288,7 @@ async function measurePose([id, keep, bandHex]: [string, boolean, string]): Prom
     for (let y = y0; y <= y1; y++) {
       for (let x = x0; x <= x1; x++) {
         const i = y * W + x;
-        if (Math.hypot(LC[3 * i] - ref[0], LC[3 * i + 1] - ref[1], LC[3 * i + 2] - ref[2]) <= 8) band[i] = 1;
+        if (Math.hypot(LC[3 * i] - ref[0], LC[3 * i + 1] - ref[1], LC[3 * i + 2] - ref[2]) <= BAND_DE) band[i] = 1;
       }
     }
   }
@@ -267,6 +296,7 @@ async function measurePose([id, keep, bandHex]: [string, boolean, string]): Prom
   const seen = new Uint8Array(N);
   const nearBand = new Int32Array(N).fill(-1);
   const ports: Port[] = [];
+  const rejected: Shot['rejected'] = [];
   for (let y = y0; y <= y1; y++) {
     for (let x = x0; x <= x1; x++) {
       const i0 = y * W + x;
@@ -291,7 +321,10 @@ async function measurePose([id, keep, bandHex]: [string, boolean, string]): Prom
       }
       const xs = comp.map((c) => c % W), ys = comp.map((c) => (c / W) | 0);
       const w = Math.max(...xs) - Math.min(...xs) + 1, h = Math.max(...ys) - Math.min(...ys) + 1;
-      if (w < 2 || h < 2) continue;
+      if (w < 2 || h < 2) {
+        rejected.push({ x: Math.min(...xs), y: Math.min(...ys), w, h, why: 'caja' });
+        continue;
+      }
       const tag = ports.length;
       const ring: number[] = [];
       for (const c of comp) {
@@ -307,8 +340,12 @@ async function measurePose([id, keep, bandHex]: [string, boolean, string]): Prom
           }
         }
       }
-      if (!ring.length) continue;
-      ports.push({ w, h, band: ring.length, contrast: median(ring) - median(comp.map(L)) });
+      if (!ring.length) {
+        rejected.push({ x: Math.min(...xs), y: Math.min(...ys), w, h, why: 'sin franja' });
+        continue;
+      }
+      const core = comp.filter((c) => E.data[4 * c] >= 191);
+      ports.push({ x: Math.min(...xs), y: Math.min(...ys), w, h, band: ring.length, core: core.length, contrast: core.length >= 2 ? median(ring) - median(core.map(L)) : NaN });
     }
   }
 
@@ -322,9 +359,9 @@ async function measurePose([id, keep, bandHex]: [string, boolean, string]): Prom
       c.getContext('2d')!.putImageData(img, -cx0, -cy0, cx0, cy0, cw, ch);
       return c.toDataURL('image/png');
     };
-    crops = { con: crop(A), sin: crop(B), alb: crop(C), ids: crop(D) };
+    crops = { con: crop(A), sin: crop(B), alb: crop(C), ids: crop(D), cob: crop(E) };
   }
-  return { ppm, lod: view.lod, calls: withShip.calls - without.calls, triangles: withShip.triangles - without.triangles, mask: maskPx, interior, texture: interior ? textured / interior : 0, regions, ports, crops };
+  return { ppm, lod: view.lod, calls: withShip.calls - without.calls, triangles: withShip.triangles - without.triangles, mask: maskPx, interior, texture: interior ? textured / interior : 0, regions, ports, rejected, crops };
 }
 
 interface Row extends Omit<Shot, 'crops'> {
@@ -347,6 +384,7 @@ const lab = (hex: string) => {
   return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
 };
 const AS_V20_CONTRAST = 15;
+const legible = (q: Port) => q.core >= 2 && q.contrast >= AS_V20_CONTRAST; // AS-V20 (D38): núcleo ≥ 2 px y contraste ≥ 15
 
 // Una pasada por la galería con un nivel de cañón (encuadre de §6.2): cada clase al foco con cada rumbo, SHOTS capturas
 async function gallery(page: Page, level: number, headings: number[], out?: string): Promise<Row[]> {
@@ -368,15 +406,25 @@ async function gallery(page: Page, level: number, headings: number[], out?: stri
       (window as unknown as { __gallery: { setPose(id: string, x: number, z: number, h: number): void } }).__gallery.setPose(id, x, z, (deg * Math.PI) / 180);
     }, [id, x, z, deg] as [string, number, number, number]);
   const rows: Row[] = [];
-  for (const [i, classId] of CLASSES.entries()) {
-    const id = setup.ids[i];
+  for (const classId of CLASSES) {
+    const id = `g-${classId}`; // galleryScene: un barco por clase, aparcado en su hueco i hasta que le toca
+    const i = setup.ids.indexOf(id);
     for (const deg of headings) {
       await pose(id, setup.focus.x, setup.focus.z, deg);
       await page.waitForTimeout(800);
       for (let k = 0; k < SHOTS; k++) {
-        const { crops, ...shot } = await page.evaluate(measurePose, [id, !!out && k === 0, SHIP_LOOKS[LOOK[classId]].band] as [string, boolean, string]);
+        // Con N3 siempre se piden los recortes: si la captura no cumple AS-V20, se adjuntan al reporte con sus componentes
+        const { crops, ...shot } = await page.evaluate(measurePose, [id, (!!out && k === 0) || level === 3, SHIP_LOOKS[LOOK[classId]].band] as [string, boolean, string]);
         rows.push({ classId, level, deg, k, ...shot });
-        if (crops && out) for (const [name, url] of Object.entries(crops)) fs.writeFileSync(path.join(out, `n${level}-${classId}-${deg}-${name}.png`), Buffer.from(url.slice(url.indexOf(',') + 1), 'base64'));
+        const counted = CANNONS[classId] ? shot.ports.filter(legible).length : shot.ports.length;
+        const failed = level === 3 && counted !== CANNONS[classId];
+        const png = (url: string) => Buffer.from(url.slice(url.indexOf(',') + 1), 'base64');
+        if (crops && out && (k === 0 || failed)) for (const [name, url] of Object.entries(crops)) fs.writeFileSync(path.join(out, `n${level}-${classId}-${deg}${k ? `-k${k}` : ''}-${name}.png`), png(url));
+        if (crops && failed) {
+          const tag = `AS-V20-${classId}-${deg}-k${k}`;
+          for (const [name, url] of Object.entries(crops)) await test.info().attach(`${tag}-${name}.png`, { body: png(url), contentType: 'image/png' });
+          await test.info().attach(`${tag}.json`, { body: JSON.stringify({ ports: shot.ports, rejected: shot.rejected }, null, 1), contentType: 'application/json' });
+        }
         await page.waitForTimeout(500);
       }
     }
@@ -419,9 +467,10 @@ test.describe('Detalle interno de los cascos @perf', () => {
         facetMax: lines.length ? Math.max(...lines) : 0,
         facetMean: lines.length ? mean(lines) : 0,
         regions: rs[0].regions.map((g) => `${g.name}:${g.pixels}`).join(' '),
-        ports: rs.map((r) => r.ports.filter((q) => q.contrast >= AS_V20_CONTRAST).length),
+        ports: rs.map((r) => r.ports.filter(legible).length),
         components: rs.map((r) => r.ports.length),
-        contrast: rs.flatMap((r) => r.ports.map((q) => q.contrast))
+        core: rs.flatMap((r) => r.ports.map((q) => q.core)),
+        contrast: rs.flatMap((r) => r.ports.map((q) => q.contrast)).filter(Number.isFinite)
       };
     })));
     const sails = values.map((v) => {
@@ -432,7 +481,7 @@ test.describe('Detalle interno de los cascos @perf', () => {
     });
 
     for (const p of summary) {
-      const v20 = p.level === 3 ? ` · AS-V20 ${p.ports.join('/')} de ${CANNONS[p.classId]} (componentes ${p.components.join('/')}, contraste ${p.contrast.length ? `${Math.min(...p.contrast).toFixed(0)}–${Math.max(...p.contrast).toFixed(0)}` : '—'})` : '';
+      const v20 = p.level === 3 ? ` · AS-V20 ${p.ports.join('/')} de ${CANNONS[p.classId]} (componentes ${p.components.join('/')}, núcleo ${p.core.length ? `${Math.min(...p.core)}–${Math.max(...p.core)}` : '—'} px, contraste ${p.contrast.length ? `${Math.min(...p.contrast).toFixed(1)}–${Math.max(...p.contrast).toFixed(1)}` : '—'})` : '';
       const v19 = p.level === 1 ? ` · AS-V19 ${(p.texture * 100).toFixed(1)} % · AS-V18 máx. ${p.facetMax} / media ${p.facetMean.toFixed(2)} (${p.regions})` : '';
       console.log(`D36 ${p.classId.padEnd(8)} N${p.level} ${String(p.deg).padStart(3)}° LOD${p.lod} · ${p.calls} draw call / ${p.triangles} tris · silueta ${p.mask} px${v19}${v20}`);
     }
@@ -450,7 +499,8 @@ test.describe('Detalle interno de los cascos @perf', () => {
         expect.soft(p.facetMax, `AS-V18 ${p.classId} ${p.deg}°: escalones por línea`).toBeLessThanOrEqual(1);
         expect.soft(p.facetMean, `AS-V18 ${p.classId} ${p.deg}°: media`).toBeLessThanOrEqual(0.5);
       }
-      // AS-V20 con N3: en cada captura, componentes con contraste ≥ 15 = cañones por banda; el Mercante, 0 componentes
+      // AS-V20 con N3: en cada captura, componentes legibles (núcleo ≥ 2 px, contraste ≥ 15) = cañones por banda; el
+      // Mercante, 0 componentes
       if (p.level === 3) {
         for (const n of p.ports) expect.soft(n, `AS-V20 ${p.classId} ${p.deg}°`).toBe(CANNONS[p.classId]);
         if (CANNONS[p.classId] === 0) for (const n of p.components) expect.soft(n, `AS-V20 ${p.classId} ${p.deg}°: sin componentes`).toBe(0);

@@ -246,9 +246,10 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
     }
   });
 
-  test('D36: rejillas de las velas (cuadras con paños de ≈ 0,7 m; cangreja, latina y foque con paños) en LOD0, lisas en LOD1', () => {
+  test('D36/D37: rejillas de las velas (paños de ≈ 0,7 m, o 0,6 m con la paleta pirata; foque y latina por filas) en LOD0, lisas en LOD1', () => {
     const r = model.recipe;
     const look = SHIP_LOOKS[r.look];
+    const pirate = r.look === 'pirate'; // D37: paños de 0,6 m y filas de 0,75 m
     const d = (p: number[], q: number[]) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
     const zy = (p: readonly [number, number]) => [0, p[1], p[0]];
     // Triángulos esperados por vela, en el orden de construcción: por mástil, cuadras, cangreja y latina; luego los foques
@@ -256,15 +257,17 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
     const rows = r.sailStyle === 'striped' ? 5 : 3;
     for (const mast of r.masts) {
       for (const s of mast.squares ?? []) {
-        const nx = r.sailStyle === 'notched' ? Math.max(4, 4 * Math.round(s.w / 2.8)) : Math.max(4, 2 * Math.round(s.w / 1.4));
+        const nx = pirate ? Math.max(4, 4 * Math.round(s.w / 2.4)) : r.sailStyle === 'notched' ? Math.max(4, 4 * Math.round(s.w / 2.8)) : Math.max(4, 2 * Math.round(s.w / 1.4));
         expected.push([2 * nx * rows, 2 * 4 * rows]);
       }
-      if (mast.gaff) expected.push([2 * Math.max(2, Math.round(d(zy(mast.gaff.A), zy(mast.gaff.D)) / 0.7)) * 3, 4]);
-      if (mast.lateen) expected.push([2 * 3 * Math.max(2, Math.round(d(zy(mast.lateen.A), zy(mast.lateen.C)) / 0.9)) - 3, 3]); // la fila del pico degenera
+      if (mast.gaff) expected.push([2 * Math.max(2, Math.round(d(zy(mast.gaff.A), zy(mast.gaff.D)) / (pirate ? 0.6 : 0.7))) * 3, 4]);
+      if (mast.lateen) expected.push([2 * 3 * Math.max(2, Math.round(d(zy(mast.lateen.A), zy(mast.lateen.C)) / (pirate ? 0.75 : 0.9))) - 3, 3]); // la fila del pico degenera
     }
     const bs = r.bowsprit + 1;
     const tip = [0, 1.25 * r.F + 0.342 * bs, r.L / 2 - 1 + 0.94 * bs];
-    for (const jib of r.jibs) expected.push([2 * 3 * Math.max(2, Math.round(d(jib.T === 'tip' ? tip : jib.T, jib.H) / 0.9)) - 3, 3]);
+    for (const jib of r.jibs) expected.push([2 * 3 * Math.max(2, Math.round(d(jib.T === 'tip' ? tip : jib.T, jib.H) / (pirate ? 0.75 : 0.9))) - 3, 3]);
+    // ASSET-SPEC §8.4 (D37): las dos cuadras del pirata llevan 12 columnas
+    if (pirate) expect(r.masts.flatMap((m) => m.squares ?? []).map((q) => Math.max(4, 4 * Math.round(q.w / 2.4)))).toEqual([12, 12]);
     model.sails.forEach((ranges, lod) => {
       expect(ranges.map(([a, b]) => b - a)).toEqual(expected.map((e) => e[lod]));
       const color = model.lods[lod].getAttribute('color');
