@@ -3,19 +3,24 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "node server.js",
-    "build": "next build",
-    "start": "NODE_ENV=production node server.js",
-    "next-dev": "next dev --turbopack",
+    "dev": "tsx server/index.ts",
+    "dev:guest": "AUTH_BYPASS=1 tsx server/index.ts",
+    "build": "next build && tsc -p tsconfig.server.json",
+    "build:e2e": "NEXT_DIST_DIR=.next-e2e next build && tsc -p tsconfig.server.json",
+    "start": "NODE_ENV=production node dist/server/index.js",
+    "typecheck": "tsc --noEmit",
     "test": "jest",
-    "test:watch": "jest --watch"
+    "test:watch": "jest --watch",
+    "test:e2e": "npm run build:e2e && playwright test --grep-invert \"@perf|@capture\"",
+    "test:perf": "npm run build:e2e && playwright test --grep @perf",
+    "qa:capture": "npm run build:e2e && playwright test --grep @capture",
+    "verify": "npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
     "@clerk/backend": "^3.23.2",
     "@clerk/nextjs": "^6.32.0",
     "@react-three/drei": "^10.7.6",
     "@react-three/fiber": "^9.3.0",
-    "@vercel/kv": "^3.0.0",
     "next": "^15.5.27",
     "react": "19.1.0",
     "react-dom": "19.1.0",
@@ -25,6 +30,7 @@
     "zustand": "^5.0.8"
   },
   "devDependencies": {
+    "@playwright/test": "^1.56.1",
     "@tailwindcss/postcss": "^4",
     "@types/jest": "^30.0.0",
     "@types/node": "^20",
@@ -34,28 +40,46 @@
     "jest-environment-jsdom": "^30.1.2",
     "tailwindcss": "^4",
     "ts-jest": "^29.4.1",
+    "tsx": "^4.20.6",
     "typescript": "^5"
   },
   "jest": {
     "preset": "ts-jest",
-    "testEnvironment": "jsdom",
+    "testEnvironment": "node",
     "roots": [
-      "<rootDir>/src"
+      "<rootDir>/src",
+      "<rootDir>/server"
     ],
     "testMatch": [
-      "**/__tests__/**/*.ts",
-      "**/?(*.)+(spec|test).ts"
+      "**/__tests__/**/*.test.ts"
     ],
     "transform": {
-      "^.+\\.ts$": "ts-jest"
+      "^.+\\.ts$": [
+        "ts-jest",
+        {
+          "tsconfig": {
+            "module": "commonjs",
+            "esModuleInterop": true,
+            "strict": true,
+            "target": "ES2020",
+            "lib": [
+              "ES2021",
+              "DOM"
+            ],
+            "skipLibCheck": true
+          }
+        }
+      ]
     },
     "moduleFileExtensions": [
       "ts",
-      "js"
+      "js",
+      "json"
     ],
     "collectCoverageFrom": [
-      "src/**/*.{ts,tsx}",
-      "!src/**/*.d.ts"
+      "src/game/**/*.ts",
+      "server/**/*.ts",
+      "!**/__tests__/**"
     ]
   }
 }
