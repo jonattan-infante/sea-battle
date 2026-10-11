@@ -180,6 +180,7 @@ body {
 .hint-touch { display: none; }
 @media (pointer: coarse) { .hint-touch { display: inline; } .hint-mouse { display: none; } }
 .hud-hint { position: absolute; left: 50%; bottom: 148px; transform: translateX(-50%); max-width: 420px; min-height: 40px; padding: 8px 16px; font-size: 15px; display: flex; align-items: center; gap: 8px; animation: fade-in 300ms ease both; pointer-events: none; }
+.hud-hint.is-alt { top: 128px; bottom: auto; } /* ranura sobre el barco (AC-105) */
 
 /* ---------- Móvil vertical 390×844 (§12.2) y horizontal 844×390 (§12.3) ---------- */
 @media (max-width: 699.98px), (max-height: 499.98px) {
@@ -216,6 +217,7 @@ body {
   .hud-mobile-btn--repair { right: 16px; bottom: calc(env(safe-area-inset-bottom, 0px) + 108px); }
   .hud-mobile-btn--port { left: 16px; bottom: calc(env(safe-area-inset-bottom, 0px) + 16px); }
   .hud-hint { bottom: 200px; width: calc(100% - 32px); }
+  .hud-hint.is-alt { top: calc(env(safe-area-inset-top, 0px) + 156px); bottom: auto; }
 }
 
 @media (max-height: 499.98px) and (min-width: 700px) {
@@ -234,6 +236,7 @@ body {
   .hud-mobile-btn--repair { right: 24px; bottom: 100px; }
   .hud-mobile-btn--port { left: 12px; bottom: 12px; }
   .hud-hint { bottom: 12px; } /* H-06: entre Puerto y Objetivo, lejos del barco centrado y de su placa */
+  .hud-hint.is-alt { top: 64px; bottom: auto; }
 }
 
 /* ---------- Modales (z 40) ---------- */
