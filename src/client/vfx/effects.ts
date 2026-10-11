@@ -9,10 +9,25 @@ import { RingLayer } from './rings';
 // renderOrder (§0.2): océano 0 → P_WATER 1 → P_CONTACT 2 → islas 3 → RINGS 4 → barcos 5 → sombras 6 → balas 7 → P_ALPHA 8 → P_ADD 9
 export const RENDER_ORDER = { ocean: 0, water: 1, contact: 2, islands: 3, rings: 4, ships: 5, shadows: 6, balls: 7, alpha: 8, add: 9 };
 
-const POOLS = {
+export const POOLS = {
   desktop: { add: 384, alpha: 1280, water: 768, balls: 96, contact: 64, rings: 64 }, // P_ALPHA con los cuerpos de llama (D21)
   mobile: { add: 192, alpha: 640, water: 384, balls: 64, contact: 64, rings: 64 }
 };
+
+// §6 humo y fuego de vida baja: tasas por socket (1/s) y vidas (s) (D20, D21), y barcos que los llevan a la vez, los
+// más cercanos al centro: [normal, móvil y calidad baja]. En móvil y calidad baja no se recortan la tasa ni la vida,
+// porque son información de daño (AC-104); a cambio, humo en ≤ 12 barcos y fuego en ≤ 4 (§0.4, D32)
+export const DAMAGE_FX = {
+  smokeRate: 3, denseSmokeRate: 6, smokeLife: 3.4,
+  flameRate: 12, coreRate: 6, emberRate: 2, flameLife: 0.55, coreLife: 0.4, emberLife: 1.2, fireSockets: 3,
+  smokeShips: [Infinity, 12], fireShips: [8, 4]
+} as const;
+
+// Mínimo en px del cuerpo de llama (10) y del núcleo (5), pero nunca más de ≈ 1/4 de la eslora en pantalla
+// (0,22·L·ppm y 0,11·L·ppm): en 390×844 con N3 la Balandra baja a 8 px y su fuego deja de taparle el casco (Q24, D35)
+export function flamePxMin(length: number, ppm: number, core = false): number {
+  return core ? Math.min(5, 0.11 * length * ppm) : Math.min(10, 0.22 * length * ppm);
+}
 
 const WIND = new THREE.Vector3(0.5, 0, -0.5); // m/s (VFX §2); el humo de daño usa × 1,2 = (0,6, 0, −0,6)
 
@@ -241,7 +256,7 @@ export class Effects {
   // de 0,07·h → 0,25·h (claro) o 0,10·h → 0,32·h (denso), × (1 ± 0,15) para que la columna no sea un collar de cuentas
   damageSmoke(x: number, y: number, z: number, dense: boolean, mastHeight: number): void {
     const k = mastHeight * (1 + rand(-0.15, 0.15));
-    const s = this.spec(x + rand(-0.3, 0.3), y, z + rand(-0.3, 0.3), 3.4, (dense ? 0.1 : 0.07) * k, (dense ? 0.32 : 0.25) * k, dense ? C.denseSmoke : C.smoke, SHAPE.puff);
+    const s = this.spec(x + rand(-0.3, 0.3), y, z + rand(-0.3, 0.3), DAMAGE_FX.smokeLife, (dense ? 0.1 : 0.07) * k, (dense ? 0.32 : 0.25) * k, dense ? C.denseSmoke : C.smoke, SHAPE.puff);
     s.vy = 0.22 * mastHeight;
     s.gravity = 0.035 * mastHeight;
     s.wind = 1.2;
@@ -249,7 +264,7 @@ export class Effects {
     this.alpha.emit(s);
   }
 
-  // Cuerpo de la llama (D21): de 3,0 a 1,2 m × L/24 (mínimo 10 px; final 1,2 m en D29, antes 0,9: con el encuadre N1
+  // Cuerpo de la llama (D21): de 3,0 a 1,2 m × L/24 (mínimo flamePxMin, D35; final 1,2 m en D29, antes 0,9: con el encuadre N1
   // el mínimo en px ya no inflaba el final y el fuego del Mercante quedaba en el límite), nacida en un punto al azar de la elipse de
   // cubierta del socket, de semiejes 0,06·L (eslora) × 0,15·B (manga). Antes nacían a ±0,3 m y se apilaban en un óvalo.
   // Forma 8 (D24): con el sesgo del humo, para que las cuadras braceadas propias no la tapen (Q20)
@@ -259,23 +274,23 @@ export class Effects {
     const along = 0.06 * length * d * Math.cos(a);
     const across = 0.15 * beam * d * Math.sin(a);
     const k = length / 24;
-    const s = this.spec(x + Math.sin(heading) * along + Math.cos(heading) * across, y, z + Math.cos(heading) * along - Math.sin(heading) * across, 0.55, 3.0 * k, 1.2 * k, C.flame, SHAPE.damageFlame);
+    const s = this.spec(x + Math.sin(heading) * along + Math.cos(heading) * across, y, z + Math.cos(heading) * along - Math.sin(heading) * across, DAMAGE_FX.flameLife, 3.0 * k, 1.2 * k, C.flame, SHAPE.damageFlame);
     s.vy = 1.8 + rand(-0.4, 0.4);
-    s.pxMin = 10;
+    s.pxMin = flamePxMin(length, this.ppm);
     this.alpha.emit(s);
   }
 
-  // Núcleo aditivo (forma 8) en el centro del socket: la mitad del tamaño de la llama (mínimo 5 px) y vida 0,4 s (D21)
+  // Núcleo aditivo (forma 8) en el centro del socket: de 1,5 a 0,6 m × L/24 (mínimo flamePxMin, D35) y vida 0,4 s (D21, D31)
   flameCore(x: number, y: number, z: number, length: number): void {
     const k = length / 24;
-    const s = this.spec(x, y, z, 0.4, 1.5 * k, 0.6 * k, C.flameCore, SHAPE.damageFlame);
+    const s = this.spec(x, y, z, DAMAGE_FX.coreLife, 1.5 * k, 0.6 * k, C.flameCore, SHAPE.damageFlame);
     s.vy = 1.8 + rand(-0.4, 0.4);
-    s.pxMin = 5;
+    s.pxMin = flamePxMin(length, this.ppm, true);
     this.add.emit(s);
   }
 
   ember(x: number, y: number, z: number): void {
-    const s = this.spec(x + rand(-0.4, 0.4), y, z + rand(-0.4, 0.4), 1.2, 0.12, 0.12, C.ember, SHAPE.disc);
+    const s = this.spec(x + rand(-0.4, 0.4), y, z + rand(-0.4, 0.4), DAMAGE_FX.emberLife, 0.12, 0.12, C.ember, SHAPE.disc);
     s.vx = rand(-0.4, 0.4);
     s.vy = 3;
     s.vz = rand(-0.4, 0.4);

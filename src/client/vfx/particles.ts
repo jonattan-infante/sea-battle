@@ -285,13 +285,13 @@ export class ParticlePool {
     this.mesh.visible = time < this.lastDeath;
   }
 
-  // Instancias vivas (contador de depuración, VFX-03)
-  live(time: number): number {
+  // Instancias vivas (contador de depuración, VFX-03); con shape, solo las de esa forma (QA de D32)
+  live(time: number, shape?: number): number {
     let n = 0;
     const count = Math.min(this.emitted, this.capacity);
     for (let i = 0; i < count; i++) {
       const t0 = this.arrays.aP0T0[i * 4 + 3];
-      if (time >= t0 && time <= this.deaths[i]) n++;
+      if (time >= t0 && time <= this.deaths[i] && (shape === undefined || this.arrays.aMisc[i * 4] === shape)) n++;
     }
     return n;
   }

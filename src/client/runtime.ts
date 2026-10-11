@@ -14,7 +14,7 @@ import { createOceanGeometry, createOceanMaterial } from './models/ocean-materia
 import { measureSailVisibility, measureShipValues, SailVisibility, ShipValues } from './models/sail-visibility';
 import { createShipMaterial, getShipModel, LOD_PX, ShipMaterial, ShipModel } from './models/ship-geometry';
 import { FloatingTextLayer, LabelLayer, LabelTarget, OverlayHost, ReloadState, ScreenPoint } from './overlays';
-import { Effects, RENDER_ORDER, rgba } from './vfx/effects';
+import { DAMAGE_FX, Effects, RENDER_ORDER, rgba } from './vfx/effects';
 import { makeRing, RING_MODE, RingSpec } from './vfx/rings';
 import { VolleyRandom, volleySide } from './vfx/volley';
 import { damageScene, heroScene, SceneName, showcaseScene, standardScene, SyntheticSource } from './synthetic-scene';
@@ -102,6 +102,7 @@ interface ShipView extends LabelTarget {
   lastHp: number;
   repairGain: number;
   repairClock: number;
+  smokeSlot: boolean;
   fireSlot: boolean;
 }
 
@@ -158,6 +159,10 @@ export class VfxDirector {
   private readonly volleys: VolleyRecord[] = [];
   private readonly v = new THREE.Vector3();
   private readonly fireCandidates: ShipView[] = [];
+  private readonly smokeCandidates: ShipView[] = [];
+  // Orden por distancia al centro de la pantalla (los topes de humo y fuego); creado una vez, sin asignar por frame
+  private readonly byFocus = (a: ShipView, b: ShipView) =>
+    Math.hypot(a.ship.x - this.rt.focusX, a.ship.z - this.rt.focusZ) - Math.hypot(b.ship.x - this.rt.focusX, b.ship.z - this.rt.focusZ);
   private readonly random = new VolleyRandom(); // reparto sembrado de cada andanada (D3)
 
   constructor(private readonly rt: GameRuntime) {
@@ -416,17 +421,24 @@ export class VfxDirector {
   updateShips(now: number, dt: number): void {
     const rt = this.rt;
     const fx = rt.effects;
-    const rate = rt.mobile || rt.lowQuality ? 0.5 : 1;
+    // Móvil y calidad baja (§0.4): tasas × 0,5 y estela × 0,7, salvo el humo y el fuego de vida baja, que van con la
+    // tasa y la vida completas (D32); a cambio, humo en ≤ 12 barcos y fuego en ≤ 4
+    const low = rt.mobile || rt.lowQuality;
+    const rate = low ? 0.5 : 1;
     const lifeScale = rt.mobile ? 0.7 : 1;
     const contact = fx.contact;
     contact.begin();
 
-    // Fuego en ≤ 8 barcos a la vez (móvil 4): los más cercanos al centro de la pantalla
-    const maxFire = rt.mobile || rt.lowQuality ? 4 : 8;
+    // Humo y fuego en los barcos más cercanos al centro de la pantalla: fuego ≤ 8 (4) y humo sin tope (≤ 12)
+    const maxFire = DAMAGE_FX.fireShips[low ? 1 : 0];
+    const maxSmoke = DAMAGE_FX.smokeShips[low ? 1 : 0];
     const cands = this.fireCandidates;
+    const smokers = this.smokeCandidates;
     cands.length = 0;
+    smokers.length = 0;
     for (const view of rt.views.values()) {
       view.fireSlot = false;
+      view.smokeSlot = false;
       const s = view.ship;
       const ratio = s.maxHp > 0 ? s.hp / s.maxHp : 1;
       if (view.fire) {
@@ -436,13 +448,12 @@ export class VfxDirector {
         if (ratio > 0.53 && s.state === 'alive') view.smoke = false;
       } else if (ratio <= 0.5 && s.state === 'alive') view.smoke = true;
       if (view.fire && s.state !== 'dead') cands.push(view);
+      if (view.smoke && s.state !== 'dead') smokers.push(view);
     }
-    if (cands.length > maxFire) {
-      const cx = rt.focusX;
-      const cz = rt.focusZ;
-      cands.sort((a, b) => Math.hypot(a.ship.x - cx, a.ship.z - cz) - Math.hypot(b.ship.x - cx, b.ship.z - cz));
-    }
+    if (cands.length > maxFire) cands.sort(this.byFocus);
     for (let i = 0; i < Math.min(maxFire, cands.length); i++) cands[i].fireSlot = true;
+    if (smokers.length > maxSmoke) smokers.sort(this.byFocus);
+    for (let i = 0; i < Math.min(maxSmoke, smokers.length); i++) smokers[i].smokeSlot = true;
 
     for (const view of rt.views.values()) {
       const s = view.ship;
@@ -486,9 +497,9 @@ export class VfxDirector {
 
       // Humo (≤ 50 %) y fuego (≤ 25 %) con histéresis; siguen encendidos mientras se hunde
       const dense = view.fire;
-      if (view.smoke && s.state !== 'dead' && shown) {
-        // 3/s (≤ 50 %) o 6/s denso (≤ 25 %) con vida 3,4 s: ≤ 11 y ≤ 21 vivas por barco (VFX §6, D20)
-        view.smokeAcc += dt * (dense ? 6 : 3) * rate;
+      if (view.smoke && view.smokeSlot && s.state !== 'dead' && shown) {
+        // 3/s (≤ 50 %) o 6/s denso (≤ 25 %) con vida 3,4 s: ≤ 11 y ≤ 21 vivas por barco (VFX §6, D20), también en móvil
+        view.smokeAcc += dt * (dense ? DAMAGE_FX.denseSmokeRate : DAMAGE_FX.smokeRate);
         while (view.smokeAcc >= 1) {
           view.smokeAcc -= 1;
           this.v.copy(view.model.sockets.smoke).applyMatrix4(view.mesh.matrix);
@@ -497,11 +508,11 @@ export class VfxDirector {
       }
       if (view.fire && view.fireSlot && shown) {
         const ratio = s.hp / Math.max(1, s.maxHp);
-        const sockets = ratio <= 0.12 ? 3 : 2;
+        const sockets = ratio <= 0.12 ? DAMAGE_FX.fireSockets : 2;
         // Por socket: 12 cuerpos de llama/s (P_ALPHA), 6 núcleos/s y 2 brasas/s (P_ADD); vivos ≤ 20, ≤ 8 y ≤ 7 (D21)
-        view.fireAcc += dt * 12 * rate;
-        view.coreAcc += dt * 6 * rate;
-        view.emberAcc += dt * 2 * rate;
+        view.fireAcc += dt * DAMAGE_FX.flameRate;
+        view.coreAcc += dt * DAMAGE_FX.coreRate;
+        view.emberAcc += dt * DAMAGE_FX.emberRate;
         while (view.fireAcc >= 1 || view.coreAcc >= 1 || view.emberAcc >= 1) {
           const kind = view.fireAcc >= 1 ? 0 : view.coreAcc >= 1 ? 1 : 2;
           if (kind === 0) view.fireAcc -= 1;
@@ -1269,7 +1280,7 @@ export class GameRuntime implements OverlayHost {
       smoke: false, fire: false, smokeAcc: 0, fireAcc: 0, coreAcc: 0, emberAcc: 0, repairAcc: 0, chipAcc: 0, wakeDist: 0, wakeCount: 0,
       lastX: ship.x, lastZ: ship.z, hitAt: -Infinity, lastDamagedAt: -Infinity, heel: 1, emergeAt: -Infinity, sinkFx: false,
       sinkRingAcc: 0, sprayAcc: 0, debris: false, fireUnder: [false, false, false], shieldEnd: -Infinity, wasProtected: false,
-      lastHp: ship.hp, repairGain: 0, repairClock: 0, fireSlot: false
+      lastHp: ship.hp, repairGain: 0, repairClock: 0, smokeSlot: false, fireSlot: false
     };
   }
 
