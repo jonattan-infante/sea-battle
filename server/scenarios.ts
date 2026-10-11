@@ -18,7 +18,17 @@ const AMBUSH_RADIUS = 30;
 // del puerto, también fuera del radio de interés desde el anillo de reaparición y desde los puntos de captura.
 export const BLIND_GUNNER_POINT = { x: -300, z: 300 };
 
-export const SCENARIOS = ['showcase', 'shipyard'] as const;
+// Abanico de objetivos para los e2e de selección y ataque (AC-27, AC-31): 4 mercantes quietos y sin IA (no huyen ni
+// disparan) a 40, 90, 140 y 170 m de TARGETS_POINT. Los e2e lo arrancan en su propio servidor
+export const TARGETS_POINT = { x: 0, z: 150 };
+export const TARGET_FAN = [
+  { d: 40, x: 40, z: 150 },
+  { d: 90, x: -90, z: 150 },
+  { d: 140, x: 0, z: 290 },
+  { d: 170, x: 120.21, z: 270.21 }
+] as const;
+
+export const SCENARIOS = ['showcase', 'shipyard', 'targets'] as const;
 export type ScenarioName = (typeof SCENARIOS)[number];
 
 export function parseScenario(value: string | undefined): ScenarioName | null {
@@ -29,6 +39,17 @@ export function applyScenario(world: World, name: ScenarioName): void {
   if (name === 'shipyard') {
     // AC-70: cada jugador entra con el oro justo para comprar el Bergantín en el puerto
     world.startingGold = SHIP_CLASSES.brig.price;
+    return;
+  }
+  if (name === 'targets') {
+    for (const p of TARGET_FAN) {
+      const m = spawnMerchant(world);
+      m.pos = { x: p.x, z: p.z };
+      m.heading = 0;
+      m.destination = null;
+      m.path = [];
+      m.ai = null;
+    }
     return;
   }
   // Pirata quieto a 45 m del punto de captura: entra en combate cuando el jugador pierde la protección

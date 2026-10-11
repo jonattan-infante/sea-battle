@@ -1,6 +1,18 @@
-import { INTEREST_RADIUS, ISLANDS, NAV_LIMIT, PIRATE_PORT_EXCLUSION, RESPAWN_RING, SAFE_ZONE_RADIUS, SHIP_CLASSES, STARTING_GOLD } from '../../src/game/constants';
+import {
+  CANNON_LEVELS,
+  INTEREST_RADIUS,
+  ISLANDS,
+  NAV_LIMIT,
+  navClearance,
+  PIRATE_PORT_EXCLUSION,
+  RESPAWN_RING,
+  SAFE_ZONE_RADIUS,
+  SHIP_CLASSES,
+  STARTING_GOLD,
+  TAB_TARGET_RADIUS
+} from '../../src/game/constants';
 import { addPlayer, createWorld } from '../../src/game/world';
-import { AMBUSH_POINT, applyScenario, BLIND_GUNNER_POINT, parseScenario, SHOWCASE_POINT } from '../scenarios';
+import { AMBUSH_POINT, applyScenario, BLIND_GUNNER_POINT, parseScenario, SHOWCASE_POINT, TARGET_FAN, TARGETS_POINT } from '../scenarios';
 
 describe('escenario "showcase" para capturas', () => {
   const world = createWorld({ seed: 1, spawnNpcs: false });
@@ -50,7 +62,38 @@ describe('escenario "shipyard" (AC-70)', () => {
   test('parseScenario solo acepta los escenarios conocidos', () => {
     expect(parseScenario('showcase')).toBe('showcase');
     expect(parseScenario('shipyard')).toBe('shipyard');
+    expect(parseScenario('targets')).toBe('targets');
     expect(parseScenario('rich')).toBeNull();
     expect(parseScenario(undefined)).toBeNull();
+  });
+});
+
+describe('escenario "targets" (AC-27, AC-31)', () => {
+  const world = createWorld({ seed: 1, spawnNpcs: false });
+  applyScenario(world, 'targets');
+  const npcs = [...world.ships.values()];
+  const dist = (p: { x: number; z: number }) => Math.hypot(p.x - TARGETS_POINT.x, p.z - TARGETS_POINT.z);
+  const sorted = npcs.slice().sort((a, b) => dist(a.pos) - dist(b.pos));
+
+  test('4 mercantes quietos y sin IA (no huyen ni disparan) a 40, 90, 140 y 170 m del punto', () => {
+    expect(npcs).toHaveLength(4);
+    expect(npcs.every((s) => s.kind === 'merchant' && s.ai === null && s.destination === null && s.path.length === 0)).toBe(true);
+    TARGET_FAN.forEach((t, i) => expect(dist(sorted[i].pos)).toBeCloseTo(t.d, 1));
+  });
+
+  test('el punto queda fuera de la zona segura y el de 170 m fuera del radio de Tab; el de 40 m a tiro del cañón inicial y el de 90 m no', () => {
+    expect(Math.hypot(TARGETS_POINT.x, TARGETS_POINT.z)).toBeGreaterThan(SAFE_ZONE_RADIUS);
+    const [d40, d90, d140, d170] = sorted.map((s) => dist(s.pos));
+    expect(d140).toBeLessThanOrEqual(TAB_TARGET_RADIUS);
+    expect(d170).toBeGreaterThan(TAB_TARGET_RADIUS);
+    expect(d40).toBeLessThanOrEqual(CANNON_LEVELS[0].range);
+    expect(d90).toBeGreaterThan(CANNON_LEVELS[0].range);
+  });
+
+  test('ningún mercante ni el punto tocan una isla ni salen del límite navegable', () => {
+    for (const p of [...npcs.map((s) => s.pos), TARGETS_POINT]) {
+      for (const isl of ISLANDS) expect(Math.hypot(p.x - isl.x, p.z - isl.z)).toBeGreaterThan(isl.radius + navClearance('merchant'));
+      expect(Math.max(Math.abs(p.x), Math.abs(p.z))).toBeLessThan(NAV_LIMIT);
+    }
   });
 });
