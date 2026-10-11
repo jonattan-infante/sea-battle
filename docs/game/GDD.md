@@ -315,7 +315,7 @@ Eslora y radio de colisión: Pirata 20 m / 6 m, Mercante 22 m / 7 m, Capitán 30
 | Paso | Regla |
 |---|---|
 | Vida ≤ 0 | Estado **Hundiéndose** durante 3 s. No se puede seleccionar ni atacar. Los ataques contra él terminan. |
-| Pantalla de muerte | Muestra quién te hundió, el oro perdido y una cuenta atrás de 8 s desde la muerte. El botón **Zarpar** se activa al llegar a 0 (no hay reaparición automática, para evitar barcos AFK). También zarpa con `Espacio` o `Enter`, y nunca antes de que termine la cuenta. |
+| Pantalla de muerte | Muestra quién te hundió, el oro perdido y una cuenta atrás de 8 s desde la muerte. El botón **Zarpar** se activa al llegar a 0 (no hay reaparición automática, para evitar barcos AFK). También zarpa con `Espacio` o `Enter`, y nunca antes de que termine la cuenta. El servidor admite el `respawn` con una tolerancia de reloj de 2 ticks (100 ms) antes del final, para que el primer clic no se rechace por desfase cliente-servidor. |
 | Reaparición | En el anillo del puerto, con la vida al 100 %, la misma clase y las mismas mejoras |
 | Protección | 15 s o hasta que el jugador ataque, lo que ocurra primero. Mientras dura, ningún pirata lo elige como objetivo y ningún jugador puede dañarlo. Tiene indicador visual. (Inspirado en Seafight, REFERENCE §10.) |
 
