@@ -14,6 +14,7 @@
     "test:e2e": "npm run build:e2e && playwright test --grep-invert \"@perf|@capture\"",
     "test:perf": "npm run build:e2e && playwright test --grep @perf",
     "qa:capture": "npm run build:e2e && playwright test --grep @capture",
+    "qa:hero": "npm run build:e2e && node scripts/qa-hero.mjs",
     "verify": "npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
