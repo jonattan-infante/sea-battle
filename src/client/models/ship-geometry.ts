@@ -36,6 +36,10 @@ const AO = 0.85;
 const AO_HEIGHT = 0.4;
 const ao = (c: THREE.Color) => c.clone().multiplyScalar(AO);
 
+const BAND = 1.0; // franja de portas (D36), m: contiene la porta de 0,8 m con 0,1 m de franja arriba y abajo en la maestra
+const CLOTH = 0.7; // paño de las cuadras y cangrejas (D36), m
+const CLOTH_ROW = 0.9; // fila de los foques y latinas (D36), m
+
 interface Station { a: number; b: number; s: number; k: number }
 
 // D23: la tabla de perfiles se interpola con Catmull-Rom (Hermite con las tangentes por diferencias finitas sobre el
@@ -277,8 +281,11 @@ function section(r: ShipRecipe, u: number, side: 1 | -1): Vec3[] {
   const yd = s * r.F;
   const z = u * r.L;
   const xAt = (y: number) => hb * (b + ((a - b) * y) / yd);
-  const y1 = yd - 0.3 * r.F;
-  const y2 = yd - 0.55 * r.F;
+  // Franja de portas (D36): con portas en el costado, BAND m centrada en la línea de cañones en la maestra (s = 1) y
+  // siguiendo el arrufo; sin portas, entre 0,30·F y 0,55·F bajo el canto
+  const ports = r.cannonZ.length > 0;
+  const y1 = ports ? yd - (r.F - r.cannonY - BAND / 2) : yd - 0.3 * r.F;
+  const y2 = ports ? yd - (r.F - r.cannonY + BAND / 2) : yd - 0.55 * r.F;
   return [
     [side * a * hb, yd + r.railH, z], // V5 regala
     [side * a * hb, yd, z], // V0 canto de cubierta
@@ -369,8 +376,10 @@ function opened(group: THREE.Matrix4, p: Vec3, axis: Vec3, free: Vec3, open: num
 const dist3 = (a: Vec3, b: Vec3) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 
 function squareSail(g: GeoBuilder, r: ShipRecipe, look: ShipLook, group: THREE.Matrix4, mast: MastDef, sail: SquareSail, lod: 0 | 1, rm: number): void {
-  // 4 columnas (paneles de lona, D23) × 3 filas; las franjas del mercante, 5 filas
-  const segs: [number, number] = r.sailStyle === 'striped' ? [4, 5] : [4, 3];
+  // LOD0 (D36): paños de ≈ CLOTH m, nx = max(4, 2·round(w / 1,4)); el pirata, múltiplo de 4 para conservar los vértices
+  // de las muescas en u' = 0,25 y 0,75. LOD1: 4 columnas, lisa. 3 filas; las franjas del mercante, 5
+  const q = r.sailStyle === 'notched' ? 4 : 2;
+  const segs: [number, number] = [lod === 0 ? Math.max(4, q * Math.round(sail.w / (CLOTH * q))) : 4, r.sailStyle === 'striped' ? 5 : 3];
   const plane = new THREE.PlaneGeometry(sail.w, sail.h, segs[0], segs[1]);
   const pos = plane.getAttribute('position');
   for (let i = 0; i < pos.count; i++) {
@@ -389,7 +398,7 @@ function squareSail(g: GeoBuilder, r: ShipRecipe, look: ShipLook, group: THREE.M
   const cAlt = lin(look.sailAlt);
   const stripe = look.sailStripe ? lin(look.sailStripe) : cSail;
   // PlaneGeometry: 2 triángulos por celda, filas de arriba abajo. Filas 1 y 3 desde arriba en el color de franja; en
-  // LOD0, las columnas impares de las filas de lona en sail.alt (paneles, D23)
+  // LOD0, las columnas impares de las filas de lona en sail.alt (paños, D23, D36)
   const color = (_x: number, _y: number, _z: number, t: number) => {
     const cell = Math.floor(t / 2);
     const row = Math.floor(cell / segs[0]);
@@ -403,6 +412,30 @@ function squareSail(g: GeoBuilder, r: ShipRecipe, look: ShipLook, group: THREE.M
   }
 }
 
+// Velas de cuchillo en LOD0 (D36): parche bilineal sobre A (amura) · B (puño de driza) · C (pico) · D (puño de escota),
+// P(u, v) = (1−v)·((1−u)·A + u·D) + v·((1−u)·B + u·C), con la panza bulge·sin(πu)·sin(πv) en x local. nu × nv celdas en
+// paños alternos sail / sail.alt por columnas (cangreja) o por filas paralelas al pujamen (foque y latina, con B = C: la
+// fila del pico degenera y GeoBuilder descarta sus triángulos vacíos)
+function clothSail(g: GeoBuilder, group: THREE.Matrix4, [A, B, C, D]: Vec3[], bulge: number, nu: number, nv: number, byRows: boolean, look: ShipLook): void {
+  const grid: Vec3[][] = [];
+  for (let j = 0; j <= nv; j++) {
+    const v = j / nv;
+    grid.push([]);
+    for (let i = 0; i <= nu; i++) {
+      const u = i / nu;
+      const p = [0, 1, 2].map((k) => (1 - v) * ((1 - u) * A[k] + u * D[k]) + v * ((1 - u) * B[k] + u * C[k])) as Vec3;
+      p[0] += bulge * Math.sin(Math.PI * u) * Math.sin(Math.PI * v);
+      grid[j].push(new THREE.Vector3(...p).applyMatrix4(group).toArray() as Vec3);
+    }
+  }
+  const colors = [lin(look.sail), lin(look.sailAlt)];
+  g.mark(() => {
+    for (let j = 0; j < nv; j++) {
+      for (let i = 0; i < nu; i++) g.quad(grid[j][i], grid[j][i + 1], grid[j + 1][i + 1], grid[j + 1][i], colors[(byRows ? j : i) % 2]);
+    }
+  });
+}
+
 function boxColors(look: ShipLook, kind: BoxDef['kind']): (x: number, y: number, z: number, t: number) => THREE.Color {
   // BoxGeometry no indexada: 2 triángulos por cara en el orden +X, −X, +Y, −Y, +Z, −Z
   if (kind === 'lantern') return () => lin(look.lantern);
@@ -411,8 +444,9 @@ function boxColors(look: ShipLook, kind: BoxDef['kind']): (x: number, y: number,
 }
 
 // Castillos y camaretas: costados en `rail` con sus primeros 0,4 m oscurecidos (oclusión horneada, D23) y tapa en
-// `deck`; sin cara inferior, que queda dentro del casco. Normales hacia afuera
-function castle(g: GeoBuilder, look: ShipLook, box: BoxDef): void {
+// tablas deck / deck.alt en LOD0 (D36) o en `deck` en LOD1; sin cara inferior, que queda dentro del casco. Normales
+// hacia afuera
+function castle(g: GeoBuilder, look: ShipLook, box: BoxDef, planks: boolean): void {
   const [w, h, d] = box.size;
   const [x, y, z] = box.pos;
   const [x0, x1, y0, y1, z0, z1] = [x - w / 2, x + w / 2, y - h / 2, y + h / 2, z - d / 2, z + d / 2];
@@ -426,7 +460,14 @@ function castle(g: GeoBuilder, look: ShipLook, box: BoxDef): void {
     g.quad([ax, y0, az], [bx, y0, bz], [bx, ya, bz], [ax, ya, az], dark);
     g.quad([ax, ya, az], [bx, ya, bz], [bx, y1, bz], [ax, y1, az], side);
   }
-  g.quad([x0, y1, z0], [x0, y1, z1], [x1, y1, z1], [x1, y1, z0], lin(look.deck));
+  // Tapa: n = 2·ceil(w/2 / 0,5) tablas a lo largo de Z sobre el ancho w (D36)
+  const n = planks ? 2 * Math.ceil(w / 2 / 0.5) : 1;
+  const deck = [lin(look.deck), lin(look.deckAlt)];
+  for (let j = 0; j < n; j++) {
+    const a = x0 + (w * j) / n;
+    const b = x0 + (w * (j + 1)) / n;
+    g.quad([a, y1, z0], [a, y1, z1], [b, y1, z1], [b, y1, z0], deck[j % 2]);
+  }
 }
 
 function buildLod(r: ShipRecipe, lod: 0 | 1): { geometry: THREE.BufferGeometry; hullBox: THREE.Box3; triangles: number; sails: [number, number][] } {
@@ -470,7 +511,10 @@ function buildLod(r: ShipRecipe, lod: 0 | 1): { geometry: THREE.BufferGeometry; 
       const { A, B, C, D } = mast.gaff;
       const axis: Vec3 = [0, B[1] - A[1], B[0] - A[0]];
       const m = opened(group, zy(A), axis, zy(D), open);
-      fanSail(g, m, [zy(A), zy(B), zy(C), zy(D)], 0.08 * dist3(zy(A), zy(D)), cSail);
+      const foot = dist3(zy(A), zy(D));
+      // LOD0 (D36): paños casi verticales de ≈ CLOTH m × 3 filas; LOD1: abanico liso desde el centro con panza
+      if (lod === 0) clothSail(g, m, [zy(A), zy(B), zy(C), zy(D)], 0.08 * foot, Math.max(2, Math.round(foot / CLOTH)), 3, false, look);
+      else fanSail(g, m, [zy(A), zy(B), zy(C), zy(D)], 0.08 * foot, cSail);
       if (lod === 0) {
         spar(g, m, zy(A), zy(D), 0.3 * rm, cMast);
         spar(g, m, zy(B), zy(C), 0.3 * rm, cMast);
@@ -480,7 +524,10 @@ function buildLod(r: ShipRecipe, lod: 0 | 1): { geometry: THREE.BufferGeometry; 
       // Latina: alrededor del eje vertical que pasa por la amura A, con la entena
       const { A, B, C } = mast.lateen;
       const m = opened(group, zy(A), [0, 1, 0], zy(B), open);
-      fanSail(g, m, [zy(A), zy(B), zy(C)], 0.06 * dist3(zy(A), zy(C)), cSail);
+      const len = dist3(zy(A), zy(C));
+      // LOD0 (D36): A = amura, D = escota B y los dos vértices superiores en el pico C; 3 columnas × filas de ≈ CLOTH_ROW m
+      if (lod === 0) clothSail(g, m, [zy(A), zy(C), zy(C), zy(B)], 0.06 * len, 3, Math.max(2, Math.round(len / CLOTH_ROW)), true, look);
+      else fanSail(g, m, [zy(A), zy(B), zy(C)], 0.06 * len, cSail);
       if (lod === 0) spar(g, m, zy(A), zy(C), 0.3 * rm, cMast);
     }
     if (lod === 0 && mast.topY !== undefined) {
@@ -493,14 +540,17 @@ function buildLod(r: ShipRecipe, lod: 0 | 1): { geometry: THREE.BufferGeometry; 
     // Foque: alrededor del estay T→H
     const T = jib.T === 'tip' ? tip : jib.T;
     const m = opened(new THREE.Matrix4(), T, [jib.H[0] - T[0], jib.H[1] - T[1], jib.H[2] - T[2]], jib.C, open);
-    fanSail(g, m, [jib.H, T, jib.C], 0.06 * dist3(jib.H, T), cSail);
+    const stay = dist3(jib.H, T);
+    // LOD0 (D36): A = amura T, D = escota C y los dos vértices superiores en el puño de driza H; filas de ≈ CLOTH_ROW m
+    if (lod === 0) clothSail(g, m, [T, jib.H, jib.H, jib.C], 0.06 * stay, 3, Math.max(2, Math.round(stay / CLOTH_ROW)), true, look);
+    else fanSail(g, m, [jib.H, T, jib.C], 0.06 * stay, cSail);
   }
 
   for (const box of r.boxes) {
     if (lod === 1 && box.kind !== 'castle') continue;
     if (box.kind === 'castle') {
       g.rim = 1;
-      castle(g, look, box);
+      castle(g, look, box, lod === 0);
       g.rim = 0;
     } else {
       g.add(new THREE.BoxGeometry(...box.size), trs(...box.pos), boxColors(look, box.kind));
@@ -514,10 +564,15 @@ function buildLod(r: ShipRecipe, lod: 0 | 1): { geometry: THREE.BufferGeometry; 
       const a = sample(PROFILES[r.profile], z / r.L).a;
       for (const side of [1, -1] as const) {
         const x = side * (a * r.B / 2 + 0.3);
-        // La boca (radio superior) mira hacia afuera de la banda
-        g.add(new THREE.CylinderGeometry(rTop, rBot, len, 6), trs(x - side * (len / 2), r.cannonY, z, 0, 0, -side * Math.PI / 2), lin(look.cannon));
-        // Porta de 0,8 × 0,8 m (D23; antes 0,5 × 0,6: 1,5 px de alto a 1,0×), bajo el canto de cubierta (AS-V20)
-        g.add(new THREE.BoxGeometry(0.06, 0.8, 0.8), trs(side * (a * r.B / 2 + 0.02), r.cannonY, z), lin(look.gunport));
+        // La boca (radio superior) mira hacia afuera de la banda. Sin la tapa interior, que queda dentro del casco (D36):
+        // CylinderGeometry no indexada, torso (12 triángulos), boca (6) y tapa interior (6)
+        g.add(new THREE.CylinderGeometry(rTop, rBot, len, 6), trs(x - side * (len / 2), r.cannonY, z, 0, 0, -side * Math.PI / 2), lin(look.cannon), (t) => t >= 18);
+        // Porta (D36): un quad de 0,8 × 0,8 m (antes una caja de 12 triángulos de la que solo se veía la cara exterior),
+        // hacia afuera en a(u)·B/2 + 0,05, dentro de la franja de portas y bajo el canto de cubierta (AS-V20)
+        const px = side * (a * r.B / 2 + 0.05);
+        const [y0, y1, z0, z1] = [r.cannonY - 0.4, r.cannonY + 0.4, z - 0.4, z + 0.4];
+        const [za, zb] = side > 0 ? [z1, z0] : [z0, z1];
+        g.quad([px, y0, za], [px, y0, zb], [px, y1, zb], [px, y1, za], lin(look.gunport));
       }
     }
   }

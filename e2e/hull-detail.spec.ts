@@ -1,24 +1,24 @@
-// D23 c (ASSET-SPEC §11: AS-V18 sin facetas, AS-V19 textura interna, AS-V20 cañones legibles; ART-DIRECTION AD-26
-// escala de la Balandra) medidos sobre el render del juego. Escena sintética 'gallery': las 5 clases quietas, con la
-// vida entera y sin efectos; la que se mide va al foco con su rumbo y las demás quedan a 2 km. Encuadre de una sesión
-// nueva (N1, zoom 1,0×) en 1440×900. Por pose, el mismo frame congelado se dibuja 4 veces:
+// D23 c y D36 (ASSET-SPEC §11: AS-V18 sin facetas, AS-V19 textura interna, AS-V20 cañones legibles; ART-DIRECTION
+// AD-10, AD-25 y AD-26) medidos sobre el render del juego. Escena sintética 'gallery': las 5 clases quietas, con la vida
+// entera y sin efectos; la que se mide va al foco con su rumbo y las demás quedan a 2 km. 1440×900 a zoom 1,0×: N1 (la
+// sesión nueva, 6,20 px/m) para AS-V18/V19 y AD-26, y N3 (5,04 px/m, D28) para AS-V20. Por pose, el mismo frame
+// congelado se dibuja 4 veces:
 //   con   el juego tal cual
 //   sin   sin la malla del barco: silueta = píxeles con ΔE76 ≥ 3 (AS-V19, AD-26)
 //   alb   solo albedo: hemisférica blanca de intensidad π y sol apagado, así MeshStandardMaterial devuelve el vertex
-//         color (irradiancia × albedo / π); localiza los bordes de color de AS-V18
+//         color (irradiancia × albedo / π); localiza los bordes de color de AS-V18 y la franja de portas de AS-V20
 //   ids   regiones como vertex color: costado (casco con |n_y| ≤ 0,6), cubierta, cada vela y cañones/portas
 // Con D23_OUT=<carpeta> guarda los recortes de cada pose (k = 0) y un JSON con todas las cifras, para QA.
-// Se asertan AS-V18, AD-26 y el presupuesto del barco (1 draw call y ≤ ASSET-SPEC §5 triángulos en LOD0). AS-V19 y
-// AS-V20 solo se registran mientras game-ux decide (D23 c, entrega de dev-render de 2026-10-11): con la paleta de D23,
-// sail.alt (ΔL* −6 / +5) y deck.alt del pirata (−7) quedan por debajo de |∇L*| ≥ 4, y la lectura literal de AS-V20
-// no separa las portas de un casco que ya tiene L* ≤ 30.
-import { expect, test } from '@playwright/test';
+import { expect, Page, test } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
+import { SHIP_LOOKS } from '../src/client/art';
+import type { ShipKind } from '../src/game/constants';
 import { enterGame } from './helpers';
 
 const CLASSES = ['sloop', 'brig', 'frigate', 'pirate', 'merchant'] as const;
 const CANNONS: Record<string, number> = { sloop: 4, brig: 6, frigate: 8, pirate: 4, merchant: 0 }; // por banda
+const LOOK: Record<string, ShipKind> = { sloop: 'player', brig: 'player', frigate: 'player', pirate: 'pirate', merchant: 'merchant' };
 const BUDGET: Record<string, number> = { sloop: 2500, brig: 2500, frigate: 2500, pirate: 2000, merchant: 2000 }; // tris LOD0 (§5)
 const HEADINGS = [0, 90, 180, 270];
 const SHOTS = 3; // capturas por pose, separadas 0,5 s (balanceo distinto)
@@ -30,6 +30,13 @@ interface Region {
   steps: number[]; // escalones por línea (5 horizontales + 5 verticales)
 }
 
+interface Port {
+  w: number;
+  h: number;
+  band: number; // px de franja a ≤ 3 px
+  contrast: number; // mediana de L* de esa franja − mediana de L* de la componente
+}
+
 interface Shot {
   ppm: number;
   lod: number;
@@ -39,13 +46,12 @@ interface Shot {
   regions: Region[]; // AS-V18
   calls: number; // draw calls del barco: con − sin
   triangles: number; // triángulos del barco: con − sin
-  spots: number; // AS-V20: manchas L* ≤ 30 de ≥ 3 × 2 px sobre el costado
-  sideDark: number; // fracción del costado con L* ≤ 30 (si el casco ya es oscuro, las manchas se funden)
+  ports: Port[]; // AS-V20: componentes de cañón o porta junto a la franja
   crops?: Record<string, string>;
 }
 
 // Mide una pose: se ejecuta en la página (sin acceso a nada de Node)
-async function measurePose([id, keep]: [string, boolean]): Promise<Shot> {
+async function measurePose([id, keep, bandHex]: [string, boolean, string]): Promise<Shot> {
   type V3 = { x: number; y: number; z: number };
   type Attr = { count: number; array: Float32Array; clone(): Attr; getX(i: number): number; getY(i: number): number; getZ(i: number): number };
   type Light = { isLight?: boolean; isHemisphereLight?: boolean; intensity: number; color: { clone(): unknown; copy(c: unknown): void; setRGB(r: number, g: number, b: number): void }; groundColor?: Light['color'] };
@@ -240,34 +246,69 @@ async function measurePose([id, keep]: [string, boolean]): Promise<Shot> {
     regions.push({ name: r === -2 ? 'costado' : `vela${r}`, pixels: q.n, steps });
   }
 
-  // AS-V20: manchas oscuras (L* ≤ 30, 8 vecinos) de ≥ 3 × 2 px sobre el costado visible (costado + cañones y portas)
+  // AS-V20 (D36): componentes conexas (8 vecinos) de píxeles de cañón o porta del pase de ids con caja ≥ 2 × 2 y píxeles
+  // de franja (pase de albedo a ΔE76 ≤ 8 de hull.band) a ≤ 3 px. Contraste = mediana de L* de esa franja − mediana de L*
+  // de la componente, en la captura
+  const band = new Uint8Array(N);
+  {
+    const [r, g, b] = [1, 3, 5].map((k) => LUT[parseInt(bandHex.slice(k, k + 2), 16)]);
+    const fx = f((0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047);
+    const fy = f(0.2126 * r + 0.7152 * g + 0.0722 * b);
+    const fz = f((0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883);
+    const ref = [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        const i = y * W + x;
+        if (Math.hypot(LC[3 * i] - ref[0], LC[3 * i + 1] - ref[1], LC[3 * i + 2] - ref[2]) <= 8) band[i] = 1;
+      }
+    }
+  }
+  const median = (v: number[]) => { const q = [...v].sort((a, b) => a - b); const m = q.length >> 1; return q.length % 2 ? q[m] : (q[m - 1] + q[m]) / 2; };
   const seen = new Uint8Array(N);
-  let spots = 0, side = 0, sideDark = 0;
+  const nearBand = new Int32Array(N).fill(-1);
+  const ports: Port[] = [];
   for (let y = y0; y <= y1; y++) {
     for (let x = x0; x <= x1; x++) {
-      const i = y * W + x;
-      const onSide = region[i] === -2 || region[i] === -3;
-      if (region[i] === -2) { side++; if (L(i) <= 30) sideDark++; }
-      if (!onSide || L(i) > 30 || seen[i]) continue;
-      let bx0 = x, bx1 = x, by0 = y, by1 = y;
-      const stack = [i];
-      seen[i] = 1;
+      const i0 = y * W + x;
+      if (region[i0] !== -3 || seen[i0]) continue;
+      const comp: number[] = [];
+      const stack = [i0];
+      seen[i0] = 1;
       while (stack.length) {
         const c = stack.pop()!;
+        comp.push(c);
         const cx = c % W, cy = (c / W) | 0;
-        bx0 = Math.min(bx0, cx); bx1 = Math.max(bx1, cx); by0 = Math.min(by0, cy); by1 = Math.max(by1, cy);
         for (let dy = -1; dy <= 1; dy++) {
           for (let dx = -1; dx <= 1; dx++) {
             const nx = cx + dx, ny = cy + dy;
             if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
             const j = ny * W + nx;
-            if (seen[j] || L(j) > 30 || (region[j] !== -2 && region[j] !== -3)) continue;
+            if (seen[j] || region[j] !== -3) continue;
             seen[j] = 1;
             stack.push(j);
           }
         }
       }
-      if (bx1 - bx0 + 1 >= 3 && by1 - by0 + 1 >= 2) spots++;
+      const xs = comp.map((c) => c % W), ys = comp.map((c) => (c / W) | 0);
+      const w = Math.max(...xs) - Math.min(...xs) + 1, h = Math.max(...ys) - Math.min(...ys) + 1;
+      if (w < 2 || h < 2) continue;
+      const tag = ports.length;
+      const ring: number[] = [];
+      for (const c of comp) {
+        const cx = c % W, cy = (c / W) | 0;
+        for (let dy = -3; dy <= 3; dy++) {
+          for (let dx = -3; dx <= 3; dx++) {
+            const nx = cx + dx, ny = cy + dy;
+            if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+            const j = ny * W + nx;
+            if (!band[j] || nearBand[j] === tag) continue;
+            nearBand[j] = tag;
+            ring.push(L(j));
+          }
+        }
+      }
+      if (!ring.length) continue;
+      ports.push({ w, h, band: ring.length, contrast: median(ring) - median(comp.map(L)) });
     }
   }
 
@@ -283,109 +324,143 @@ async function measurePose([id, keep]: [string, boolean]): Promise<Shot> {
     };
     crops = { con: crop(A), sin: crop(B), alb: crop(C), ids: crop(D) };
   }
-  return { ppm, lod: view.lod, calls: withShip.calls - without.calls, triangles: withShip.triangles - without.triangles, mask: maskPx, interior, texture: interior ? textured / interior : 0, regions, spots, sideDark: side ? sideDark / side : 0, crops };
+  return { ppm, lod: view.lod, calls: withShip.calls - without.calls, triangles: withShip.triangles - without.triangles, mask: maskPx, interior, texture: interior ? textured / interior : 0, regions, ports, crops };
 }
 
 interface Row extends Omit<Shot, 'crops'> {
   classId: string;
+  level: number;
   deg: number;
   k: number;
 }
 
 const mean = (v: number[]) => v.reduce((a, b) => a + b, 0) / v.length;
+const lstar = (hex: string) => {
+  const c = [1, 3, 5].map((k) => { const v = parseInt(hex.slice(k, k + 2), 16) / 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+  const Y = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  return Y > 0.008856 ? 116 * Math.cbrt(Y) - 16 : 903.3 * Y;
+};
+const lab = (hex: string) => {
+  const c = [1, 3, 5].map((k) => { const v = parseInt(hex.slice(k, k + 2), 16) / 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+  const f = (t: number) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+  const fx = f((0.4124 * c[0] + 0.3576 * c[1] + 0.1805 * c[2]) / 0.95047), fy = f(0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]), fz = f((0.0193 * c[0] + 0.1192 * c[1] + 0.9505 * c[2]) / 1.08883);
+  return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
+};
+const AS_V20_CONTRAST = 15;
+
+// Una pasada por la galería con un nivel de cañón (encuadre de §6.2): cada clase al foco con cada rumbo, SHOTS capturas
+async function gallery(page: Page, level: number, headings: number[], out?: string): Promise<Row[]> {
+  const setup = await page.evaluate((level) => {
+    const rt = window.__SEA_BATTLE__!.runtime();
+    rt.setCameraPreset('game');
+    rt.setZoomLevel(1);
+    const scene = rt.startScene('gallery', { cannonLevel: level });
+    // Todas a 2 km del foco hasta que les toque
+    scene.spec.ships.forEach((s, i) => scene.setPose(s.id, scene.focus.x + 2000 * (i + 1), scene.focus.z, s.heading));
+    (window as unknown as { __gallery: typeof scene }).__gallery = scene;
+    for (const k of ['add', 'alpha', 'water'] as const) rt.effects[k].mesh.visible = false;
+    return { focus: scene.focus, ids: scene.spec.ships.map((s) => s.id) };
+  }, level);
+  await page.mouse.move(5, 450); // sin hover sobre barcos
+  await page.waitForTimeout(1500); // transición del encuadre
+  const pose = (id: string, x: number, z: number, deg: number) =>
+    page.evaluate(([id, x, z, deg]) => {
+      (window as unknown as { __gallery: { setPose(id: string, x: number, z: number, h: number): void } }).__gallery.setPose(id, x, z, (deg * Math.PI) / 180);
+    }, [id, x, z, deg] as [string, number, number, number]);
+  const rows: Row[] = [];
+  for (const [i, classId] of CLASSES.entries()) {
+    const id = setup.ids[i];
+    for (const deg of headings) {
+      await pose(id, setup.focus.x, setup.focus.z, deg);
+      await page.waitForTimeout(800);
+      for (let k = 0; k < SHOTS; k++) {
+        const { crops, ...shot } = await page.evaluate(measurePose, [id, !!out && k === 0, SHIP_LOOKS[LOOK[classId]].band] as [string, boolean, string]);
+        rows.push({ classId, level, deg, k, ...shot });
+        if (crops && out) for (const [name, url] of Object.entries(crops)) fs.writeFileSync(path.join(out, `n${level}-${classId}-${deg}-${name}.png`), Buffer.from(url.slice(url.indexOf(',') + 1), 'base64'));
+        await page.waitForTimeout(500);
+      }
+    }
+    await pose(id, setup.focus.x + 2000 * (i + 1), setup.focus.z, 90);
+  }
+  return rows;
+}
 
 test.describe('Detalle interno de los cascos @perf', () => {
-  test('D23 c: AS-V18 sin facetas, AD-26 ≥ 1 900 px y 1 draw call por barco dentro de su presupuesto (AS-V19 y AS-V20 se registran)', async ({ page }) => {
-    test.setTimeout(300_000);
+  test('D23 c y D36: AS-V19 ≥ 55 %, AS-V18 sin facetas, AS-V20 con contraste local, AD-10, AD-25, AD-26 y 1 draw call por barco en su presupuesto', async ({ page }) => {
+    test.setTimeout(420_000);
     await enterGame(page);
     if (OUT) fs.mkdirSync(OUT, { recursive: true });
-    const setup = await page.evaluate(() => {
-      const rt = window.__SEA_BATTLE__!.runtime();
-      rt.setCameraPreset('game');
-      rt.setZoomLevel(1);
-      const scene = rt.startScene('gallery', { cannonLevel: 1 });
-      // Todas a 2 km del foco hasta que les toque
-      scene.spec.ships.forEach((s, i) => scene.setPose(s.id, scene.focus.x + 2000 * (i + 1), scene.focus.z, s.heading));
-      (window as unknown as { __gallery: typeof scene }).__gallery = scene;
-      for (const k of ['add', 'alpha', 'water'] as const) rt.effects[k].mesh.visible = false;
-      return { focus: scene.focus, ids: scene.spec.ships.map((s) => s.id) };
-    });
-    await page.mouse.move(5, 450); // sin hover sobre barcos
-    await page.waitForTimeout(1500); // transición del encuadre a N1
-
-    const rows: Row[] = [];
-    for (const [i, classId] of CLASSES.entries()) {
-      const id = setup.ids[i];
-      for (const deg of HEADINGS) {
-        await page.evaluate(([id, deg, x, z]) => {
-          (window as unknown as { __gallery: { setPose(id: string, x: number, z: number, h: number): void } }).__gallery.setPose(id, x, z, (deg * Math.PI) / 180);
-        }, [id, deg, setup.focus.x, setup.focus.z] as [string, number, number, number]);
-        await page.waitForTimeout(800);
-        for (let k = 0; k < SHOTS; k++) {
-          const { crops, ...shot } = await page.evaluate(measurePose, [id, !!OUT && k === 0] as [string, boolean]);
-          rows.push({ classId, deg, k, ...shot });
-          if (crops && OUT) for (const [name, url] of Object.entries(crops)) fs.writeFileSync(path.join(OUT, `${classId}-${deg}-${name}.png`), Buffer.from(url.slice(url.indexOf(',') + 1), 'base64'));
-          await page.waitForTimeout(500);
-        }
-      }
-      await page.evaluate(([id, x, z]) => {
-        (window as unknown as { __gallery: { setPose(id: string, x: number, z: number, h: number): void } }).__gallery.setPose(id, x, z, Math.PI / 2);
-      }, [id, setup.focus.x + 2000 * (i + 1), setup.focus.z] as [string, number, number]);
-    }
-
-    // AD-26: measureShipValues (vela + cubierta + casco) con el ppm de la sesión nueva (N1 a 1,0×)
-    const ppm = rows[0].ppm;
-    const values = await page.evaluate((ppm) => window.__SEA_BATTLE__!.runtime().measureShipValues(['sloop'], [0, 90, 180, 270], ppm), ppm);
-    const ad26 = values.map((v) => ({ deg: v.headingDeg, sail: v.sailPixels, deck: v.deckPixels, hull: v.hullPixels, total: v.sailPixels + v.deckPixels + v.hullPixels }));
+    const n1 = await gallery(page, 1, HEADINGS, OUT);
+    const ppm = n1[0].ppm;
+    // AD-26: measureShipValues (vela + cubierta + casco) con el ppm de la sesión nueva (N1 a 1,0×). AD-10 y AD-25: con el
+    // nivel más cercano (0,7×, el ppm por defecto de measureShipValues), L* medio de la lona y color medio de la cubierta
+    const ad26 = (await page.evaluate((ppm) => window.__SEA_BATTLE__!.runtime().measureShipValues(['sloop'], [0, 90, 180, 270], ppm), ppm))
+      .map((v) => ({ deg: v.headingDeg, sail: v.sailPixels, deck: v.deckPixels, hull: v.hullPixels, total: v.sailPixels + v.deckPixels + v.hullPixels }));
+    const values = await page.evaluate((classes) => window.__SEA_BATTLE__!.runtime().measureShipValues(classes, [0, 90, 180, 270]), [...CLASSES]);
+    const n3 = await gallery(page, 3, [90, 270], OUT);
     await page.evaluate(() => {
       const rt = window.__SEA_BATTLE__!.runtime();
       for (const k of ['add', 'alpha', 'water'] as const) rt.effects[k].mesh.visible = true;
       rt.stopScene();
     });
 
-    const summary = CLASSES.map((classId) => {
-      const at = (deg: number) => rows.filter((r) => r.classId === classId && r.deg === deg);
-      const per = HEADINGS.map((deg) => {
-        const rs = at(deg);
-        const lines = rs.flatMap((r) => r.regions.flatMap((g) => g.steps));
-        return {
-          deg,
-          lod: Math.max(...rs.map((r) => r.lod)),
-          calls: Math.max(...rs.map((r) => r.calls)),
-          triangles: Math.max(...rs.map((r) => r.triangles)),
-          mask: Math.round(mean(rs.map((r) => r.mask))),
-          texture: mean(rs.map((r) => r.texture)),
-          facetMax: lines.length ? Math.max(...lines) : 0,
-          facetMean: lines.length ? mean(lines) : 0,
-          regions: rs[0].regions.map((g) => `${g.name}:${g.pixels}`).join(' '),
-          spots: rs.map((r) => r.spots),
-          sideDark: mean(rs.map((r) => r.sideDark))
-        };
-      });
-      return { classId, per };
+    const rows = [...n1, ...n3];
+    const summary = CLASSES.flatMap((classId) => ([[1, HEADINGS], [3, [90, 270]]] as const).flatMap(([level, headings]) => headings.map((deg) => {
+      const rs = rows.filter((r) => r.classId === classId && r.level === level && r.deg === deg);
+      const lines = rs.flatMap((r) => r.regions.flatMap((g) => g.steps));
+      return {
+        classId, level, deg,
+        ppm: rs[0].ppm,
+        lod: Math.max(...rs.map((r) => r.lod)),
+        calls: Math.max(...rs.map((r) => r.calls)),
+        triangles: Math.max(...rs.map((r) => r.triangles)),
+        mask: Math.round(mean(rs.map((r) => r.mask))),
+        texture: mean(rs.map((r) => r.texture)),
+        facetMax: lines.length ? Math.max(...lines) : 0,
+        facetMean: lines.length ? mean(lines) : 0,
+        regions: rs[0].regions.map((g) => `${g.name}:${g.pixels}`).join(' '),
+        ports: rs.map((r) => r.ports.filter((q) => q.contrast >= AS_V20_CONTRAST).length),
+        components: rs.map((r) => r.ports.length),
+        contrast: rs.flatMap((r) => r.ports.map((q) => q.contrast))
+      };
+    })));
+    const sails = values.map((v) => {
+      const look = SHIP_LOOKS[LOOK[v.classId]];
+      const token = LOOK[v.classId] === 'pirate' ? '#6E4B30' : '#C9965E'; // cubierta en pantalla = media de las tablas (D36)
+      const [a, b] = [lab(v.deckHex), lab(token)];
+      return { classId: v.classId, deg: v.headingDeg, sailL: v.sailL, stripeL: v.stripeL, deckHex: v.deckHex, ad25: Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]), alt: lstar(look.sailAlt) };
     });
-    for (const s of summary) {
-      for (const p of s.per) {
-        console.log(`D23c ${s.classId.padEnd(8)} ${String(p.deg).padStart(3)}° LOD${p.lod} · ${p.calls} draw call / ${p.triangles} tris · silueta ${p.mask} px · AS-V19 ${(p.texture * 100).toFixed(1)} % · AS-V18 máx. ${p.facetMax} / media ${p.facetMean.toFixed(2)} (${p.regions}) · AS-V20 ${p.spots.join('/')} de ${CANNONS[s.classId]} (costado con L* ≤ 30: ${(p.sideDark * 100).toFixed(0)} %)`);
-      }
-    }
-    console.log(`AD-26 (ppm ${ppm.toFixed(3)}): ${ad26.map((v) => `${v.deg}° ${v.sail}+${v.deck}+${v.hull} = ${v.total}`).join(' · ')} · silueta render ${summary[0].per.map((p) => `${p.deg}° ${p.mask}`).join(' · ')}`);
-    if (OUT) fs.writeFileSync(path.join(OUT, 'd23c.json'), JSON.stringify({ ppm, rows, summary, ad26 }, null, 1));
 
-    for (const s of summary) {
-      for (const p of s.per) {
-        expect(p.lod, `${s.classId} ${p.deg}°: LOD0 con N1 en escritorio`).toBe(0);
-        expect.soft(p.calls, `${s.classId} ${p.deg}°: 1 draw call por barco`).toBe(1);
-        expect.soft(p.triangles, `${s.classId} ${p.deg}°: triángulos del barco ≤ §5`).toBeLessThanOrEqual(BUDGET[s.classId]);
-        if (p.deg === 0 || p.deg === 90) {
-          expect.soft(p.facetMax, `AS-V18 ${s.classId} ${p.deg}°: escalones por línea`).toBeLessThanOrEqual(1);
-          expect.soft(p.facetMean, `AS-V18 ${s.classId} ${p.deg}°: media`).toBeLessThanOrEqual(0.5);
-        }
-        // AS-V19 (≥ 55 % en 0° y 90°) y AS-V20 se registran sin asertar hasta la decisión de game-ux (cabecera). En
-        // AS-V20 el casco del jugador (#4A2F1C, L* 22) y el del pirata (#2A2523, L* 15) ya son «manchas oscuras»: ver
-        // sideDark en el registro
+    for (const p of summary) {
+      const v20 = p.level === 3 ? ` · AS-V20 ${p.ports.join('/')} de ${CANNONS[p.classId]} (componentes ${p.components.join('/')}, contraste ${p.contrast.length ? `${Math.min(...p.contrast).toFixed(0)}–${Math.max(...p.contrast).toFixed(0)}` : '—'})` : '';
+      const v19 = p.level === 1 ? ` · AS-V19 ${(p.texture * 100).toFixed(1)} % · AS-V18 máx. ${p.facetMax} / media ${p.facetMean.toFixed(2)} (${p.regions})` : '';
+      console.log(`D36 ${p.classId.padEnd(8)} N${p.level} ${String(p.deg).padStart(3)}° LOD${p.lod} · ${p.calls} draw call / ${p.triangles} tris · silueta ${p.mask} px${v19}${v20}`);
+    }
+    console.log(`AD-26 (ppm ${ppm.toFixed(3)}): ${ad26.map((v) => `${v.deg}° ${v.sail}+${v.deck}+${v.hull} = ${v.total}`).join(' · ')}`);
+    for (const v of sails) console.log(`AD-10/AD-25 ${v.classId.padEnd(8)} ${String(v.deg).padStart(3)}°: lona L* ${v.sailL.toFixed(1)}${v.stripeL ? ` (franjas ${v.stripeL.toFixed(1)})` : ''} · cubierta ${v.deckHex} (ΔE76 ${v.ad25.toFixed(1)} del token)`);
+    if (OUT) fs.writeFileSync(path.join(OUT, 'd36.json'), JSON.stringify({ ppm, rows, summary, ad26, sails }, null, 1));
+
+    for (const p of summary) {
+      expect(p.lod, `${p.classId} N${p.level} ${p.deg}°: LOD0 en escritorio`).toBe(0);
+      expect.soft(p.calls, `${p.classId} N${p.level} ${p.deg}°: 1 draw call por barco`).toBe(1);
+      expect.soft(p.triangles, `${p.classId} N${p.level} ${p.deg}°: triángulos del barco ≤ §5`).toBeLessThanOrEqual(BUDGET[p.classId]);
+      // AS-V18 y AS-V19 en 0° y 90° con N1 (180° y 270° se registran sin asertar, AS-V19)
+      if (p.level === 1 && (p.deg === 0 || p.deg === 90)) {
+        expect.soft(p.texture, `AS-V19 ${p.classId} ${p.deg}°`).toBeGreaterThanOrEqual(0.55);
+        expect.soft(p.facetMax, `AS-V18 ${p.classId} ${p.deg}°: escalones por línea`).toBeLessThanOrEqual(1);
+        expect.soft(p.facetMean, `AS-V18 ${p.classId} ${p.deg}°: media`).toBeLessThanOrEqual(0.5);
+      }
+      // AS-V20 con N3: en cada captura, componentes con contraste ≥ 15 = cañones por banda; el Mercante, 0 componentes
+      if (p.level === 3) {
+        for (const n of p.ports) expect.soft(n, `AS-V20 ${p.classId} ${p.deg}°`).toBe(CANNONS[p.classId]);
+        if (CANNONS[p.classId] === 0) for (const n of p.components) expect.soft(n, `AS-V20 ${p.classId} ${p.deg}°: sin componentes`).toBe(0);
       }
     }
     expect.soft(Math.min(...ad26.map((v) => v.total)), 'AD-26: peor rumbo de la Balandra').toBeGreaterThanOrEqual(1900);
+    // AD-10 con rumbo N (180°): pirata ≤ 25, jugador y mercante ≥ 80. AD-25: cubierta a ΔE76 ≤ 6 de la media de sus tablas
+    for (const v of sails) {
+      if (v.deg === 180) expect.soft(v.sailL, `AD-10 ${v.classId}`)[LOOK[v.classId] === 'pirate' ? 'toBeLessThanOrEqual' : 'toBeGreaterThanOrEqual'](LOOK[v.classId] === 'pirate' ? 25 : 80);
+      expect.soft(v.ad25, `AD-25 ${v.classId} ${v.deg}°`).toBeLessThanOrEqual(6);
+    }
   });
 });

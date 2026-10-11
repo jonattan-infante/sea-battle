@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { ISLANDS } from '../../../game/constants';
 import { buildBuoyGeometry, buildIslands, buildLootGeometry, buildPalmGeometry } from '../island-geometry';
-import { SHIP_LOOKS } from '../../art';
+import { SHIP_LOOKS, TOP_FACE } from '../../art';
 import { buildShipAsset, deckHalfBeam, deckY, getShipModel, ShipExtras } from '../ship-geometry';
 
 const CLASSES = ['sloop', 'brig', 'frigate', 'pirate', 'merchant'] as const;
@@ -183,10 +183,11 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
     const yd = deckY(r, 0);
     const a = deckHalfBeam(r, 0) * 2 / r.B;
     expect(at(a * r.B / 2, yd, 0)).toBeGreaterThan(1);
-    // V1: x(y₁) con y₁ = yd − 0,3·F, sobre la recta entre la flotación V3 (el vértice de babor con y = 0 en z = 0) y el canto
+    // V1: x(y₁) sobre la recta entre la flotación V3 (el vértice de babor con y = 0 en z = 0) y el canto; y₁ = yd − 0,3·F,
+    // o el borde superior de la franja de portas de 1,0 m en las clases con portas (D36)
     let b = 0;
     for (let v = 0; v < pos.count; v++) if (Math.abs(pos.getY(v)) < 1e-6 && Math.abs(pos.getZ(v)) < 1e-6 && pos.getX(v) > b) b = pos.getX(v);
-    const y1 = yd - 0.3 * r.F;
+    const y1 = r.cannonZ.length ? yd - (r.F - r.cannonY - 0.5) : yd - 0.3 * r.F;
     const x1 = b + ((a * r.B / 2 - b) * y1) / yd;
     expect(at(x1, y1, 0)).toBe(1);
   });
@@ -195,6 +196,112 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
     const r = model.recipe;
     for (const z of r.cannonZ) expect(r.cannonY + 0.4).toBeLessThanOrEqual(deckY(r, z / r.L) + 1e-9);
     if (r.cannonZ.length) expect(r.cannon[0]).toBeGreaterThanOrEqual(0.22);
+  });
+
+  // D36 (ASSET-SPEC §8.1–8.2, ART-DIRECTION §9.1): paños, tablas en las tapas y franja de portas. Las cifras salen de las
+  // fórmulas de la spec, no de la implementación
+  const sameColor = (color: THREE.BufferAttribute | THREE.InterleavedBufferAttribute, v: number, hex: string) => {
+    const c = new THREE.Color(hex);
+    return Math.abs(c.r - color.getX(v)) + Math.abs(c.g - color.getY(v)) + Math.abs(c.b - color.getZ(v)) < 1e-4;
+  };
+
+  test('D36: franja de portas de 1,0 m centrada en la línea de cañones en la maestra, con la porta dentro; sin portas, 0,30–0,55·F', () => {
+    const r = model.recipe;
+    const look = SHIP_LOOKS[r.look];
+    const pos = model.lods[0].getAttribute('position');
+    const color = model.lods[0].getAttribute('color');
+    const ys: number[] = [];
+    for (let v = 0; v < pos.count; v++) if (Math.abs(pos.getZ(v)) < 1e-6 && pos.getX(v) > 0 && sameColor(color, v, look.band)) ys.push(pos.getY(v));
+    const [lo, hi] = [Math.min(...ys), Math.max(...ys)];
+    if (r.cannonZ.length) {
+      expect(lo).toBeCloseTo(r.cannonY - 0.5, 6);
+      expect(hi).toBeCloseTo(r.cannonY + 0.5, 6);
+    } else {
+      expect(lo).toBeCloseTo(r.F - 0.55 * r.F, 6);
+      expect(hi).toBeCloseTo(r.F - 0.3 * r.F, 6);
+    }
+  });
+
+  test('D36: tapas de castillos y camaretas en n = 2·ceil(w/2 / 0,5) tablas deck / deck.alt en LOD0; lisas en LOD1', () => {
+    const r = model.recipe;
+    const look = SHIP_LOOKS[r.look];
+    for (const box of r.boxes.filter((b) => b.kind === 'castle')) {
+      const [w, h, d] = box.size;
+      const top = box.pos[1] + h / 2;
+      const n = 2 * Math.ceil(w / 2 / 0.5);
+      model.lods.forEach((geometry, lod) => {
+        const pos = geometry.getAttribute('position');
+        const color = geometry.getAttribute('color');
+        let count = 0;
+        const colors = new Set<string>();
+        for (let t = 0; t < pos.count / 3; t++) {
+          const vs = [3 * t, 3 * t + 1, 3 * t + 2];
+          if (!vs.every((v) => Math.abs(pos.getY(v) - top) < 1e-6 && Math.abs(pos.getX(v) - box.pos[0]) <= w / 2 + 1e-6 && Math.abs(pos.getZ(v) - box.pos[2]) <= d / 2 + 1e-6)) continue;
+          count++;
+          colors.add(sameColor(color, vs[0], look.deck) ? 'deck' : sameColor(color, vs[0], look.deckAlt) ? 'deckAlt' : 'otro');
+        }
+        expect(count).toBe(lod === 0 ? 2 * n : 2);
+        expect([...colors].sort()).toEqual(lod === 0 ? ['deck', 'deckAlt'] : ['deck']);
+      });
+    }
+  });
+
+  test('D36: rejillas de las velas (cuadras con paños de ≈ 0,7 m; cangreja, latina y foque con paños) en LOD0, lisas en LOD1', () => {
+    const r = model.recipe;
+    const look = SHIP_LOOKS[r.look];
+    const d = (p: number[], q: number[]) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+    const zy = (p: readonly [number, number]) => [0, p[1], p[0]];
+    // Triángulos esperados por vela, en el orden de construcción: por mástil, cuadras, cangreja y latina; luego los foques
+    const expected: [number, number][] = [];
+    const rows = r.sailStyle === 'striped' ? 5 : 3;
+    for (const mast of r.masts) {
+      for (const s of mast.squares ?? []) {
+        const nx = r.sailStyle === 'notched' ? Math.max(4, 4 * Math.round(s.w / 2.8)) : Math.max(4, 2 * Math.round(s.w / 1.4));
+        expected.push([2 * nx * rows, 2 * 4 * rows]);
+      }
+      if (mast.gaff) expected.push([2 * Math.max(2, Math.round(d(zy(mast.gaff.A), zy(mast.gaff.D)) / 0.7)) * 3, 4]);
+      if (mast.lateen) expected.push([2 * 3 * Math.max(2, Math.round(d(zy(mast.lateen.A), zy(mast.lateen.C)) / 0.9)) - 3, 3]); // la fila del pico degenera
+    }
+    const bs = r.bowsprit + 1;
+    const tip = [0, 1.25 * r.F + 0.342 * bs, r.L / 2 - 1 + 0.94 * bs];
+    for (const jib of r.jibs) expected.push([2 * 3 * Math.max(2, Math.round(d(jib.T === 'tip' ? tip : jib.T, jib.H) / 0.9)) - 3, 3]);
+    model.sails.forEach((ranges, lod) => {
+      expect(ranges.map(([a, b]) => b - a)).toEqual(expected.map((e) => e[lod]));
+      const color = model.lods[lod].getAttribute('color');
+      for (const [a, b] of ranges) {
+        let alt = 0;
+        let plain = 0;
+        for (let v = 3 * a; v < 3 * b; v++) {
+          if (sameColor(color, v, look.sailAlt)) alt++;
+          if (sameColor(color, v, look.sail)) plain++;
+        }
+        if (lod === 0) expect(alt > 0 && plain > 0).toBe(true);
+        else expect(alt).toBe(0);
+      }
+    });
+  });
+
+  test('D36: porta de 1 quad hacia afuera (2 tris) y cañón sin tapa interior (18 tris) en LOD0; nada en LOD1', () => {
+    const r = model.recipe;
+    const look = SHIP_LOOKS[r.look];
+    const n = r.cannonZ.length * 2;
+    model.lods.forEach((geometry, lod) => {
+      const pos = geometry.getAttribute('position');
+      const color = geometry.getAttribute('color');
+      let ports = 0;
+      let guns = 0;
+      for (let t = 0; t < pos.count / 3; t++) {
+        if (sameColor(color, 3 * t, look.gunport)) {
+          ports++;
+          const p = [0, 1, 2].map((k) => new THREE.Vector3().fromBufferAttribute(pos, 3 * t + k));
+          const normal = new THREE.Vector3().subVectors(p[2], p[1]).cross(new THREE.Vector3().subVectors(p[0], p[1]));
+          expect(Math.sign(normal.x)).toBe(Math.sign(p[0].x)); // cara exterior hacia afuera de su banda
+        }
+        if (sameColor(color, 3 * t, look.cannon)) guns++;
+      }
+      expect(ports).toBe(lod === 0 ? 2 * n : 0);
+      expect(guns).toBe(lod === 0 ? 18 * n : 0);
+    });
   });
 
   test('AS-V17 (D22): la elipse de fuego de cada socket se solapa ≤ 5 % con objetos de cubierta que sobresalen > 0,5 m', () => {
@@ -228,6 +335,33 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
       }
       expect({ name, overlap: hit / inside <= 0.05 ? 'ok' : hit / inside }).toEqual({ name, overlap: 'ok' });
     }
+  });
+});
+
+// D36 (ART-DIRECTION §4.2–4.2.1): pasos de L* de los alternos, medidos sobre los hex en pantalla
+describe('Paleta de tablas y paños (D36)', () => {
+  const L = (hex: string) => {
+    const c = new THREE.Color(hex); // lineal
+    const Y = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+    return Y > 0.008856 ? 116 * Math.cbrt(Y) - 16 : 903.3 * Y;
+  };
+
+  test('tablas a ±7 de L* de la cubierta en pantalla (#C9965E; pirata #6E4B30), con su albedo compensado', () => {
+    expect(L(TOP_FACE.deck.target) - L('#C9965E')).toBeCloseTo(7, 0);
+    expect(L(TOP_FACE.deckAlt.target) - L('#C9965E')).toBeCloseTo(-7, 0);
+    expect(L(TOP_FACE.deckPirate.target) - L('#6E4B30')).toBeCloseTo(7, 0);
+    expect(L(TOP_FACE.deckAltPirate.target) - L('#6E4B30')).toBeCloseTo(-7, 0);
+    expect(SHIP_LOOKS.player.deck).toBe(TOP_FACE.deck.albedo);
+    expect(SHIP_LOOKS.player.deckAlt).toBe(TOP_FACE.deckAlt.albedo);
+    expect(SHIP_LOOKS.pirate.deck).toBe(TOP_FACE.deckPirate.albedo);
+    expect(SHIP_LOOKS.merchant.deckAlt).toBe(TOP_FACE.deckAlt.albedo);
+  });
+
+  test('sail.alt: jugador ΔL* −12 sin bajar de 80 (AD-10); pirata #0D0D0F; mercante #D9CEB6', () => {
+    expect(L(SHIP_LOOKS.player.sailAlt) - L(SHIP_LOOKS.player.sail)).toBeCloseTo(-12, 0);
+    expect(L(SHIP_LOOKS.player.sailAlt)).toBeGreaterThanOrEqual(80);
+    expect(SHIP_LOOKS.pirate.sailAlt).toBe('#0D0D0F');
+    expect(SHIP_LOOKS.merchant.sailAlt).toBe('#D9CEB6');
   });
 });
 
