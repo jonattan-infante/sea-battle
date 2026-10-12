@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { PORTS } from '../playwright.config';
-import { commits, enterGame, hud, installCommitCounter, me, renderInfo, ships, trackSocket, waitFor } from './helpers';
+import { commits, DebugShip, enterGame, hud, installCommitCounter, me, renderInfo, ships, trackSocket, waitFor } from './helpers';
 
 const EMPTY = `http://localhost:${PORTS.empty}`;
 
@@ -65,34 +65,48 @@ test.describe('Rendimiento @perf', () => {
     const npcsOnScreen = async () =>
       (await ships(page)).filter((s) => s.kind !== 'player' && s.state === 'alive' && s.screen && s.screen.sx >= 0 && s.screen.sx <= vw.width && s.screen.sy >= 0 && s.screen.sy <= vw.height);
 
-    // Acercarse al mercante más cercano (los piratas atacarían al acabar la protección) y parar con un NPC en pantalla
-    await waitFor(
-      async () => {
-        if ((await npcsOnScreen()).length > 0) return true;
-        const mine = await me(page);
-        const npc = (await ships(page))
-          .filter((s) => s.kind === 'merchant' && s.state === 'alive')
-          .sort((a, b) => Math.hypot(a.x - mine!.x, a.z - mine!.z) - Math.hypot(b.x - mine!.x, b.z - mine!.z))[0];
-        await moveTo(npc ? npc.x : 0, npc ? npc.z : 220);
-        return false;
-      },
-      (ok) => ok,
-      60_000,
-      1000
-    );
-    await page.keyboard.press('KeyS');
-    await waitFor(async () => { const a = await me(page); await page.waitForTimeout(300); const b = await me(page); return Math.hypot(a!.x - b!.x, a!.z - b!.z); }, (d) => d < 0.05, 15_000, 0);
-    await page.mouse.move(5, 450);
-    await page.waitForTimeout(1000);
+    // DT-07: el "dado" (≥ 1 NPC vivo en pantalla con el barco ya parado) se comprueba después de frenar. Mientras navega,
+    // el NPC aparece a pocos px del borde y puede salir durante la frenada; entonces se vuelve a acercar y repite, con un
+    // tope de 60 s. Sin el dado, la corrida es NO VERIFICADO (como AC-91), no RECHAZADO
+    const GIVEN_TIMEOUT_MS = 60_000;
+    const givenEnd = Date.now() + GIVEN_TIMEOUT_MS;
+    let start: DebugShip[] = [];
+    let attempts = 0;
+    while (start.length === 0 && Date.now() < givenEnd) {
+      attempts++;
+      // Acercarse al mercante más cercano (los piratas atacarían al acabar la protección) hasta ver un NPC en pantalla
+      const seen = await waitFor(
+        async () => {
+          if ((await npcsOnScreen()).length > 0) return true;
+          const mine = await me(page);
+          const npc = (await ships(page))
+            .filter((s) => s.kind === 'merchant' && s.state === 'alive')
+            .sort((a, b) => Math.hypot(a.x - mine!.x, a.z - mine!.z) - Math.hypot(b.x - mine!.x, b.z - mine!.z))[0];
+          await moveTo(npc ? npc.x : 0, npc ? npc.z : 220);
+          return false;
+        },
+        (ok) => ok,
+        Math.max(0, givenEnd - Date.now()),
+        1000
+      ).catch((e: Error) => {
+        if (e.message.startsWith('waitFor: tiempo agotado')) return false;
+        throw e;
+      });
+      if (!seen) break;
+      await page.keyboard.press('KeyS');
+      await waitFor(async () => { const a = await me(page); await page.waitForTimeout(300); const b = await me(page); return Math.hypot(a!.x - b!.x, a!.z - b!.z); }, (d) => d < 0.05, 15_000, 0);
+      await page.mouse.move(5, 450);
+      await page.waitForTimeout(1000);
+      start = await npcsOnScreen();
+    }
+    if (start.length === 0) throw new Error(`AC-84 NO VERIFICADO: en ${GIVEN_TIMEOUT_MS / 1000} s no hubo ningún NPC vivo en pantalla con el barco parado (${attempts} intento${attempts === 1 ? '' : 's'})`);
 
-    const start = await npcsOnScreen();
     const c0 = await commits(page);
     await page.waitForTimeout(10_000);
     const rate = ((await commits(page)) - c0) / 10;
     const end = new Map((await ships(page)).map((s) => [s.id, s]));
     const moved = start.filter((s) => { const e = end.get(s.id); return !!e && Math.hypot(e.x - s.x, e.z - s.z) > 1; }).length;
-    console.log(`AC-84: ${rate.toFixed(2)} commits/s · ${start.length} NPC en pantalla al empezar, ${moved} se movieron`);
-    expect(start.length).toBeGreaterThan(0);
+    console.log(`AC-84: ${rate.toFixed(2)} commits/s · ${start.length} NPC en pantalla al empezar (dado en ${attempts} intento${attempts === 1 ? '' : 's'}), ${moved} se movieron`);
     expect(moved).toBeGreaterThan(0);
     expect(rate).toBeLessThanOrEqual(2);
   });
