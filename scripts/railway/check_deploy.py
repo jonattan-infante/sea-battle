@@ -9,8 +9,9 @@
 #   solape       RAILWAY_DEPLOYMENT_OVERLAP_SECONDS=0: el viejo recibe el SIGTERM al empezar el relevo
 #   drenaje      RAILWAY_DEPLOYMENT_DRAINING_SECONDS ≥ plazo del apagado + 2 s (SHUTDOWN_FLUSH_MS, server/shutdown.ts)
 # Del último despliegue mira además el paso HEALTHCHECK, el arranque del plan de Railpack y, si relevó a otro, cuándo
-# recibió el viejo el SIGTERM y cuánto duró el relevo (con 15 s de drenaje, DRAIN_INSTANCES dura ~15 s). Y que exista
-# DATABASE_URL (solo el nombre): sin ella el servidor no arranca en Railway.
+# recibió el viejo el SIGTERM y cuánto duró el relevo (con 15 s de drenaje, DRAIN_INSTANCES dura ~15 s). Y, solo por el
+# nombre, que exista DATABASE_URL (sin ella el servidor no arranca en Railway) y que las redirecciones de Clerk usen los
+# nombres nuevos y no los obsoletos (DT-11, punto 5).
 # Uso: python3 scripts/railway/check_deploy.py [--env staging|production] [--deployment <prefijo del id>]
 # Sale con 1 si algo no coincide. Token: el de `railway login` o RAILWAY_API_TOKEN (railway_api.py).
 import argparse, json, os, re, sys
@@ -24,6 +25,19 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..')
 START = 'node dist/server/index.js'
 HEALTH = '/healthz'
 TUNING = re.compile(r'^RAILWAY_(DEPLOYMENT_(OVERLAP|DRAINING)_SECONDS|HEALTHCHECK_TIMEOUT_SEC)$')
+# DT-11 (5): Clerk da por obsoletas las AFTER_* (la consola avisa de `afterSignInUrl`); van las FALLBACK_REDIRECT_URL
+CLERK_REDIRECTS = ('NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL', 'NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL')
+CLERK_DEPRECATED = ('NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL', 'NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL')
+
+
+def clerk_redirects(variables):
+    """Los nombres nuevos de las redirecciones de Clerk están y los obsoletos no. Solo mira los nombres, nunca los valores."""
+    missing = [n for n in CLERK_REDIRECTS if n not in variables]
+    stale = [n for n in CLERK_DEPRECATED if n in variables]
+    if not missing and not stale:
+        return True, 'los dos FALLBACK_REDIRECT_URL, sin los AFTER_* obsoletos'
+    problems = ([f"faltan {', '.join(missing)}"] if missing else []) + ([f"sobran {', '.join(stale)} (obsoletas)"] if stale else [])
+    return False, ' · '.join(problems)
 
 
 def flush_seconds():
@@ -102,6 +116,7 @@ def main():
     check('drenaje', bool(draining and draining.isdigit() and int(draining) >= flush + 2),
           f'RAILWAY_DEPLOYMENT_DRAINING_SECONDS={draining!r} (≥ {flush:g} s del apagado + 2 s)')
     check('DATABASE_URL', 'DATABASE_URL' in variables, 'definida' if 'DATABASE_URL' in variables else 'no existe: el servidor sale con exit 1 en Railway')
+    check('redirecciones de Clerk', *clerk_redirects(variables))
 
     # Relevo: el despliegue anterior al mirado, si ya lo retiró
     older = [d for d in deps if ts(d['createdAt']) < ts(dep['createdAt'])]
