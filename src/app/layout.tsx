@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Barlow, Barlow_Semi_Condensed, Pirata_One } from "next/font/google";
 import { ClerkProvider } from '@clerk/nextjs';
+import { CLERK_APPEARANCE, CLERK_LOCALIZATION } from "../lib/clerk-theme";
 import "./globals.css";
 import "../styles/world-overlays.css";
 
@@ -29,7 +30,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <ClerkProvider>
+    <ClerkProvider appearance={CLERK_APPEARANCE} localization={CLERK_LOCALIZATION}>
       <html lang="es">
         <body className={`${pirata.variable} ${barlow.variable} ${barlowCondensed.variable} antialiased`}>
           {children}

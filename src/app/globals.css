@@ -321,6 +321,7 @@ body {
 .landing__bg { position: absolute; inset: 0; background: radial-gradient(ellipse at 70% 40%, #2b7aa3 0%, #1a5f86 35%, #0f3f5c 70%, #06111a 100%); }
 .landing__bg img { object-fit: cover; }
 .landing__veil { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(6, 17, 26, 0.15) 0%, rgba(6, 17, 26, 0.55) 60%, #06111a 100%); }
+.landing__bg.is-fixed, .landing__veil.is-fixed { position: fixed; }
 .landing__content { position: relative; margin-left: 120px; max-width: 560px; display: flex; flex-direction: column; gap: 20px; }
 .landing__logo { font-size: 88px; line-height: 1; color: var(--ui-gold); text-shadow: 0 3px 0 #6b3a1a, 0 8px 24px rgba(0, 0, 0, 0.5); }
 .landing__tagline { font-size: 22px; font-weight: 500; max-width: 520px; }
@@ -344,6 +345,18 @@ body {
   .cta, .cta-ghost { width: 100%; max-width: 358px; }
   .feature { width: 358px; max-width: 100%; }
 }
+
+/* ---------- Inicio de sesión y registro (§16.3, D53) ---------- */
+.auth { position: relative; min-height: 100dvh; display: grid; grid-template-rows: minmax(max-content, 1fr) auto minmax(max-content, 1fr); justify-items: center; padding: calc(16px + env(safe-area-inset-top, 0px)) calc(16px + env(safe-area-inset-right, 0px)) calc(16px + env(safe-area-inset-bottom, 0px)) calc(16px + env(safe-area-inset-left, 0px)); color: var(--ui-text); overflow-x: hidden; }
+.auth__top, .auth__card, .auth__bottom { position: relative; } /* por encima del fondo fijo */
+.auth__top { align-self: end; padding-bottom: 24px; }
+.auth__logo { display: block; font-size: 48px; line-height: 1; color: var(--ui-gold); text-shadow: 0 3px 0 #6b3a1a, 0 8px 24px rgba(0, 0, 0, 0.5); }
+.auth__bottom { align-self: start; padding-top: 16px; }
+.auth__back { display: inline-flex; align-items: center; min-height: 44px; font-size: 15px; font-weight: 600; color: var(--ui-text); }
+.auth__back:hover, .auth__back:focus-visible { text-decoration: underline; }
+@media (max-width: 699.98px) { .auth__logo { font-size: 36px; } }
+/* Con < 560 px de alto la tarjeta no cabe: sin logo, arranca a 16 px y la página hace scroll vertical */
+@media (max-height: 559.98px) { .auth { grid-template-rows: auto auto 1fr; } .auth__top { display: none; } }
 
 /* ---------- Animaciones ---------- */
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }

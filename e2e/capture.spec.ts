@@ -11,6 +11,7 @@ import { startOwnServer } from './own-server';
 
 const OUT = path.join(__dirname, '..', 'qa-artifacts');
 const SHOWCASE = `http://localhost:${PORTS.showcase}`;
+const AUTH = `http://localhost:${PORTS.auth}`; // sin invitado: Clerk de desarrollo de .env.local
 
 const VIEWPORTS = [
   { name: 'desktop', width: 1440, height: 900, mobile: false },
@@ -220,6 +221,23 @@ async function legibilityShot(page: Page, vp: Vp) {
 
 test.describe('Capturas @capture', () => {
   test.beforeAll(() => fs.mkdirSync(OUT, { recursive: true }));
+
+  // Inicio de sesión y registro (AC-140, D53), también en horizontal, donde la tarjeta no cabe en alto
+  for (const vp of [...VIEWPORTS, { name: 'mobile-landscape', width: 844, height: 390, mobile: true }]) {
+    test(`inicio de sesión y registro en ${vp.name} (${vp.width}×${vp.height})`, async ({ browser }) => {
+      const page = await newPage(browser, vp);
+      try {
+        for (const route of ['sign-in', 'sign-up']) {
+          await page.goto(`${AUTH}/${route}`);
+          await expect(page.locator('.cl-formButtonPrimary')).toBeVisible({ timeout: 30_000 });
+          await page.waitForLoadState('networkidle');
+          await shot(page, vp, route);
+        }
+      } finally {
+        await page.context().close();
+      }
+    });
+  }
 
   for (const vp of VIEWPORTS) {
     test(`escenas estándar en ${vp.name} (${vp.width}×${vp.height})`, async ({ browser }) => {
