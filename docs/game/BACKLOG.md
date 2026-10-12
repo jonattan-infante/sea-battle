@@ -60,6 +60,11 @@ QA-8 sobre lo de 434b160 ────────┘
 | Latencia | game-qa (mide) | Medir desde su conexión (AC-136) |
 | Cierre | game-qa + Jonattan | El portátil de referencia (Q9) para AC-90, los 5 evaluadores de AC-72 y el visto bueno al push |
 
+**Reglas de las pruebas remotas** (los arneses de dev-tests contra un despliegue real):
+- **En staging**, se corren cuando haga falta.
+- **En prod**, cada corrida lleva la guarda `REMOTE_ALLOW_PROD=1` **y el OK explícito de Jonattan para esa corrida**: el barco de prueba se ve en el mundo real, al lado de jugadores reales. Sin las dos cosas, el arnés no arranca contra prod.
+- **Usuario de prueba:** parte de un estado distinto del inicial (AC-135), y en prod es una cuenta dedicada a las pruebas, nunca la de un jugador.
+
 ### R1 Persistencia robusta (GDD §13) · P0 para la 1.0.0
 AC-97 (E11) sigue tal cual: recargar la página devuelve el mismo oro, mejoras y barcos, y el invitado vuelve a 100. Estos AC añaden lo que hace falta para que la persistencia aguante en producción.
 - **AC-129** — Dado un usuario de Clerk con progreso guardado, cuando el servidor se reinicia (proceso nuevo con la misma BD) o se redespliega, entonces al volver a entrar recupera exactamente su oro, sus mejoras, sus barcos en propiedad y su barco activo, y aparece en el puerto con la vida llena (la vida y la posición no se guardan). En un redeploy, que llega como `SIGTERM`, **no se pierde nada**: el servidor escribe el estado de todos los jugadores antes de cerrar. La clave es el `userId` del JWT verificado (AC-08), nunca un dato que mande el cliente. Un usuario nuevo empieza con 100 de oro y la Balandra, y un invitado no escribe nada en la BD (0 filas). Verificación: Jest+socket con Postgres real, con el servidor en un proceso hijo al que se manda `SIGTERM` y se arranca de nuevo; en staging, AC-135 tras un redeploy.
@@ -72,17 +77,25 @@ AC-97 (E11) sigue tal cual: recargar la página devuelve el mismo oro, mejoras y
 - **AC-134** — Dado prod en el dominio propio de Jonattan (GDD Q13) con la instancia de **producción** de Clerk, cuando se abre la landing, se inicia sesión y se entra al juego, entonces: la consola del navegador no muestra el aviso de claves de desarrollo de Clerk («Clerk has been loaded with development keys…», que hoy sale en prod); la clave publicable empieza por `pk_live_`; y un socket sin JWT, o con un JWT de la instancia de desarrollo, se rechaza antes de unirse al mundo (AC-08 contra producción). El dominio de Railway (`*.up.railway.app`) no vale, porque Clerk rechaza los dominios de hosting en producción (`provider_domain_operation_not_allowed`). Verificación: e2e contra prod con captura de la consola, más un socket sin token y otro con token de desarrollo.
 
 ### R3 Staging en Railway · P0 para la 1.0.0
-- **AC-135** — Dado el commit candidato desplegado en staging (entorno de Railway con **su propia BD Postgres, nunca la de prod**, y Clerk real), cuando QA entra con un usuario de prueba, hunde un mercante (oro +N), recarga la página, y luego se redespliega staging y vuelve a entrar, entonces las dos veces ve el mismo oro, las mismas mejoras y el mismo barco activo. Es la **prueba rápida** que se repite en prod (AC-139). Staging y prod despliegan el mismo SHA. Verificación: e2e contra la URL de staging, con el oro antes y después en el log.
+- **AC-135** — Dado el commit candidato desplegado en staging (entorno de Railway con **su propia BD Postgres, nunca la de prod**, y Clerk real) y un usuario de prueba que **parte de un estado distinto del inicial** (oro ≠ 100, al menos una mejora y un barco activo que no sea la Balandra; así, volver al estado por defecto se detecta), cuando QA entra, hunde un mercante (oro +N) y luego (1) recarga la página, (2) cierra la pestaña, espera ≥ 15 s y vuelve a entrar, y (3) se redespliega staging y vuelve a entrar, entonces en los tres casos ve **el mismo estado: exactamente los campos de AC-97** (oro, mejoras, barcos en propiedad y barco activo) que tenía justo antes de salir. **La posición y la vida no se comparan.** Si vuelve en menos de 10 s recupera el mismo barco (AC-96); si no, reaparece en el puerto con la vida llena (AC-129). El paso (2) prueba la BD sin redeploy: pasados los 10 s de AC-96, el barco ya no está en memoria. Es la **prueba rápida** que se repite en prod (AC-139), sin el paso (3). Staging y prod despliegan el mismo SHA. Verificación: e2e contra la URL de staging, con los 4 campos antes y después de cada paso en el log.
 
 ### R4 Latencia en Railway (GDD §13) · P0 para la 1.0.0
-- **AC-136** — Dado staging en Railway y un navegador de escritorio en conexiones domésticas reales (al menos la de Jonattan y la de QA), cuando se hacen 20 clics en el agua por conexión con el método de AC-14, entonces: (a) el marcador aparece en ≤ 50 ms en 20 de 20 (AC-14 a); (b) el RTT se registra (mediana de 20 peticiones a `/healthz`); y (c) el tiempo del clic al primer cambio de la posición renderizada tiene **p95 ≤ 500 ms**, el umbral de «muy jugable» de GDD §13. En local se miden 263–309 ms, así que el margen alcanza para un RTT de hasta ~190 ms. Si (c) falla, **bloquea la 1.0.0** hasta que se cumpla, con una región de Railway más cercana o con la predicción del arranque (hoy P2). Verificación: e2e contra staging, 20 clics por conexión, con el RTT y los tiempos en el log.
+- **AC-136** — Dado staging en Railway y un navegador de escritorio en conexiones domésticas reales (al menos la de Jonattan y la de QA), cuando se hacen **30 clics en el agua por conexión** con el método de AC-14, registrando p50, p95 y máximo, y el RTT aparte (mediana de las peticiones a `/healthz`), entonces:
+  (a) **del clic al marcador: p95 ≤ 50 ms y máximo ≤ 100 ms.** El marcador es local y no depende de la red (AC-14 a), así que superarlo es un fallo del cliente y **bloquea la 1.0.0** como cualquier regresión;
+  (b) **del clic al primer cambio de la posición renderizada: p95 ≤ 500 ms**, el umbral de «muy jugable» de GDD §13. El p50 y el máximo se registran, pero no son criterio, porque un pico suelto de la red no dice nada del juego. En local se miden 263–309 ms, así que el margen alcanza para un RTT de hasta ~190 ms.
+  **Si (b) falla, bloquea la 1.0.0 y se decide con el RTT medido:**
+  - **RTT ≥ ~190 ms:** es la distancia. Se cambia a la región de Railway más cercana a los jugadores y se vuelve a medir.
+  - **RTT < ~190 ms:** el tiempo se va en el servidor o en el cliente, no en la red. Es un fallo P1 que se arregla; la predicción no lo resuelve.
+  - **Con la región más cercana y todavía > 500 ms:** la predicción del arranque (hoy P2) es la única palanca. Elegir entre retrasar la 1.0.0 para hacerla o publicar con el límite conocido es una decisión de negocio de Jonattan, que se le pregunta entonces.
+
+  Verificación: e2e remoto contra staging, 30 clics por conexión, con los tres percentiles de cada tramo y el RTT en el log.
 
 ### R5 Alcance: I2 latente · P0 para la 1.0.0
 - **AC-137** — Dado el build 1.0.0, cuando se juegan 10 min en el mundo normal y se hunden ≥ 10 piratas (el disparador del Capitán en AC-54), entonces no aparece ningún NPC de I2: ningún snapshot contiene un Capitán ni una Cañonera, el HUD y el minimapa no muestran sus avisos ni marcadores, y la población es la anterior a I2 (AC-51: 12 piratas y 8 mercantes). El modelo del Capitán (`264363e`) puede estar en el código, pero no se instancia en partida. Verificación: Jest+socket con 10 min simulados y hundimientos, más el unitario de la población.
 
 ### R6 Cierre y publicación · P0 para la 1.0.0
 - **AC-138** — Dado el commit candidato de `chore/release-1-0-0`, que ya lleva `package.json` en `1.0.0` y el `CHANGELOG.md` con la entrada 1.0.0 (así QA evalúa exactamente lo que se publica), cuando game-qa hace la regresión completa (verify, test:e2e, test:perf, qa:capture y el test:soak de 10 min de AC-91), entonces el QA-REPORT da **APROBADO**, sin P0 ni P1 abiertos (las observaciones P2/P3 se admiten y van al CHANGELOG como conocidas). Todos los AC de la 1.0.0 quedan en A: los del universo de QA salvo los de I2, más AC-97 y AC-129 a AC-137. **AC-90 y AC-72 se hacen con Jonattan en esta pasada**: AC-90 en el portátil de referencia (GDD Q9) y AC-72 con 5 evaluadores. Ninguno queda NO VERIFICADO. Verificación: QA-REPORT sobre el SHA candidato.
-- **AC-139** — Dado AC-138 aprobado, cuando se despliega en prod el mismo SHA, entonces: (a) la prueba rápida de AC-135 pasa en prod con una cuenta real de Jonattan (login → jugar → recargar → mismo oro); (b) AC-134 pasa en prod; y (c) **después** de (a) y (b) se crea el tag `v1.0.0` sobre el SHA desplegado. El push de la rama y del tag lo confirma Jonattan. Verificación: log de la prueba en prod, y `git rev-parse v1.0.0` igual al SHA que despliega Railway.
+- **AC-139** — Dado AC-138 aprobado, cuando se despliega en prod el mismo SHA, entonces: (a) la prueba rápida de AC-135 pasa en prod (pasos 1 y 2, los mismos 4 campos de AC-97) con una cuenta de prueba que parte de un estado distinto del inicial; (b) AC-134 pasa en prod; y (c) **después** de (a) y (b) se crea el tag `v1.0.0` sobre el SHA desplegado. El push de la rama y del tag lo confirma Jonattan. Verificación: log de la prueba en prod, y `git rev-parse v1.0.0` igual al SHA que despliega Railway.
 
 ## Incremento I2: orden por impacto frente a Seafight (QA-3 §8, media 7,4)
 **I2 → 1.1.0** (GDD Q12, alcance A): I2 completo (H-305, H-306, E13 + AC-124, AC-115) sale después de la 1.0.0 y sigue en `feat/seafight-vertical-slice`. Lo que no es I2 en estas colas (O-4, O-7 / O-8, AD-27 y los P3 de QA) entra en la 1.0.0 si QA lo aprueba («Release 1.0.0»).
@@ -259,7 +272,12 @@ Reportes (el último manda):
   - **BD caída durante la partida:** se sigue jugando con aviso, pero sin tienda ni cambio de barco, para no confirmar compras que se podrían perder (AC-132).
   - **Guardado:** compras y cambio de barco antes de confirmar, el oro en ≤ 5 s, y nada perdido en un redeploy (AC-129, AC-130).
   - **Sesiones:** una por `userId`; la pestaña nueva manda (AC-133).
-  - **Latencia:** un p95 > 500 ms en Railway bloquea la publicación (AC-136).
+  - **Latencia (AC-136):**
+    - Del clic al marcador: p95 ≤ 50 ms y máximo ≤ 100 ms.
+    - Del clic al movimiento: p95 ≤ 500 ms.
+    - Si falla: con RTT alto, se cambia de región; con RTT bajo, es un fallo P1. Si sigue fallando con la región más cercana, decide Jonattan.
+  - **Prueba rápida (AC-135):** se comparan solo los 4 campos de AC-97, con un usuario que parte de un estado distinto del inicial.
+  - **Pruebas en prod:** cada una con `REMOTE_ALLOW_PROD=1` y el OK de Jonattan.
   - **Cierre:** el candidato lleva ya la versión 1.0.0 y el CHANGELOG, y el tag se crea solo tras la prueba rápida en prod (AC-138, AC-139).
 
 ---
@@ -561,5 +579,5 @@ Reportes (el último manda):
 | P2 | Galeón del tesoro con escolta | Mercante raro y de alto valor escoltado por 2 piratas: momentos multijugador. Se decide después de medir I2 |
 | P2 | Corsario rápido | Pirata frágil y más rápido que la Balandra, que ataca y huye. Se decide después de medir I2 |
 | P2 | Varias salas y emparejamiento | Cuando 20 jugadores por sala no basten (GDD Q6) |
-| P2 | Predicción del arranque del barco propio | Solo si AC-136 mide en Railway un p95 > 500 ms del clic al movimiento visible (GDD §13). En ese caso sube a P0 y bloquea la 1.0.0, salvo que baste con una región de Railway más cercana |
+| P2 | Predicción del arranque del barco propio | Solo si AC-136 mide en Railway un p95 > 500 ms del clic al movimiento visible (GDD §13) **aun con la región más cercana**. Entonces Jonattan decide si la 1.0.0 espera a la predicción o se publica con el límite conocido (árbol de decisión en AC-136) |
 | P3 | Monstruos y arpones (GDD Q10) · abordaje · chat · ranking · XP, niveles y misiones · colisión entre barcos · viento | Fuera del slice (GDD §3) |
