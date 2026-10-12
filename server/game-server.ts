@@ -26,6 +26,9 @@ import { distance } from '../src/game/vec';
 import {
   ActionResult,
   addPlayer,
+  applyBuy,
+  applyPurchase,
+  applySelectShip,
   attack,
   buy,
   cancelAttack,
@@ -33,7 +36,10 @@ import {
   disconnectPlayer,
   drainEvents,
   moveTo,
+  planBuy,
+  planSelectShip,
   playerView,
+  removePlayer,
   respawn,
   selectShip,
   setRepair,
@@ -43,6 +49,8 @@ import {
   stop
 } from '../src/game/world';
 import type { Identity } from './auth';
+import { createPersistence, ProgressStore, StoredProgress } from './persistence';
+import { progressOf, SavedProgress } from './progress';
 
 export interface GameServerOptions {
   authenticate: (auth: unknown) => Promise<Identity>;
@@ -54,6 +62,8 @@ export interface GameServerOptions {
   setup?: (world: World) => void; // preparar el mundo antes de aceptar jugadores (escenarios de captura)
   now?: () => number; // reloj en ms para el límite de intenciones
   log?: (msg: string) => void;
+  store?: ProgressStore; // progreso guardado de los usuarios de Clerk (AC-97); sin él, todo vive en memoria
+  saveIntervalMs?: number; // guardado periódico del oro (por defecto 2 s)
 }
 
 export interface GameServer {
@@ -61,7 +71,12 @@ export interface GameServer {
   onlinePlayers: () => number;
   tick: () => void;
   stop: () => void;
+  flushProgress: () => Promise<void>; // escribe ya todo el progreso que cambió y espera (apagado, tests)
 }
+
+const KICKED_TEXT = 'Abriste el juego en otra pestaña';
+const PROGRESS_ERROR_TEXT = 'No podemos cargar tu progreso ahora mismo';
+const SHOP_UNAVAILABLE_TEXT = 'La tienda no está disponible: no podemos guardar';
 
 // Estado de red por cliente: qué barcos conoce y con qué valores
 interface ClientState {
@@ -87,6 +102,31 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
   const clients = new Map<string, ClientState>(); // por userId: una sola pestaña por usuario
   let ticks = 0;
   let pendingEvents: GameEvent[] = [];
+  const purchasing = new Set<string>(); // usuarios con una compra o un cambio de barco esperando a la BD
+  const departing = new Set<string>(); // desconectados que salen de la memoria al retirar su barco (AC-129)
+
+  const persistence = options.store
+    ? createPersistence({
+        store: options.store,
+        read: (userId) => {
+          const player = world.players.get(userId);
+          return player ? progressOf(player) : null;
+        },
+        // Otro proceso escribió un progreso más nuevo: este suelta al jugador para no pisarlo; al volver, se carga de la BD
+        onConflict: (userId) => {
+          const c = clients.get(userId);
+          if (c) {
+            clients.delete(userId);
+            c.socket.emit(S2C.kicked, { text: KICKED_TEXT });
+            c.socket.disconnect(true);
+          }
+          removePlayer(world, userId);
+          persistence?.forget(userId);
+        },
+        saveIntervalMs: options.saveIntervalMs,
+        log
+      })
+    : null;
 
   io.use(async (socket, next) => {
     try {
@@ -106,8 +146,10 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
   };
 
   io.on('connection', (socket) => {
-    const { userId } = socket.data.identity as Identity;
+    const { userId, guest } = socket.data.identity as Identity;
     let client: ClientState | null = null;
+    let joining = false;
+    let joinAttempts = 0;
     let tokens = INTENT_BURST;
     let lastRefill = now();
 
@@ -136,23 +178,25 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
       });
     };
 
-    // join no gasta fichas: solo se procesa una vez por socket
-    socket.on(C2S.join, (raw: unknown) => {
-      if (client) return;
-      const data = parseJoin(raw);
-      if (!data) return;
-      if (occupiedSlots(userId) >= MAX_PLAYERS) {
-        socket.emit(S2C.full, { text: 'Servidor lleno' });
-        socket.disconnect(true);
-        return;
-      }
+    const rejectIfFull = () => {
+      if (occupiedSlots(userId) < MAX_PLAYERS) return false;
+      socket.emit(S2C.full, { text: 'Servidor lleno' });
+      socket.disconnect(true);
+      return true;
+    };
+
+    // Entra al mundo con el progreso recién cargado de la BD (stored) o con el que ya está en memoria (undefined)
+    const enter = (name: string | null, stored?: StoredProgress | null) => {
+      if (rejectIfFull()) return;
       const previous = clients.get(userId);
       if (previous && previous.socket.id !== socket.id) {
-        previous.socket.emit(S2C.kicked, { text: 'Abriste el juego en otra pestaña' });
+        previous.socket.emit(S2C.kicked, { text: KICKED_TEXT });
         previous.socket.disconnect(true);
       }
       const existing = world.players.get(userId);
-      const player = addPlayer(world, userId, data.name ?? existing?.name ?? defaultName(userId));
+      const player = addPlayer(world, userId, name ?? existing?.name ?? defaultName(userId), stored?.progress);
+      if (stored !== undefined) persistence?.track(userId, stored);
+      departing.delete(userId);
       client = { socket, userId, known: new Map(), lastView: '', notices: [], needsFull: true };
       clients.set(userId, client);
       const welcome: Welcome = {
@@ -168,6 +212,33 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
       socket.emit(S2C.welcome, welcome);
       sendFrame(client, []); // snapshot completo inmediato
       log(`🎮 ${player.name} se unió (${clients.size} en línea)`);
+    };
+
+    // join se procesa una vez por socket y no gasta fichas; solo los reintentos tras un fallo de carga las gastan
+    socket.on(C2S.join, (raw: unknown) => {
+      if (client || joining) return;
+      if (joinAttempts++ > 0 && !takeToken()) return;
+      const data = parseJoin(raw);
+      if (!data || rejectIfFull()) return;
+      // Invitado, sin BD o con el jugador aún en memoria (reconexión, otra pestaña): la memoria es lo más fresco
+      if (!persistence || guest || world.players.has(userId)) {
+        enter(data.name);
+        return;
+      }
+      joining = true;
+      persistence.load(userId).then(
+        (stored) => {
+          joining = false;
+          if (!socket.connected || client) return;
+          enter(data.name, world.players.has(userId) ? undefined : stored); // otra pestaña pudo cargarlo mientras tanto
+        },
+        (err: Error) => {
+          joining = false;
+          // Nunca se entra con un estado por defecto: podría sobrescribir el progreso real (AC-131)
+          log(`⚠️  No se pudo cargar el progreso de ${userId}: ${err.message}`);
+          if (socket.connected) socket.emit(S2C.progressError, { text: PROGRESS_ERROR_TEXT });
+        }
+      );
     });
 
     on(C2S.moveTo, parseMoveTo, (target) => moveTo(world, userId, target));
@@ -175,18 +246,52 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
     on(C2S.attack, parseAttack, ({ targetId }) => attack(world, userId, targetId));
     on(C2S.cancelAttack, parseEmpty, () => cancelAttack(world, userId));
     on(C2S.repair, parseRepair, ({ on: enabled }) => setRepair(world, userId, enabled));
+    // Con progreso guardado, la compra o el cambio de barco se escribe en la BD y solo entonces se aplica y se confirma
+    // (AC-130 a); si la escritura falla, se rechaza y el mundo no cambia. Una a la vez por usuario
+    const persisted = () => !!persistence?.isTracked(userId);
+    const commit = (c: ClientState, next: SavedProgress, apply: () => void, okText: string | null): ActionResult => {
+      purchasing.add(userId);
+      persistence!
+        .commit(userId, next, apply)
+        .then((saved) => {
+          if (!saved) c.notices.push({ kind: 'error', text: SHOP_UNAVAILABLE_TEXT });
+          else if (okText) c.notices.push({ kind: 'info', text: okText });
+        })
+        .catch((err: Error) => log(`❌ Error al aplicar una compra de ${userId}: ${err.message}`))
+        .finally(() => purchasing.delete(userId));
+      return { ok: true };
+    };
+
     on(C2S.buy, parseBuy, ({ item }, c) => {
-      const result = buy(world, userId, item);
-      if (result.ok) c.notices.push({ kind: 'info', text: 'Compra realizada' });
-      return result;
+      if (!persisted()) {
+        const result = buy(world, userId, item);
+        if (result.ok) c.notices.push({ kind: 'info', text: 'Compra realizada' });
+        return result;
+      }
+      if (purchasing.has(userId)) return { ok: false, reason: 'Compra en curso' };
+      const plan = planBuy(world, userId, item);
+      if (!plan.ok) return plan;
+      const next = progressOf(world.players.get(userId)!);
+      applyPurchase(next, item, plan.price);
+      return commit(c, next, () => applyBuy(world, userId, item, plan.price), 'Compra realizada');
     });
-    on(C2S.selectShip, parseSelectShip, ({ classId }) => selectShip(world, userId, classId));
+    on(C2S.selectShip, parseSelectShip, ({ classId }, c) => {
+      if (!persisted()) return selectShip(world, userId, classId);
+      if (purchasing.has(userId)) return { ok: false, reason: 'Compra en curso' };
+      const plan = planSelectShip(world, userId, classId);
+      if (!plan.ok) return plan;
+      const player = world.players.get(userId)!;
+      if (player.activeShip === classId) return { ok: true };
+      return commit(c, { ...progressOf(player), activeShip: classId }, () => applySelectShip(world, userId, classId), null);
+    });
     on(C2S.respawn, parseEmpty, () => respawn(world, userId));
 
     socket.on('disconnect', () => {
       if (!client || clients.get(userId) !== client) return;
       clients.delete(userId);
       disconnectPlayer(world, userId); // el barco sigue 10 s en el mundo (AC-96)
+      persistence?.saveNow(userId); // el progreso se escribe ya, sin esperar al guardado periódico (AC-130 c)
+      departing.add(userId);
       log(`👋 ${userId} salió (${clients.size} en línea)`);
     });
   });
@@ -290,8 +395,29 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
     for (const client of clients.values()) sendFrame(client, events, current);
   }
 
+  // Pasado el margen de reconexión, el barco ya no está (AC-96) y el jugador sale de la memoria: al volver, su progreso se
+  // lee de la BD (AC-129) y el invitado empieza de cero. Con progreso guardado, solo cuando ya está escrito; si la
+  // escritura falla, sigue en memoria hasta que se escriba, para no perder el oro
+  function releaseDeparted() {
+    for (const userId of departing) {
+      const player = world.players.get(userId);
+      if (!player) {
+        departing.delete(userId);
+        continue;
+      }
+      if (world.ships.has(player.shipId) || clients.has(userId) || purchasing.has(userId)) continue;
+      if (persistence?.isTracked(userId)) {
+        if (persistence.saveState(userId) !== 'saved') continue; // lo escribe el guardado periódico (o el reintento)
+        persistence.forget(userId);
+      }
+      world.players.delete(userId);
+      departing.delete(userId);
+    }
+  }
+
   function tick() {
     step(world, 1 / tickRate);
+    if (departing.size) releaseDeparted();
     pendingEvents.push(...drainEvents(world));
     ticks++;
     if (ticks % snapshotEvery === 0) broadcast();
@@ -320,7 +446,9 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
     tick,
     stop: () => {
       if (interval) clearInterval(interval);
-    }
+      persistence?.close();
+    },
+    flushProgress: () => persistence?.flush() ?? Promise.resolve()
   };
 }
 

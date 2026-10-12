@@ -25,6 +25,7 @@
     "@react-three/drei": "^10.7.6",
     "@react-three/fiber": "^9.3.0",
     "next": "^15.5.27",
+    "pg": "^8.23.1",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "socket.io": "^4.8.1",
@@ -38,6 +39,7 @@
     "@tailwindcss/postcss": "^4",
     "@types/jest": "^30.0.0",
     "@types/node": "^20",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "jest": "^30.1.3",
@@ -85,6 +87,8 @@
       "src/game/**/*.ts",
       "server/**/*.ts",
       "!**/__tests__/**"
-    ]
+    ],
+    "globalSetup": "<rootDir>/server/__tests__/pg/global-setup.ts",
+    "globalTeardown": "<rootDir>/server/__tests__/pg/global-teardown.ts"
   }
 }

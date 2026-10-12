@@ -13,7 +13,8 @@ Dueño: `game-developer`. Fuentes de verdad: `GDD.md` y `BACKLOG.md` (qué se co
  │  │   interpolación 100 ms     │  frames   │   step() a 20 Hz · frames a 10 Hz              │
  │  ├─ runtime + R3F (useFrame)  │  10 Hz    │   deltas por cliente en 300 m                  │
  │  └─ HUD (zustand) / overlays  │           │ src/game/ (simulación pura y determinista)    │
- └───────────────────────────────┘           └──────────────────────────────────────────────┘
+ └───────────────────────────────┘           │ server/persistence.ts ──► Postgres (Railway)  │
+                                             └──────────────────────────────────────────────┘
 ```
 
 | Capa | Ruta | Regla |
@@ -21,6 +22,7 @@ Dueño: `game-developer`. Fuentes de verdad: `GDD.md` y `BACKLOG.md` (qué se co
 | Simulación | `src/game/` | TypeScript puro: sin React, three.js, sockets, `Date` ni `Math.random` (AC-01). Todo el azar sale de `world.rng` con semilla (AC-02). Las constantes reproducen el GDD (AC-04) |
 | Protocolo | `src/game/protocol.ts` | Parsers estrictos: tipos exactos, números finitos y ningún campo extra (AC-05) |
 | Servidor | `server/` | Autoritativo. Autenticación con JWT de Clerk; el modo invitado solo funciona con `AUTH_BYPASS=1` y fuera de Railway (AC-09: el proceso termina si se combinan) |
+| Persistencia | `server/{persistence,progress,bootstrap}.ts`, `server/db/` | Progreso de los usuarios de Clerk en Postgres (§2.1). La simulación no toca la BD |
 | Red cliente | `src/client/game-client.ts` | Sin React. Fusiona los deltas en muestras completas por entidad e interpola con un retraso fijo de 100 ms, sin extrapolar |
 | Render | `src/client/{art,runtime,overlays}.ts`, `models/`, `vfx/`, `src/components/game/` | `useFrame` muta refs; prohibido `setState` por frame. Placas y números en DOM posicionados por ref |
 | HUD | `src/client/hud-store.ts`, `hud-logic.ts`, `src/components/hud/` | El store solo cambia con los datos (≤ 10 Hz). Lo que avanza con el reloj (recarga, protección, cuenta atrás) se pinta por ref desde un único `requestAnimationFrame` (AC-83) |
@@ -43,11 +45,37 @@ Dueño: `game-developer`. Fuentes de verdad: `GDD.md` y `BACKLOG.md` (qué se co
 
 Medido (Jest + socket real, `server/__tests__/game-server.test.ts`): con 20 clientes y 20 NPC en combate durante 30 s simulados, el peor cliente recibe 10,00 msg/s y 10,03 KB/s.
 
+### 2.1 Progreso guardado (AC-97, AC-129 a AC-133)
+
+Postgres de Railway (`DATABASE_URL`, GDD Q2) con `pg`, sin ORM. Se guarda el oro, las mejoras, los barcos en propiedad y el barco activo de cada usuario de Clerk; la vida y la posición no (AC-129).
+
+| Pieza | Qué hace |
+|---|---|
+| `player_progress` | `user_id` (el `sub` del JWT verificado, AC-08), `state` jsonb, `revision` (+1 en cada escritura) y `updated_at` |
+| `server/progress.ts` | Parser estricto del `state` (oro entero entre 0 y el tope, niveles 1–3, barco activo entre los que posee). Lo que no pasa no se usa ni se sobrescribe (AC-131) |
+| `server/db/migrate.ts` | Migraciones al arrancar, antes de abrir el puerto, con `pg_advisory_lock`. Si fallan, el proceso termina y Railway mantiene el despliegue anterior |
+| `server/persistence.ts` | Carga al entrar y cola de escrituras por usuario. Cada escritura lleva la revisión leída: si otro proceso escribió algo más nuevo, no se pisa y el jugador se recarga desde la BD |
+| `server/bootstrap.ts` | Arranque compartido por `index.ts` y el proceso de los tests. En Railway sin `DATABASE_URL` el servidor no arranca; fuera de Railway, sin ella, todo vive en memoria (con aviso) |
+
+Cuándo se escribe:
+
+| Momento | Escritura |
+|---|---|
+| Entrar | Si el jugador sigue en memoria (reconexión en ≤ 10 s u otra pestaña), se usa la memoria, que es lo más fresco. Si no, se lee la fila (plazo de 3 s); sin fila, empieza con 100 de oro y la Balandra |
+| Salir de la memoria | Al retirar el barco tras los 10 s de AC-96, el jugador sale de la memoria, pero solo cuando su estado ya está escrito (si la BD falla, sigue en memoria hasta que se escriba). Así, al volver, el progreso sale de la BD (AC-129). El invitado sale sin más y vuelve con 100 de oro |
+| Compra o cambio de barco | El mundo valida (`planBuy`, `planSelectShip`), se escribe y solo entonces se aplica y se confirma (AC-130 a). Si falla, se rechaza y no cambia nada. Una a la vez por usuario («Compra en curso») |
+| Oro | Cada 2 s, solo si cambió algo (huella): en reposo, cero consultas. Queda escrito en ≤ 5 s (AC-130 b) |
+| Desconexión | En el acto, sin esperar los 10 s del barco (AC-130 c) |
+
+- El invitado no escribe nunca. El usuario de prueba de los e2e (`testUser`, guardado como `test-<id>`) solo existe con el modo invitado, fuera de Railway.
+- **Limitación conocida (P3):** entre validar una compra y aplicarla pasa la escritura (~20 ms). Si en ese rato el jugador pierde oro (muerte), el precio se descuenta con suelo 0 (`applyPurchase` en `src/game/world.ts`, con su test).
+- Tests: Postgres real. El `globalSetup` de Jest usa `TEST_DATABASE_URL` (la CI la da con un service container `postgres:16`) o levanta un clúster temporal con `initdb` en un puerto libre, que un vigía para y borra aunque Jest muera. Cada archivo usa su propio schema (`search_path`). Los tests de `kill -9` lanzan el servidor en un proceso hijo (`server/__tests__/fixtures/game-process.ts`).
+
 ## 3. Harnesses
 
 | Comando | Qué cubre |
 |---|---|
-| `npm test` | Simulación por AC (navegación, combate, NPC, economía, arquitectura), protocolo y servidor con sockets reales y reloj inyectable (`autoStart: false` + `tick()`) |
+| `npm test` | Simulación por AC (navegación, combate, NPC, economía, arquitectura), protocolo y servidor con sockets reales y reloj inyectable (`autoStart: false` + `tick()`). La persistencia, contra Postgres real (§2.1): sin `TEST_DATABASE_URL` ni Postgres instalado, esos tests fallan con instrucciones, no se saltan |
 | `npm run build` | `next build` + `tsc -p tsconfig.server.json` → `dist/server/index.js` |
 | `npm run test:e2e` | Playwright contra el build de producción, con 3 servidores: invitado (3100), invitado sin NPC (3101) y sin invitado (3102) |
 | `npm run test:perf` | Commits de React (hook de DevTools inyectado), frames de WebSocket y `renderInfo` |
@@ -70,6 +98,8 @@ Puente de depuración de solo lectura: `window.__SEA_BATTLE__` (`ready`, `server
 | `SEA_BATTLE_NPCS=0` | Servidor de prueba sin NPC (AC-83, AC-87) |
 | `PORT` | Puerto HTTP y de Socket.IO |
 | `PUBLIC_ORIGINS` | AC-134 (d): orígenes públicos separados por comas (en prod, `https://seabattle.jonattan.dev`), los únicos que reciben permiso de CORS en Socket.IO y cuyos JWT de Clerk se aceptan (`azp` contra `authorizedParties`; `server/origins.ts`). Sin la variable, `http://localhost:${PORT}` y `https://${RAILWAY_PUBLIC_DOMAIN}`, que Railway pone solo. Se normalizan como el `Origin` del navegador (minúsculas, sin barra final ni puerto por defecto), y un valor que no es un origen detiene el arranque. Con la variable, toda petición a un host que no está en la lista va con 301 al primer origen, con la misma ruta y query (AC-139, paso 3: el dominio de Railway de prod); `/healthz` nunca se redirige, porque Railway comprueba la salud con el host `healthcheck.railway.app` (`server/request-handler.ts`). Sin la variable no hay redirección. Para entrar con Clerk desde otra máquina de la red (p. ej., el móvil contra `npm run dev`), hay que listar los dos orígenes: `PUBLIC_ORIGINS=http://localhost:3000,http://192.168.1.10:3000` |
+| `DATABASE_URL` | Postgres del progreso (§2.1). Obligatoria en Railway (prod y staging, cada uno con su BD); fuera de Railway es opcional |
+| `TEST_DATABASE_URL`, `PG_BIN` | `npm test`: Postgres de los tests (la CI usa su service container). Sin ella, el clúster temporal busca `initdb` en `PG_BIN`, `pg_config` o Homebrew |
 | `RAILWAY_GIT_COMMIT_SHA` | Lo pone Railway en los despliegues desde Git; `/healthz` lo devuelve como `commit` (`null` si falta) |
 | `BASE_URL` | `test:remote`: despliegue que se prueba |
 | `E2E_CLERK_EXTERNAL_ID` + `CLERK_SECRET_KEY` | `test:remote`, inicio de sesión A (preferido): busca al usuario de prueba por su `externalId` (en dev, `sea-battle-qa`) y entra con un token de inicio de sesión del Backend API (estrategia ticket) y el Testing Token de la instancia del despliegue; sin contraseña, así que vale con cualquier identificador que active la instancia, pero el usuario necesita uno (email, teléfono o username): sin ninguno, Clerk rechaza el ticket |
@@ -82,6 +112,6 @@ Las variables de `test:remote` van en `.env.remote.local` (lo ignora `.env*` en 
 
 ## 5. Pendiente y decisiones abiertas
 
-- Persistencia por `userId` (P1, AC-97): falta elegir el almacén (GDD Q2), y el coste lo aprueba Jonattan.
+- Persistencia por `userId` (AC-97): Postgres en Railway (GDD Q2, §2.1). Fallos de la BD al entrar y en partida (AC-131, AC-132), sesión única entre pestañas (AC-133) y vaciado en `SIGTERM`: en curso.
 - El ping del HUD (solo si es > 200 ms) necesita medir la latencia sin enviar mensajes en reposo (AC-86); está pendiente de diseño.
 - Capitán pirata, munición especial y sonido: P2.

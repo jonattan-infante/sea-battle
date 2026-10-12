@@ -5,18 +5,17 @@ import { loadEnvConfig } from '@next/env';
 import next from 'next';
 import { Server } from 'socket.io';
 import { authConfigError, isAuthBypassAllowed } from '../src/lib/auth-bypass';
-import { authenticateHandshake } from './auth';
-import { createGameServer } from './game-server';
+import { databaseConfigError, startGame } from './bootstrap';
+import type { GameServer } from './game-server';
 import { healthPayload } from './health';
 import { canonicalRedirect, publicOrigins, socketServerOptions } from './origins';
 import { requestHandler } from './request-handler';
-import { applyScenario, parseScenario } from './scenarios';
 
 const dev = process.env.NODE_ENV !== 'production';
 loadEnvConfig(process.cwd(), dev);
 
-// AC-09: nunca abrir el puerto con el modo invitado en Railway
-const configError = authConfigError();
+// AC-09: nunca abrir el puerto con el modo invitado en Railway; ni, en Railway, sin la BD del progreso
+const configError = authConfigError() ?? databaseConfigError();
 if (configError) {
   console.error(`❌ ${configError}`);
   process.exit(1);
@@ -37,7 +36,7 @@ const port = parseInt(process.env.PORT || '3000', 10);
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
 
-app.prepare().then(() => {
+app.prepare().then(async () => {
   const startedAt = Date.now();
   let onlinePlayers = () => 0;
 
@@ -51,14 +50,14 @@ app.prepare().then(() => {
 
   const io = new Server(httpServer, socketServerOptions(origins)); // CORS: PUBLIC_ORIGINS, los mismos que authorizedParties
 
-  const scenario = parseScenario(process.env.SEA_BATTLE_SCENARIO);
-  const game = createGameServer(io, {
-    authenticate: (auth) => authenticateHandshake(auth),
-    spawnNpcs: process.env.SEA_BATTLE_NPCS !== '0', // servidor de prueba sin NPC (AC-83, AC-87)
-    // Escenarios de prueba: solo con el modo invitado permitido, que nunca se activa en Railway
-    setup: isAuthBypassAllowed() && scenario ? (world) => applyScenario(world, scenario) : undefined,
-    log: (msg) => console.log(msg)
-  });
+  // BD y migraciones antes de abrir el puerto: si fallan, el healthcheck no pasa y Railway mantiene el despliegue anterior
+  let game: GameServer;
+  try {
+    ({ game } = await startGame(io, process.env, (msg) => console.log(msg)));
+  } catch (err) {
+    console.error(`❌ No se pudo preparar la base de datos: ${(err as Error).message}`);
+    process.exit(1);
+  }
   onlinePlayers = game.onlinePlayers;
 
   httpServer.listen(port, () => {

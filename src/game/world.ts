@@ -153,6 +153,11 @@ export function canAttack(world: World, attacker: Ship, target: Ship): boolean {
   return true;
 }
 
+// Oro que pierde un jugador al hundirse (§10)
+export function deathPenalty(gold: number): number {
+  return Math.floor(gold * DEATH_GOLD_PENALTY);
+}
+
 function addGold(player: Player, amount: number): void {
   player.gold = Math.max(0, Math.min(GOLD_CAP, player.gold + amount));
 }
@@ -264,7 +269,8 @@ function respawnPoint(world: World, clearance: number): { pos: Vec2; heading: nu
   return { pos: { x: 0, z: 75 }, heading: 0 };
 }
 
-export function addPlayer(world: World, id: string, name: string): Player {
+// initial: el progreso guardado de un usuario de Clerk (server/persistence.ts); sin él, el inicial (100 de oro y Balandra)
+export function addPlayer(world: World, id: string, name: string, initial?: Pick<Player, 'gold' | 'upgrades' | 'ownedShips' | 'activeShip'>): Player {
   const existing = world.players.get(id);
   if (existing) {
     const ship = world.ships.get(existing.shipId);
@@ -279,10 +285,10 @@ export function addPlayer(world: World, id: string, name: string): Player {
     id,
     name,
     shipId: '',
-    gold: world.startingGold ?? STARTING_GOLD,
-    upgrades: { cannons: 1, hull: 1, sails: 1 },
-    ownedShips: [STARTING_SHIP],
-    activeShip: STARTING_SHIP,
+    gold: initial?.gold ?? world.startingGold ?? STARTING_GOLD,
+    upgrades: initial ? { ...initial.upgrades } : { cannons: 1, hull: 1, sails: 1 },
+    ownedShips: initial ? [...initial.ownedShips] : [STARTING_SHIP],
+    activeShip: initial?.activeShip ?? STARTING_SHIP,
     kills: 0,
     deaths: 0,
     death: null
@@ -300,7 +306,7 @@ export function addPlayer(world: World, id: string, name: string): Player {
   return player;
 }
 
-// El barco queda DISCONNECT_GRACE s en el mundo; oro y mejoras se conservan para la sesión
+// El barco queda DISCONNECT_GRACE s en el mundo; después el servidor saca al jugador de la memoria (AC-129)
 export function disconnectPlayer(world: World, playerId: string): void {
   const ship = shipOfPlayer(world, playerId);
   if (ship) {
@@ -310,6 +316,13 @@ export function disconnectPlayer(world: World, playerId: string): void {
     ship.attackTargetId = null;
     ship.repairing = false;
   }
+}
+
+// Saca al jugador y su barco del mundo (otro proceso escribió un progreso más nuevo: server/persistence.ts)
+export function removePlayer(world: World, playerId: string): void {
+  const ship = shipOfPlayer(world, playerId);
+  if (ship) removeShip(world, ship);
+  world.players.delete(playerId);
 }
 
 function removeShip(world: World, ship: Ship): void {
@@ -329,7 +342,7 @@ export function shipOfPlayer(world: World, playerId: string): Ship | undefined {
 // ---------- Intenciones del jugador ----------
 
 export type ActionResult = { ok: true } | { ok: false; reason: string };
-const fail = (reason: string): ActionResult => ({ ok: false, reason });
+const fail = (reason: string): { ok: false; reason: string } => ({ ok: false, reason });
 
 function setDestination(ship: Ship, target: Vec2): void {
   const clearance = navClearance(ship.classId);
@@ -428,7 +441,11 @@ function switchClass(world: World, ship: Ship, player: Player, classId: PlayerSh
   ship.path = [];
 }
 
-export function buy(world: World, playerId: string, item: ShopItem): ActionResult {
+// La tienda va en dos pasos para que el servidor pueda escribir la compra en la BD antes de confirmarla (AC-130 a):
+// planBuy valida sin tocar el mundo y applyBuy aplica. buy() hace las dos cosas en el acto (invitados y tests)
+export type BuyPlan = { ok: true; price: number } | { ok: false; reason: string };
+
+export function planBuy(world: World, playerId: string, item: ShopItem): BuyPlan {
   const player = world.players.get(playerId);
   const ship = shipOfPlayer(world, playerId);
   if (!player || !isAlive(ship)) return fail('Tu barco no está a flote');
@@ -436,33 +453,76 @@ export function buy(world: World, playerId: string, item: ShopItem): ActionResul
   const price = itemPrice(item);
   if (item.kind === 'upgrade') {
     if (item.level !== player.upgrades[item.upgrade] + 1 || item.level > MAX_UPGRADE_LEVEL) return fail('Primero necesitas el nivel anterior');
-    if (player.gold < price) return fail(`Necesitas ${price} de oro`);
-    player.gold -= price;
-    player.upgrades[item.upgrade] = item.level;
-    if (item.upgrade === 'hull') {
-      const ratio = ship.hp / ship.maxHp;
-      ship.maxHp = maxHpFor(ship.classId, player);
-      ship.hp = Math.round(ship.maxHp * ratio);
-    }
-    return { ok: true };
+  } else if (player.ownedShips.includes(item.classId)) {
+    return fail('Ya tienes ese barco');
   }
-  if (player.ownedShips.includes(item.classId)) return fail('Ya tienes ese barco');
   if (player.gold < price) return fail(`Necesitas ${price} de oro`);
-  player.gold -= price;
-  player.ownedShips.push(item.classId);
-  player.ownedShips.sort((a, b) => PLAYER_SHIP_ORDER.indexOf(a) - PLAYER_SHIP_ORDER.indexOf(b));
-  switchClass(world, ship, player, item.classId, false);
+  return { ok: true, price };
+}
+
+// La compra sobre el progreso (el jugador o una copia que se escribe en la BD). Limitación conocida (P3): entre planBuy
+// y applyBuy pasa la escritura (~20 ms); si en ese rato el jugador pierde oro (muerte), el precio se descuenta con suelo
+// 0 y puede pagar de menos. La compra ya está escrita y confirmada, así que se entrega igualmente
+export function applyPurchase(progress: Pick<Player, 'gold' | 'upgrades' | 'ownedShips' | 'activeShip'>, item: ShopItem, price: number): void {
+  progress.gold = Math.max(0, progress.gold - price);
+  if (item.kind === 'upgrade') {
+    progress.upgrades[item.upgrade] = item.level;
+    return;
+  }
+  if (!progress.ownedShips.includes(item.classId)) progress.ownedShips.push(item.classId);
+  progress.ownedShips.sort((a, b) => PLAYER_SHIP_ORDER.indexOf(a) - PLAYER_SHIP_ORDER.indexOf(b));
+  progress.activeShip = item.classId;
+}
+
+export function applyBuy(world: World, playerId: string, item: ShopItem, price: number): void {
+  const player = world.players.get(playerId);
+  if (!player) return;
+  const ship = shipOfPlayer(world, playerId);
+  applyPurchase(player, item, price);
+  if (!ship) return;
+  const afloat = ship.state === 'alive';
+  if (item.kind === 'ship') {
+    if (afloat) switchClass(world, ship, player, item.classId, false);
+    else ship.classId = item.classId; // hundiéndose: Zarpar lo saca con la clase nueva y la vida llena
+  } else if (item.upgrade === 'hull' && afloat) {
+    const ratio = ship.hp / ship.maxHp;
+    ship.maxHp = maxHpFor(ship.classId, player);
+    ship.hp = Math.round(ship.maxHp * ratio);
+  }
+}
+
+export function buy(world: World, playerId: string, item: ShopItem): ActionResult {
+  const plan = planBuy(world, playerId, item);
+  if (!plan.ok) return plan;
+  applyBuy(world, playerId, item, plan.price);
   return { ok: true };
 }
 
-export function selectShip(world: World, playerId: string, classId: PlayerShipClass): ActionResult {
+export function planSelectShip(world: World, playerId: string, classId: PlayerShipClass): ActionResult {
   const player = world.players.get(playerId);
   const ship = shipOfPlayer(world, playerId);
   if (!player || !isAlive(ship)) return fail('Tu barco no está a flote');
   if (!player.ownedShips.includes(classId)) return fail('No tienes ese barco');
   if (!isInSafeZone(ship.pos)) return fail('Solo puedes cambiar de barco en el puerto');
-  if (player.activeShip === classId) return { ok: true };
-  switchClass(world, ship, player, classId, true);
+  return { ok: true };
+}
+
+export function applySelectShip(world: World, playerId: string, classId: PlayerShipClass): void {
+  const player = world.players.get(playerId);
+  const ship = shipOfPlayer(world, playerId);
+  if (!player || player.activeShip === classId) return;
+  if (ship?.state === 'alive') {
+    switchClass(world, ship, player, classId, true);
+    return;
+  }
+  player.activeShip = classId;
+  if (ship) ship.classId = classId;
+}
+
+export function selectShip(world: World, playerId: string, classId: PlayerShipClass): ActionResult {
+  const plan = planSelectShip(world, playerId, classId);
+  if (!plan.ok) return plan;
+  applySelectShip(world, playerId, classId);
   return { ok: true };
 }
 
@@ -751,7 +811,7 @@ function sinkShip(world: World, ship: Ship, killer: Ship | null): void {
 
   const victim = playerOf(world, ship);
   if (victim) {
-    const goldLost = Math.floor(victim.gold * DEATH_GOLD_PENALTY);
+    const goldLost = deathPenalty(victim.gold);
     victim.gold -= goldLost;
     victim.deaths += 1;
     victim.death = { by: killer ? killer.name : null, goldLost, at: world.time };

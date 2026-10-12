@@ -1,9 +1,13 @@
 // Modo invitado para pruebas locales y e2e. Nunca se activa en Railway, aunque alguien defina AUTH_BYPASS allí.
 const RAILWAY_MARKERS = ['RAILWAY_ENVIRONMENT', 'RAILWAY_ENVIRONMENT_NAME', 'RAILWAY_PROJECT_ID', 'RAILWAY_SERVICE_ID'];
 
+export function isRailway(env: Record<string, string | undefined> = process.env): boolean {
+  return RAILWAY_MARKERS.some((key) => Boolean(env[key]));
+}
+
 export function isAuthBypassAllowed(env: Record<string, string | undefined> = process.env): boolean {
   if (env.AUTH_BYPASS !== '1') return false;
-  return !RAILWAY_MARKERS.some((key) => Boolean(env[key]));
+  return !isRailway(env);
 }
 
 // AC-09: AUTH_BYPASS junto a un marcador de Railway es un error de configuración; el servidor no debe arrancar

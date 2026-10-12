@@ -35,6 +35,32 @@ describe('modo invitado', () => {
   });
 });
 
+// Usuario de prueba para el e2e de AC-97: persiste como un usuario de Clerk (guest: false), pero solo existe con el modo
+// invitado permitido, que nunca se activa en Railway (AC-09). El prefijo test- impide pisar la fila de un jugador real
+describe('usuario de prueba (testUser)', () => {
+  test('con el modo permitido, entra como usuario con progreso guardado', async () => {
+    await expect(authenticateHandshake({ testUser: 'alice' }, { AUTH_BYPASS: '1' })).resolves.toEqual({ userId: 'test-alice', guest: false });
+  });
+
+  test.each(['RAILWAY_ENVIRONMENT', 'RAILWAY_ENVIRONMENT_NAME', 'RAILWAY_PROJECT_ID', 'RAILWAY_SERVICE_ID'])(
+    'se rechaza en Railway aunque AUTH_BYPASS=1 (%s presente)',
+    async (marker) => {
+      await expect(authenticateHandshake({ testUser: 'alice' }, { AUTH_BYPASS: '1', [marker]: 'x', CLERK_SECRET_KEY: 'sk_test_x' })).rejects.toThrow('unauthorized');
+    }
+  );
+
+  test('sin el modo se rechaza', async () => {
+    await expect(authenticateHandshake({ testUser: 'alice' }, { CLERK_SECRET_KEY: 'sk_test_x' })).rejects.toThrow('unauthorized');
+  });
+
+  test.each([['vacío', ''], ['con mayúsculas', 'Alice'], ['con barra', 'a/b'], ['demasiado largo', 'a'.repeat(41)], ['no texto', 7]])(
+    'un id %s se rechaza',
+    async (_label, testUser) => {
+      await expect(authenticateHandshake({ testUser }, { AUTH_BYPASS: '1', CLERK_SECRET_KEY: 'sk_test_x' })).rejects.toThrow('unauthorized');
+    }
+  );
+});
+
 describe('AC-09: arranque con AUTH_BYPASS en Railway', () => {
   const { authConfigError } = jest.requireActual('../../src/lib/auth-bypass') as typeof import('../../src/lib/auth-bypass');
 

@@ -38,6 +38,16 @@ function guestId(): string {
   }
 }
 
+// Usuario de prueba de los e2e de persistencia (?testUser=, AC-97): solo en modo invitado, y el servidor lo rechaza fuera
+// de ese modo (server/auth.ts)
+function testUserParam(): string | null {
+  try {
+    return new URLSearchParams(window.location.search).get('testUser');
+  } catch {
+    return null;
+  }
+}
+
 function readHints(): number {
   try {
     return Number(localStorage.getItem(HINTS_KEY) ?? 0) || 0;
@@ -97,11 +107,12 @@ export default function GameApp({ guest }: { guest: boolean }) {
   useEffect(() => {
     if (!identityReady) return;
     const id = guest ? guestId() : null;
-    const name = guest ? `Invitado ${id!.slice(0, 4).toUpperCase()}` : user?.username ?? user?.firstName ?? null;
+    const testUser = guest ? testUserParam() : null;
+    const name = testUser ? `Prueba ${testUser}` : guest ? `Invitado ${id!.slice(0, 4).toUpperCase()}` : user?.username ?? user?.firstName ?? null;
     const client = new GameClient({
       url: window.location.origin,
       name,
-      auth: async () => (guest ? { guest: true, guestId: id } : { token: (await getTokenRef.current()) ?? undefined })
+      auth: async () => (testUser ? { testUser } : guest ? { guest: true, guestId: id } : { token: (await getTokenRef.current()) ?? undefined })
     });
     const rt = createRuntime(client);
     const hud = useHud.getState();
