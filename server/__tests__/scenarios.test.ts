@@ -3,6 +3,7 @@ import {
   INTEREST_RADIUS,
   ISLANDS,
   NAV_LIMIT,
+  PIRATE_AGGRO_RADIUS,
   navClearance,
   PIRATE_PORT_EXCLUSION,
   PIRATE_RETURN_ARRIVE,
@@ -22,6 +23,7 @@ import {
   ENDURANCE_MERCHANTS,
   ENDURANCE_PIRATE_OFFSET,
   ENDURANCE_POINT,
+  LEGIBILITY,
   parseScenario,
   REPAIR_START_HULL,
   ScenarioName,
@@ -104,6 +106,51 @@ describe('piratas fijos de los escenarios (DT-04)', () => {
     const drift = Math.hypot(pirate.pos.x - post.x, pirate.pos.z - post.z);
     console.log(`DT-04: ${label}, tras el combate, en ${pirate.ai!.state} a ${drift.toFixed(1)} m de su puesto`);
     expect(drift).toBeLessThanOrEqual(PIRATE_RETURN_ARRIVE);
+  });
+});
+
+// AC-72 (D57): la captura de legibilidad necesita los 4 barcos quietos. El pirata solo se mueve si un jugador sin
+// protección entra en su radio de agresión, así que los puestos de los jugadores, y el camino recto desde el puerto
+// hasta ellos, quedan fuera de ese radio
+describe('escenario "legibility" (AC-72)', () => {
+  const world = createWorld({ seed: 1, spawnNpcs: false });
+  applyScenario(world, 'legibility');
+  const npcs = [...world.ships.values()];
+  const at = (p: { x: number; z: number }) => npcs.filter((s) => Math.hypot(s.pos.x - p.x, s.pos.z - p.z) < 0.01);
+
+  test('un pirata quieto y un mercante sin IA en sus puestos, y nada más', () => {
+    expect(npcs).toHaveLength(2);
+    expect(at(LEGIBILITY.pirate).map((s) => [s.kind, s.holdPosition])).toEqual([['pirate', true]]);
+    expect(at(LEGIBILITY.merchant).map((s) => [s.kind, s.ai])).toEqual([['merchant', null]]);
+  });
+
+  test.each([['el jugador', LEGIBILITY.self], ['el otro jugador', LEGIBILITY.other]] as const)('%s, en su puesto y en el camino desde el puerto, queda fuera del radio de agresión del pirata', (_who, p) => {
+    // Distancia del pirata al segmento puerto → puesto
+    const t = Math.max(0, Math.min(1, (LEGIBILITY.pirate.x * p.x + LEGIBILITY.pirate.z * p.z) / (p.x * p.x + p.z * p.z)));
+    expect(Math.hypot(LEGIBILITY.pirate.x - t * p.x, LEGIBILITY.pirate.z - t * p.z)).toBeGreaterThan(PIRATE_AGGRO_RADIUS + 5);
+    expect(Math.hypot(p.x, p.z)).toBeGreaterThan(SAFE_ZONE_RADIUS);
+  });
+
+  test('con los dos jugadores en sus puestos y sin protección, nadie se mueve en 30 s', () => {
+    const w = createWorld({ seed: 2, spawnNpcs: false });
+    applyScenario(w, 'legibility');
+    addPlayer(w, 'u1', 'Ana');
+    addPlayer(w, 'u2', 'Bea');
+    const players = [shipOfPlayer(w, 'u1')!, shipOfPlayer(w, 'u2')!];
+    const posts = [LEGIBILITY.self, LEGIBILITY.other];
+    const before = [...w.ships.values()].filter((s) => s.kind !== 'player').map((s) => ({ ...s.pos }));
+    for (let i = 0; i < 30 * TICK_RATE; i++) {
+      players.forEach((s, k) => {
+        s.pos = { ...posts[k] };
+        s.speed = 0;
+        s.destination = null;
+        s.protectedUntil = 0;
+      });
+      step(w, 1 / TICK_RATE);
+      drainEvents(w);
+    }
+    const after = [...w.ships.values()].filter((s) => s.kind !== 'player').map((s) => ({ ...s.pos }));
+    expect(after).toEqual(before);
   });
 });
 

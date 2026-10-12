@@ -37,12 +37,23 @@ export const ENDURANCE_MERCHANT_RADIUS = 28; // dentro de la órbita del pirata 
 export const ENDURANCE_PIRATE_OFFSET = 60; // a < 70 m (radio de agresión): ataca en cuanto el jugador pierde la protección
 export const ENDURANCE_PIRATE_ACCURACY = 0.15; // ~2,9 de vida/s: reparar bajo fuego (1,5 %/s = 12/s) gana terreno de sobra
 
+// Legibilidad (AC-72, D57): un pirata quieto, un mercante sin IA y los puestos de los dos jugadores alrededor del punto de
+// captura. Los jugadores quedan a más de 70 m del pirata (fuera de su radio de agresión), así que nadie se mueve, y los
+// 4 barcos salen enteros en 1440×900 y en 390×844, a ≥ 16 px unos de otros y fuera de los paneles y botones del HUD.
+// e2e/capture.spec.ts lo arranca en su propio servidor, sin más NPC
+export const LEGIBILITY = {
+  self: SHOWCASE_POINT,
+  other: { x: -30, z: 230 },
+  pirate: { x: 45, z: 262 },
+  merchant: { x: -40, z: 160 }
+} as const;
+
 // Reparar y atacar cruzados (AC-128, e2e/input-toggle.spec.ts): el abanico de "targets" y el jugador entra con el casco
 // al 10 %. Sin nadie que dispare, reparar cura 32 de vida/s (GDD §8): con 80 de vida quedan ~20 s de reparación antes
 // de pasar del 90 % que pide el criterio
 export const REPAIR_START_HULL = 0.1;
 
-export const SCENARIOS = ['showcase', 'shipyard', 'targets', 'endurance', 'repair'] as const;
+export const SCENARIOS = ['showcase', 'shipyard', 'targets', 'endurance', 'repair', 'legibility'] as const;
 export type ScenarioName = (typeof SCENARIOS)[number];
 
 export function parseScenario(value: string | undefined): ScenarioName | null {
@@ -75,6 +86,22 @@ export function applyScenario(world: World, name: ScenarioName): void {
     pirate.destination = null;
     pirate.path = [];
     pirate.accuracyOverride = ENDURANCE_PIRATE_ACCURACY;
+    return;
+  }
+  if (name === 'legibility') {
+    const pirate = spawnPirate(world, 3);
+    pirate.pos = { ...LEGIBILITY.pirate };
+    pirate.heading = -Math.PI / 2;
+    pirate.ai!.origin = { ...pirate.pos };
+    pirate.holdPosition = true;
+    pirate.destination = null;
+    pirate.path = [];
+    const merchant = spawnMerchant(world);
+    merchant.pos = { ...LEGIBILITY.merchant };
+    merchant.heading = Math.PI / 2;
+    merchant.destination = null;
+    merchant.path = [];
+    merchant.ai = null;
     return;
   }
   if (name === 'targets' || name === 'repair') {

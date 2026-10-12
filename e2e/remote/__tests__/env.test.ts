@@ -15,7 +15,8 @@ describe('guarda de prod del arnés remoto (DT-08)', () => {
 
   test.each([
     ['https://sea-battle-production-5eba.up.railway.app', 'host de Railway de prod', STAGING],
-    ['https://seabattle.example.com', 'dominio propio de prod (AC-134)', STAGING],
+    ['https://seabattle.jonattan.dev', 'el dominio propio de prod (AC-134, GDD Q13)', STAGING],
+    ['https://seabattle.example.com', 'otro dominio propio', STAGING],
     ['https://SEA-BATTLE-PRODUCTION-5EBA.UP.RAILWAY.APP:8443/game', 'mayúsculas y puerto no cuelan', STAGING],
     ['https://dominio-nuevo.example.org', 'cualquier host no declarado', STAGING],
     ['https://staging.example.com.evil.net', 'un host que solo contiene el de staging', STAGING],
