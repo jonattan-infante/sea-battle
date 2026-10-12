@@ -11,7 +11,7 @@ import { enterGame } from './helpers';
 const HOSTILES = ['pirate', 'captain'] as const;
 const HEADINGS = [45, 135, 225, 315];
 const PAIR_DIFF = 0.3; // al menos una firma difiere ≥ 30 % (|x − y| / máx)
-const STANDARD_PX = 20; // el estandarte del Capitán: ≥ 20 px con L* ≥ 80 en cada rumbo
+const STANDARD_PX = 20; // el estandarte del Capitán: ≥ 20 px CSS de área con L* ≥ 80 en cada rumbo (D47: px de lienzo ÷ DPR²)
 const OUT = process.env.AD28_OUT;
 
 interface Signature { classId: string; deg: number; lod: number; dpr: number; area: number; meanL: number; light: number; bright: number }
@@ -102,7 +102,7 @@ test.describe('Firmas de los hostiles @mobile', () => {
 
     const diff = (x: number, y: number) => (Math.max(x, y) > 0 ? Math.abs(x - y) / Math.max(x, y) : 0);
     console.log(`AD-28: ppm ${setup.ppm.toFixed(3)} · lienzo a DPR ${rows[0].dpr}`);
-    for (const r of rows) console.log(`AD-28 ${r.classId.padEnd(8)} ${String(r.deg).padStart(3)}° LOD${r.lod}: área ${r.area} px · L* medio ${r.meanL.toFixed(1)} · clara ${(100 * r.light).toFixed(1)} % · L* ≥ 80: ${r.bright} px`);
+    for (const r of rows) console.log(`AD-28 ${r.classId.padEnd(8)} ${String(r.deg).padStart(3)}° LOD${r.lod}: área ${r.area} px · L* medio ${r.meanL.toFixed(1)} · clara ${(100 * r.light).toFixed(1)} % · L* ≥ 80: ${r.bright} px de lienzo = ${(r.bright / r.dpr ** 2).toFixed(1)} px CSS`);
     const pairs: { deg: number; a: string; b: string; area: number; meanL: number; light: number }[] = [];
     for (const deg of HEADINGS) {
       for (let i = 0; i < HOSTILES.length; i++) {
@@ -118,6 +118,6 @@ test.describe('Firmas de los hostiles @mobile', () => {
 
     expect(rows.every((r) => r.area > 0), 'cada barco deja máscara').toBe(true);
     for (const p of pairs) expect.soft(Math.max(p.area, p.meanL, p.light), `AD-28 ${p.deg}° ${p.a}–${p.b}: la firma que más difiere`).toBeGreaterThanOrEqual(PAIR_DIFF);
-    for (const r of rows.filter((q) => q.classId === 'captain')) expect.soft(r.bright, `AD-28 estandarte ${r.deg}°: px con L* ≥ 80`).toBeGreaterThanOrEqual(STANDARD_PX);
+    for (const r of rows.filter((q) => q.classId === 'captain')) expect.soft(r.bright / r.dpr ** 2, `AD-28 estandarte ${r.deg}°: px CSS con L* ≥ 80`).toBeGreaterThanOrEqual(STANDARD_PX);
   });
 });

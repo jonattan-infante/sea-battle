@@ -581,7 +581,8 @@ test.describe('Detalle interno de los cascos @perf', () => {
       const cs = v21all.filter((c) => c.classId === classId);
       return { classId, sails: cs.length, eta: cs.length ? med(cs.map((c) => c.eta)) : NaN, r: cs.length ? med(cs.map((c) => c.r)) : NaN, range: cs.length ? med(cs.map((c) => c.range)) : NaN };
     });
-    // AD-33: por clase, L* medio de la vela y color medio de la cubierta (ponderados por píxeles en los 3 rumbos)
+    // AD-33: por clase, L* medio de la vela y color medio de la cubierta (ponderados por píxeles en los 3 rumbos, para el
+    // registro) y el salto en cada rumbo, que es lo que se aserta (D46)
     const avg = (vs: { px: number; v: number[] }[]) => { const n = vs.reduce((a, q) => a + q.px, 0); return [0, 1, 2].map((i) => vs.reduce((a, q) => a + q.px * q.v[i], 0) / n); };
     const rgb = (h: string) => [1, 3, 5].map((k) => parseInt(h.slice(k, k + 2), 16));
     const hexOf = (c: number[]) => '#' + c.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('').toUpperCase();
@@ -590,7 +591,11 @@ test.describe('Detalle interno de los cascos @perf', () => {
       const sailL = (vs: typeof l0) => vs.reduce((a, v) => a + v.sailPixels * v.sailL, 0) / vs.reduce((a, v) => a + v.sailPixels, 0);
       const deck = (vs: typeof l0) => hexOf(avg(vs.filter((v) => v.deckPixels > 0).map((v) => ({ px: v.deckPixels, v: rgb(v.deckHex) }))));
       const [d0, d1] = [lab(deck(l0)), lab(deck(l1))];
-      return { classId, sail0: sailL(l0), sail1: sailL(l1), deck0: deck(l0), deck1: deck(l1), dL: sailL(l1) - sailL(l0), dE: Math.hypot(d0[0] - d1[0], d0[1] - d1[1], d0[2] - d1[2]), perDeg: l0.map((v, i) => `${v.headingDeg}° ${(l1[i].sailL - v.sailL).toFixed(1)}`).join(' · ') };
+      const poses = l0.map((v, i) => {
+        const [p0, p1] = [lab(v.deckHex), lab(l1[i].deckHex)];
+        return { deg: v.headingDeg, dL: l1[i].sailL - v.sailL, dE: Math.hypot(p0[0] - p1[0], p0[1] - p1[1], p0[2] - p1[2]) };
+      });
+      return { classId, sail0: sailL(l0), sail1: sailL(l1), deck0: deck(l0), deck1: deck(l1), dL: sailL(l1) - sailL(l0), dE: Math.hypot(d0[0] - d1[0], d0[1] - d1[1], d0[2] - d1[2]), poses };
     });
     const ad25m = mobile.map((v) => {
       const [a, b] = [lab(v.deckHex), lab(LOOK[v.classId] === 'pirate' ? '#6E4B30' : '#C9965E')];
@@ -606,7 +611,7 @@ test.describe('Detalle interno de los cascos @perf', () => {
     for (const v of sails) console.log(`AD-10/AD-25 ${v.classId.padEnd(8)} ${String(v.deg).padStart(3)}°: lona L* ${v.sailL.toFixed(1)}${v.stripeL ? ` (franjas ${v.stripeL.toFixed(1)})` : ''} · cubierta ${v.deckHex} (ΔE76 ${v.ad25.toFixed(1)} del token)`);
     console.log(`AS-V21 (b): ${v21.length} velas · r mediana ${v21r.toFixed(2)} (≤ ${AS_V21.rMedian}) · r ≥ ${AS_V21.rHigh}: ${(100 * v21rHigh).toFixed(0)} % · η ≥ ${AS_V21.etaHigh}: ${(100 * v21etaHigh).toFixed(0)} % (≤ ${100 * AS_V21.share} %) · rango ${med(v21.map((c) => c.range)).toFixed(1)}`);
     for (const c of v21class) console.log(`AS-V21 ${c.classId.padEnd(8)}: ${c.sails} velas · η ${c.eta.toFixed(2)}${c.classId === 'merchant' ? ' (sin asertar)' : ` (≤ ${AS_V21.etaClass})`} · r ${c.r.toFixed(2)} · rango ${c.range.toFixed(1)}`);
-    for (const a of ad33) console.log(`AD-33 ${a.classId.padEnd(8)}: vela L* ${a.sail0.toFixed(1)} → ${a.sail1.toFixed(1)} (Δ ${a.dL >= 0 ? '+' : ''}${a.dL.toFixed(1)}; por rumbo ${a.perDeg}) · cubierta ${a.deck0} → ${a.deck1} (ΔE76 ${a.dE.toFixed(1)})`);
+    for (const a of ad33) console.log(`AD-33 ${a.classId.padEnd(8)}: vela L* ${a.sail0.toFixed(1)} → ${a.sail1.toFixed(1)} (Δ ${a.dL >= 0 ? '+' : ''}${a.dL.toFixed(1)}) · cubierta ${a.deck0} → ${a.deck1} (ΔE76 ${a.dE.toFixed(1)}) · por rumbo ${a.poses.map((q) => `${q.deg}° vela ${q.dL >= 0 ? '+' : ''}${q.dL.toFixed(1)} cubierta ${q.dE.toFixed(1)}`).join(' · ')}`);
     for (const v of ad25m) console.log(`AD-25 390×844 LOD1 ${v.classId.padEnd(8)} ${String(v.deg).padStart(3)}°: cubierta ${v.deckHex} (${v.px} px) · ΔE76 ${v.dE.toFixed(1)} del token`);
     if (OUT) fs.writeFileSync(path.join(OUT, 'd36.json'), JSON.stringify({ ppm, rows, summary, ad26, sails, v21: v21all, ad33, ad25m }, null, 1));
 
@@ -640,10 +645,13 @@ test.describe('Detalle interno de los cascos @perf', () => {
     expect.soft(v21r, 'AS-V21: mediana de r').toBeLessThanOrEqual(AS_V21.rMedian);
     expect.soft(v21rHigh, 'AS-V21: velas con r ≥ 0,70').toBeLessThanOrEqual(AS_V21.share);
     expect.soft(v21etaHigh, 'AS-V21: velas con η ≥ 0,85').toBeLessThanOrEqual(AS_V21.share);
-    // AD-33 (D40): |ΔL*| de la vela ≤ 3 y ΔE76 de la cubierta ≤ 3 entre LOD0 y LOD1. AD-25 en LOD1 (390×844): ≤ 4
+    // AD-33 (D40, D46): |ΔL*| de la vela ≤ 3 y ΔE76 de la cubierta ≤ 3 entre LOD0 y LOD1 en cada rumbo. AD-25 en LOD1
+    // (390×844): ≤ 4
     for (const a of ad33) {
-      expect.soft(Math.abs(a.dL), `AD-33 ${a.classId}: vela`).toBeLessThanOrEqual(3);
-      expect.soft(a.dE, `AD-33 ${a.classId}: cubierta`).toBeLessThanOrEqual(3);
+      for (const q of a.poses) {
+        expect.soft(Math.abs(q.dL), `AD-33 ${a.classId} ${q.deg}°: vela`).toBeLessThanOrEqual(3);
+        expect.soft(q.dE, `AD-33 ${a.classId} ${q.deg}°: cubierta`).toBeLessThanOrEqual(3);
+      }
     }
     for (const v of ad25m) expect.soft(v.dE, `AD-25 390×844 ${v.classId} ${v.deg}°`).toBeLessThanOrEqual(4);
   });
