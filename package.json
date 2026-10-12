@@ -2,60 +2,98 @@
   "name": "sea-battle",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
-    "dev": "node server.js",
-    "build": "next build",
-    "start": "NODE_ENV=production node server.js",
-    "next-dev": "next dev --turbopack",
+    "dev": "tsx server/index.ts",
+    "dev:guest": "AUTH_BYPASS=1 tsx server/index.ts",
+    "build": "next build && tsc -p tsconfig.server.json",
+    "build:e2e": "NEXT_DIST_DIR=.next-e2e next build && tsc -p tsconfig.server.json",
+    "start": "NODE_ENV=production node dist/server/index.js",
+    "typecheck": "tsc --noEmit",
     "test": "jest",
-    "test:watch": "jest --watch"
+    "test:watch": "jest --watch",
+    "test:e2e": "npm run build:e2e && playwright test --grep-invert \"@perf|@capture|@soak\"",
+    "test:perf": "npm run build:e2e && playwright test --grep @perf",
+    "test:soak": "npm run build:e2e && playwright test --grep @soak",
+    "qa:capture": "npm run build:e2e && playwright test --grep @capture",
+    "qa:hero": "npm run build:e2e && node scripts/qa-hero.mjs",
+    "icons": "node scripts/icons/generate.mjs",
+    "test:remote": "playwright test -c playwright.remote.config.ts",
+    "verify": "npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
     "@clerk/backend": "^3.23.2",
-    "@clerk/nextjs": "^6.32.0",
+    "@clerk/localizations": "3.37.9",
+    "@clerk/nextjs": "^6.39.7",
     "@react-three/drei": "^10.7.6",
     "@react-three/fiber": "^9.3.0",
-    "@vercel/kv": "^3.0.0",
     "next": "^15.5.27",
-    "react": "19.1.0",
-    "react-dom": "19.1.0",
-    "socket.io": "^4.8.1",
-    "socket.io-client": "^4.8.1",
+    "pg": "^8.23.1",
+    "react": "19.1.9",
+    "react-dom": "19.1.9",
+    "socket.io": "^4.8.4",
+    "socket.io-client": "^4.8.4",
     "three": "^0.180.0",
     "zustand": "^5.0.8"
   },
   "devDependencies": {
+    "@clerk/testing": "1.14.10",
+    "@playwright/test": "^1.56.1",
     "@tailwindcss/postcss": "^4",
     "@types/jest": "^30.0.0",
-    "@types/node": "^20",
+    "@types/node": "^24",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "jest": "^30.1.3",
     "jest-environment-jsdom": "^30.1.2",
     "tailwindcss": "^4",
     "ts-jest": "^29.4.1",
+    "tsx": "^4.20.6",
     "typescript": "^5"
   },
   "jest": {
     "preset": "ts-jest",
-    "testEnvironment": "jsdom",
+    "testEnvironment": "node",
     "roots": [
-      "<rootDir>/src"
+      "<rootDir>/src",
+      "<rootDir>/server",
+      "<rootDir>/e2e"
     ],
     "testMatch": [
-      "**/__tests__/**/*.ts",
-      "**/?(*.)+(spec|test).ts"
+      "**/__tests__/**/*.test.ts"
     ],
     "transform": {
-      "^.+\\.ts$": "ts-jest"
+      "^.+\\.ts$": [
+        "ts-jest",
+        {
+          "tsconfig": {
+            "module": "commonjs",
+            "esModuleInterop": true,
+            "strict": true,
+            "target": "ES2020",
+            "lib": [
+              "ES2021",
+              "DOM"
+            ],
+            "skipLibCheck": true
+          }
+        }
+      ]
     },
     "moduleFileExtensions": [
       "ts",
-      "js"
+      "js",
+      "json"
     ],
     "collectCoverageFrom": [
-      "src/**/*.{ts,tsx}",
-      "!src/**/*.d.ts"
-    ]
+      "src/game/**/*.ts",
+      "server/**/*.ts",
+      "!**/__tests__/**"
+    ],
+    "globalSetup": "<rootDir>/server/__tests__/pg/global-setup.ts",
+    "globalTeardown": "<rootDir>/server/__tests__/pg/global-teardown.ts"
   }
 }
