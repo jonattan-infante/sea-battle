@@ -1,13 +1,14 @@
 // Apagado ordenado: Railway manda SIGTERM al despliegue viejo en cada redeploy y SIGKILL al acabar el drenaje (15 s,
-// railway.json). AC-129: no se pierde nada. Se dejan de aceptar entradas, se para la simulación, se escribe el progreso
-// de todos y solo después se cierran las conexiones, para que el cliente que reconecta al despliegue nuevo cargue lo ya
-// escrito y no un estado anterior
+// variable RAILWAY_DEPLOYMENT_DRAINING_SECONDS del servicio; TECH-ARCHITECTURE §2.1). AC-129: no se pierde nada. Se
+// dejan de aceptar entradas, se para la simulación, se escribe el progreso de todos y solo después se cierran las
+// conexiones, para que el cliente que reconecta al despliegue nuevo cargue lo ya escrito y no un estado anterior
 import type { Server as HttpServer } from 'http';
 import type { Pool } from 'pg';
 import type { Server } from 'socket.io';
 import type { GameServer } from './game-server';
 
-export const SHUTDOWN_FLUSH_MS = 10_000; // por debajo de los 15 s de drenaje: con la BD colgada se sale igualmente
+// Por debajo de los 15 s de drenaje, con la BD colgada se sale igual (scripts/railway/check_deploy.py exige ≥ esto + 2 s)
+export const SHUTDOWN_FLUSH_MS = 10_000;
 
 export interface ShutdownDeps {
   game: GameServer;

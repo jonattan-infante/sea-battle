@@ -54,6 +54,7 @@ app.prepare().then(async () => {
   const io = new Server(httpServer, socketServerOptions(origins)); // CORS: PUBLIC_ORIGINS, los mismos que authorizedParties
 
   // BD y migraciones antes de abrir el puerto: si fallan, el healthcheck no pasa y Railway mantiene el despliegue anterior
+  // (Healthcheck Path `/healthz` en los ajustes del servicio de cada entorno; TECH-ARCHITECTURE §2.1)
   const log = (msg: string) => console.log(msg);
   let game: GameServer;
   let pool: Pool | null;
