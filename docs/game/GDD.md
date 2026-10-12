@@ -151,7 +151,7 @@ Lectura de diseño: el **riesgo crece con la distancia al puerto**. Los mercante
 | Mover la vista (I2) | Arrastrar **un** dedo en el agua (> 12 px CSS), o tocar o arrastrar en el minimapa | Un toque sin arrastre sigue navegando; con dos dedos es zoom, nunca desplazamiento |
 | Centrar (I2) | Botón **Centrar** | Vuelve al seguimiento |
 
-**Regla de entrada:** cada pulsación produce como mucho una intención. Los conmutadores (Atacar, Reparar, Esc) alternan sobre la **última intención del jugador**, no sobre el estado que llega del servidor, que va interpolado y con retraso (§13). Esa última intención incluye lo que cancela según §8: después de pulsar Reparar, el siguiente Atacar ataca, y después de Atacar, el siguiente Reparar repara. Una intención que el servidor va a rechazar con seguridad (reparar con el casco intacto) no cancela nada (AC-128). Mantener una tecla pulsada no la repite.
+**Regla de entrada:** cada pulsación produce como mucho una intención. Los conmutadores (Atacar, Reparar, Esc) alternan sobre la **última intención del jugador**, no sobre el estado que llega del servidor, que va interpolado y con retraso (§13). Esa última intención incluye lo que cancela según §8: después de pulsar Reparar, el siguiente Atacar ataca, y después de Atacar o de una orden de navegación, el siguiente Reparar repara. Una intención que el servidor va a rechazar con seguridad (reparar con el casco intacto) no cancela nada (AC-128). Mantener una tecla pulsada no la repite.
 
 Orientaciones soportadas: vertical (390×844) y horizontal (844×390). Mientras se juega, el navegador no hace scroll ni zoom.
 
