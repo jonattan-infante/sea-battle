@@ -98,8 +98,13 @@ Detalle y criterios en `docs/game/BACKLOG.md`, «Conocidos de la 1.0.0».
 - **(a) Comprar justo al hundirte.** Si tu barco se hunde en los ~20 ms en que una compra se está guardando, la compra se completa y el precio se cobra con el oro que te queda, sin bajar de 0, así que puede salirte más barata. Lo que se deja de cobrar no pasa del 10 % de tu oro, y nunca acabas con más oro que si hubieras comprado antes de hundirte. No se puede provocar a propósito: solo se compra en la zona segura, donde no entran los piratas ni hay combate entre jugadores.
 - **(b) Cada actualización del servidor desconecta a todos unos segundos.** El juego reconecta solo y vuelves al puerto con la vida llena y todo tu progreso. El combate en curso se pierde. Se acepta porque, con dos servidores a la vez, habría dos mundos y dos copias de tu barco. Medido en staging: la pestaña vuelve a conectar 1,55 s y 4,75 s después de que el servidor anterior la suelte, dentro de los 7 s de reintentos automáticos.
 - **(c) Sin correo no hay recuperación de contraseña.** Si la olvidas, pierdes la cuenta y su progreso. El registro lo avisa: «Guarda tu contraseña: no se puede recuperar».
-- **(d) Avisos de seguridad de `postcss`.** `next` 15.5.27 arrastra una versión de `postcss` con avisos de seguridad moderados y altos, que solo se arreglan con `next` 16. Ese salto de versión mayor, con riesgo de regresión justo antes de publicar, va a la 1.1. Es la única excepción: ninguna otra dependencia de producción tiene avisos altos ni críticos.
-  - Avisos: **PENDIENTE DT-11**.
+- **(d) Avisos de seguridad de `postcss`.** `next` 15.5.27 lleva su propia copia de `postcss` (≤ 8.5.22), con 4 avisos de severidad alta, y `next` sale como moderada por depender de ella:
+  - [GHSA-qx2v-qp2m-jg93](https://github.com/advisories/GHSA-qx2v-qp2m-jg93): XSS por un `</style>` sin escapar en el CSS que genera;
+  - [GHSA-6g55-p6wh-862q](https://github.com/advisories/GHSA-6g55-p6wh-862q): lectura de archivos arbitrarios mediante un `sourceMappingURL` controlado por el atacante en comentarios CSS;
+  - [GHSA-fxqj-rqcc-2cmp](https://github.com/advisories/GHSA-fxqj-rqcc-2cmp): arreglo incompleto del anterior, cuando `from` no está definido;
+  - [GHSA-r28c-9q8g-f849](https://github.com/advisories/GHSA-r28c-9q8g-f849): recorrido de rutas al cargar los source maps previos, que expone archivos `.map`.
+
+  El arreglo exige `next` 16.4.0. Ese salto de versión mayor, con riesgo de regresión justo antes de publicar, va a la 1.1. Es la única excepción: `npm audit` pasa de 15 vulnerabilidades antes de la 1.0.0 (2 críticas, 9 altas y 4 moderadas) a estas 2 (1 alta y 1 moderada), y ninguna otra dependencia de producción tiene avisos altos ni críticos.
 - **(e) El botón de ver la contraseña se anuncia en inglés.** En el inicio de sesión y en el registro, un lector de pantalla lee «Show password» / «Hide password». En pantalla no se ve ningún texto en inglés. El texto está fijo en el componente de Clerk y no se puede traducir. Se revisará si Clerk lo permite en una versión futura.
 - **(f) El rendimiento se mide en un Apple M4 Pro, no en un portátil común.** El objetivo son 60 fps en un portátil común, y la 1.0.0 no tiene uno para comprobarlo. Por eso se mide en un M4 Pro con un umbral más exigente: el p95 del trabajo por frame, ≤ 7 ms, frente a los 20 ms del criterio original. La equivalencia, ~2,8 veces un M1, es una estimación por especificaciones, no una medida.
 - **(g) Otra pestaña abierta durante una actualización del servidor.** Si en los primeros segundos de una actualización abres el juego en otra pestaña, o recargas, mientras tu sesión sigue en el servidor anterior, la pestaña nueva puede cargar tu progreso anterior. Durante ese rato puede haber dos barcos tuyos, uno en cada servidor. El juego lo detecta al guardar: no sobrescribe lo más reciente, y la sesión con el progreso anterior se cierra con «Has abierto el juego en otra pestaña». Al volver a entrar cargas lo último. Como mucho pierdes el botín que ganaste en esa sesión antes de su primer guardado, nunca lo ya guardado ni una compra o un cambio de barco confirmados. Ventana medida en staging: 2,53 s hasta que el servidor anterior deja de simular, ≤ 6,5 s hasta que guarda y cierra, y 8,40 s hasta que el navegador ve el cierre.
@@ -111,12 +116,13 @@ Detalle y criterios en `docs/game/BACKLOG.md`, «Conocidos de la 1.0.0».
 
 | Valor | Dónde | Por qué |
 |---|---|---|
-| Arranque `node dist/server/index.js` | Ajuste Start Command | El `SIGTERM` llega directo a `node` y el progreso se guarda antes de cerrar |
+| Arranque `node dist/server/index.js` | Ajuste Start Command | El arranque con `node` (sin `npm`) hace que el `SIGTERM` llegue al servidor y el progreso se guarde antes de cerrar |
 | Healthcheck `/healthz` | Ajuste Healthcheck Path | Sin respuesta 2xx, el tráfico no pasa al despliegue nuevo |
 | 1 réplica | Ajuste Replicas | Un solo mundo y un solo escritor por cuenta |
 | Solape 0 | Variable `RAILWAY_DEPLOYMENT_OVERLAP_SECONDS=0` | El servidor anterior recibe el `SIGTERM` al empezar el relevo |
 | Drenaje de 15 s | Variable `RAILWAY_DEPLOYMENT_DRAINING_SECONDS=15` | Más que los 10 s del apagado, para que no se corte el guardado |
 
+- **clerk-js fijada en 5.128.0** (`src/lib/clerk-js.ts`). El navegador carga esa versión y no la última 5.x, así que Clerk no puede cambiar textos ni comportamiento en prod sin un deploy nuestro. Mantenimiento: cada subida de `@clerk/nextjs` o de clerk-js cambia la versión fijada a propósito, en un commit propio, y vuelve a pasar las pruebas de los textos en español del inicio de sesión y el registro (AC-140 c y AD-35 d). Así ningún texto nuevo de Clerk en inglés llega a prod sin que nadie lo vea.
 - **Node 24**, la versión con la que corre Railway. **PENDIENTE DT-14:** `engines.node`, `.nvmrc` y la CI en Node 24.
 
 [Unreleased]: https://github.com/jonattan-infante/sea-battle/compare/v1.0.0...HEAD
