@@ -81,7 +81,7 @@ Si la BD falla:
 
   | Valor | Dónde | Por qué |
   |---|---|---|
-  | Arranque `node dist/server/index.js` | Ajuste Start Command | Sin `npm` en medio, el `SIGTERM` llega a `node` (PID 1) |
+  | Arranque `node dist/server/index.js` | Ajuste Start Command | Sin `npm` en medio, el `SIGTERM` llega a `node`. No es el PID 1 (los logs dicen `(node:2)`): delante hay un proceso de la plataforma que le reenvía la señal, porque 🛑 y 💾 salen en los relevos de staging del 2026-10-12 |
   | Healthcheck `/healthz` | Ajuste Healthcheck Path (plazo por defecto, 300 s) | Sin un 2xx no se enruta al despliegue nuevo: si la BD o las migraciones fallan, sigue el anterior |
   | 1 réplica | Ajuste Replicas (us-west2) | Un solo mundo y un solo escritor por `userId` |
   | Solape 0 | Variable `RAILWAY_DEPLOYMENT_OVERLAP_SECONDS=0` | El viejo recibe el `SIGTERM` al empezar el relevo |
