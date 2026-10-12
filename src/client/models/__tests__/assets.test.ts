@@ -6,7 +6,7 @@ import { buildBuoyGeometry, buildIslands, buildLootGeometry, buildPalmGeometry }
 import { SHIP_LOOKS, TOP_FACE } from '../../art';
 import { buildShipAsset, clothTones, deckHalfBeam, deckTones, deckY, getShipModel, SHIP_RECIPES, ShipExtras, shipLook } from '../ship-geometry';
 
-const CLASSES = ['sloop', 'brig', 'frigate', 'pirate', 'merchant', 'captain'] as const;
+const CLASSES = ['sloop', 'brig', 'frigate', 'pirate', 'merchant', 'captain', 'gunboat'] as const;
 const BUDGET = { ship: [2500, 800], npc: [2000, 700] } as const;
 const BUDGET_BY_ID: Record<string, readonly [number, number]> = { npc_pirate_captain: [2500, 800] }; // §5: el Capitán pirata, NPC con presupuesto propio
 const EXTRAS_KEYS: (keyof ShipExtras)[] = [
@@ -14,6 +14,8 @@ const EXTRAS_KEYS: (keyof ShipExtras)[] = [
   'sb_radius', 'sb_pick', 'sb_cannons_per_side', 'sb_lod_px'
 ];
 
+// Portas en el costado: las clases con cañones, salvo la Cañonera, que los lleva sobre cubierta (§8.1, §8.4)
+const sidePorts = (r: { cannonZ: number[]; battery?: 'deck' }) => r.cannonZ.length > 0 && r.battery !== 'deck';
 const tris = (g: THREE.BufferGeometry) => (g.index ? g.index.count : g.getAttribute('position').count) / 3;
 
 describe.each(CLASSES)('Barco procedural %s', (classId) => {
@@ -169,7 +171,8 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
   test('D40 (O-8): LOD1 pinta la cubierta y las tapas lisas con el albedo de la media de las tablas, sin deck ni deck.alt', () => {
     const look = shipLook(model.recipe);
     const [lod0, lod1] = model.lods;
-    expect(look.deckLod1).toBe(model.recipe.look === 'pirate' ? '#67462D' : '#BD8D59');
+    // §7: la media de las tablas de su facción; la Cañonera, la de su cubierta propia
+    expect(look.deckLod1).toBe(model.recipe.assetId === 'npc_pirate_gunboat' ? '#907C61' : model.recipe.look === 'pirate' ? '#67462D' : '#BD8D59');
     expect(colorCount(lod1, look.deckLod1)).toBeGreaterThan(0);
     expect(colorCount(lod1, look.deck)).toBe(0);
     // D62: deck.mid, la tabla media y el trancanil de LOD0, es el mismo hex que la cara lisa de LOD1, así que LOD1 no cambia.
@@ -201,14 +204,14 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
     // o el borde superior de la franja de portas de 1,0 m en las clases con portas (D36)
     let b = 0;
     for (let v = 0; v < pos.count; v++) if (Math.abs(pos.getY(v)) < 1e-6 && Math.abs(pos.getZ(v)) < 1e-6 && pos.getX(v) > b) b = pos.getX(v);
-    const y1 = r.cannonZ.length ? yd - (r.F - r.cannonY - 0.5) : yd - 0.3 * r.F;
+    const y1 = sidePorts(r) ? yd - (r.F - r.cannonY - 0.5) : yd - 0.3 * r.F;
     const x1 = b + ((a * r.B / 2 - b) * y1) / yd;
     expect(at(x1, y1, 0)).toBe(1);
   });
 
   test('D23: portas de 0,8 m bajo el canto de cubierta (0,60·F + 0,4 ≤ yd(u)) y cañones con radio ≥ 0,22 m', () => {
     const r = model.recipe;
-    for (const z of r.cannonZ) expect(r.cannonY + 0.4).toBeLessThanOrEqual(deckY(r, z / r.L) + 1e-9);
+    if (sidePorts(r)) for (const z of r.cannonZ) expect(r.cannonY + 0.4).toBeLessThanOrEqual(deckY(r, z / r.L) + 1e-9);
     if (r.cannonZ.length) expect(r.cannon[0]).toBeGreaterThanOrEqual(0.22);
   });
 
@@ -227,7 +230,7 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
     const ys: number[] = [];
     for (let v = 0; v < pos.count; v++) if (Math.abs(pos.getZ(v)) < 1e-6 && pos.getX(v) > 0 && sameColor(color, v, look.band)) ys.push(pos.getY(v));
     const [lo, hi] = [Math.min(...ys), Math.max(...ys)];
-    if (r.cannonZ.length) {
+    if (sidePorts(r)) {
       expect(lo).toBeCloseTo(r.cannonY - 0.5, 6);
       expect(hi).toBeCloseTo(r.cannonY + 0.5, 6);
     } else {
@@ -304,7 +307,7 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
     const plan = sailPlan();
     // ASSET-SPEC §8.4: las dos cuadras del pirata llevan 16 y 12 columnas (paños de 0,48 y 0,5 m), y las 5 del Capitán, 20,
     // 16, 24, 20 y 16
-    const squares: Record<string, number[]> = { pirate: [16, 12], captain: [20, 16, 24, 20, 16] };
+    const squares: Record<string, number[]> = { pirate: [16, 12], captain: [20, 16, 24, 20, 16], gunboat: [24, 16] };
     if (squares[model.classId]) expect(plan.filter((q) => q.kind === 'cuadra').map((q) => q.n)).toEqual(squares[model.classId]);
     model.sails.forEach((ranges, lod) => expect(ranges.map(([a, b]) => b - a)).toEqual(plan.map((q) => q.tris[lod])));
   });
@@ -392,7 +395,7 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
   // una de un solo color. (1) Solo los 3 tonos de la paleta, con la oclusión ×0,85 en j = 0 y n − 1 de la cubierta y en
   // ninguna otra; (2) vecinas de distinto tono; (3) trancanil en deck.mid; (4) en el interior de m tablas, cada tono en
   // ⌊m/3⌋ o ⌈m/3⌉, y tantas claras como oscuras si m mod 3 = 2; (5) dos grupos completos seguidos no repiten permutación;
-  // (6) la secuencia es la de deckTones, que es determinista. El Capitán conserva deck / deck.alt alternos (D36)
+  // (6) la secuencia es la de deckTones, que es determinista. El Capitán y la Cañonera conservan deck / deck.alt alternos (D36)
   test('AS-V22 (a): tablas de cubierta y tapas en 3 tonos con trancanil medio, sin vecinas iguales ni grupos repetidos', () => {
     const r = model.recipe;
     const look = shipLook(r);
@@ -434,7 +437,33 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
     });
   });
 
-  test('D36: porta de 1 quad hacia afuera (2 tris) y cañón sin tapa interior (18 tris) en LOD0; nada en LOD1', () => {
+  // ASSET-SPEC §8.4 y §7 (I2): la Cañonera lleva 6 cañones por banda sobre cubierta, con la tapa interior (24 tris) y su
+  // cureña, solo en LOD0, y sin portas; el mortero (32 tris), en los dos LOD; los sockets de cañón en las bocas y el
+  // socket_smoke_02; y su cubierta propia, en tablas en LOD0 y lisa en #907C61 en LOD1
+  if (classId === 'gunboat') test('I2: batería sobre cubierta, mortero, sockets y cubierta de la Cañonera', () => {
+    const r = model.recipe;
+    const look = shipLook(r);
+    model.lods.forEach((geometry, lod) => {
+      const color = geometry.getAttribute('color');
+      let cannon = 0;
+      for (let t = 0; t < color.count / 3; t++) if ([0, 1, 2].every((k) => sameColor(color, 3 * t + k, look.cannon))) cannon++;
+      expect({ lod, cañónYMortero: cannon }).toEqual({ lod, cañónYMortero: (lod === 0 ? 2 * r.cannonZ.length * 24 : 0) + 32 });
+      expect({ lod, portas: colorCount(geometry, look.gunport) }).toEqual({ lod, portas: 0 });
+    });
+    const zs = [...r.cannonZ].sort((a, b) => a - b);
+    zs.forEach((z, i) => {
+      const p = child(`socket_cannon_port_${String(i + 1).padStart(2, '0')}`)!.position;
+      expect(p.x).toBeCloseTo(deckHalfBeam(r, z / r.L) - 1.0 + 1.2, 5);
+      expect(p.y).toBeCloseTo(deckY(r, z / r.L) + 0.45, 5);
+      expect(p.z).toBeCloseTo(z, 5);
+    });
+    expect(child('socket_smoke_02')!.position.toArray()).toEqual([0, deckY(r, 0.2) + 0.5, 0.2 * r.L]);
+    expect([look.deck, look.deckAlt, look.deckLod1]).toEqual([TOP_FACE.deckGunboat.albedo, TOP_FACE.deckAltGunboat.albedo, '#907C61']);
+    expect(colorCount(model.lods[0], look.deckAlt)).toBeGreaterThan(0);
+    expect(colorCount(model.lods[1], look.deckLod1)).toBeGreaterThan(0);
+  });
+
+  if (model.recipe.battery !== 'deck') test('D36: porta de 1 quad hacia afuera (2 tris) y cañón sin tapa interior (18 tris) en LOD0; nada en LOD1', () => {
     const r = model.recipe;
     const look = shipLook(r);
     const n = r.cannonZ.length * 2;
@@ -471,6 +500,23 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
       // Obstáculos: cajas (castillos, carga, faroles) y barriles (cilindro de r 0,45 y 1 m de alto); sin mástiles ni jarcia
       const boxes = r.boxes.filter((b) => b.pos[1] + b.size[1] / 2 - surface > 0.5);
       const barrels = r.barrels.filter((p) => p[1] + 0.5 - surface > 0.5);
+      // Cañonera (§8.4): los cañones sobre cubierta sobresalen 0,85 m y cuentan en la regla general (huella de la caña, de r
+      // 0,40); las cureñas y el mortero (r 1,3) tienen además su propio límite, ≤ 1 %
+      const guns: [number, number, number, number][] = []; // x0, x1, z0, z1
+      const carriages: [number, number, number, number][] = [];
+      if (r.battery === 'deck') {
+        for (const z of r.cannonZ) {
+          const half = deckHalfBeam(r, z / r.L);
+          for (const side of [1, -1]) {
+            carriages.push([side * (half - 1.0) - 0.5, side * (half - 1.0) + 0.5, z - 0.7, z + 0.7]);
+            const [x0, x1] = [side * (half - 2.2), side * (half + 0.2)].sort((p, q) => p - q);
+            guns.push([x0, x1, z - 0.4, z + 0.4]);
+          }
+        }
+      }
+      const mortar = r.mortarZ;
+      const inRect = (x: number, z: number) => ([x0, x1, z0, z1]: [number, number, number, number]) => x >= x0 && x <= x1 && z >= z0 && z <= z1;
+      let deckHit = 0;
       let inside = 0;
       let hit = 0;
       for (let a = 0; a <= N; a++) {
@@ -481,12 +527,16 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
           inside++;
           const x = s.x + dx;
           const z = s.z + dz;
-          const blocked = boxes.some((o) => Math.abs(x - o.pos[0]) <= o.size[0] / 2 && Math.abs(z - o.pos[2]) <= o.size[2] / 2) ||
+          const onDeck = carriages.some(inRect(x, z)) || (mortar !== undefined && Math.hypot(x, z - mortar) <= 1.3);
+          const blocked = onDeck || guns.some(inRect(x, z)) ||
+            boxes.some((o) => Math.abs(x - o.pos[0]) <= o.size[0] / 2 && Math.abs(z - o.pos[2]) <= o.size[2] / 2) ||
             barrels.some((p) => Math.hypot(x - p[0], z - p[2]) <= 0.45);
           if (blocked) hit++;
+          if (onDeck) deckHit++;
         }
       }
       expect({ name, overlap: hit / inside <= 0.05 ? 'ok' : hit / inside }).toEqual({ name, overlap: 'ok' });
+      expect({ name, cureñasYMortero: deckHit / inside <= 0.01 ? 'ok' : deckHit / inside }).toEqual({ name, cureñasYMortero: 'ok' });
     }
   });
 });
@@ -520,6 +570,14 @@ describe('Paleta de tablas y lona (D36, D40, D62)', () => {
     expect(L(TOP_FACE.deckAltD36Pirate.target) - L('#6E4B30')).toBeCloseTo(-7, 0);
     const look = shipLook(SHIP_RECIPES.captain);
     expect([look.deck, look.deckMid, look.deckAlt, look.deckLod1]).toEqual([TOP_FACE.deckD36Pirate.albedo, null, TOP_FACE.deckAltD36Pirate.albedo, '#67462D']);
+  });
+
+  test('D36 en la Cañonera (§8.4): sus tablas siguen a ±7 de L* de #9A8466, alternas y sin deck.mid, y la media lisa en LOD1', () => {
+    expect(L(TOP_FACE.deckGunboat.target) - L('#9A8466')).toBeCloseTo(7, 0);
+    expect(L(TOP_FACE.deckAltGunboat.target) - L('#9A8466')).toBeCloseTo(-7, 0);
+    expect(TOP_FACE.deckMeanGunboat).toEqual({ albedo: '#907C61', target: '#9A8466' });
+    const look = shipLook(SHIP_RECIPES.gunboat);
+    expect([look.deck, look.deckMid, look.deckAlt, look.deckLod1]).toEqual([TOP_FACE.deckGunboat.albedo, null, TOP_FACE.deckAltGunboat.albedo, '#907C61']);
   });
 
   test('D40: tonos de lona (§4.2): L* 96,1 / 86,2 / 76,1 en el jugador y 31,2 / 20,0 / 7,5 en el pirata; sail.mid, punto medio en sRGB', () => {

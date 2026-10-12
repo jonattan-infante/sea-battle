@@ -318,7 +318,7 @@ export function showcaseScene(): SceneSpec {
 export function galleryScene(): SceneSpec {
   const fx = -120;
   const fz = 260;
-  const classes: [string, ShipKind][] = [['sloop', 'player'], ['brig', 'player'], ['frigate', 'player'], ['pirate', 'pirate'], ['merchant', 'merchant'], ['captain', 'pirate']];
+  const classes: [string, ShipKind][] = [['sloop', 'player'], ['brig', 'player'], ['frigate', 'player'], ['pirate', 'pirate'], ['merchant', 'merchant'], ['captain', 'pirate'], ['gunboat', 'pirate']];
   return {
     name: 'gallery',
     focus: { x: fx, z: fz },

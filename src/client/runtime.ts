@@ -516,8 +516,12 @@ export class VfxDirector {
         view.smokeAcc += dt * (dense ? DAMAGE_FX.denseSmokeRate : DAMAGE_FX.smokeRate);
         while (view.smokeAcc >= 1) {
           view.smokeAcc -= 1;
-          this.v.copy(view.model.sockets.smoke).applyMatrix4(view.mesh.matrix);
-          if (this.v.y > 0) fx.damageSmoke(this.v.x, this.v.y, this.v.z, dense, view.model.extras.sb_mast_height);
+          // La misma tasa en cada socket de humo: el segundo, solo en la Cañonera (VFX §6, D25)
+          for (const p of [view.model.sockets.smoke, view.model.sockets.smoke2]) {
+            if (!p) continue;
+            this.v.copy(p).applyMatrix4(view.mesh.matrix);
+            if (this.v.y > 0) fx.damageSmoke(this.v.x, this.v.y, this.v.z, dense, view.model.extras.sb_mast_height);
+          }
         }
       }
       if (view.fire && view.fireSlot && shown) {
