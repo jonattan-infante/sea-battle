@@ -467,7 +467,7 @@ El layout, la paleta y la forma los define `game-ux`. Aquí solo se fija qué de
 | Commits de React en reposo con NPC visibles patrullando | ≤ 2/s (minimapa) |
 | Commits de React en combate | ≤ 10/s |
 | Mensajes cliente → servidor en reposo | 0 en 10 s |
-| Tick de simulación con servidor lleno | p99 ≤ 4 ms (Node 20), el menor de 3 repeticiones de 2 000 ticks (AC-03) |
+| Tick de simulación con servidor lleno | p99 ≤ 4 ms (Node 24, la de Railway; BACKLOG DT-14), el menor de 3 repeticiones de 2 000 ticks (AC-03) |
 | Crecimiento de la memoria JS del cliente (heap de V8 + ArrayBuffer) en 10 min de combate en régimen, tras el calentamiento (AC-91) | ≤ 15 MB |
 | Del clic al movimiento visible, en Railway con el RTT real (AC-136) | p95 ≤ 500 ms |
 
