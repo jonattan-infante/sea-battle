@@ -27,18 +27,20 @@
 | H4 — Excelencia | P1 de todas las épicas | PvP, persistencia, restos, minimapa, onboarding |
 
 ### Incremento I2: orden por impacto frente a Seafight (QA-3 §8, media 7,4)
-Hay dos colas en paralelo; dentro de cada una, el orden es estricto.
+Hay dos colas en paralelo; dentro de cada una, el orden es estricto para cada desarrollador. En la de lógica, desde Q11, `dev-npc` (2 → 4) y dev-tests (3) avanzan a la vez.
 
-**Cola lead / dev-tests (lógica, red y HUD)**
+**Cola de lógica: lead, `dev-npc` y dev-tests (lógica, red y HUD)**
 | # | Qué | Por qué en este puesto |
 |---|---|---|
 | 1 | AC-108, bloque 1 (dev-tests) | Blindar el bucle con tests **antes** de tocar combate e IA (lección de H-01) |
-| 2 | H-305 Capitán pirata (IA, avisos y marcador) | NPC 7/10: reto de grupo y de final de progresión |
-| 3 | E13 Vista libre + AC-124 (atacante fuera de pantalla) | Cámara 8/10. Los dos indicadores de borde comparten componente |
-| 4 | H-306 Cañonera pirata (IA) | Segundo hostil, con un comportamiento distinto |
+| 2 | H-305 Capitán pirata (IA, avisos y marcador: AC-54, AC-55, AC-111 y AC-112). **Lo hace `dev-npc`** | NPC 7/10: reto de grupo y de final de progresión. La lógica no necesita el arte: AC-54, AC-55 y AC-112 son unitarios. Al terminar se vuelve a medir AC-60 |
+| 3 | E13 Vista libre + AC-124 (atacante fuera de pantalla; AC-116 a AC-124). **Lo hace dev-tests, después de AD-27 y DT-06** | Cámara 8/10. Los dos indicadores de borde comparten componente. Hay que volver a pasar AC-110: la pista también esquiva el Centrar y los chips |
+| 4 | H-306 Cañonera pirata (IA: AC-113 y AC-114, más la población de I2 de AC-51). **Lo hace `dev-npc`, después del Capitán** | Segundo hostil, con un comportamiento distinto. Al terminar se vuelve a medir AC-60 con la población de I2 |
 | 5 | AC-108: bloque 2, AC-12, AC-92 y **el harness de AC-91** (dev-tests); AC-110, AC-75, H-13, H-15 y O-3 (lead / dev-tests) | Calidad y pulido. AC-23 y AC-25 van en la cola de dev-render. **Aprobado en QA-6** (AC-108 y AC-91 en A; H-13, H-15, O-1 y O-3 cerrados). H-16 a H-18 se cierran en QA-7; DT-04 y DT-05, en el addendum de QA-6. Quedan H-19, H-20 y O-4 (implementados, para QA-8) y H-21 (nuevo en QA-7) |
 
-**Los puestos 2–4 (H-305, E13 y H-306) esperan a GDD Q11:** Jonattan tiene que aprobar el paquete I2 entero. Sin Q11 no pueden subir NPC (7) ni Cámara (8), que solo suben con I2 (QA-6 §13). **Mientras tanto, lo siguiente sin bloqueo:** dev-tests hace AD-27, espuma natural (tomado de la cola dev-render, puesto 5), y dev-render, O-7 / O-8 con la spec D40. El código de O-4 ya está hecho y queda para QA-8. Lo que más sube la media sin I2 es O-7: es lo único que separa Barcos del 9 (QA-7 §9).
+**I2 aprobado (GDD Q11: «Sí», Jonattan, 2026-10-11).** Los puestos 2–4 arrancan con dos desarrolladores en paralelo: `dev-npc` hace el Capitán y después la Cañonera (2 → 4), y dev-tests hace la vista libre (3) cuando termine AD-27 y DT-06. dev-render sigue con O-7 / O-8 (D40) y después con el arte de los NPC de I2 (su puesto 4). **Dos puntos donde se cruzan, que hay que acordar antes de tocarlos:**
+- **Área de interés del servidor:** el Capitán vivo se envía siempre (GDD §13) y la vista libre añade un área alrededor del centro de la vista. Es el mismo código, y AC-88 y AC-123 miden los dos presupuestos.
+- **Minimapa:** el marcador del Capitán (AC-111) y el clic o arrastre que mueve la vista (AC-117), sobre el `Minimap.tsx` que acaba de cambiar O-4.
 
 **Cola dev-render (render y VFX)**
 | # | Qué | Por qué en este puesto |
@@ -46,7 +48,7 @@ Hay dos colas en paralelo; dentro de cada una, el orden es estricto.
 | 1 | Cerrar Q20 / D22 → AC-104 | VFX 6/10, la nota más baja. **Aprobado** en 1440×900 (QA-5) y en 390×844 (QA-6 §8) |
 | 2 | Encuadre U8 (R = max(alcance propio, 65 m)) + AC-24 revisado + tests de cámara AC-23 y AC-25 | Barcos 7/10: +51 % de área para la Balandra con un cambio de fórmula y sin coste de rendimiento. Los tests de cámara van justo después de tocar la cámara. **Aprobado** (QA-5 §3.1: AC-24 y AD-06; AC-23 y AC-25 con test que aserta el observable) |
 | 3 | (c) Detalle de los cascos (AS-V18–V20, AD-26) | Barcos: "facetados". Va **antes** del arte de los NPC nuevos, para que el Capitán y la Cañonera nazcan con la misma técnica y no haya que rehacerlos. **`3327f5e`, en parte aprobado (QA-6 §9.2):** AS-V18 (0–1 escalones), AD-26 (1 965 px) y el presupuesto (1 draw call; 926–1 851 triángulos). **AS-V19 y AS-V20, aprobados con D36** (`1a3440e`, QA-6 §15.2): AS-V19 queda entre 55,6 y 70,7 % en 0° y 90° (rangos de QA en 4 corridas), con el Pirata a 90° a 0,6 puntos del umbral. **Confirmados con D37 y D38** (QA-7 §6): AS-V19 con un mínimo del 56,6 % y AS-V20 legible en 90 de 90 capturas. **Abiertos:** O-7 (la lona se lee como rayas) y O-8 (cubierta de LOD1), en el puesto 8. **El detalle en móvil queda decidido:** no se añade, porque en 390×844 los paños serían moiré (D36 b, D40), y QA-7 §6.6 deja de contar el móvil en la nota de Barcos, porque Seafight es de escritorio |
-| 4 | Arte del Capitán y luego de la Cañonera (cuando game-ux los especifique) | Lo necesitan los puntos 2 y 4 de la otra cola. **Espera a GDD Q11**, como ellos |
+| 4 | Arte del Capitán y luego de la Cañonera (`npc_pirate_captain`, `npc_pirate_gunboat`; requisitos en GDD §9, AD-28 y AD-29), con H-708 / AC-115 | Lo necesitan los puntos 2 y 4 de la otra cola. **I2 aprobado (Q11). Va después de O-7 / O-8 (puesto 8)**, para que los dos NPC nazcan con la lona de D40 y no haya que rehacerlos, la misma lección que D23 c. Mientras tanto, la lógica de `dev-npc` puede usar un modelo provisional. Solo AC-115 espera al arte; AC-111 es aviso y marcador del minimapa, que es HUD (AD-29) |
 | 5 | AD-27 Espuma natural | Océano 8/10. **Lo hace dev-tests**, porque dev-render está con los puntos 7 y 8. No se pisan: es el océano frente al HUD y los cascos |
 | 6 | H-12: VFX-09b en 390×844 (código de D32) | Cerrar AC-104 en móvil. **Aprobado** (`3068eda`, QA-6 §8) |
 | 7 | Código de O-4: las placas no entran en el HUD y el sector va dentro del minimapa (spec de game-ux en `8078c2a`) | HUD 9/10: lo último que le queda al HUD además de H-16 (QA-6 §13). **Implementado** con D39 + D41 (`a45251d`, `cea3ad7`), pendiente de QA-8 |
@@ -154,6 +156,7 @@ Reportes (el último manda):
 | AC | Motivo | Responsable | Estado |
 |---|---|---|---|
 | AC-72 | Exige 5 evaluadores humanos | game-qa + Jonattan | Hay que organizar la prueba de 5 s |
+| AC-115 (I2) | Exige 5 evaluadores humanos, como AC-72. Antes tienen que pasar las reglas medibles AD-28 y AD-29 | game-qa + Jonattan | Cuando exista el arte del Capitán y la Cañonera (cola dev-render, puesto 4). Conviene hacerla en la misma sesión que AC-72 |
 | AC-90 | Manual en el portátil de referencia | game-qa | Bloqueado por GDD Q9 (Jonattan) |
 | AC-128 (caso d) | Ampliación nueva (H-21); los casos a–c están aprobados (QA-7 §4) | lead → game-qa | Implementado en `3c8c614`; pendiente de QA-8 |
 | AC-91 (métrica ampliada) | Aprobado en QA-6 §10 con el texto de `9f030a4`. La memoria externa (H-19), el cociente de commits por pares de intervalos y el veredicto según la carga no tienen corrida (QA-7 la dejó fuera) | dev-tests (harness) → game-qa | Harness completo en `160bc15`, `182146d` y `1282744`; falta la corrida de `npm run test:soak` en QA-8 |
@@ -181,6 +184,13 @@ Reportes (el último manda):
 - Orden de la cola lead / dev-tests: lo que espera es el paquete I2 entero (GDD Q11), así que **E13 también espera**, con H-305 y H-306. Lo siguiente sin bloqueo que más sube la media: AD-27 (Océano 8), que hace dev-tests, y en dev-render, el código de O-4 (HUD) y después O-7 / O-8 (Barcos 8).
 - Pareto tras QA-7: se **acepta** que QA retire el móvil (LOD1) como motivo de la nota de Barcos. Seafight es de escritorio, así que la comparación se hace en 1440×900; además, en 390×844 los paños serían moiré (D36 b, D40). **O-7 queda como lo único que separa Barcos del 9.** O-8 sigue abierto como consistencia de color entre tamaños (P3) y va en el mismo cambio de D40. Orden sin I2: O-7 (Barcos) y AD-27 (Océano) en paralelo, y después los P3.
 - Navegación y reparación (H-21): **AC-128 se amplía con el caso (d)**, sobre la propuesta de QA, con los mismos Δ y retardos que (a) y (b). El punto de partida es "sin reparar" (en la propuesta de QA ponía "reparando", pero el primer `R` es el que activa la reparación). El HUD no debe mostrar «reparando» mientras el barco navega. La regla general de GDD §5 nombra ahora la orden de navegación de forma explícita.
+- Q11 respondida, «Sí» (Jonattan, 2026-10-11): I2 arranca con el reparto del lead. Product añade cuatro cosas:
+  - El arte de los NPC de I2 va **después de D40**, para que nazcan con la lona nueva.
+  - AC-51 deja escrito que la población de I2 entra **con** la cañonera, no antes.
+  - AC-60 se vuelve a medir tras H-305 y tras H-306.
+  - AC-115 queda marcado como prueba con evaluadores humanos, como AC-72.
+
+  Los cruces entre `dev-npc` y dev-tests (área de interés y minimapa) están anotados bajo la cola.
 
 ---
 
@@ -289,7 +299,7 @@ Reportes (el último manda):
 - **AC-50** — Dado un mercante dañado por un atacante quieto, cuando pasan los 12 s siguientes, entonces su distancia al atacante crece de forma monótona a 9 ±0,2 m/s. Al terminar, vuelve a su ruta por el *waypoint* más cercano. Verificación: unitario.
 
 ### H-303 Población y reaparición (§9) · P0
-- **AC-51** — Dado un servidor recién arrancado, cuando se inspecciona el mundo, entonces hay 8 piratas (2 por sector), 4 cañoneras (1 por sector, en el anillo de 400–470 m) y 8 mercantes en sus zonas. Antes de I2 eran 12 piratas (3 por sector). Verificación: unitario.
+- **AC-51** — Dado un servidor recién arrancado, cuando se inspecciona el mundo, entonces hay 8 piratas (2 por sector), 4 cañoneras (1 por sector, en el anillo de 400–470 m) y 8 mercantes en sus zonas. **Hasta que entre H-306 vale la población anterior a I2:** 12 piratas (3 por sector) y 8 mercantes. Es lo que hay hoy en el código y en el test (`constants.ts:136-137`; `npc.test.ts:176`; AC-04 en `architecture.test.ts:142`), y con lo que QA aprobó AC-51. El cambio de población entra **en el mismo commit que la cañonera**, nunca antes: quitar 4 piratas sin poner 4 cañoneras dejaría menos hostiles y movería la curva de AC-60. Verificación: unitario.
 - **AC-52** — Dado un NPC hundido, cuando pasan 30 s (pirata), 45 s (cañonera) o 20 s (mercante) ±1 tick, entonces reaparece en su zona, a ≥ 100 m de cualquier jugador y fuera de las islas. Verificación: unitario.
 
 ### H-304 Balance de duelos (§9) · P0
@@ -304,6 +314,7 @@ Reportes (el último manda):
 
 ### H-306 Cañonera pirata (§9) · P1 (I2)
 *Requisitos de arte para game-ux: GDD §9, "Requisitos de arte de los NPC de I2".*
+*Con H-306 entran también la población de I2 de AC-51 (con su constante en AC-04) y la cañonera en el contador del Capitán (AC-54). AC-60 se vuelve a medir con la población de I2; si sale de rango, la palanca es la recompensa de la cañonera (GDD §10).*
 - **AC-113** — Dada una cañonera en combate contra un objetivo quieto a 40 m, cuando pasan 20 s, entonces se aleja hasta ≥ 55 m y la mediana de su distancia es 62 ±4 m. Dispara solo a ≤ 65 m. Contra un objetivo que se le acerca a ≥ 10 m/s, la distancia baja, es decir, se la puede alcanzar. Verificación: unitario.
 - **AC-114** — Dados 1 000 duelos con semilla, cuando un Bergantín con cañones N2 se enfrenta a una cañonera, entonces la mediana está en 15–22 s con 10–25 % de vida perdida. Una Balandra N1 pierde entre el 55 y el 80 % de su vida (no es un objetivo para N1). Verificación: unitario. *Referencia (Monte Carlo de game-product): 18,0 s / 17 %; 68 %.*
 
@@ -318,7 +329,7 @@ Reportes (el último manda):
 - **AC-59** — Dado un NPC hundido, cuando se hunde, entonces aparece una caja en su posición. El primer jugador a ≤ 8 m la recoge (+25 de un pirata, +15 de un mercante); si dos llegan en el mismo tick, la recoge el más cercano. A los 30 s desaparece. Verificación: unitario + captura.
 
 ### H-403 Curva económica (§10) · P1
-- **AC-60** — Dado un bot con una Balandra N1 y 100 de oro que ataca al NPC más cercano, repara por debajo del 40 % de vida y sigue la estrategia **"barco primero"** (no compra nada hasta poder pagar el Bergantín; lo compra y, a partir de ahí, compra siempre el artículo más barato disponible, Fragata incluida), **no ataca al Capitán pirata, no entra a menos de 200 m de su guarida y, si el capitán lo elige, navega al puerto**, cuando juega en la simulación acelerada con las semillas fijas 1–5 y la población de I2, entonces la **mediana de las 5 semillas** cumple tres cosas: acumula ≥ 500 de oro en ≤ 4 min, compra el Bergantín en ≤ 20 min y lo tiene todo comprado (12 800 de oro) en 45–70 min simulados. Verificación: unitario.
+- **AC-60** — Dado un bot con una Balandra N1 y 100 de oro que ataca al NPC más cercano, repara por debajo del 40 % de vida y sigue la estrategia **"barco primero"** (no compra nada hasta poder pagar el Bergantín; lo compra y, a partir de ahí, compra siempre el artículo más barato disponible, Fragata incluida), **no ataca al Capitán pirata, no entra a menos de 200 m de su guarida y, si el capitán lo elige, navega al puerto**, cuando juega en la simulación acelerada con las semillas fijas 1–5 y la población de I2, entonces la **mediana de las 5 semillas** cumple tres cosas: acumula ≥ 500 de oro en ≤ 4 min, compra el Bergantín en ≤ 20 min y lo tiene todo comprado (12 800 de oro) en 45–70 min simulados. Verificación: unitario. *Hasta H-306 se mide con la población vigente (AC-51). Se vuelve a medir al entrar H-305 (el bot tiene que esquivar a un Capitán real) y al entrar H-306 (población de I2).*
 
 ## E5 — Muerte y reaparición (§12) · P0
 
