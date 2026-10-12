@@ -141,11 +141,11 @@ export function ConnectionOverlay({ actions }: { actions: HudActions }) {
         {detail && <p className="offline__detail" data-testid="offline-detail">{detail}</p>}
         {exit === 'unreachable' && <p className="offline__detail" role="status" data-testid="exit-unreachable">El servidor no responde. Vuelve a intentarlo en unos segundos</p>}
         {(copy.retry || copy.exit) && (
-          <div className="offline__actions">
+          <div className="flex gap-3">
             {copy.retry && (
               // Como «Salir» en AC-126 e: sin disabled, para que conserve el foco y los clics de más lleguen aquí y no lancen otro
-              // intento; mientras espera se ve deshabilitado (CSS de aria-busy)
-              <button ref={retryRef} type="button" className="btn btn--primary" onClick={onRetry} aria-busy={busy} data-testid="btn-retry">
+              // intento. Mientras espera, aria-busy y aria-disabled, con el aspecto de D55 (CSS de .offline)
+              <button ref={retryRef} type="button" className="btn btn--primary" onClick={onRetry} aria-busy={busy} aria-disabled={busy} data-testid="btn-retry">
                 {busy ? 'Reintentando…' : 'Reintentar'}
               </button>
             )}

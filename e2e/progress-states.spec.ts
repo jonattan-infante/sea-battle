@@ -98,6 +98,13 @@ async function watch(page: Page) {
   return () => page.evaluate(() => (window as unknown as { __PS__: { t: number; k: string; v: string | null }[] }).__PS__.slice());
 }
 
+// Color calculado como [r, g, b, a] en 0–255 y 0–1: Chrome serializa color-mix() como color(srgb r g b / a)
+function rgba(css: string): number[] {
+  const n = (css.match(/[\d.]+/g) ?? []).map(Number);
+  if (css.startsWith('color(srgb')) return [n[0] * 255, n[1] * 255, n[2] * 255, n[3] ?? 1];
+  return [n[0], n[1], n[2], n[3] ?? 1];
+}
+
 // ΔE76 de un píxel de la captura frente a un color sRGB
 async function deltaE(page: Page, x: number, y: number, hex: string): Promise<number> {
   const png = (await page.screenshot({ clip: { x, y, width: 1, height: 1 } })).toString('base64');
@@ -135,6 +142,8 @@ async function overlayLayout(page: Page) {
       margin: Math.min(r.left, r.top, innerWidth - r.right, innerHeight - r.bottom),
       clipped,
       buttons: Array.from(card.querySelectorAll('button')).map((b) => ({ id: b.getAttribute('data-testid'), h: b.getBoundingClientRect().height })),
+      // Separación entre botones contiguos (la fila es flex con gap-3, como el «Sin conexión» aprobado)
+      gaps: Array.from(card.querySelectorAll('button')).slice(1).map((b, i) => b.getBoundingClientRect().left - card.querySelectorAll('button')[i].getBoundingClientRect().right),
       coarse: matchMedia('(pointer: coarse)').matches,
       hudBlocks: Array.from(document.querySelectorAll('[data-hud-block]')).filter(visible).length,
       canvases: Array.from(document.querySelectorAll('canvas')).filter(visible).length
@@ -154,9 +163,10 @@ async function expectLoadFailedScreen(page: Page, label: string) {
   const vh = page.viewportSize()!.height;
   const top = await deltaE(page, 8, 8, '#0F3F5C');
   const bottom = await deltaE(page, 8, vh - 8, '#1A5F86');
-  console.log(`AD-34 a (${label}): margen ${layout.margin.toFixed(0)} px · recortados ${JSON.stringify(layout.clipped)} · botones ${JSON.stringify(layout.buttons)} (pointer: coarse ${layout.coarse}) · bloques del HUD visibles ${layout.hudBlocks} · lienzos visibles ${layout.canvases} · ΔE76 fondo ${top.toFixed(2)} / ${bottom.toFixed(2)}`);
+  console.log(`AD-34 a (${label}): margen ${layout.margin.toFixed(0)} px · recortados ${JSON.stringify(layout.clipped)} · botones ${JSON.stringify(layout.buttons)} (pointer: coarse ${layout.coarse}) · separación ${JSON.stringify(layout.gaps)} · bloques del HUD visibles ${layout.hudBlocks} · lienzos visibles ${layout.canvases} · ΔE76 fondo ${top.toFixed(2)} / ${bottom.toFixed(2)}`);
   expect(layout.margin).toBeGreaterThanOrEqual(16);
   expect(layout.clipped).toEqual([]);
+  for (const g of layout.gaps) expect(g, 'los botones no se tocan').toBeGreaterThan(0);
   expect(layout.hudBlocks).toBe(0);
   expect(layout.canvases).toBe(0);
   expect(top).toBeLessThanOrEqual(3);
@@ -172,15 +182,31 @@ async function loadFailedFlow(page: Page, label: string) {
   await expect(page.getByTestId('offline-detail')).toHaveText('Lo que tenías guardado sigue intacto.');
   await capture(page, `ac131-${label}`);
 
-  // BD colgada: 3 clics separados 120 ms lanzan 1 intento, con «Reintentando…» y aria-busy mientras espera
+  // BD colgada: 3 clics separados 120 ms lanzan 1 intento, con «Reintentando…», aria-busy y aria-disabled mientras espera.
+  // Playwright no hace clic en un botón con aria-disabled="true" (espera a que se habilite): los de más van con force
   net.s.load = 'hung';
   const before = { joins: net.s.joins, sockets: net.s.sockets };
   const retry = page.getByTestId('btn-retry');
   for (let i = 0; i < 3; i++) {
-    await retry.click();
+    await retry.click({ force: i > 0 });
     if (i === 0) {
       await expect(retry).toHaveText('Reintentando…');
       await expect(retry).toHaveAttribute('aria-busy', 'true');
+      await expect(retry).toHaveAttribute('aria-disabled', 'true');
+      await expect(retry).toBeFocused();
+      // D55: solo el fondo pasa a --btn-primary (#1F6F8B) al 60 %; texto --ui-text pleno y cursor de espera
+      const look = await retry.evaluate((b) => {
+        const s = getComputedStyle(b);
+        return { bg: s.backgroundColor, color: s.color, cursor: s.cursor, opacity: s.opacity };
+      });
+      const bg = rgba(look.bg);
+      console.log(`AD-34 a (${label}): «Reintentando…» fondo ${look.bg} → ${bg.map((v) => v.toFixed(2)).join(', ')} · texto ${look.color} · cursor ${look.cursor} · opacidad ${look.opacity}`);
+      [31, 111, 139].forEach((v, k) => expect(Math.abs(bg[k] - v), `canal ${k} del fondo`).toBeLessThanOrEqual(1));
+      expect(Math.abs(bg[3] - 0.6)).toBeLessThanOrEqual(0.01);
+      expect(look.color).toBe('rgb(245, 241, 230)');
+      expect(look.cursor).toBe('progress');
+      expect(look.opacity).toBe('1');
+      await capture(page, `ac131-reintentando-${label}`);
     }
     await page.waitForTimeout(120);
   }
@@ -192,6 +218,7 @@ async function loadFailedFlow(page: Page, label: string) {
   await expect(page.getByTestId('connection-overlay')).toHaveAttribute('data-state', 'load-failed');
   await expect(page.getByTestId('offline-detail')).toHaveText('Sigue sin responder. Prueba de nuevo en unos segundos.');
   await expect(retry).toHaveAttribute('aria-busy', 'false');
+  await expect(retry).toHaveAttribute('aria-disabled', 'false');
   await expect(retry).toBeFocused();
   await capture(page, `ac131-reintento-fallido-${label}`);
 
