@@ -20,9 +20,12 @@ import {
   BLIND_GUNNER_POINT,
   ENDURANCE_MERCHANT_RADIUS,
   ENDURANCE_MERCHANTS,
+  ENDURANCE_PIRATE_OFFSET,
   ENDURANCE_POINT,
   parseScenario,
   REPAIR_START_HULL,
+  ScenarioName,
+  SCENARIOS,
   SHOWCASE_POINT,
   TARGET_FAN,
   TARGETS_POINT
@@ -55,14 +58,32 @@ describe('escenario "showcase" para capturas', () => {
     }
   });
 
-  // QA-5 H-13: tras un combate, los piratas del escenario volvían a su origen y se ponían a patrullar a ≤ 120 m
-  // (world.ts sobrescribía su espera de 1e9), así que el estado del servidor compartido dependía de los tests anteriores
-  test.each([
-    ['el pirata del punto de captura', SHOWCASE_POINT, 50],
-    ['el artillero ciego', BLIND_GUNNER_POINT, 1]
-  ])('%s vuelve a su puesto tras un combate y se queda quieto en él', (label, point, radius) => {
+  test('la emboscada y el artillero ciego quedan fuera del radio de interés desde el anillo de reaparición y el punto de captura', () => {
+    // Así no aparecen en las capturas estándar ni en su minimapa
+    for (const s of [...near(AMBUSH_POINT, 31), ...near(BLIND_GUNNER_POINT, 1)]) {
+      expect(Math.hypot(s.pos.x, s.pos.z) - RESPAWN_RING.max).toBeGreaterThan(INTEREST_RADIUS);
+      expect(Math.hypot(s.pos.x - SHOWCASE_POINT.x, s.pos.z - SHOWCASE_POINT.z)).toBeGreaterThan(INTEREST_RADIUS);
+    }
+  });
+});
+
+// DT-04 (QA-5 H-13, QA-6 H-20): tras un combate, los piratas de los escenarios volvían a su origen y se ponían a patrullar
+// a ≤ 120 m (world.ts sobrescribía su espera de 1e9), así que el estado del servidor dependía de lo que pasó antes
+describe('piratas fijos de los escenarios (DT-04)', () => {
+  test.each(SCENARIOS)('en "%s", todos los piratas esperan en su puesto (holdPosition)', (name) => {
+    const world = createWorld({ seed: 1, spawnNpcs: false });
+    applyScenario(world, name);
+    const roaming = [...world.ships.values()].filter((s) => s.kind === 'pirate' && s.holdPosition !== true);
+    expect(roaming.map((s) => `${s.id} en (${s.pos.x.toFixed(0)}, ${s.pos.z.toFixed(0)})`)).toEqual([]);
+  });
+
+  test.each<[string, ScenarioName, { x: number; z: number }, number]>([
+    ['el pirata del punto de captura', 'showcase', SHOWCASE_POINT, 50],
+    ['el artillero ciego', 'showcase', BLIND_GUNNER_POINT, 1],
+    ['el pirata de endurance', 'endurance', { x: ENDURANCE_POINT.x, z: ENDURANCE_POINT.z - ENDURANCE_PIRATE_OFFSET }, 1]
+  ])('%s vuelve a su puesto tras un combate y se queda quieto en él', (label, scenario, point, radius) => {
     const w = createWorld({ seed: 3, spawnNpcs: false });
-    applyScenario(w, 'showcase');
+    applyScenario(w, scenario);
     const pirate = [...w.ships.values()].find((s) => s.kind === 'pirate' && Math.hypot(s.pos.x - point.x, s.pos.z - point.z) <= radius)!;
     const post = { ...pirate.pos };
     addPlayer(w, 'u1', 'Ana');
@@ -81,20 +102,8 @@ describe('escenario "showcase" para capturas', () => {
     expect(pirate.ai!.state).toBe('combat');
     run(80, post.x, post.z - 200); // el jugador se aleja: el pirata vuelve a su origen
     const drift = Math.hypot(pirate.pos.x - post.x, pirate.pos.z - post.z);
-    console.log(`H-13: ${label}, tras el combate, en ${pirate.ai!.state} a ${drift.toFixed(1)} m de su puesto`);
+    console.log(`DT-04: ${label}, tras el combate, en ${pirate.ai!.state} a ${drift.toFixed(1)} m de su puesto`);
     expect(drift).toBeLessThanOrEqual(PIRATE_RETURN_ARRIVE);
-  });
-
-  test('todos los piratas del escenario esperan en su puesto (holdPosition)', () => {
-    expect(npcs.filter((s) => s.kind === 'pirate').every((s) => s.holdPosition === true)).toBe(true);
-  });
-
-  test('la emboscada y el artillero ciego quedan fuera del radio de interés desde el anillo de reaparición y el punto de captura', () => {
-    // Así no aparecen en las capturas estándar ni en su minimapa
-    for (const s of [...near(AMBUSH_POINT, 31), ...near(BLIND_GUNNER_POINT, 1)]) {
-      expect(Math.hypot(s.pos.x, s.pos.z) - RESPAWN_RING.max).toBeGreaterThan(INTEREST_RADIUS);
-      expect(Math.hypot(s.pos.x - SHOWCASE_POINT.x, s.pos.z - SHOWCASE_POINT.z)).toBeGreaterThan(INTEREST_RADIUS);
-    }
   });
 });
 
