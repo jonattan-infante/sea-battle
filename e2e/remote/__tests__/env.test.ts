@@ -5,7 +5,7 @@ import { isProdHost, prodGuard } from '../env';
 const STAGING = { REMOTE_STAGING_HOSTS: 'sea-battle-staging.up.railway.app, Staging.Example.com' };
 
 describe('guarda de prod del arnés remoto (DT-08)', () => {
-  test.each(['http://localhost:3500', 'http://127.0.0.1:3500', 'http://[::1]:3500', 'https://sea-battle-staging.up.railway.app', 'https://staging.example.com/game'])(
+  test.each(['http://localhost:3500', 'http://LOCALHOST:3500', 'http://127.0.0.1:3500', 'http://[::1]:3500', 'https://sea-battle-staging.up.railway.app', 'https://SEA-BATTLE-STAGING.up.railway.app:8443/game', 'https://staging.example.com/game'])(
     'arranca sin REMOTE_ALLOW_PROD: %s',
     (u) => {
       expect(isProdHost(new URL(u), STAGING)).toBe(false);
@@ -16,6 +16,7 @@ describe('guarda de prod del arnés remoto (DT-08)', () => {
   test.each([
     ['https://sea-battle-production-5eba.up.railway.app', 'host de Railway de prod', STAGING],
     ['https://seabattle.example.com', 'dominio propio de prod (AC-134)', STAGING],
+    ['https://SEA-BATTLE-PRODUCTION-5EBA.UP.RAILWAY.APP:8443/game', 'mayúsculas y puerto no cuelan', STAGING],
     ['https://dominio-nuevo.example.org', 'cualquier host no declarado', STAGING],
     ['https://staging.example.com.evil.net', 'un host que solo contiene el de staging', STAGING],
     ['https://sea-battle-staging.up.railway.app', 'staging sin REMOTE_STAGING_HOSTS', {}]
