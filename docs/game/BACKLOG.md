@@ -36,13 +36,13 @@
 | Entra en 1.0.0 | Pasa a 1.1.0 |
 |---|---|
 | Lo aprobado por QA (QA-8: 109 A, con O-4, H-20 y H-22 cerrados) y lo implementado en `434b160` que QA apruebe en la pasada siguiente (QA-9: H-21, O-7 / O-8, AD-27, DT-06 y DT-07). Lo que QA rechace se arregla o se saca | **I2 completo:** H-305 Capitán, H-306 Cañonera, E13 vista libre + AC-124, y AC-115. El trabajo sigue en `feat/seafight-vertical-slice`, no en la rama de release |
-| Persistencia en Postgres (AC-97, AC-129 a AC-133), Clerk de producción (AC-134), staging (AC-135) y latencia en Railway (AC-136) | El arte del Capitán (`264363e`) va en el código, pero **latente**: no aparece en partida (AC-137) |
+| Persistencia en Postgres (AC-97, AC-129 a AC-133), Clerk de producción (AC-134) con sus páginas de inicio de sesión y registro (AC-140), staging (AC-135) y latencia en Railway (AC-136) | El arte del Capitán (`264363e`) va en el código, pero **latente**: no aparece en partida (AC-137) |
 | La población anterior a I2: 12 piratas y 8 mercantes (AC-51) | La población de I2 (8 piratas + 4 cañoneras), que entra con H-306 |
 
 **Orden y dependencias**
 ```
 Persistencia AC-97, AC-129–133 ──┐
-Clerk de producción AC-134 ──────┤  (dominio listo: seabattle.jonattan.dev, Q13)
+Clerk de producción AC-134, 140 ─┤  (dominio listo: seabattle.jonattan.dev, Q13)
 I2 latente AC-137 ───────────────┤
 QA-8 y QA-9 sobre lo de 434b160 ─┘
                                   ▼
@@ -84,6 +84,14 @@ AC-97 (E11) sigue tal cual: recargar la página devuelve el mismo oro, mejoras y
   (e) el inicio de sesión ofrece **solo usuario y contraseña**, sin Google, GitHub ni correo (GDD Q13). Lo mismo en staging, con la instancia de desarrollo.
 
   El dominio de Railway (`*.up.railway.app`) no vale como dominio de Clerk, porque Clerk rechaza los dominios de hosting en producción (`provider_domain_operation_not_allowed`). Verificación: e2e contra prod con captura de la consola y del formulario de inicio de sesión; un socket sin token y otro con token de desarrollo; un unitario de la verificación del JWT con un `azp` de otro origen y una petición con otro `Origin`, que se rechazan.
+- **AC-140** — Dado un usuario en la página de inicio de sesión (`/sign-in`) o en la de registro (`/sign-up`), en 1440×900, 390×844 y 844×390, cuando la página termina de cargar, entonces:
+  (a) **la tarjeta de Clerk está centrada en los dos ejes** del área visible, con la tolerancia que fije game-ux. Hoy queda en x = 0, y = 0, con el centro desplazado −520 / −258 px en 1440×900 (medido por el lead en staging). Si la tarjeta no cabe en alto (844×390), va centrada en horizontal, arriba con margen, y solo hay scroll vertical;
+  (b) no hay scroll horizontal (`scrollWidth ≤ clientWidth`);
+  (c) **todos sus textos están en español** (GDD Q8): títulos, etiquetas, botones, enlaces entre inicio de sesión y registro, y mensajes de error. Hoy salen en inglés;
+  (d) hay un enlace visible a la landing (`/`);
+  (e) si Jonattan aprueba GDD Q25, el registro muestra el aviso de que la contraseña no se recupera.
+
+  Verificación: e2e en los 3 tamaños (en local con Clerk de desarrollo, o con el arnés remoto contra staging). Mide la caja de la tarjeta frente al viewport y `scrollWidth`. Comprueba los textos en español, incluido el error de una contraseña incorrecta, y que no aparece ninguna cadena en inglés de Clerk de una lista («Sign in», «Continue», «Password», «Don't have an account?»…). Comprueba también el enlace a `/`. Más las capturas de las dos páginas en `qa:capture`.
 
 ### R3 Staging en Railway · P0 para la 1.0.0
 - **AC-135** — Dado el commit candidato desplegado en staging (https://sea-battle-staging.up.railway.app, entorno `staging` de Railway desplegado desde `chore/release-1-0-0`, con **su propia BD Postgres, nunca la de prod**, y la instancia de desarrollo de Clerk; `/healthz` dice qué commit está desplegado) y un usuario de prueba que **parte de un estado distinto del inicial** (oro ≠ 100, al menos una mejora y un barco activo que no sea la Balandra; así, volver al estado por defecto se detecta), cuando QA entra, hunde un mercante (oro +N) y luego (1) recarga la página, (2) cierra la pestaña, espera ≥ 15 s y vuelve a entrar, y (3) se redespliega staging y vuelve a entrar, entonces en los tres casos ve **el mismo estado: exactamente los campos de AC-97** (oro, mejoras, barcos en propiedad y barco activo) que tenía justo antes de salir. **La posición y la vida no se comparan.** Si vuelve en menos de 10 s recupera el mismo barco (AC-96); si no, reaparece en el puerto con la vida llena (AC-129). El paso (2) prueba la BD sin redeploy: pasados los 10 s de AC-96, ni el barco ni el progreso siguen en la memoria del proceso (AC-129). Es la **prueba rápida** que se repite en prod (AC-139), sin el paso (3). Staging y prod despliegan el mismo SHA. Verificación: e2e contra la URL de staging, con los 4 campos antes y después de cada paso en el log.
@@ -103,7 +111,7 @@ AC-97 (E11) sigue tal cual: recargar la página devuelve el mismo oro, mejoras y
 - **AC-137** — Dado el build 1.0.0, cuando se juegan 10 min en el mundo normal y se hunden ≥ 10 piratas (el disparador del Capitán en AC-54), entonces no aparece ningún NPC de I2: ningún snapshot contiene un Capitán ni una Cañonera, el HUD y el minimapa no muestran sus avisos ni marcadores, y la población es la anterior a I2 (AC-51: 12 piratas y 8 mercantes). El modelo del Capitán (`264363e`) puede estar en el código, pero no se instancia en partida. Verificación: Jest+socket con 10 min simulados y hundimientos, más el unitario de la población.
 
 ### R6 Cierre y publicación · P0 para la 1.0.0
-- **AC-138** — Dado el commit candidato de `chore/release-1-0-0`, que ya lleva `package.json` en `1.0.0` y el `CHANGELOG.md` con la entrada 1.0.0 (así QA evalúa exactamente lo que se publica), cuando game-qa hace la regresión completa (verify, test:e2e, test:perf, qa:capture y el test:soak de 10 min de AC-91), entonces el QA-REPORT da **APROBADO**, sin P0 ni P1 abiertos (las observaciones P2/P3 se admiten y van al CHANGELOG como conocidas). Todos los AC de la 1.0.0 quedan en A: los del universo de QA salvo los de I2, más AC-97 y AC-129 a AC-137. **AC-90 y AC-72 se hacen con Jonattan en esta pasada**: AC-90 en el portátil de referencia (GDD Q9) y AC-72 con 5 evaluadores. Ninguno queda NO VERIFICADO. Verificación: QA-REPORT sobre el SHA candidato.
+- **AC-138** — Dado el commit candidato de `chore/release-1-0-0`, que ya lleva `package.json` en `1.0.0` y el `CHANGELOG.md` con la entrada 1.0.0 (así QA evalúa exactamente lo que se publica), cuando game-qa hace la regresión completa (verify, test:e2e, test:perf, qa:capture y el test:soak de 10 min de AC-91), entonces el QA-REPORT da **APROBADO**, sin P0 ni P1 abiertos (las observaciones P2/P3 se admiten y van al CHANGELOG como conocidas). Todos los AC de la 1.0.0 quedan en A: los del universo de QA salvo los de I2, más AC-97, AC-129 a AC-137 y AC-140. **AC-90 y AC-72 se hacen con Jonattan en esta pasada**: AC-90 en el portátil de referencia (GDD Q9) y AC-72 con 5 evaluadores. Ninguno queda NO VERIFICADO. Verificación: QA-REPORT sobre el SHA candidato.
 - **AC-139** — Dado AC-138 aprobado, cuando se despliega en prod el mismo SHA, entonces: (a) la prueba rápida de AC-135 pasa en prod (pasos 1 y 2, los mismos 4 campos de AC-97) con una cuenta de prueba que parte de un estado distinto del inicial; (b) AC-134 pasa en prod; y (c) **después** de (a) y (b) se crea el tag `v1.0.0` sobre el SHA desplegado. El push de la rama y del tag lo confirma Jonattan. Verificación: log de la prueba en prod, y `git rev-parse v1.0.0` igual al SHA que despliega Railway.
 
 ### Conocidos de la 1.0.0 (van al CHANGELOG, AC-138)
