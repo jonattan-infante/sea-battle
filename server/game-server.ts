@@ -2,6 +2,7 @@
 // cliente solo lo que cambió dentro de su área de interés, a 10 Hz y en un único mensaje por envío.
 import type { Server, Socket } from 'socket.io';
 import {
+  CAPTAIN_CLASS,
   INTENT_BURST,
   INTENT_RATE_PER_SECOND,
   INTEREST_RADIUS,
@@ -72,6 +73,8 @@ interface ClientState {
   notices: Notice[];
   needsFull: boolean;
 }
+
+type Point = { x: number; z: number };
 
 // Margen para que un evento en el borde del área (p. ej. una andanada desde fuera) llegue a quien lo ve
 const EVENT_MARGIN = 60;
@@ -191,14 +194,20 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
     });
   });
 
+  // Área de interés de un cliente (§13): 300 m alrededor de cada uno de sus centros (hoy, su barco; con la vista libre de E13,
+  // también el centro de la vista) y, además, lo que se envía siempre: su barco y el Capitán pirata vivo (AC-111)
+  function inInterest(snap: ShipSnapshot, centers: Point[], ownShipId: string | null): boolean {
+    if (snap.id === ownShipId || snap.c === CAPTAIN_CLASS) return true;
+    return centers.some((c) => Math.hypot(snap.x - c.x, snap.z - c.z) <= INTEREST_RADIUS);
+  }
+
   // Delta de un cliente: barcos que entran (completos), campos que cambiaron y barcos que salen
-  function diffShips(client: ClientState, current: Map<string, ShipSnapshot>, center: { x: number; z: number } | null, ownShipId: string | null) {
+  function diffShips(client: ClientState, current: Map<string, ShipSnapshot>, centers: Point[], ownShipId: string | null) {
     const s: ShipDelta[] = [];
     const r: string[] = [];
     const visible = new Set<string>();
     for (const snap of current.values()) {
-      const inside = snap.id === ownShipId || (center !== null && Math.hypot(snap.x - center.x, snap.z - center.z) <= INTEREST_RADIUS);
-      if (!inside) continue;
+      if (!inInterest(snap, centers, ownShipId)) continue;
       visible.add(snap.id);
       const prev = client.known.get(snap.id);
       if (!prev || client.needsFull) {
@@ -227,15 +236,18 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
     return { s, r };
   }
 
-  function eventVisible(e: GameEvent, client: ClientState, center: { x: number; z: number } | null): boolean {
+  function eventVisible(e: GameEvent, client: ClientState, centers: Point[]): boolean {
     const radius = INTEREST_RADIUS + EVENT_MARGIN;
-    const near = (p: { x: number; z: number }) => center !== null && distance(p, center) <= radius;
+    const near = (p: Point) => centers.some((c) => distance(p, c) <= radius);
     switch (e.type) {
       case 'loot':
         return e.playerId === client.userId;
       case 'wreck':
       case 'wreckGone':
         return true; // raros y pequeños: todos mantienen la lista de restos al día
+      case 'captain':
+      case 'captainDown':
+        return true; // aviso y feed del Capitán pirata para todos, estén donde estén (AC-111)
       case 'volley':
         return near(e.from) || near(e.to);
       case 'respawn': {
@@ -249,15 +261,15 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
 
   function sendFrame(client: ClientState, events: GameEvent[], current = snapshotAll()) {
     const own = shipOfPlayer(world, client.userId);
-    const center = own ? own.pos : null;
+    const centers: Point[] = own ? [own.pos] : [];
     const full = client.needsFull;
-    const { s, r } = diffShips(client, current, center, own && own.state !== 'dead' ? own.id : null);
+    const { s, r } = diffShips(client, current, centers, own && own.state !== 'dead' ? own.id : null);
     client.needsFull = false;
     const frame: ServerFrame = { t: world.time };
     if (full) frame.full = true;
     if (s.length) frame.s = s;
     if (r.length) frame.r = r;
-    const visibleEvents = full ? [] : events.filter((e) => eventVisible(e, client, center));
+    const visibleEvents = full ? [] : events.filter((e) => eventVisible(e, client, centers));
     if (visibleEvents.length) frame.e = visibleEvents;
     if (full) frame.w = world.wrecks.map((w) => ({ id: w.id, x: w.pos.x, z: w.pos.z, gold: w.gold, expiresAt: w.expiresAt }));
     const view = playerView(world, client.userId);

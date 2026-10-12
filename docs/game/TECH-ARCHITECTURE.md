@@ -30,7 +30,8 @@ Dueño: `game-developer`. Fuentes de verdad: `GDD.md` y `BACKLOG.md` (qué se co
 - **Un mensaje por envío**: `frame` (`ServerFrame` en `src/game/types.ts`) lleva los deltas de barcos (`s`), las salidas (`r`), los eventos visibles (`e`), la vista privada si cambió (`me`) y los avisos (`n`). Así se cumple ≤ 10 mensajes/s (AC-88).
 - **Deltas**: al entrar en el área de interés (300 m) un barco se envía completo; después, solo los campos que cambiaron. Si no cambia nada, no se envía nada (AC-87).
 - **Campos sin reloj**: la protección viaja como instante de fin (`pu`) y la muerte como `respawnAt`, ambos en tiempo de servidor. Así no hay deltas solo porque pasa el tiempo.
-- **Eventos**: se filtran por distancia (300 m + 60). El botín (`loot`) solo lo recibe su dueño, y los restos van a todos.
+- **Eventos**: se filtran por distancia (300 m + 60). El botín (`loot`) solo lo recibe su dueño, y los restos van a todos, igual que el aviso (`captain`) y el feed (`captainDown`) del Capitán pirata.
+- **Área de interés** (`inInterest` en `server/game-server.ts`): 300 m alrededor de cada centro de una lista (hoy, el barco propio; la vista libre de E13 añade el centro de la vista sin cambiar la regla) más lo que se envía siempre: el barco propio y el Capitán pirata vivo o hundiéndose, para su marcador del minimapa (GDD §13, AC-111). Solo hay un capitán, así que suma como mucho una entidad por cliente. Medido con él (AC-88): 10,00 msg/s y 9,88 KB/s en el peor cliente.
 - **Límite de intenciones**: cubeta de 20 fichas con recarga de 10/s por socket (AC-06). `join` no gasta fichas: solo se procesa una vez.
 - **Desconexión**: el barco queda 10 s en el mundo y se puede atacar. Si el jugador reconecta, recupera el mismo barco (AC-96).
 - **Servidor lleno**: cuentan los clientes conectados más los barcos en margen de reconexión. El jugador 21 recibe `serverFull` y vuelve a la landing con `?full=1` (AC-12).
@@ -38,7 +39,19 @@ Dueño: `game-developer`. Fuentes de verdad: `GDD.md` y `BACKLOG.md` (qué se co
 
 Medido (Jest + socket real, `server/__tests__/game-server.test.ts`): con 20 clientes y 20 NPC en combate durante 30 s simulados, el peor cliente recibe 10,00 msg/s y 10,03 KB/s.
 
-## 3. Harnesses
+## 3. Capitán pirata (H-305, GDD §9)
+
+| Pieza | Dónde | Regla |
+|---|---|---|
+| Identidad | `SHIP_CLASSES.captain`, `CAPTAIN_CLASS` (`constants.ts`) | `kind: 'pirate'` (facción hostil: misma regla de ataque, exclusión de 130 m del puerto y relación coral) y `classId: 'captain'` para todo lo propio del jefe. El render elige el modelo por `classId`: `SHIP_RECIPES.captain` es la receta `npc_pirate_captain` (dev-render, `264363e`) |
+| IA | `HOSTILE_AI` (`constants.ts`), `updatePirate` (`world.ts`) | La misma máquina de estados del pirata con el perfil de su clase: detecta a 90 m, orbita a 50 m, correa de 150 m alrededor de su guarida. Objetivo perdido (110 m), velocidad de órbita (8 m/s) y patrulla (120 m) son "como el pirata" |
+| Aparición | `updateCaptain` → `spawnCaptain` (`world.ts`) | Al final de `step`: con `killsSinceBoss ≥ 10` y ningún capitán en el mundo. Guarida = sector con menos jugadores (empate con `world.rng`), punto del arco de 440 m más cercano a su centro que esté a ≥ 150 m de todos los jugadores y fuera del margen de las islas; si no hay, el siguiente sector; si ninguno, se reintenta en el siguiente tick |
+| Cuenta | `sinkShip` | Suman los `kind: 'pirate'` que no son el capitán (piratas y, con H-306, cañoneras). La muerte del capitán la pone a 0 y no suma |
+| Muerte | `sinkShip`, `updateLifecycle` | Reparto y restos como cualquier NPC (600 + 150). Evento `captainDown` con hasta 3 nombres por daño (ventana de 60 s del reparto) y `more`. Al terminar de hundirse sale del mundo: no reaparece por tiempo |
+| Cliente | `GameApp.tsx`, `hud-logic.ts`, `Minimap.tsx`, `overlays.ts` | Aviso (toast `warn`) y línea de feed con los textos de `captainSpawnText` / `captainDownText`. Minimapa (D43): ★ de radio 5,5 / 2,2 px en el canvas (≤ 2 Hz), encima de piratas y mercantes y debajo del ▲ propio, que desaparece en el redibujado del hundimiento; el halo es un `<svg>` sobre el canvas con animación CSS de 1 s y trazo de 1,5 px que no escala. Placa: calavera + corona (2 iconos de 12 px) y ancho máximo +14 px para que «Capitán pirata» no se trunque; panel del objetivo: corona sobre la calavera |
+| Escenarios | `server/scenarios.ts` | `captain` (9 hundidos y un cebo con 1 de vida) y `captain-down` (capitán quieto con 1 de vida que no acierta), para `e2e/captain.spec.ts` |
+
+## 4. Harnesses
 
 | Comando | Qué cubre |
 |---|---|
@@ -55,7 +68,7 @@ Puente de depuración de solo lectura: `window.__SEA_BATTLE__` (`ready`, `server
 
 **Cuidado con la CPU**: Playwright usa el Chrome del sistema con Metal (`--use-angle=metal`). Con SwiftShader, el WebGL por software satura unos 6 núcleos. Cierra siempre el navegador al terminar.
 
-## 4. Variables de entorno
+## 5. Variables de entorno
 
 | Variable | Uso |
 |---|---|
@@ -64,8 +77,8 @@ Puente de depuración de solo lectura: `window.__SEA_BATTLE__` (`ready`, `server
 | `SEA_BATTLE_NPCS=0` | Servidor de prueba sin NPC (AC-83, AC-87) |
 | `PORT` | Puerto HTTP y de Socket.IO |
 
-## 5. Pendiente y decisiones abiertas
+## 6. Pendiente y decisiones abiertas
 
 - Persistencia por `userId` (P1, AC-97): falta elegir el almacén (GDD Q2), y el coste lo aprueba Jonattan.
 - El ping del HUD (solo si es > 200 ms) necesita medir la latencia sin enviar mensajes en reposo (AC-86); está pendiente de diseño.
-- Capitán pirata, munición especial y sonido: P2.
+- Munición especial y sonido: P2.

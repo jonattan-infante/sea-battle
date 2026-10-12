@@ -2,10 +2,11 @@ import { createServer, Server as HttpServer } from 'http';
 import { AddressInfo } from 'net';
 import { Server } from 'socket.io';
 import { io as ioClient, Socket as ClientSocket } from 'socket.io-client';
-import { MAX_PLAYERS, TICK_RATE } from '../../src/game/constants';
+import { CAPTAIN_CLASS, INTEREST_RADIUS, MAX_PLAYERS, TICK_RATE } from '../../src/game/constants';
 import { C2S, S2C } from '../../src/game/protocol';
 import { GameEvent, Notice, ServerFrame, ShipDelta, Welcome } from '../../src/game/types';
-import { shipOfPlayer, spawnMerchant } from '../../src/game/world';
+import { createRng, distance } from '../../src/game/vec';
+import { shipOfPlayer, spawnCaptain, spawnMerchant, spawnPirate } from '../../src/game/world';
 import { authenticateHandshake } from '../auth';
 import { createGameServer, GameServer, GameServerOptions } from '../game-server';
 
@@ -308,8 +309,9 @@ describe('Servidor — red y conexión', () => {
     expect(events.some((e) => e.type === 'impact' && e.byShipId === ship.id)).toBe(true);
   });
 
-  test('AC-88: con 20 clientes y 20 NPC en combate, cada cliente recibe ≤ 10 mensajes/s y ≤ 12 KB/s (30 s)', async () => {
+  test('AC-88: con 20 clientes, 20 NPC y el jefe en combate, cada cliente recibe ≤ 10 mensajes/s y ≤ 12 KB/s (30 s)', async () => {
     await start({ spawnNpcs: true });
+    expect(spawnCaptain(game.world)).not.toBeNull(); // GDD §13: 20 + 20 + 1 jefe, que se envía a todos
     const bots: Joined[] = [];
     for (let i = 0; i < MAX_PLAYERS; i++) bots.push(await join(`bot${i}`, `Bot ${i}`));
     const baseline = bots.map((b) => ({ frames: b.frames.length, bytes: b.bytes() }));
@@ -345,4 +347,83 @@ describe('Servidor — red y conexión', () => {
     expect(worst.msgs).toBeLessThanOrEqual(10);
     expect(worst.kbps).toBeLessThanOrEqual(12);
   }, 60_000);
+});
+
+describe('Servidor — Capitán pirata (AC-111)', () => {
+  test('AC-111: al aparecer, todos reciben en el siguiente snapshot el aviso con el sector y el barco del capitán aunque esté fuera de su área de interés, y lo siguen recibiendo; al hundirse, todos reciben los 3 primeros por daño y "y N más"', async () => {
+    await start();
+    const a = await join('a', 'Ana');
+    const b = await join('b', 'Bea');
+    const c = await join('c', 'Caro');
+    const d = await join('d', 'Dani');
+    const ship = (j: Joined) => game.world.ships.get(j.welcome.shipId)!;
+    // Repartidos por el oeste (SO y NO) y lejos de cualquier guarida del este
+    ship(a).pos = { x: -200, z: 200 };
+    ship(b).pos = { x: -200, z: -200 };
+    ship(c).pos = { x: -300, z: 300 };
+    ship(d).pos = { x: -450, z: 0 };
+    for (const j of [a, b, c, d]) ship(j).protectedUntil = 0;
+    await advance(0.2);
+
+    // El 10.º pirata hundido: A hunde uno con 1 de vida
+    game.world.killsSinceBoss = 9;
+    const pirate = spawnPirate(game.world, 2);
+    pirate.pos = { x: -200, z: 230 };
+    pirate.ai = null;
+    pirate.hp = 1;
+    game.world.rng = () => 0;
+    a.c.emit(C2S.attack, { targetId: pirate.id });
+    await flush();
+    const before = [a, b, c, d].map((j) => j.frames.length);
+    let spawnTick = -1;
+    for (let i = 0; i < 2 * TICK_RATE && spawnTick < 0; i++) {
+      game.tick();
+      if ([...game.world.ships.values()].some((s) => s.classId === CAPTAIN_CLASS)) spawnTick = i;
+    }
+    expect(spawnTick).toBeGreaterThanOrEqual(0);
+    game.world.rng = createRng(5);
+    const cap = [...game.world.ships.values()].find((s) => s.classId === CAPTAIN_CLASS)!;
+    // El siguiente snapshot sale como mucho 2 ticks después (10 Hz)
+    game.tick();
+    game.tick();
+    await flush(60);
+    const sector = cap.pos.x > 0 ? (cap.pos.z < 0 ? 'NE' : 'SE') : cap.pos.z < 0 ? 'NO' : 'SO';
+    [a, b, c, d].forEach((j, i) => {
+      const fresh = j.frames.slice(before[i]);
+      const minDist = distance(ship(j).pos, cap.pos);
+      expect(minDist).toBeGreaterThan(INTEREST_RADIUS); // fuera de su área de interés
+      expect(eventsOf(fresh)).toContainEqual(expect.objectContaining({ type: 'captain', shipId: cap.id, sector }));
+      expect(deltasOf(fresh, cap.id)[0]).toMatchObject({ id: cap.id, k: 'pirate', c: CAPTAIN_CLASS, n: 'Capitán pirata', hp: 1800, mhp: 1800 });
+    });
+    console.log(`AC-111: capitán en el sector ${sector} (${cap.pos.x.toFixed(0)}, ${cap.pos.z.toFixed(0)}); distancias ${[a, b, c, d].map((j) => distance(ship(j).pos, cap.pos).toFixed(0)).join(', ')} m`);
+
+    // Sigue llegando a todos mientras patrulla (marcador del minimapa desde cualquier punto)
+    const mid = [a, b, c, d].map((j) => j.frames.length);
+    await advance(12);
+    [a, b, c, d].forEach((j, i) => expect(deltasOf(j.frames.slice(mid[i]), cap.id).some((s) => s.x !== undefined || s.z !== undefined)).toBe(true));
+
+    // Hundimiento: Dani, Bea y Caro le hicieron daño en los últimos 60 s, en orden inverso al daño (el feed ordena por daño,
+    // no por quién dañó primero); Ana le da la última andanada
+    const now = game.world.time;
+    cap.damage = [
+      { playerId: 'd', shipId: ship(d).id, amount: 1000, at: now, firstAt: now - 10 },
+      { playerId: 'b', shipId: ship(b).id, amount: 600, at: now, firstAt: now - 20 },
+      { playerId: 'c', shipId: ship(c).id, amount: 300, at: now, firstAt: now - 30 }
+    ];
+    cap.hp = 1;
+    ship(a).pos = { x: cap.pos.x - 40, z: cap.pos.z };
+    game.world.rng = () => 0;
+    a.c.emit(C2S.attack, { targetId: cap.id });
+    await flush();
+    const beforeDown = [a, b, c, d].map((j) => j.frames.length);
+    await advance(1);
+    [a, b, c, d].forEach((j, i) => {
+      expect(eventsOf(j.frames.slice(beforeDown[i]))).toContainEqual(expect.objectContaining({ type: 'captainDown', shipId: cap.id, names: ['Dani', 'Bea', 'Caro'], more: 1 }));
+    });
+    expect(distance(ship(d).pos, cap.pos)).toBeGreaterThan(INTEREST_RADIUS + 60); // también le llega a quien está lejos
+    // Termina de hundirse y sale del mundo para todos
+    await advance(3.5);
+    [a, b, c, d].forEach((j) => expect(j.frames.some((f) => f.r?.includes(cap.id))).toBe(true));
+    expect(game.world.ships.has(cap.id)).toBe(false);
+  }, 30_000);
 });

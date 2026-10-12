@@ -30,6 +30,18 @@ export function classLabel(classId: string): string {
   return SHIP_CLASSES[classId]?.label ?? classId;
 }
 
+// Aviso y feed del Capitán pirata (GDD §9, AC-111): hasta 3 nombres por daño y "y N más"
+export function captainSpawnText(sector: string): string {
+  return `¡El Capitán pirata ha aparecido en el sector ${sector}!`;
+}
+
+export function captainDownText(names: string[], more: number): string {
+  if (names.length === 0) return 'El Capitán pirata ha caído';
+  const list = more > 0 ? [...names, `${more} más`] : names;
+  const text = list.length === 1 ? list[0] : `${list.slice(0, -1).join(', ')} y ${list[list.length - 1]}`;
+  return `El Capitán pirata ha caído: ${text}`;
+}
+
 // Vida baja (< 30 %, AC-41): el panel propio avisa y el botón Reparar pulsa
 export function isLowHp(me: Pick<MeHud, 'state' | 'hp' | 'maxHp'>): boolean {
   return me.state === 'alive' && me.hp / me.maxHp < LOW_HP_WARNING;

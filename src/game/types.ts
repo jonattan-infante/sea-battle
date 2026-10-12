@@ -102,7 +102,10 @@ export type GameEvent =
   | { type: 'loot'; playerId: string; gold: number; pos: Vec2; source: 'kill' | 'wreck' | 'pvp' }
   | { type: 'respawn'; shipId: string }
   | { type: 'wreck'; wreckId: string; pos: Vec2; gold: number; expiresAt: number }
-  | { type: 'wreckGone'; wreckId: string };
+  | { type: 'wreckGone'; wreckId: string }
+  // Capitán pirata (§9): se envían a todos los jugadores, estén donde estén (AC-111)
+  | { type: 'captain'; shipId: string; sector: string; pos: Vec2 }
+  | { type: 'captainDown'; shipId: string; names: string[]; more: number; pos: Vec2 }; // hasta 3 nombres por daño y "y N más"
 
 export interface World {
   time: number;

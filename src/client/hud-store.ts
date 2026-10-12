@@ -27,6 +27,7 @@ export interface TargetHud {
   name: string;
   kind: ShipKind;
   relation: Relation;
+  classId: string;
   classLabel: string;
   hp: number;
   maxHp: number;

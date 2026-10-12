@@ -7,7 +7,7 @@ import { PlayerShipClass } from '../game/constants';
 import { GameEvent, Welcome } from '../game/types';
 import { probeServerOnce } from '../client/exit-probe';
 import { GameClient } from '../client/game-client';
-import { canAttackClient, cannonFor, classLabel, cycleTarget, hudSignals, inSafeZone, relationOf } from '../client/hud-logic';
+import { canAttackClient, cannonFor, captainDownText, captainSpawnText, classLabel, cycleTarget, hudSignals, inSafeZone, relationOf } from '../client/hud-logic';
 import { MeHud, TargetHud, sameShallow, useHud } from '../client/hud-store';
 import { attachOverlays, createRuntime, disposeRuntime, GameRuntime } from '../client/runtime';
 import GameCanvas from './game/GameCanvas';
@@ -144,6 +144,13 @@ export default function GameApp({ guest }: { guest: boolean }) {
         case 'respawn':
           if (e.shipId === myId) useHud.setState({ killedBy: null });
           break;
+        // Capitán pirata (AC-111): aviso a todos al aparecer y feed de todos al hundirse
+        case 'captain':
+          hud.pushToast('warn', captainSpawnText(e.sector));
+          break;
+        case 'captainDown':
+          hud.pushFeed('info', captainDownText(e.names, e.more));
+          break;
       }
     };
 
@@ -191,6 +198,7 @@ export default function GameApp({ guest }: { guest: boolean }) {
           name: sel.name,
           kind: sel.kind,
           relation: relationOf(sel, myId),
+          classId: sel.classId,
           classLabel: classLabel(sel.classId),
           hp: sel.hp,
           maxHp: sel.maxHp,
