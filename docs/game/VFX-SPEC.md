@@ -55,7 +55,7 @@ billboard: offset = (uCamRight·x + uCamUp·y)·size (cámara ortográfica: mism
 Las formas son procedurales en el fragment shader. **Sin texturas.**
 
 ### 0.4 Calidad adaptativa (ART-DIRECTION §5)
-En calidad "baja" (media del frame > 20 ms durante 3 s, o en móvil): tasas × 0,5, vida de la estela × 0,7, sin estela de humo en las balas y fuego en ≤ 4 barcos (antes ponía 3; el código y §6 usan 4). **Excepción (D32): el humo y el fuego de vida baja no reducen su tasa ni su vida**, porque son información de daño (AC-104), no decoración. A cambio, en esta calidad el humo de vida baja se limita a ≤ 12 barcos, los más cercanos al centro: 12 × 21 + 4 × 21 llamas = 336 partículas en el pico (medido por dev-render), dentro de las 640 del pool móvil. En móvil las partículas miden pocos px (una bocanada densa de 0,32·h a 2,82 px/m ocupa ≈ 16 px), así que el coste de relleno es bajo.
+En calidad "baja" (media del frame > 20 ms durante 3 s, o en móvil): tasas × 0,5, vida de la estela × 0,7, sin estela de humo en las balas y fuego en ≤ 4 barcos (antes ponía 3; el código y §6 usan 4). **Excepción (D32): el humo y el fuego de vida baja no reducen su tasa ni su vida**, porque son información de daño (AC-104), no decoración. A cambio, en esta calidad el humo de vida baja se limita a ≤ 12 barcos, los más cercanos al centro: 12 × 21 + 4 × 21 llamas = 336 partículas en el pico (medido por dev-render), dentro de las 640 del pool móvil. Con I2, la segunda columna de las 4 cañoneras (`socket_smoke_02`, §6) suma ≤ 4 × 21: 420 en el pico (D48). En móvil las partículas miden pocos px (una bocanada densa de 0,32·h a 2,82 px/m ocupa ≈ 16 px), así que el coste de relleno es bajo.
 
 ---
 
@@ -67,7 +67,7 @@ En calidad "baja" (media del frame > 20 ms durante 3 s, o en móvil): tasas × 0
 | Duración | 100 ms |
 | Forma | Núcleo: disco aditivo en la boca, de 0,9 a 1,5 m. Penacho: disco a `boca + dir·0.9 m`, de 0,6 a 1,2 m. Chispas: 3 de forma 4 a 9 m/s dentro de un cono de 25° alrededor de `dir`, g = −9,8, vida 0,25 s, 0,18 m |
 | Colores | Núcleo `#FFF6C8` α1 → `#FFB347` α0 · penacho `#FF8A2B` α0,9 → `#FF5A1F` α0 · chispas `#FFD27A` → `#FF6A1F` α0 |
-| Escala por clase | Balandra 0,8 · Bergantín y Pirata 1,0 · Fragata y Capitán 1,2 |
+| Escala por clase | Balandra 0,8 · Bergantín y Pirata 1,0 · Fragata, Capitán y Cañonera 1,2. La escala va por el tamaño del barco, no por el calibre (D48): la Cañonera (28 m) cae junto al Capitán (30 m), y su daño por bala (20, GDD §9) es menor que el del Pirata (22) y el del Capitán (28), así que un fogonazo mayor que el del jefe daría una pista falsa |
 | Mínimo en pantalla | Núcleo 10 px |
 | Partículas | 5 por cañón (andanada de Fragata = 40 `P_ADD`) |
 | Técnica | `P_ADD`, sin luces dinámicas |
