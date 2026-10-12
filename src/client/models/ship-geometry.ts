@@ -11,7 +11,7 @@ const deg = Math.PI / 180;
 // ---- §8.1 Perfiles del casco: u, a (semimanga en cubierta), b (en la flotación), s (arrufo), k (quilla) ----
 type ProfileRow = readonly [number, number, number, number, number];
 
-const PROFILES: Record<'standard' | 'fine' | 'full', readonly ProfileRow[]> = {
+const PROFILES: Record<'standard' | 'fine' | 'full' | 'flat', readonly ProfileRow[]> = {
   standard: [
     [-0.5, 0.8, 0.62, 1.3, 0.35], [-0.4, 0.96, 0.85, 1.15, 0.75], [-0.25, 1.0, 0.93, 1.04, 1.0], [0, 1.0, 0.95, 1.0, 1.0],
     [0.2, 0.97, 0.88, 1.03, 1.0], [0.36, 0.72, 0.56, 1.12, 0.85], [0.5, 0, 0, 1.28, 0.3]
@@ -23,6 +23,10 @@ const PROFILES: Record<'standard' | 'fine' | 'full', readonly ProfileRow[]> = {
   full: [
     [-0.5, 0.92, 0.8, 1.4, 0.45], [-0.4, 1.0, 0.93, 1.22, 0.85], [-0.25, 1.0, 0.97, 1.05, 1.0], [0, 1.0, 0.97, 1.0, 1.0],
     [0.2, 1.0, 0.95, 1.04, 1.0], [0.36, 0.88, 0.78, 1.15, 0.9], [0.5, 0.3, 0.18, 1.3, 0.5]
+  ],
+  flat: [
+    [-0.5, 0.86, 0.78, 1.1, 0.4], [-0.4, 0.98, 0.94, 1.04, 0.8], [-0.25, 1.0, 0.98, 1.0, 1.0], [0, 1.0, 0.98, 1.0, 1.0],
+    [0.2, 1.0, 0.97, 1.0, 1.0], [0.36, 0.92, 0.85, 1.04, 0.9], [0.5, 0.45, 0.3, 1.12, 0.5]
   ]
 };
 
@@ -169,6 +173,10 @@ export interface ShipRecipe {
   sailStyle: 'plain' | 'notched' | 'striped' | 'banded'; // banded: 4 filas con la inferior de franja (Capitán, I2)
   sailStripe?: string; // franja propia de la receta (D46) cuando su facción no la tiene
   deckD36?: readonly [string, string]; // tablas alternas de D36 (clara, oscura) en lugar de los 3 tonos de §8.2.2 (I2)
+  deckLod1?: string; // cubierta lisa de LOD1 propia de la receta, cuando no es la media de su facción (Cañonera, §8.4)
+  battery?: 'deck'; // cañones sobre cubierta, en cureña y sin portas (Cañonera, §8.4)
+  mortarZ?: number; // mortero en (0, yd + 0,6, z), también en LOD1 (Cañonera)
+  smoke2?: boolean; // socket_smoke_02 en (0, yd(+0,20) + 0,5, +0,20·L) (Cañonera, D25)
   flagStyle: 'pennant' | 'flag' | 'standard'; // standard: el estandarte del Capitán (D25)
   trimRail: boolean;
   cannonScale: number; // escala del fogonazo y del humo (VFX §1)
@@ -306,6 +314,24 @@ const CAPTAIN: ShipRecipe = {
   radius: 16, mastHeight: 24, pick: [6.0, 24.0, 15.0]
 };
 
+// Cañonera pirata (I2; §8.4, D25, D43): casco chato y ancho, un solo palo con caída de 4°, cuadra y gavia con los paños
+// de la paleta pirata, foque radial, 6 cañones por banda sobre cubierta en cureña, mortero y cubierta propia
+const GUNBOAT: ShipRecipe = {
+  assetId: 'npc_pirate_gunboat', sbKind: 'npc', look: 'pirate',
+  // Conserva las tablas de D36 hasta que I2 mida AD-28 con los 3 tonos (ASSET-SPEC §8.4, D62)
+  deckD36: [TOP_FACE.deckGunboat.albedo, TOP_FACE.deckAltGunboat.albedo], deckLod1: TOP_FACE.deckMeanGunboat.albedo,
+  L: 28, B: 10.0, F: 1.5, D: 1.2, bowsprit: 3.0, railH: 0.9, profile: 'flat', rake: 4 * deg,
+  masts: [{ z: -1.0, h: 16, squares: [{ w: 11.0, h: 5.6, yb: 3.4 }, { w: 7.0, h: 2.6, yb: 9.6 }] }],
+  flagMast: 0,
+  jibs: [{ H: [0, 12.0, -0.6], T: 'tip', C: [0, 2.6, 8.0] }],
+  boxes: [],
+  barrels: [],
+  battery: 'deck', mortarZ: 3.5, smoke2: true,
+  cannonZ: [-10, -6, -2, 2, 6, 10], cannonY: 0, cannon: [0.34, 0.4, 2.4],
+  sailStyle: 'plain', flagStyle: 'flag', trimRail: false, cannonScale: 1.2,
+  radius: 14, mastHeight: 16, pick: [5.5, 16.0, 13.0]
+};
+
 // classId de la simulación (src/game/constants.ts) → receta
 export const SHIP_RECIPES: Record<string, ShipRecipe> = {
   sloop: SLOOP,
@@ -313,7 +339,8 @@ export const SHIP_RECIPES: Record<string, ShipRecipe> = {
   frigate: FRIGATE,
   pirate: PIRATE,
   merchant: MERCHANT,
-  captain: CAPTAIN
+  captain: CAPTAIN,
+  gunboat: GUNBOAT
 };
 
 export const LOD_PX: [number, number] = [72, 64]; // LOD0 si L·ppm ≥ 72; LOD1 si < 64 (histéresis)
@@ -322,6 +349,7 @@ export interface ShipSockets {
   cannonsPort: THREE.Vector3[]; // 01 = el más a popa
   cannonsStbd: THREE.Vector3[];
   smoke: THREE.Vector3;
+  smoke2?: THREE.Vector3; // socket_smoke_02, solo la Cañonera (D25)
   fire: THREE.Vector3[];
   label: THREE.Vector3;
   wake: THREE.Vector3;
@@ -376,7 +404,7 @@ function section(r: ShipRecipe, u: number, side: 1 | -1): Vec3[] {
   const xAt = (y: number) => hb * (b + ((a - b) * y) / yd);
   // Franja de portas (D36): con portas en el costado, BAND m centrada en la línea de cañones en la maestra (s = 1) y
   // siguiendo el arrufo; sin portas, entre 0,30·F y 0,55·F bajo el canto
-  const ports = r.cannonZ.length > 0;
+  const ports = r.cannonZ.length > 0 && r.battery !== 'deck';
   const y1 = ports ? yd - (r.F - r.cannonY - BAND / 2) : yd - 0.3 * r.F;
   const y2 = ports ? yd - (r.F - r.cannonY + BAND / 2) : yd - 0.55 * r.F;
   return [
@@ -600,14 +628,16 @@ function castle(g: GeoBuilder, r: ShipRecipe, look: ShipLook, box: BoxDef, plank
   return planksAt;
 }
 
-// Paleta de un barco: la de su facción con lo propio de la receta (la franja del Capitán, D46, y sus tablas de D36)
+// Paleta de un barco: la de su facción con lo propio de la receta (la franja del Capitán, D46; las tablas de D36 del
+// Capitán y la Cañonera, y la cubierta lisa de LOD1 de la Cañonera)
 export function shipLook(r: ShipRecipe): ShipLook {
   const look = SHIP_LOOKS[r.look];
-  if (!r.sailStripe && !r.deckD36) return look;
+  if (!r.sailStripe && !r.deckD36 && !r.deckLod1) return look;
   return {
     ...look,
     ...(r.sailStripe && { sailStripe: r.sailStripe }),
-    ...(r.deckD36 && { deck: r.deckD36[0], deckMid: null, deckAlt: r.deckD36[1] })
+    ...(r.deckD36 && { deck: r.deckD36[0], deckMid: null, deckAlt: r.deckD36[1] }),
+    ...(r.deckLod1 && { deckLod1: r.deckLod1 })
   };
 }
 
@@ -707,6 +737,17 @@ function buildLod(r: ShipRecipe, lod: 0 | 1): { geometry: THREE.BufferGeometry; 
     const [rTop, rBot, len] = r.cannon;
     for (const z of r.cannonZ) {
       const a = sample(PROFILES[r.profile], z / r.L).a;
+      if (r.battery === 'deck') {
+        // Batería sobre cubierta (Cañonera, §8.4): eje del cañón a yd + 0,45 con el centro a 1,0 m de la borda hacia
+        // dentro, la boca hacia afuera y la tapa interior a la vista; la cureña de 0,5 m apoyada en la cubierta
+        const yd = deckY(r, z / r.L);
+        for (const side of [1, -1] as const) {
+          const x = side * (a * r.B / 2 - 1.0);
+          g.add(new THREE.CylinderGeometry(rTop, rBot, len, 6), trs(x, yd + 0.45, z, 0, 0, -side * Math.PI / 2), lin(look.cannon));
+          g.add(new THREE.BoxGeometry(1.0, 0.5, 1.4), trs(x, yd + 0.25, z), lin(look.rail));
+        }
+        continue;
+      }
       for (const side of [1, -1] as const) {
         const x = side * (a * r.B / 2 + 0.3);
         // La boca (radio superior) mira hacia afuera de la banda. Sin la tapa interior, que queda dentro del casco (D36):
@@ -720,6 +761,11 @@ function buildLod(r: ShipRecipe, lod: 0 | 1): { geometry: THREE.BufferGeometry; 
         g.quad([px, y0, za], [px, y0, zb], [px, y1, zb], [px, y1, za], lin(look.gunport));
       }
     }
+  }
+
+  if (r.mortarZ !== undefined) {
+    // Mortero de la Cañonera: disco oscuro de 2,6 m visto desde arriba; se queda en LOD1 (rasgo de identidad, §7)
+    g.add(new THREE.CylinderGeometry(1.1, 1.3, 1.2, 8), trs(0, deckY(r, r.mortarZ / r.L) + 0.6, r.mortarZ), lin(look.cannon));
   }
 
   // Normales con pliegue de 40° (D23): sin bandas de facetas en el casco ni en la panza de las velas; los cantos de
@@ -752,7 +798,7 @@ function flag(g: GeoBuilder, r: ShipRecipe, look: ShipLook, group: THREE.Matrix4
   const h = 0.65 * kf;
   g.add(new THREE.PlaneGeometry(w, h), group.clone().multiply(trs(0, top - h / 2, mast.z - w / 2, 0, Math.PI / 2)), lin(look.flag));
   if (look.flagMark) {
-    const m = r.look === 'pirate' ? 0.4 : 0.32 * w;
+    const m = 0.32 * w; // 0,4 m en el Pirata (kf 1,25), escalado con kf en la Cañonera
     for (const side of [1, -1]) {
       g.add(new THREE.PlaneGeometry(m, m), group.clone().multiply(trs(side * 0.01, top - h / 2, mast.z - w / 2, 0, Math.PI / 2)), lin(look.flagMark));
     }
@@ -768,11 +814,15 @@ function fireSocket(r: ShipRecipe, i: 0 | 1 | 2, x: number, u: number): THREE.Ve
 
 function buildSockets(r: ShipRecipe): ShipSockets {
   const zs = [...r.cannonZ].sort((a, b) => a - b);
-  const cannon = (side: 1 | -1) => zs.map((z) => new THREE.Vector3(side * (sample(PROFILES[r.profile], z / r.L).a * r.B / 2 + 0.3), 0.6 * r.F, z));
+  // En la boca: por la porta del costado o, sobre cubierta, en el extremo exterior del cañón (Cañonera)
+  const cannon = (side: 1 | -1) => zs.map((z) => r.battery === 'deck'
+    ? new THREE.Vector3(side * (sample(PROFILES[r.profile], z / r.L).a * r.B / 2 - 1.0 + r.cannon[2] / 2), deckY(r, z / r.L) + 0.45, z)
+    : new THREE.Vector3(side * (sample(PROFILES[r.profile], z / r.L).a * r.B / 2 + 0.3), 0.6 * r.F, z));
   return {
     cannonsPort: cannon(1),
     cannonsStbd: cannon(-1),
     smoke: new THREE.Vector3(0, deckY(r, -0.15) + 0.5, -0.15 * r.L),
+    smoke2: r.smoke2 ? new THREE.Vector3(0, deckY(r, 0.2) + 0.5, 0.2 * r.L) : undefined,
     fire: [fireSocket(r, 0, 0.2 * r.B, 0.25), fireSocket(r, 1, -0.2 * r.B, 0), fireSocket(r, 2, 0, -0.3)],
     label: new THREE.Vector3(0, r.mastHeight + 1.5, 0),
     wake: new THREE.Vector3(0, 0, -r.L / 2),
@@ -842,6 +892,7 @@ export function buildShipAsset(classId: string, material: THREE.Material = creat
   model.sockets.cannonsPort.forEach((p, i) => socket(`socket_cannon_port_${nn(i)}`, p, Math.PI / 2));
   model.sockets.cannonsStbd.forEach((p, i) => socket(`socket_cannon_stbd_${nn(i)}`, p, -Math.PI / 2));
   socket('socket_smoke', model.sockets.smoke);
+  if (model.sockets.smoke2) socket('socket_smoke_02', model.sockets.smoke2);
   model.sockets.fire.forEach((p, i) => socket(`socket_fire_${nn(i)}`, p));
   socket('socket_label', model.sockets.label);
   socket('socket_wake', model.sockets.wake);

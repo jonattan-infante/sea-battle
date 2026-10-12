@@ -70,3 +70,32 @@ test.describe('Humo y fuego de daño en móvil', () => {
     await page.evaluate(() => window.__SEA_BATTLE__!.runtime().stopScene());
   });
 });
+
+// La Cañonera echa humo también por socket_smoke_02 (VFX-SPEC §6, D25): su huella L·B es grande para su mástil
+test.describe('Humo de daño de la Cañonera', () => {
+  test('D25: al 40 % echa humo por sus 2 sockets, cada uno con la tasa completa (2 × 10–11 bocanadas vivas)', async ({ page }) => {
+    await enterGame(page);
+    await page.evaluate(() => {
+      const rt = window.__SEA_BATTLE__!.runtime();
+      rt.setCameraPreset('game');
+      rt.setZoomLevel(1);
+      const scene = rt.startScene('gallery', { cannonLevel: 1 });
+      // Todas a 2 km del foco y con la vida llena, salvo la Cañonera, en el foco al 40 % (humo de 3/s por socket)
+      scene.spec.ships.forEach((s, i) => scene.setPose(s.id, scene.focus.x + 2000 * (i + 1), scene.focus.z, s.heading));
+      scene.setPose('g-gunboat', scene.focus.x, scene.focus.z, Math.PI / 2);
+      const g = scene.getShip('g-gunboat')!;
+      g.hp = Math.round(0.4 * g.maxHp);
+    });
+    await page.waitForTimeout(4500); // > 3,4 s de vida del humo: régimen estable
+    const puffs: number[] = [];
+    for (let i = 0; i < 10; i++) {
+      puffs.push(await page.evaluate((puff) => { const fx = window.__SEA_BATTLE__!.runtime().effects; return fx.alpha.live(fx.time, puff); }, PUFF));
+      await page.waitForTimeout(150);
+    }
+    console.log(`D25 Cañonera al 40 %: bocanadas vivas ${Math.min(...puffs)}–${Math.max(...puffs)} (10 muestras; con un solo socket, ≈ 10)`);
+    // 3/s × 3,4 s = 10–11 vivas por socket, y salen de 2 en 2: 20 o 22 (con un solo socket, 10 u 11)
+    expect(Math.min(...puffs)).toBeGreaterThanOrEqual(20);
+    expect(Math.max(...puffs)).toBeLessThanOrEqual(22);
+    await page.evaluate(() => window.__SEA_BATTLE__!.runtime().stopScene());
+  });
+});
