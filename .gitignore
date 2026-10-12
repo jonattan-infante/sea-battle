@@ -48,3 +48,6 @@ next-env.d.ts
 /qa-artifacts
 /test-results
 /playwright-report
+
+# sesión del usuario de prueba del arnés remoto (playwright.remote.config.ts)
+/.auth

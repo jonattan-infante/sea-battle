@@ -20,13 +20,14 @@ const server = (port: number, env: string) => ({
 });
 
 // Chrome del sistema con GPU (Metal en macOS): con SwiftShader el WebGL por software satura la CPU
-const chrome = {
+export const chrome = {
   channel: 'chrome',
   launchOptions: { args: ['--use-angle=metal', '--enable-gpu-rasterization', '--ignore-gpu-blocklist'] }
 };
 
 export default defineConfig({
   testDir: './e2e',
+  testIgnore: 'remote/**', // contra un despliegue real: playwright.remote.config.ts
   globalSetup: './e2e/global-setup.ts',
   fullyParallel: false,
   workers: 1,

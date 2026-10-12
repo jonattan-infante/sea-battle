@@ -7,6 +7,7 @@ import { Server } from 'socket.io';
 import { authConfigError, isAuthBypassAllowed } from '../src/lib/auth-bypass';
 import { authenticateHandshake } from './auth';
 import { createGameServer } from './game-server';
+import { healthPayload } from './health';
 import { applyScenario, parseScenario } from './scenarios';
 
 const dev = process.env.NODE_ENV !== 'production';
@@ -31,7 +32,7 @@ app.prepare().then(() => {
   const httpServer = createServer((req, res) => {
     if (req.url === '/healthz') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: true, players: onlinePlayers(), uptimeSeconds: Math.round((Date.now() - startedAt) / 1000) }));
+      res.end(JSON.stringify(healthPayload(onlinePlayers(), startedAt, Date.now())));
       return;
     }
     handle(req, res, parse(req.url || '/', true));
