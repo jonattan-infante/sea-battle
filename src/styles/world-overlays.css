@@ -1,0 +1,161 @@
+/* Placas, números flotantes y cursores del mundo (dueño: capa de render, ver runtime.ts / overlays.ts).
+   Fuente: ART-DIRECTION §11 y §12.7, VFX-SPEC §9. Aquí va solo lo estático; overlays.ts escribe por ref la
+   posición, el ancho de la barra y --p, y fija --bar-w, --bar-h, --plate-max y --reload-* desde LABEL (art.ts). */
+
+/* ---- Placa de nombre y vida ---- */
+.wo-plate {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: none;
+  will-change: transform;
+  pointer-events: none;
+}
+
+.wo-plate[data-relation="self"] { --rel: var(--rel-self); --rel-bar: var(--ui-ok); }
+.wo-plate[data-relation="player"] { --rel: var(--rel-player); --rel-bar: var(--rel-player); }
+.wo-plate[data-relation="pirate"] { --rel: var(--rel-pirate); --rel-bar: var(--rel-pirate); }
+.wo-plate[data-relation="merchant"] { --rel: var(--rel-merchant); --rel-bar: var(--rel-merchant); }
+
+.wo-plate__body {
+  position: relative;
+  box-sizing: border-box;
+  min-width: calc(var(--bar-w) + 12px);
+  max-width: var(--plate-max);
+  padding: 2px 6px;
+  background: var(--ui-plate);
+  border: 1px solid transparent;
+  border-radius: 4px;
+}
+
+/* Otro jugador te está atacando (P1) */
+.wo-plate.is-attacker .wo-plate__body { border-color: var(--ui-danger); }
+
+.wo-plate__row {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 16px;
+  color: var(--rel);
+  font: 600 12px/16px var(--font-label), "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+  white-space: nowrap;
+}
+
+.wo-plate__icon { display: inline-flex; flex: none; width: 12px; height: 12px; }
+.wo-plate__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* 2.ª fila: barra + iconos de estado a la derecha (§11.1). Alto fijo de 12 px para que la placa no salte */
+.wo-plate__meter {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 12px;
+  margin-top: 1px;
+  font: 600 12px/12px var(--font-label), "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+  white-space: nowrap;
+}
+.wo-plate__status { display: inline-flex; flex: none; align-items: center; gap: 2px; font-variant-numeric: tabular-nums; }
+.wo-plate__status:empty { display: none; }
+.wo-plate__status > span { display: inline-flex; align-items: center; gap: 1px; }
+.wo-status--attacker, .wo-status--danger { color: var(--ui-danger); }
+.wo-status--repair { color: var(--ui-ok); }
+.wo-status--shield { color: var(--ui-shield); }
+
+.wo-plate__bar {
+  position: relative;
+  box-sizing: content-box;
+  flex: none;
+  width: var(--bar-w);
+  height: var(--bar-h);
+  background: #0b1a24;
+  border: 1px solid rgba(0, 0, 0, 0.6);
+}
+
+/* Tramo perdido tras un daño: estela que se encoge en 400 ms */
+.wo-plate__trail { position: absolute; inset: 0 auto 0 0; width: 0; background: #fff2b3; transition: width 400ms ease-out; }
+.wo-plate__fill { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--rel-bar); }
+
+/* Vida < 30 %: la barra pulsa a 1 Hz */
+.wo-plate.is-low .wo-plate__bar { animation: wo-pulse 1s ease-in-out infinite; }
+
+/* Declutter: solo la barra */
+.wo-plate.is-compact .wo-plate__row,
+.wo-plate.is-compact .wo-plate__status { display: none; }
+.wo-plate.is-compact .wo-plate__meter { height: auto; margin-top: 0; }
+.wo-plate.is-compact .wo-plate__body { min-width: 0; padding: 0; background: transparent; }
+
+/* Bajo un bloque del HUD (§11.4, D39): oculta en el mismo frame y sin transición; vuelve con el fundido fade-in
+   (globals.css). La opacidad va en los hijos porque la raíz lleva en línea la del hundimiento, que overlays.ts escribe
+   por frame: una animación en la raíz la pisaría mientras dura */
+.wo-plate.is-hud { visibility: hidden; }
+.wo-plate.is-hud > * { opacity: 0; }
+.wo-plate.is-entering > * { animation: fade-in var(--hud-fade) ease-out; }
+
+/* ---- Recarga junto a la placa propia (§11.3, AC-73) ---- */
+.wo-reload {
+  --p: 0;
+  position: absolute;
+  top: var(--reload-top);
+  left: calc(-1 * var(--reload-size) - var(--reload-gap));
+  display: none;
+  box-sizing: border-box;
+  width: var(--reload-size);
+  height: var(--reload-size);
+  background: conic-gradient(var(--ui-gold) calc(var(--p) * 1turn), rgba(255, 255, 255, 0.15) 0);
+  border: 1px solid transparent;
+  border-radius: 50%;
+}
+
+.wo-reload.is-visible { display: block; }
+.wo-reload.is-ready { border-color: var(--ui-gold-hi); animation: wo-ready 833ms ease-out infinite; }
+.wo-reload.is-flash { background: #fff; }
+
+/* ---- Números flotantes (VFX §9) ---- */
+.wo-float {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: none;
+  white-space: nowrap;
+  will-change: transform;
+  pointer-events: none;
+}
+
+.wo-float__rise { display: block; }
+
+.wo-float__pop {
+  display: block;
+  font-family: var(--font-label), "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+  font-style: normal;
+  text-shadow: -1px 0 #07121b, 1px 0 #07121b, 0 -1px #07121b, 0 1px #07121b, 0 2px 4px rgba(0, 0, 0, 0.6);
+}
+
+.wo-float[data-kind="dealt"] .wo-float__pop { color: var(--ui-gold-hi); font-size: 20px; font-weight: 700; }
+.wo-float[data-kind="heavy"] .wo-float__pop { color: var(--ui-gold-hi); font-size: 26px; font-weight: 700; }
+.wo-float[data-kind="taken"] .wo-float__pop { color: var(--ui-danger); font-size: 22px; font-weight: 700; }
+.wo-float[data-kind="others"] .wo-float__pop { color: var(--ui-text); font-size: 15px; font-weight: 600; }
+.wo-float[data-kind="miss"] .wo-float__pop { color: #c9d4db; font-size: 14px; font-weight: 600; font-style: italic; }
+.wo-float[data-kind="repair"] .wo-float__pop { color: var(--ui-ok); font-size: 15px; font-weight: 600; }
+.wo-float[data-kind="gold"] .wo-float__pop { color: var(--ui-gold); font-size: 18px; font-weight: 700; }
+
+/* ---- Cursor sobre el canvas (§12.7): mira coral de 32 px sobre un barco atacable ---- */
+.wo-cursor-attack {
+  cursor: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2232%22%20height%3D%2232%22%20viewBox%3D%220%200%2032%2032%22%20fill%3D%22none%22%20stroke-linecap%3D%22round%22%3E%3Cg%20stroke%3D%22%2307121B%22%20stroke-width%3D%224%22%3E%3Ccircle%20cx%3D%2216%22%20cy%3D%2216%22%20r%3D%229%22%2F%3E%3Cpath%20d%3D%22M16%202v7M16%2023v7M2%2016h7M23%2016h7%22%2F%3E%3C%2Fg%3E%3Cg%20stroke%3D%22%23FF7A7A%22%20stroke-width%3D%222%22%3E%3Ccircle%20cx%3D%2216%22%20cy%3D%2216%22%20r%3D%229%22%2F%3E%3Cpath%20d%3D%22M16%202v7M16%2023v7M2%2016h7M23%2016h7%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E") 16 16, crosshair;
+}
+
+.wo-cursor-blocked { cursor: not-allowed; }
+
+@keyframes wo-pulse {
+  50% { opacity: 0.55; }
+}
+
+@keyframes wo-ready {
+  from { box-shadow: 0 0 0 0 var(--ui-gold-hi); }
+  to { box-shadow: 0 0 0 3px rgba(255, 209, 102, 0); }
+}
+
+/* Movimiento reducido: los pulsos pasan a un borde fijo (ART-DIRECTION §17) */
+@media (prefers-reduced-motion: reduce) {
+  .wo-plate.is-low .wo-plate__bar { animation: none; outline: 1px solid var(--ui-danger); }
+  .wo-reload.is-ready { animation: none; }
+  .wo-plate__trail { transition: none; }
+}
