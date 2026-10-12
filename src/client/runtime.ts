@@ -1106,9 +1106,10 @@ export class GameRuntime implements OverlayHost {
 
   // AD-10 / D8: L* de velas y casco por rumbo con el nivel más cercano (0,7×) de 1440×900 y la cámara del juego.
   // ppm opcional (AD-26: el de una sesión nueva, N1 a 1,0×)
-  measureShipValues(classIds: string[] = ['sloop', 'brig', 'frigate', 'pirate', 'merchant'], headingsDeg?: number[], ppm?: number): ShipValues[] {
+  // lod: fuerza LOD0 o LOD1 con cualquier ppm (AD-33, D40); sin él, el que toca con ese ppm (ASSET-SPEC §7)
+  measureShipValues(classIds: string[] = ['sloop', 'brig', 'frigate', 'pirate', 'merchant'], headingsDeg?: number[], ppm?: number, lod?: 0 | 1): ShipValues[] {
     if (!this.gl) return [];
-    return measureShipValues(this.gl, ppm ?? computePpm0(1440, 900, MAX_CANNON_RANGE) / ZOOM.levels[0], CAMERA.elevation, classIds, headingsDeg);
+    return measureShipValues(this.gl, ppm ?? computePpm0(1440, 900, MAX_CANNON_RANGE) / ZOOM.levels[0], CAMERA.elevation, classIds, headingsDeg, lod);
   }
 
   // QA: congela la simulación y los efectos (R3F sigue dibujando el último estado) para comparar dos capturas del

@@ -37,13 +37,34 @@ const AO_HEIGHT = 0.4;
 const ao = (c: THREE.Color) => c.clone().multiplyScalar(AO);
 
 const BAND = 1.0; // franja de portas (D36), m: contiene la porta de 0,8 m con 0,1 m de franja arriba y abajo en la maestra
-// Paños (D36): ancho de paño de cuadras y cangrejas (w) y alto de fila de foques y latinas (row), m. La paleta pirata,
-// de lona casi negra, lleva paños más finos para dejar AS-V19 fuera de la dispersión entre capturas (D37)
-const CLOTH: Record<ShipKind, { w: number; row: number }> = {
-  player: { w: 0.7, row: 0.9 },
+// Paños (D36, D40): ancho de paño (w), m, de cuadras y cangrejas y, en el jugador y la paleta pirata, también de los paños
+// radiales de foques y latinas. El mercante conserva sus filas de foque y latina de `row` m (D36)
+const CLOTH: Record<ShipKind, { w: number; row?: number }> = {
+  player: { w: 0.55 },
   merchant: { w: 0.7, row: 0.9 },
-  pirate: { w: 0.6, row: 0.75 }
+  pirate: { w: 0.5 }
 };
+
+// §8.2.1 (D40): tonos de lona en bolsas barajadas. Cada grupo de 3 paños seguidos es una permutación de los tonos
+// (0 sail, 1 sail.mid, 2 sail.alt) elegida por un hash de (clase, vela, grupo), sin empezar por el tono del último paño
+// del grupo anterior: dos paños vecinos nunca comparten tono y cada tono cubre ⌊n/3⌋ o ⌈n/3⌉ de los n paños
+const PERMS = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
+function hash32(a: number, b: number, c: number): number {
+  let h = Math.imul(a ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(b + 0x632be5ab, 0xc2b2ae35) ^ Math.imul(c + 0x27d4eb2f, 0x165667b1);
+  h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d);
+  h = Math.imul(h ^ (h >>> 12), 0x297a2d39);
+  return (h ^ (h >>> 15)) >>> 0;
+}
+const strHash = (s: string) => [...s].reduce((h, ch) => Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0, 2166136261);
+export function clothTones(assetId: string, sail: number, n: number): number[] {
+  const key = strHash(assetId);
+  const out: number[] = [];
+  for (let group = 0; out.length < n; group++) {
+    const ok = PERMS.filter((p) => group === 0 || p[0] !== out[out.length - 1]);
+    out.push(...ok[hash32(key, sail, group) % ok.length]);
+  }
+  return out.slice(0, n);
+}
 
 interface Station { a: number; b: number; s: number; k: number }
 
@@ -309,9 +330,9 @@ function loftHull(g: GeoBuilder, r: ShipRecipe, look: ShipLook, stations: readon
     [1, 0, cRail, cRail], [1, 2, cHull, cHull], [2, 3, lin(look.band), lin(look.band)], [3, 4, cHull, ao(cHull)], [4, 5, lin(look.bottom), lin(look.bottom)]
   ];
   // Cubierta (D23): en LOD0, n = 2·ceil(B/2 / 0,5) tablas longitudinales alternas deck / deck.alt de ≈ 0,5 m, con las
-  // tiras junto a la borda oscurecidas; en LOD1, una sola cara
+  // tiras junto a la borda oscurecidas; en LOD1, una sola cara en `deckLod1`, la media de las tablas (D40)
   const n = planks ? 2 * Math.ceil(r.B / 2 / 0.5) : 1;
-  const deck = [lin(look.deck), lin(look.deckAlt)];
+  const deck = planks ? [lin(look.deck), lin(look.deckAlt)] : [lin(look.deckLod1)];
   const plankColor = (j: number) => (planks && (j === 0 || j === n - 1) ? ao(deck[j % 2]) : deck[j % 2]);
   const across = (p: Vec3, q: Vec3, f: number): Vec3 => [p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f, p[2] + (q[2] - p[2]) * f];
   const secs = stations.map((u) => ({ port: section(r, u, 1), stbd: section(r, u, -1) }));
@@ -399,16 +420,16 @@ function squareSail(g: GeoBuilder, r: ShipRecipe, look: ShipLook, group: THREE.M
   // Braza de +20° alrededor del eje del mástil (§8.3) para que no se vea de canto con rumbo E/O
   const brace = new THREE.Matrix4().makeTranslation(0, 0, mast.z).multiply(new THREE.Matrix4().makeRotationY(20 * deg));
   const sailM = group.clone().multiply(brace).multiply(trs(0, sail.yb + sail.h / 2, 0.45));
-  const cSail = lin(look.sail);
-  const cAlt = lin(look.sailAlt);
-  const stripe = look.sailStripe ? lin(look.sailStripe) : cSail;
+  const stripe = look.sailStripe ? lin(look.sailStripe) : lin(look.sail);
+  const cloth = lod === 0 ? clothColors(r, look, g.marks.length, segs[0]) : null;
+  const cLod1 = lin(look.sailLod1);
   // PlaneGeometry: 2 triángulos por celda, filas de arriba abajo. Filas 1 y 3 desde arriba en el color de franja; en
-  // LOD0, las columnas impares de las filas de lona en sail.alt (paños, D23, D36)
+  // LOD0, cada columna de lona con el tono de su paño (todas las filas igual); en LOD1, lisa en sail.lod1
   const color = (_x: number, _y: number, _z: number, t: number) => {
     const cell = Math.floor(t / 2);
     const row = Math.floor(cell / segs[0]);
     if (r.sailStyle === 'striped' && (row === 1 || row === 3)) return stripe;
-    return lod === 0 && (cell % segs[0]) % 2 === 1 ? cAlt : cSail;
+    return cloth ? cloth[cell % segs[0]] : cLod1;
   };
   g.mark(() => g.add(plane, sailM, color));
   if (lod === 0) {
@@ -417,11 +438,20 @@ function squareSail(g: GeoBuilder, r: ShipRecipe, look: ShipLook, group: THREE.M
   }
 }
 
+// Tonos de los n paños de una vela (§8.2.1): 3 tonos barajados en el jugador y la paleta pirata; sail / sail.alt alternos
+// en el mercante (D36). `sail` = índice de la vela en model.sails, el que recibirá su rango
+function clothColors(r: ShipRecipe, look: ShipLook, sail: number, n: number): THREE.Color[] {
+  if (!look.sailMid) return Array.from({ length: n }, (_, i) => lin(i % 2 ? look.sailAlt : look.sail));
+  const tones = [lin(look.sail), lin(look.sailMid), lin(look.sailAlt)];
+  return clothTones(r.assetId, sail, n).map((t) => tones[t]);
+}
+
 // Velas de cuchillo en LOD0 (D36): parche bilineal sobre A (amura) · B (puño de driza) · C (pico) · D (puño de escota),
-// P(u, v) = (1−v)·((1−u)·A + u·D) + v·((1−u)·B + u·C), con la panza bulge·sin(πu)·sin(πv) en x local. nu × nv celdas en
-// paños alternos sail / sail.alt por columnas (cangreja) o por filas paralelas al pujamen (foque y latina, con B = C: la
-// fila del pico degenera y GeoBuilder descarta sus triángulos vacíos)
-function clothSail(g: GeoBuilder, group: THREE.Matrix4, [A, B, C, D]: Vec3[], bulge: number, nu: number, nv: number, byRows: boolean, look: ShipLook): void {
+// P(u, v) = (1−v)·((1−u)·A + u·D) + v·((1−u)·B + u·C), con la panza bulge·sin(πu)·sin(πv) en x local. nu × nv celdas;
+// cada paño, una columna (cangreja; paños radiales de foques y latinas con B = C, D40) o una fila paralela al pujamen
+// (foque y latina del mercante), con el color de `cloth`. Con B = C la fila del pico degenera y GeoBuilder descarta sus
+// triángulos vacíos
+function clothSail(g: GeoBuilder, group: THREE.Matrix4, [A, B, C, D]: Vec3[], bulge: number, nu: number, nv: number, byRows: boolean, cloth: THREE.Color[]): void {
   const grid: Vec3[][] = [];
   for (let j = 0; j <= nv; j++) {
     const v = j / nv;
@@ -433,12 +463,23 @@ function clothSail(g: GeoBuilder, group: THREE.Matrix4, [A, B, C, D]: Vec3[], bu
       grid[j].push(new THREE.Vector3(...p).applyMatrix4(group).toArray() as Vec3);
     }
   }
-  const colors = [lin(look.sail), lin(look.sailAlt)];
   g.mark(() => {
     for (let j = 0; j < nv; j++) {
-      for (let i = 0; i < nu; i++) g.quad(grid[j][i], grid[j][i + 1], grid[j + 1][i + 1], grid[j + 1][i], colors[(byRows ? j : i) % 2]);
+      for (let i = 0; i < nu; i++) g.quad(grid[j][i], grid[j][i + 1], grid[j + 1][i + 1], grid[j + 1][i], cloth[byRows ? j : i]);
     }
   });
+}
+
+// Foque o latina en LOD0 sobre [amura, cabeza, cabeza, escota]: paños radiales de CLOTH.w m a lo largo del pujamen × 3
+// filas con los 3 tonos barajados (D40), o, en el mercante, 3 columnas × filas de CLOTH.row m alternas (D36)
+function knifeSail(g: GeoBuilder, r: ShipRecipe, look: ShipLook, m: THREE.Matrix4, quad: Vec3[], bulge: number, foot: number, luff: number): void {
+  if (look.sailMid) {
+    const nu = Math.max(2, Math.round(foot / CLOTH[r.look].w));
+    clothSail(g, m, quad, bulge, nu, 3, false, clothColors(r, look, g.marks.length, nu));
+    return;
+  }
+  const nv = Math.max(2, Math.round(luff / CLOTH[r.look].row!));
+  clothSail(g, m, quad, bulge, 3, nv, true, clothColors(r, look, g.marks.length, nv));
 }
 
 function boxColors(look: ShipLook, kind: BoxDef['kind']): (x: number, y: number, z: number, t: number) => THREE.Color {
@@ -449,8 +490,8 @@ function boxColors(look: ShipLook, kind: BoxDef['kind']): (x: number, y: number,
 }
 
 // Castillos y camaretas: costados en `rail` con sus primeros 0,4 m oscurecidos (oclusión horneada, D23) y tapa en
-// tablas deck / deck.alt en LOD0 (D36) o en `deck` en LOD1; sin cara inferior, que queda dentro del casco. Normales
-// hacia afuera
+// tablas deck / deck.alt en LOD0 (D36) o lisa en `deckLod1`, la media de las tablas, en LOD1 (D40); sin cara inferior,
+// que queda dentro del casco. Normales hacia afuera
 function castle(g: GeoBuilder, look: ShipLook, box: BoxDef, planks: boolean): void {
   const [w, h, d] = box.size;
   const [x, y, z] = box.pos;
@@ -467,7 +508,7 @@ function castle(g: GeoBuilder, look: ShipLook, box: BoxDef, planks: boolean): vo
   }
   // Tapa: n = 2·ceil(w/2 / 0,5) tablas a lo largo de Z sobre el ancho w (D36)
   const n = planks ? 2 * Math.ceil(w / 2 / 0.5) : 1;
-  const deck = [lin(look.deck), lin(look.deckAlt)];
+  const deck = planks ? [lin(look.deck), lin(look.deckAlt)] : [lin(look.deckLod1)];
   for (let j = 0; j < n; j++) {
     const a = x0 + (w * j) / n;
     const b = x0 + (w * (j + 1)) / n;
@@ -480,7 +521,7 @@ function buildLod(r: ShipRecipe, lod: 0 | 1): { geometry: THREE.BufferGeometry; 
   const g = new GeoBuilder({ rim: true });
   const rm = 0.022 * r.L;
   const cMast = lin(look.mast);
-  const cSail = lin(look.sail);
+  const cSail = lin(look.sailLod1); // velas lisas de LOD1 (D40)
   const open = (r.knifeOpen ?? 25) * deg;
 
   // _rim_mask = 1 solo en el casco: loft (con borda y cubierta), castillos y camaretas (D18, ASSET-SPEC §6)
@@ -517,8 +558,9 @@ function buildLod(r: ShipRecipe, lod: 0 | 1): { geometry: THREE.BufferGeometry; 
       const axis: Vec3 = [0, B[1] - A[1], B[0] - A[0]];
       const m = opened(group, zy(A), axis, zy(D), open);
       const foot = dist3(zy(A), zy(D));
-      // LOD0 (D36): paños casi verticales de CLOTH.w m × 3 filas; LOD1: abanico liso desde el centro con panza
-      if (lod === 0) clothSail(g, m, [zy(A), zy(B), zy(C), zy(D)], 0.08 * foot, Math.max(2, Math.round(foot / CLOTH[r.look].w)), 3, false, look);
+      // LOD0 (D36, D40): paños casi verticales de CLOTH.w m × 3 filas; LOD1: abanico liso desde el centro con panza
+      const nu = Math.max(2, Math.round(foot / CLOTH[r.look].w));
+      if (lod === 0) clothSail(g, m, [zy(A), zy(B), zy(C), zy(D)], 0.08 * foot, nu, 3, false, clothColors(r, look, g.marks.length, nu));
       else fanSail(g, m, [zy(A), zy(B), zy(C), zy(D)], 0.08 * foot, cSail);
       if (lod === 0) {
         spar(g, m, zy(A), zy(D), 0.3 * rm, cMast);
@@ -530,8 +572,10 @@ function buildLod(r: ShipRecipe, lod: 0 | 1): { geometry: THREE.BufferGeometry; 
       const { A, B, C } = mast.lateen;
       const m = opened(group, zy(A), [0, 1, 0], zy(B), open);
       const len = dist3(zy(A), zy(C));
-      // LOD0 (D36): A = amura, D = escota B y los dos vértices superiores en el pico C; 3 columnas × filas de CLOTH.row m
-      if (lod === 0) clothSail(g, m, [zy(A), zy(C), zy(C), zy(B)], 0.06 * len, 3, Math.max(2, Math.round(len / CLOTH[r.look].row)), true, look);
+      // LOD0: A = amura, D = escota B y los dos vértices superiores en el pico C. Con 3 tonos (D40), paños radiales de
+      // CLOTH.w m a lo largo del pujamen A→B que convergen en el pico × 3 filas; mercante (D36), 3 columnas × filas de
+      // CLOTH.row m paralelas al pujamen
+      if (lod === 0) knifeSail(g, r, look, m, [zy(A), zy(C), zy(C), zy(B)], 0.06 * len, dist3(zy(A), zy(B)), len);
       else fanSail(g, m, [zy(A), zy(B), zy(C)], 0.06 * len, cSail);
       if (lod === 0) spar(g, m, zy(A), zy(C), 0.3 * rm, cMast);
     }
@@ -546,8 +590,9 @@ function buildLod(r: ShipRecipe, lod: 0 | 1): { geometry: THREE.BufferGeometry; 
     const T = jib.T === 'tip' ? tip : jib.T;
     const m = opened(new THREE.Matrix4(), T, [jib.H[0] - T[0], jib.H[1] - T[1], jib.H[2] - T[2]], jib.C, open);
     const stay = dist3(jib.H, T);
-    // LOD0 (D36): A = amura T, D = escota C y los dos vértices superiores en el puño de driza H; filas de CLOTH.row m
-    if (lod === 0) clothSail(g, m, [T, jib.H, jib.H, jib.C], 0.06 * stay, 3, Math.max(2, Math.round(stay / CLOTH[r.look].row)), true, look);
+    // LOD0: A = amura T, D = escota C y los dos vértices superiores en el puño de driza H. Con 3 tonos (D40), paños
+    // radiales a lo largo del pujamen T→C que convergen en H; mercante (D36), filas de CLOTH.row m
+    if (lod === 0) knifeSail(g, r, look, m, [T, jib.H, jib.H, jib.C], 0.06 * stay, dist3(T, jib.C), stay);
     else fanSail(g, m, [jib.H, T, jib.C], 0.06 * stay, cSail);
   }
 

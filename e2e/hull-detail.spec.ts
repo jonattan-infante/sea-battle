@@ -1,5 +1,5 @@
-// D23 c y D36 (ASSET-SPEC §11: AS-V18 sin facetas, AS-V19 textura interna, AS-V20 cañones legibles; ART-DIRECTION
-// AD-10, AD-25 y AD-26) medidos sobre el render del juego. Escena sintética 'gallery': las 5 clases quietas, con la vida
+// D23 c, D36 y D40 (ASSET-SPEC §11: AS-V18 sin facetas, AS-V19 textura interna, AS-V20 cañones legibles, AS-V21 carácter
+// de la lona; ART-DIRECTION AD-10, AD-25, AD-26 y AD-33) medidos sobre el render del juego. Escena sintética 'gallery': las 5 clases quietas, con la vida
 // entera y sin efectos; la que se mide va al foco con su rumbo y las demás quedan a 2 km. 1440×900 a zoom 1,0×: N1 (la
 // sesión nueva, 6,20 px/m) para AS-V18/V19 y AD-26, y N3 (5,04 px/m, D28) para AS-V20. Por pose, el mismo frame
 // congelado se dibuja 4 veces:
@@ -51,6 +51,7 @@ interface Shot {
   triangles: number; // triángulos del barco: con − sin
   ports: Port[]; // AS-V20: componentes de cañón o porta junto a la franja
   rejected: { x: number; y: number; w: number; h: number; why: 'caja' | 'sin franja' }[]; // AS-V20: las descartadas
+  cloth: { sail: number; px: number; axis: 1 | 2; lines: number; n: number; r: number; eta: number; range: number }[]; // AS-V21 (b), por vela
   crops?: Record<string, string>;
 }
 
@@ -349,6 +350,87 @@ async function measurePose([id, keep, bandHex]: [string, boolean, string]): Prom
     }
   }
 
+  // AS-V21 (b) (D40, af92d47): los descriptores de qa-artifacts/render/o7-base/scripts/sail-profile.py, para que QA y
+  // dev-render midan lo mismo. Vela = región del pase de ids con ≥ 120 px, erosionada 1 px (4 vecinos). Dirección «a
+  // través de los paños» = la dominante del gradiente del albedo (tensor de estructura con los píxeles de |∇L*| ≥ 2); si
+  // en ella no cabe ningún tramo de ≥ 12 px, la perpendicular (las franjas del Mercante). Líneas = paralelas cada 2 px
+  // hasta ±40 px del centroide, partidas en tramos continuos de ≥ 12 px dentro de la vela; se quedan las de ≥ 60 % de la
+  // más larga. Por línea, con el L* de la captura sin su tendencia lineal: r = el mayor máximo local de la autocorrelación
+  // normalizada (3 ≤ k < n/2, n ≥ 2,5·k; 0 si no hay) y η = varianza entre las 2 clases de Otsu / varianza; rango = p95 −
+  // p5 de L*. Por vela, la mediana de sus líneas
+  const rint = (v: number) => { const fl = Math.floor(v), d = v - fl; return d > 0.5 || (d === 0.5 && fl % 2 !== 0) ? fl + 1 : fl; }; // np.rint
+  const detrend = (p: number[]) => {
+    const n = p.length, tm = (n - 1) / 2, pm = p.reduce((a, b) => a + b, 0) / n;
+    let num = 0, den = 0;
+    for (let t = 0; t < n; t++) { num += (t - tm) * (p[t] - pm); den += (t - tm) ** 2; }
+    return p.map((v, t) => v - pm - (num / den) * (t - tm));
+  };
+  const acPeak = (x: number[]) => {
+    const n = x.length, r: number[] = [];
+    for (let k = 1; k <= n >> 1; k++) {
+      let ab = 0, aa = 0, bb = 0;
+      for (let i = 0; i + k < n; i++) { ab += x[i] * x[i + k]; aa += x[i] * x[i]; bb += x[i + k] * x[i + k]; }
+      r.push(aa * bb > 0 ? ab / Math.sqrt(aa * bb) : 0);
+    }
+    let best = 0;
+    for (let k = 3; k < n >> 1; k++) if (r[k - 1] > r[k - 2] && r[k - 1] >= r[k] && r[k - 1] > best && n >= 2.5 * k) best = r[k - 1];
+    return best;
+  };
+  const otsu = (x: number[]) => {
+    const n = x.length, m = x.reduce((a, b) => a + b, 0) / n, v = x.reduce((a, b) => a + (b - m) ** 2, 0) / n;
+    if (v <= 1e-9) return 0;
+    const q = [...x].sort((a, b) => a - b), total = q.reduce((a, b) => a + b, 0);
+    let best = 0, left = 0;
+    for (let i = 1; i < n; i++) { left += q[i - 1]; best = Math.max(best, ((i * (n - i)) / (n * n)) * (left / i - (total - left) / (n - i)) ** 2); }
+    return best / v;
+  };
+  const pct = (p: number[], k: number) => { const q = [...p].sort((a, b) => a - b), t = (k / 100) * (q.length - 1), lo = Math.floor(t); return q[lo] + (q[Math.min(lo + 1, q.length - 1)] - q[lo]) * (t - lo); };
+  const cloth: Shot['cloth'] = [];
+  for (const [rid, q] of boxes) {
+    if (rid < 0 || q.n < 120) continue;
+    const at = (x: number, y: number) => region[y * W + x] === rid;
+    const M1 = new Uint8Array(N);
+    let m1 = 0, sx = 0, sy = 0, mx0 = W, mx1 = 0, my0 = H, my1 = 0, jxx = 0, jyy = 0, jxy = 0, use = 0;
+    for (let y = Math.max(1, q.y0); y <= Math.min(H - 2, q.y1); y++) {
+      for (let x = Math.max(1, q.x0); x <= Math.min(W - 2, q.x1); x++) {
+        if (!(at(x, y) && at(x - 1, y) && at(x + 1, y) && at(x, y - 1) && at(x, y + 1))) continue;
+        const i = y * W + x;
+        M1[i] = 1; m1++; sx += x; sy += y;
+        mx0 = Math.min(mx0, x); mx1 = Math.max(mx1, x); my0 = Math.min(my0, y); my1 = Math.max(my1, y);
+        const gx = (LC[3 * (i + 1)] - LC[3 * (i - 1)]) / 2, gy = (LC[3 * (i + W)] - LC[3 * (i - W)]) / 2;
+        if (Math.hypot(gx, gy) < 2) continue;
+        jxx += gx * gx; jyy += gy * gy; jxy += gx * gy; use++;
+      }
+    }
+    if (m1 < 40 || use < 10) continue;
+    const cx = sx / m1, cy = sy / m1, T = Math.trunc(Math.hypot(mx1 - mx0, my1 - my0)) + 2;
+    const theta = 0.5 * Math.atan2(2 * jxy, jxx - jyy);
+    const sample = (th: number) => {
+      const [dx, dy] = [Math.cos(th), Math.sin(th)], [nx, ny] = [-dy, dx];
+      const lines: number[][] = [];
+      for (let o = -40; o <= 40; o += 2) {
+        let run: number[] = [];
+        for (let t = -T; t <= T; t++) {
+          const x = rint(cx + nx * o + dx * t), y = rint(cy + ny * o + dy * t);
+          const inside = x >= 0 && x < W && y >= 0 && y < H && M1[y * W + x] === 1;
+          if (inside && run[run.length - 1] !== y * W + x) run.push(y * W + x);
+          else if (!inside && run.length) { if (run.length >= 12) lines.push(run); run = []; }
+        }
+        if (run.length >= 12) lines.push(run);
+      }
+      return lines;
+    };
+    let axis: 1 | 2 = 1, lines = sample(theta);
+    if (!lines.length) { axis = 2; lines = sample(theta + Math.PI / 2); }
+    if (!lines.length) continue;
+    const nmax = Math.max(...lines.map((l) => l.length));
+    const ds = lines.filter((l) => l.length >= 0.6 * nmax).map((l) => {
+      const p = l.map((i) => LA[3 * i]), x = detrend(p);
+      return { r: acPeak(x), eta: otsu(x), range: pct(p, 95) - pct(p, 5) };
+    });
+    cloth.push({ sail: rid, px: q.n, axis, lines: ds.length, n: nmax, r: median(ds.map((d) => d.r)), eta: median(ds.map((d) => d.eta)), range: median(ds.map((d) => d.range)) });
+  }
+
   let crops: Record<string, string> | undefined;
   if (keep) {
     const cx0 = Math.max(0, x0 - 16), cy0 = Math.max(0, y0 - 16), cw = Math.min(W, x1 + 17) - cx0, ch = Math.min(H, y1 + 17) - cy0;
@@ -361,7 +443,7 @@ async function measurePose([id, keep, bandHex]: [string, boolean, string]): Prom
     };
     crops = { con: crop(A), sin: crop(B), alb: crop(C), ids: crop(D), cob: crop(E) };
   }
-  return { ppm, lod: view.lod, calls: withShip.calls - without.calls, triangles: withShip.triangles - without.triangles, mask: maskPx, interior, texture: interior ? textured / interior : 0, regions, ports, rejected, crops };
+  return { ppm, lod: view.lod, calls: withShip.calls - without.calls, triangles: withShip.triangles - without.triangles, mask: maskPx, interior, texture: interior ? textured / interior : 0, regions, ports, rejected, cloth, crops };
 }
 
 interface Row extends Omit<Shot, 'crops'> {
@@ -384,6 +466,9 @@ const lab = (hex: string) => {
   return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
 };
 const AS_V20_CONTRAST = 15;
+const AS_V21 = { classes: ['sloop', 'brig', 'frigate', 'pirate'], rMedian: 0.4, rHigh: 0.7, etaClass: 0.8, etaHigh: 0.85, share: 0.15 }; // D40; el Mercante se registra (D9)
+const MOBILE_N1_PPM = 2.82; // 390×844 con N1 (ASSET-SPEC §7): Balandra, Bergantín (banda), Pirata y Mercante en LOD1
+const LOD1_CLASSES = ['sloop', 'brig', 'pirate', 'merchant'];
 const legible = (q: Port) => q.core >= 2 && q.contrast >= AS_V20_CONTRAST; // AS-V20 (D38): núcleo ≥ 2 px y contraste ≥ 15
 
 // Una pasada por la galería con un nivel de cañón (encuadre de §6.2): cada clase al foco con cada rumbo, SHOTS capturas
@@ -434,7 +519,7 @@ async function gallery(page: Page, level: number, headings: number[], out?: stri
 }
 
 test.describe('Detalle interno de los cascos @perf', () => {
-  test('D23 c y D36: AS-V19 ≥ 55 %, AS-V18 sin facetas, AS-V20 con contraste local, AD-10, AD-25, AD-26 y 1 draw call por barco en su presupuesto', async ({ page }) => {
+  test('D23 c, D36 y D40: AS-V19 ≥ 55 %, AS-V18 sin facetas, AS-V20 con contraste local, AS-V21, AD-10, AD-25, AD-26, AD-33 y 1 draw call por barco en su presupuesto', async ({ page }) => {
     test.setTimeout(420_000);
     await enterGame(page);
     if (OUT) fs.mkdirSync(OUT, { recursive: true });
@@ -445,6 +530,10 @@ test.describe('Detalle interno de los cascos @perf', () => {
     const ad26 = (await page.evaluate((ppm) => window.__SEA_BATTLE__!.runtime().measureShipValues(['sloop'], [0, 90, 180, 270], ppm), ppm))
       .map((v) => ({ deg: v.headingDeg, sail: v.sailPixels, deck: v.deckPixels, hull: v.hullPixels, total: v.sailPixels + v.deckPixels + v.hullPixels }));
     const values = await page.evaluate((classes) => window.__SEA_BATTLE__!.runtime().measureShipValues(classes, [0, 90, 180, 270]), [...CLASSES]);
+    // AD-33 (D40): la misma pose (N1 a 1,0×, rumbos 0°, 90° y 180°) con LOD0 y con LOD1 forzado. AD-25 en 390×844 con N1:
+    // las clases que allí van en LOD1, con su ppm
+    const lodPair = await page.evaluate(([classes, ppm]) => ([0, 1] as const).map((lod) => window.__SEA_BATTLE__!.runtime().measureShipValues(classes, [0, 90, 180], ppm, lod)), [[...CLASSES], ppm] as [string[], number]);
+    const mobile = await page.evaluate(([classes, ppm]) => window.__SEA_BATTLE__!.runtime().measureShipValues(classes, [0, 90, 180, 270], ppm, 1), [LOD1_CLASSES, MOBILE_N1_PPM] as [string[], number]);
     const n3 = await gallery(page, 3, [90, 270], OUT);
     await page.evaluate(() => {
       const rt = window.__SEA_BATTLE__!.runtime();
@@ -480,6 +569,34 @@ test.describe('Detalle interno de los cascos @perf', () => {
       return { classId: v.classId, deg: v.headingDeg, sailL: v.sailL, stripeL: v.stripeL, deckHex: v.deckHex, ad25: Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]), alt: lstar(look.sailAlt) };
     });
 
+    // AS-V21 (b): cada vela de las 4 clases, a 0° y 90° con N1 y en las 3 capturas; el Mercante, sin asertar
+    const med = (v: number[]) => { const q = [...v].sort((a, b) => a - b); const m = q.length >> 1; return q.length % 2 ? q[m] : (q[m - 1] + q[m]) / 2; };
+    const v21all = rows.filter((r) => r.level === 1 && (r.deg === 0 || r.deg === 90)).flatMap((r) => r.cloth.map((c) => ({ classId: r.classId, deg: r.deg, k: r.k, ...c })));
+    const v21 = v21all.filter((c) => AS_V21.classes.includes(c.classId));
+    const share = (v: number[], t: number) => (v.length ? v.filter((x) => x >= t).length / v.length : NaN);
+    const v21r = v21.length ? med(v21.map((c) => c.r)) : NaN;
+    const v21rHigh = share(v21.map((c) => c.r), AS_V21.rHigh);
+    const v21etaHigh = share(v21.map((c) => c.eta), AS_V21.etaHigh);
+    const v21class = [...AS_V21.classes, 'merchant'].map((classId) => {
+      const cs = v21all.filter((c) => c.classId === classId);
+      return { classId, sails: cs.length, eta: cs.length ? med(cs.map((c) => c.eta)) : NaN, r: cs.length ? med(cs.map((c) => c.r)) : NaN, range: cs.length ? med(cs.map((c) => c.range)) : NaN };
+    });
+    // AD-33: por clase, L* medio de la vela y color medio de la cubierta (ponderados por píxeles en los 3 rumbos)
+    const avg = (vs: { px: number; v: number[] }[]) => { const n = vs.reduce((a, q) => a + q.px, 0); return [0, 1, 2].map((i) => vs.reduce((a, q) => a + q.px * q.v[i], 0) / n); };
+    const rgb = (h: string) => [1, 3, 5].map((k) => parseInt(h.slice(k, k + 2), 16));
+    const hexOf = (c: number[]) => '#' + c.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('').toUpperCase();
+    const ad33 = CLASSES.map((classId) => {
+      const [l0, l1] = lodPair.map((vs) => vs.filter((v) => v.classId === classId));
+      const sailL = (vs: typeof l0) => vs.reduce((a, v) => a + v.sailPixels * v.sailL, 0) / vs.reduce((a, v) => a + v.sailPixels, 0);
+      const deck = (vs: typeof l0) => hexOf(avg(vs.filter((v) => v.deckPixels > 0).map((v) => ({ px: v.deckPixels, v: rgb(v.deckHex) }))));
+      const [d0, d1] = [lab(deck(l0)), lab(deck(l1))];
+      return { classId, sail0: sailL(l0), sail1: sailL(l1), deck0: deck(l0), deck1: deck(l1), dL: sailL(l1) - sailL(l0), dE: Math.hypot(d0[0] - d1[0], d0[1] - d1[1], d0[2] - d1[2]), perDeg: l0.map((v, i) => `${v.headingDeg}° ${(l1[i].sailL - v.sailL).toFixed(1)}`).join(' · ') };
+    });
+    const ad25m = mobile.map((v) => {
+      const [a, b] = [lab(v.deckHex), lab(LOOK[v.classId] === 'pirate' ? '#6E4B30' : '#C9965E')];
+      return { classId: v.classId, deg: v.headingDeg, deckHex: v.deckHex, px: v.deckPixels, dE: Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) };
+    });
+
     for (const p of summary) {
       const v20 = p.level === 3 ? ` · AS-V20 ${p.ports.join('/')} de ${CANNONS[p.classId]} (componentes ${p.components.join('/')}, núcleo ${p.core.length ? `${Math.min(...p.core)}–${Math.max(...p.core)}` : '—'} px, contraste ${p.contrast.length ? `${Math.min(...p.contrast).toFixed(1)}–${Math.max(...p.contrast).toFixed(1)}` : '—'})` : '';
       const v19 = p.level === 1 ? ` · AS-V19 ${(p.texture * 100).toFixed(1)} % · AS-V18 máx. ${p.facetMax} / media ${p.facetMean.toFixed(2)} (${p.regions})` : '';
@@ -487,7 +604,11 @@ test.describe('Detalle interno de los cascos @perf', () => {
     }
     console.log(`AD-26 (ppm ${ppm.toFixed(3)}): ${ad26.map((v) => `${v.deg}° ${v.sail}+${v.deck}+${v.hull} = ${v.total}`).join(' · ')}`);
     for (const v of sails) console.log(`AD-10/AD-25 ${v.classId.padEnd(8)} ${String(v.deg).padStart(3)}°: lona L* ${v.sailL.toFixed(1)}${v.stripeL ? ` (franjas ${v.stripeL.toFixed(1)})` : ''} · cubierta ${v.deckHex} (ΔE76 ${v.ad25.toFixed(1)} del token)`);
-    if (OUT) fs.writeFileSync(path.join(OUT, 'd36.json'), JSON.stringify({ ppm, rows, summary, ad26, sails }, null, 1));
+    console.log(`AS-V21 (b): ${v21.length} velas · r mediana ${v21r.toFixed(2)} (≤ ${AS_V21.rMedian}) · r ≥ ${AS_V21.rHigh}: ${(100 * v21rHigh).toFixed(0)} % · η ≥ ${AS_V21.etaHigh}: ${(100 * v21etaHigh).toFixed(0)} % (≤ ${100 * AS_V21.share} %) · rango ${med(v21.map((c) => c.range)).toFixed(1)}`);
+    for (const c of v21class) console.log(`AS-V21 ${c.classId.padEnd(8)}: ${c.sails} velas · η ${c.eta.toFixed(2)}${c.classId === 'merchant' ? ' (sin asertar)' : ` (≤ ${AS_V21.etaClass})`} · r ${c.r.toFixed(2)} · rango ${c.range.toFixed(1)}`);
+    for (const a of ad33) console.log(`AD-33 ${a.classId.padEnd(8)}: vela L* ${a.sail0.toFixed(1)} → ${a.sail1.toFixed(1)} (Δ ${a.dL >= 0 ? '+' : ''}${a.dL.toFixed(1)}; por rumbo ${a.perDeg}) · cubierta ${a.deck0} → ${a.deck1} (ΔE76 ${a.dE.toFixed(1)})`);
+    for (const v of ad25m) console.log(`AD-25 390×844 LOD1 ${v.classId.padEnd(8)} ${String(v.deg).padStart(3)}°: cubierta ${v.deckHex} (${v.px} px) · ΔE76 ${v.dE.toFixed(1)} del token`);
+    if (OUT) fs.writeFileSync(path.join(OUT, 'd36.json'), JSON.stringify({ ppm, rows, summary, ad26, sails, v21: v21all, ad33, ad25m }, null, 1));
 
     for (const p of summary) {
       expect(p.lod, `${p.classId} N${p.level} ${p.deg}°: LOD0 en escritorio`).toBe(0);
@@ -512,5 +633,18 @@ test.describe('Detalle interno de los cascos @perf', () => {
       if (v.deg === 180) expect.soft(v.sailL, `AD-10 ${v.classId}`)[LOOK[v.classId] === 'pirate' ? 'toBeLessThanOrEqual' : 'toBeGreaterThanOrEqual'](LOOK[v.classId] === 'pirate' ? 25 : 80);
       expect.soft(v.ad25, `AD-25 ${v.classId} ${v.deg}°`).toBeLessThanOrEqual(6);
     }
+    // AS-V21 (b) (D40): η por clase ≤ 0,80; sobre las 4 clases, r con mediana ≤ 0,40 y ≤ 15 % de velas con r ≥ 0,70 o con
+    // η ≥ 0,85
+    expect.soft(v21.length, 'AS-V21: velas medidas').toBeGreaterThan(0);
+    for (const c of v21class) if (c.classId !== 'merchant') expect.soft(c.eta, `AS-V21 ${c.classId}: η`).toBeLessThanOrEqual(AS_V21.etaClass);
+    expect.soft(v21r, 'AS-V21: mediana de r').toBeLessThanOrEqual(AS_V21.rMedian);
+    expect.soft(v21rHigh, 'AS-V21: velas con r ≥ 0,70').toBeLessThanOrEqual(AS_V21.share);
+    expect.soft(v21etaHigh, 'AS-V21: velas con η ≥ 0,85').toBeLessThanOrEqual(AS_V21.share);
+    // AD-33 (D40): |ΔL*| de la vela ≤ 3 y ΔE76 de la cubierta ≤ 3 entre LOD0 y LOD1. AD-25 en LOD1 (390×844): ≤ 4
+    for (const a of ad33) {
+      expect.soft(Math.abs(a.dL), `AD-33 ${a.classId}: vela`).toBeLessThanOrEqual(3);
+      expect.soft(a.dE, `AD-33 ${a.classId}: cubierta`).toBeLessThanOrEqual(3);
+    }
+    for (const v of ad25m) expect.soft(v.dE, `AD-25 390×844 ${v.classId} ${v.deg}°`).toBeLessThanOrEqual(4);
   });
 });

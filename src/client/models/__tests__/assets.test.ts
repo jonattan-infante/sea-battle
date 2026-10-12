@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { ISLANDS } from '../../../game/constants';
 import { buildBuoyGeometry, buildIslands, buildLootGeometry, buildPalmGeometry } from '../island-geometry';
 import { SHIP_LOOKS, TOP_FACE } from '../../art';
-import { buildShipAsset, deckHalfBeam, deckY, getShipModel, ShipExtras } from '../ship-geometry';
+import { buildShipAsset, clothTones, deckHalfBeam, deckY, getShipModel, ShipExtras } from '../ship-geometry';
 
 const CLASSES = ['sloop', 'brig', 'frigate', 'pirate', 'merchant'] as const;
 const BUDGET = { ship: [2500, 800], npc: [2000, 700] } as const;
@@ -123,10 +123,11 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
     });
   });
 
-  test('AS-V14 (base): los rangos de vela de cada LOD solo contienen vértices del color de vela o de franja (y de los paneles en LOD0)', () => {
+  test('AS-V14 (base): los rangos de vela de cada LOD solo contienen vértices de los tonos de lona o de franja (LOD1: sail.lod1)', () => {
     const look = SHIP_LOOKS[model.recipe.look];
     model.lods.forEach((geometry, lod) => {
-      const allowed = [look.sail, look.sailStripe, lod === 0 ? look.sailAlt : null].filter((c): c is string => !!c).map((hex) => new THREE.Color(hex));
+      const tones = lod === 0 ? [look.sail, look.sailMid, look.sailAlt] : [look.sailLod1];
+      const allowed = [...tones, look.sailStripe].filter((c): c is string => !!c).map((hex) => new THREE.Color(hex));
       const ranges = model.sails[lod];
       expect(ranges.length).toBeGreaterThan(0);
       const color = geometry.getAttribute('color');
@@ -157,11 +158,20 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
     expect(colorCount(lod1, look.deckAlt, 0.85)).toBe(0);
     expect(colorCount(lod0, look.hull, 0.85)).toBeGreaterThan(0); // borde inferior de V2–V3
     expect(colorCount(lod0, look.mast, 0.85)).toBeGreaterThan(0); // collar de 0,4 m de los mástiles
-    // Las velas cuadras llevan paneles; el mercante solo en las filas crema
-    if (model.recipe.masts.some((m) => m.squares?.length)) {
-      expect(colorCount(lod0, look.sailAlt)).toBeGreaterThan(0);
-      expect(colorCount(lod1, look.sailAlt)).toBe(0);
-    }
+    // Las velas llevan paños; el mercante, solo en las filas crema. LOD1, lisa en sail.lod1 (D40)
+    expect(colorCount(lod0, look.sailAlt)).toBeGreaterThan(0);
+    expect(colorCount(lod1, look.sailAlt)).toBe(0);
+    expect(colorCount(lod1, look.sail)).toBe(0);
+    expect(colorCount(lod1, look.sailLod1)).toBeGreaterThan(0);
+  });
+
+  test('D40 (O-8): LOD1 pinta la cubierta y las tapas lisas con el albedo de la media de las tablas, sin deck ni deck.alt', () => {
+    const look = SHIP_LOOKS[model.recipe.look];
+    const [lod0, lod1] = model.lods;
+    expect(look.deckLod1).toBe(model.recipe.look === 'pirate' ? '#67462D' : '#BD8D59');
+    expect(colorCount(lod1, look.deckLod1)).toBeGreaterThan(0);
+    expect(colorCount(lod1, look.deck)).toBe(0);
+    expect(colorCount(lod0, look.deckLod1)).toBe(0); // LOD0: la media sale de las tablas
   });
 
   test('D23: normales con pliegue de 40° (material sin flat shading): el costado es continuo y el canto de cubierta, duro', () => {
@@ -238,49 +248,99 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
           const vs = [3 * t, 3 * t + 1, 3 * t + 2];
           if (!vs.every((v) => Math.abs(pos.getY(v) - top) < 1e-6 && Math.abs(pos.getX(v) - box.pos[0]) <= w / 2 + 1e-6 && Math.abs(pos.getZ(v) - box.pos[2]) <= d / 2 + 1e-6)) continue;
           count++;
-          colors.add(sameColor(color, vs[0], look.deck) ? 'deck' : sameColor(color, vs[0], look.deckAlt) ? 'deckAlt' : 'otro');
+          colors.add(sameColor(color, vs[0], look.deck) ? 'deck' : sameColor(color, vs[0], look.deckAlt) ? 'deckAlt' : sameColor(color, vs[0], look.deckLod1) ? 'deckLod1' : 'otro');
         }
         expect(count).toBe(lod === 0 ? 2 * n : 2);
-        expect([...colors].sort()).toEqual(lod === 0 ? ['deck', 'deckAlt'] : ['deck']);
+        expect([...colors].sort()).toEqual(lod === 0 ? ['deck', 'deckAlt'] : ['deckLod1']);
       });
     }
   });
 
-  test('D36/D37: rejillas de las velas (paños de ≈ 0,7 m, o 0,6 m con la paleta pirata; foque y latina por filas) en LOD0, lisas en LOD1', () => {
+  // Paños esperados por vela (ASSET-SPEC §8.2, D40), en el orden de construcción (por mástil: cuadras, cangreja y latina;
+  // luego los foques): n paños y triángulos de LOD0 y LOD1. Jugador: paño de 0,55 m; paleta pirata, 0,5 m (cuadras en
+  // múltiplo de 4); mercante, 0,7 m y filas de 0,9 m en foque y latina. Foques y latinas con 3 tonos: paños radiales
+  // × 3 filas, con la fila de la cabeza degenerada (1 triángulo por paño)
+  const d3 = (p: readonly number[], q: readonly number[]) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+  const zy = (p: readonly [number, number]) => [0, p[1], p[0]];
+  const sailPlan = () => {
     const r = model.recipe;
-    const look = SHIP_LOOKS[r.look];
-    const pirate = r.look === 'pirate'; // D37: paños de 0,6 m y filas de 0,75 m
-    const d = (p: number[], q: number[]) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
-    const zy = (p: readonly [number, number]) => [0, p[1], p[0]];
-    // Triángulos esperados por vela, en el orden de construcción: por mástil, cuadras, cangreja y latina; luego los foques
-    const expected: [number, number][] = [];
+    const threeTones = r.look !== 'merchant';
+    const p = r.look === 'pirate' ? 0.5 : r.look === 'merchant' ? 0.7 : 0.55;
+    const plan: { kind: string; n: number; tris: [number, number] }[] = [];
     const rows = r.sailStyle === 'striped' ? 5 : 3;
     for (const mast of r.masts) {
       for (const s of mast.squares ?? []) {
-        const nx = pirate ? Math.max(4, 4 * Math.round(s.w / 2.4)) : r.sailStyle === 'notched' ? Math.max(4, 4 * Math.round(s.w / 2.8)) : Math.max(4, 2 * Math.round(s.w / 1.4));
-        expected.push([2 * nx * rows, 2 * 4 * rows]);
+        const nx = r.look === 'pirate' ? Math.max(4, 4 * Math.round(s.w / 2.0)) : r.look === 'merchant' ? Math.max(4, 2 * Math.round(s.w / 1.4)) : Math.max(4, 2 * Math.round(s.w / 1.1));
+        plan.push({ kind: 'cuadra', n: nx, tris: [2 * nx * rows, 2 * 4 * rows] });
       }
-      if (mast.gaff) expected.push([2 * Math.max(2, Math.round(d(zy(mast.gaff.A), zy(mast.gaff.D)) / (pirate ? 0.6 : 0.7))) * 3, 4]);
-      if (mast.lateen) expected.push([2 * 3 * Math.max(2, Math.round(d(zy(mast.lateen.A), zy(mast.lateen.C)) / (pirate ? 0.75 : 0.9))) - 3, 3]); // la fila del pico degenera
+      if (mast.gaff) {
+        const nu = Math.max(2, Math.round(d3(zy(mast.gaff.A), zy(mast.gaff.D)) / p));
+        plan.push({ kind: 'cangreja', n: nu, tris: [2 * nu * 3, 4] });
+      }
+      if (mast.lateen) {
+        const { A, B, C } = mast.lateen;
+        const nu = Math.max(2, Math.round(d3(zy(A), zy(B)) / p));
+        const nv = Math.max(2, Math.round(d3(zy(A), zy(C)) / 0.9));
+        plan.push(threeTones ? { kind: 'latina', n: nu, tris: [5 * nu, 3] } : { kind: 'latina', n: nv, tris: [2 * 3 * nv - 3, 3] });
+      }
     }
     const bs = r.bowsprit + 1;
     const tip = [0, 1.25 * r.F + 0.342 * bs, r.L / 2 - 1 + 0.94 * bs];
-    for (const jib of r.jibs) expected.push([2 * 3 * Math.max(2, Math.round(d(jib.T === 'tip' ? tip : jib.T, jib.H) / (pirate ? 0.75 : 0.9))) - 3, 3]);
-    // ASSET-SPEC §8.4 (D37): las dos cuadras del pirata llevan 12 columnas
-    if (pirate) expect(r.masts.flatMap((m) => m.squares ?? []).map((q) => Math.max(4, 4 * Math.round(q.w / 2.4)))).toEqual([12, 12]);
-    model.sails.forEach((ranges, lod) => {
-      expect(ranges.map(([a, b]) => b - a)).toEqual(expected.map((e) => e[lod]));
-      const color = model.lods[lod].getAttribute('color');
-      for (const [a, b] of ranges) {
-        let alt = 0;
-        let plain = 0;
-        for (let v = 3 * a; v < 3 * b; v++) {
-          if (sameColor(color, v, look.sailAlt)) alt++;
-          if (sameColor(color, v, look.sail)) plain++;
+    for (const jib of r.jibs) {
+      const T = jib.T === 'tip' ? tip : jib.T;
+      const nu = Math.max(2, Math.round(d3(T, jib.C) / p));
+      const nv = Math.max(2, Math.round(d3(T, jib.H) / 0.9));
+      plan.push(threeTones ? { kind: 'foque', n: nu, tris: [5 * nu, 3] } : { kind: 'foque', n: nv, tris: [2 * 3 * nv - 3, 3] });
+    }
+    return plan;
+  };
+
+  test('D40: rejillas de las velas (paños de 0,55 m, 0,5 m en la paleta pirata; foques y latinas radiales × 3 filas; mercante como en D36) en LOD0, lisas en LOD1', () => {
+    const r = model.recipe;
+    const plan = sailPlan();
+    // ASSET-SPEC §8.4: las dos cuadras del pirata llevan 16 y 12 columnas (paños de 0,48 y 0,5 m)
+    if (r.look === 'pirate') expect(plan.filter((q) => q.kind === 'cuadra').map((q) => q.n)).toEqual([16, 12]);
+    model.sails.forEach((ranges, lod) => expect(ranges.map(([a, b]) => b - a)).toEqual(plan.map((q) => q.tris[lod])));
+  });
+
+  // AS-V21 (a) (D40): en cada vela de LOD0 con n ≥ 3 paños, solo los 3 tonos de la paleta, dos paños vecinos nunca del
+  // mismo tono y cada tono en ⌊n/3⌋ o ⌈n/3⌉ paños. Los paños salen de la geometría: triángulos del mismo color que
+  // comparten una arista forman un paño; si dos vecinos repitieran tono se fundirían y saldrían menos de n
+  if (model.recipe.look !== 'merchant') test('AS-V21 (a): 3 tonos barajados por vela, sin vecinos iguales y repartidos ⌊n/3⌋–⌈n/3⌉', () => {
+    const look = SHIP_LOOKS[model.recipe.look];
+    const tones = [look.sail, look.sailMid!, look.sailAlt].map((h) => new THREE.Color(h));
+    const geometry = model.lods[0];
+    const pos = geometry.getAttribute('position');
+    const color = geometry.getAttribute('color');
+    const key = (v: number) => `${pos.getX(v).toFixed(4)},${pos.getY(v).toFixed(4)},${pos.getZ(v).toFixed(4)}`;
+    const toneOf = (v: number) => tones.findIndex((c) => Math.abs(c.r - color.getX(v)) + Math.abs(c.g - color.getY(v)) + Math.abs(c.b - color.getZ(v)) < 1e-4);
+    const plan = sailPlan();
+    model.sails[0].forEach(([t0, t1], s) => {
+      const n = plan[s].n;
+      if (n < 3) return;
+      const parent = Array.from({ length: t1 - t0 }, (_, i) => i);
+      const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+      const tone: number[] = [];
+      const edges = new Map<string, number[]>();
+      for (let t = t0; t < t1; t++) {
+        const tt = [toneOf(3 * t), toneOf(3 * t + 1), toneOf(3 * t + 2)];
+        expect(tt[0]).toBeGreaterThanOrEqual(0); // (1) solo los 3 tonos
+        expect(tt[1]).toBe(tt[0]); // cada paño es de un solo color
+        expect(tt[2]).toBe(tt[0]);
+        tone.push(tt[0]);
+        const k = [key(3 * t), key(3 * t + 1), key(3 * t + 2)];
+        for (const [a, b] of [[0, 1], [1, 2], [2, 0]]) {
+          const e = [k[a], k[b]].sort().join('|');
+          edges.set(e, [...(edges.get(e) ?? []), t - t0]);
         }
-        if (lod === 0) expect(alt > 0 && plain > 0).toBe(true);
-        else expect(alt).toBe(0);
       }
+      for (const ts of edges.values()) for (const t of ts.slice(1)) if (tone[t] === tone[ts[0]]) parent[find(t)] = find(ts[0]);
+      const cloths = new Map<number, number>(); // raíz → tono
+      tone.forEach((c, i) => cloths.set(find(i), c));
+      expect({ vela: s, tipo: plan[s].kind, paños: cloths.size }).toEqual({ vela: s, tipo: plan[s].kind, paños: n }); // (2) sin vecinos iguales
+      for (const ts of edges.values()) for (const t of ts.slice(1)) if (find(t) !== find(ts[0])) expect(tone[t]).not.toBe(tone[ts[0]]);
+      const count = [0, 1, 2].map((c) => [...cloths.values()].filter((v) => v === c).length);
+      for (const c of count) expect(c === Math.floor(n / 3) || c === Math.ceil(n / 3)).toBe(true); // (3)
     });
   });
 
@@ -342,7 +402,7 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
 });
 
 // D36 (ART-DIRECTION §4.2–4.2.1): pasos de L* de los alternos, medidos sobre los hex en pantalla
-describe('Paleta de tablas y paños (D36)', () => {
+describe('Paleta de tablas y lona (D36, D40)', () => {
   const L = (hex: string) => {
     const c = new THREE.Color(hex); // lineal
     const Y = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
@@ -360,11 +420,49 @@ describe('Paleta de tablas y paños (D36)', () => {
     expect(SHIP_LOOKS.merchant.deckAlt).toBe(TOP_FACE.deckAlt.albedo);
   });
 
-  test('sail.alt: jugador ΔL* −12 sin bajar de 80 (AD-10); pirata #0D0D0F; mercante #D9CEB6', () => {
-    expect(L(SHIP_LOOKS.player.sailAlt) - L(SHIP_LOOKS.player.sail)).toBeCloseTo(-12, 0);
-    expect(L(SHIP_LOOKS.player.sailAlt)).toBeGreaterThanOrEqual(80);
-    expect(SHIP_LOOKS.pirate.sailAlt).toBe('#0D0D0F');
-    expect(SHIP_LOOKS.merchant.sailAlt).toBe('#D9CEB6');
+  test('D40: tonos de lona (§4.2): L* 96,1 / 86,2 / 76,1 en el jugador y 31,2 / 20,0 / 7,5 en el pirata; sail.mid, punto medio en sRGB', () => {
+    expect([SHIP_LOOKS.player.sail, SHIP_LOOKS.player.sailMid, SHIP_LOOKS.player.sailAlt]).toEqual(['#FBF3E3', '#DED7C8', '#C2BBAC']);
+    expect([SHIP_LOOKS.pirate.sail, SHIP_LOOKS.pirate.sailMid, SHIP_LOOKS.pirate.sailAlt]).toEqual(['#4A494D', '#303033', '#171619']);
+    expect([SHIP_LOOKS.player.sail, SHIP_LOOKS.player.sailMid!, SHIP_LOOKS.player.sailAlt].map((h) => Math.round(L(h) * 10) / 10)).toEqual([96.1, 86.2, 76.1]);
+    expect([SHIP_LOOKS.pirate.sail, SHIP_LOOKS.pirate.sailMid!, SHIP_LOOKS.pirate.sailAlt].map((h) => Math.round(L(h) * 10) / 10)).toEqual([31.2, 20, 7.5]);
+    const byte = (h: string, i: number) => parseInt(h.slice(1 + 2 * i, 3 + 2 * i), 16);
+    for (const look of [SHIP_LOOKS.player, SHIP_LOOKS.pirate]) {
+      for (let i = 0; i < 3; i++) expect(Math.abs(byte(look.sailMid!, i) - (byte(look.sail, i) + byte(look.sailAlt, i)) / 2)).toBeLessThanOrEqual(1);
+    }
+    // El mercante no cambia (D9): 2 tonos alternos
+    expect([SHIP_LOOKS.merchant.sail, SHIP_LOOKS.merchant.sailMid, SHIP_LOOKS.merchant.sailAlt]).toEqual(['#EADFC6', null, '#D9CEB6']);
+  });
+
+  test('D40 (O-8): sail.lod1 = media lineal de los tonos de LOD0 (±1/255) y cubierta de LOD1 = albedo de la media de las tablas', () => {
+    const mean = (hexes: string[]) => {
+      const cs = hexes.map((h) => new THREE.Color(h)); // lineal
+      return new THREE.Color(cs.reduce((a, c) => a + c.r, 0) / cs.length, cs.reduce((a, c) => a + c.g, 0) / cs.length, cs.reduce((a, c) => a + c.b, 0) / cs.length).getHexString();
+    };
+    const near = (a: string, b: string) => [0, 1, 2].every((i) => Math.abs(parseInt(a.slice(2 * i, 2 * i + 2), 16) - parseInt(b.slice(1 + 2 * i, 3 + 2 * i), 16)) <= 1);
+    expect(near(mean([SHIP_LOOKS.player.sail, SHIP_LOOKS.player.sailMid!, SHIP_LOOKS.player.sailAlt]), SHIP_LOOKS.player.sailLod1)).toBe(true);
+    expect(near(mean([SHIP_LOOKS.pirate.sail, SHIP_LOOKS.pirate.sailMid!, SHIP_LOOKS.pirate.sailAlt]), SHIP_LOOKS.pirate.sailLod1)).toBe(true);
+    expect(near(mean([SHIP_LOOKS.merchant.sail, SHIP_LOOKS.merchant.sailAlt]), SHIP_LOOKS.merchant.sailLod1)).toBe(true);
+    expect([SHIP_LOOKS.player.sailLod1, SHIP_LOOKS.pirate.sailLod1, SHIP_LOOKS.merchant.sailLod1]).toEqual(['#E0D9C9', '#353438', '#E2D7BE']);
+    expect([TOP_FACE.deckMean.albedo, TOP_FACE.deckMeanPirate.albedo]).toEqual(['#BD8D59', '#67462D']);
+    expect([SHIP_LOOKS.player.deckLod1, SHIP_LOOKS.merchant.deckLod1, SHIP_LOOKS.pirate.deckLod1]).toEqual(['#BD8D59', '#BD8D59', '#67462D']);
+  });
+
+  test('§8.2.1: el orden de tonos es determinista, sin vecinos iguales y con cada tono en ⌊n/3⌋–⌈n/3⌉ paños', () => {
+    for (const id of ['ship_sloop', 'ship_frigate', 'npc_pirate']) {
+      for (let sail = 0; sail < 12; sail++) {
+        for (let n = 1; n <= 30; n++) {
+          const t = clothTones(id, sail, n);
+          expect(t).toEqual(clothTones(id, sail, n));
+          expect(t).toHaveLength(n);
+          for (let i = 1; i < n; i++) expect(t[i]).not.toBe(t[i - 1]);
+          for (const c of [0, 1, 2]) {
+            const k = t.filter((v) => v === c).length;
+            expect(k === Math.floor(n / 3) || k === Math.ceil(n / 3)).toBe(true);
+          }
+          if (n === 30) expect(clothTones(id, sail, 12)).toEqual(t.slice(0, 12)); // un prefijo no depende de n
+        }
+      }
+    }
   });
 });
 

@@ -231,7 +231,8 @@ export function measureShipValues(
   ppm: number,
   elevation: number,
   classIds: string[],
-  headingsDeg: number[] = [0, 90, 180, 270]
+  headingsDeg: number[] = [0, 90, 180, 270],
+  lodOverride?: 0 | 1 // AD-33 (D40): el mismo barco y pose con LOD0 y con LOD1 forzado
 ): ShipValues[] {
   const gl = renderer.getContext();
   const prev = {
@@ -256,11 +257,12 @@ export function measureShipValues(
 
   for (const classId of classIds) {
     const model = getShipModel(classId);
-    const lod: 0 | 1 = model.extras.sb_length * ppm >= LOD_PX[0] ? 0 : 1;
+    const lod: 0 | 1 = lodOverride ?? (model.extras.sb_length * ppm >= LOD_PX[0] ? 0 : 1);
     const geometry = model.lods[lod];
     const look = SHIP_LOOKS[model.recipe.look];
     const withAo = (...hex: string[]) => hex.flatMap((h) => [new THREE.Color(h), new THREE.Color(h).multiplyScalar(0.85)]);
-    const mask = maskGeometry(geometry, model.sails[lod], withAo(look.hull), look.sailStripe ? new THREE.Color(look.sailStripe) : undefined, withAo(look.deck, look.deckAlt));
+    // Cubierta: tablas de LOD0 y cara lisa de LOD1 (deckLod1, D40)
+    const mask = maskGeometry(geometry, model.sails[lod], withAo(look.hull), look.sailStripe ? new THREE.Color(look.sailStripe) : undefined, withAo(look.deck, look.deckAlt, look.deckLod1));
     const { camera, size } = framing(geometry, ppm, elevation);
     const maskMesh = new THREE.Mesh(mask, maskMaterial);
     const litMesh = new THREE.Mesh(geometry, litMaterial);
