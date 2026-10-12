@@ -2,13 +2,13 @@
 // HUD (ART-DIRECTION §12). React solo pinta cuando cambian los datos del store; lo que avanza con el reloj
 // (recarga, protección, cuenta atrás) se actualiza por ref desde un único requestAnimationFrame.
 import React, { useEffect, useLayoutEffect, useRef } from 'react';
-import { REPAIR_RATE, REPAIR_RATE_UNDER_FIRE } from '../../game/constants';
+import { CAPTAIN_CLASS, REPAIR_RATE, REPAIR_RATE_UNDER_FIRE } from '../../game/constants';
 import type { GameClient } from '../../client/game-client';
 import { HINTS } from '../../client/hints';
 import { addTicker, hudSignals, isLowHp, portBlock } from '../../client/hud-logic';
 import { MeHud, Relation, TargetHud, useHud } from '../../client/hud-store';
 import { HUD_BLOCKS_EVENT } from '../../client/overlays';
-import { Alert, Anchor, Close, CloudOff, Coins, Crosshair, Sailboat, Shield, Skull, Star, Stop, Store, Swords, Target, Wrench } from './icons';
+import { Alert, Anchor, Close, CloudOff, Coins, Crosshair, Crown, Sailboat, Shield, Skull, Star, Stop, Store, Swords, Target, Wrench } from './icons';
 import Minimap, { ViewRect } from './Minimap';
 import Shop from './Shop';
 import { DeathOverlay } from './Overlays';
@@ -39,7 +39,9 @@ const pct = (v: number, max: number) => `${Math.max(0, Math.min(100, (v / Math.m
 const fmt = (n: number) => n.toLocaleString('es-ES');
 const fmtRate = (r: number) => `${(r * 100).toLocaleString('es-ES', { maximumFractionDigits: 1 })} %/s`;
 
-function RelationIcon({ relation, size = 22 }: { relation: Relation; size?: number }) {
+function RelationIcon({ relation, classId, size = 22 }: { relation: Relation; classId?: string; size?: number }) {
+  // Capitán pirata: calavera y corona (ART-DIRECTION §10)
+  if (relation === 'pirate' && classId === CAPTAIN_CLASS) return <span className="hud-icon-pair"><Crown size={Math.round(size * 0.55)} /><Skull size={Math.round(size * 0.75)} /></span>;
   if (relation === 'pirate') return <Skull size={size} />;
   if (relation === 'merchant') return <Coins size={size} />;
   if (relation === 'self') return <Star size={size} />;
@@ -133,7 +135,7 @@ function TargetPanel({ actions }: { actions: HudActions }) {
   const color = RELATION_COLOR[target.relation];
   return (
     <section className="panel hud-target" data-testid="target-frame" data-target-id={target.id} data-hud-block="">
-      <div className="hud-target__icon" style={{ color }}><RelationIcon relation={target.relation} /></div>
+      <div className="hud-target__icon" style={{ color }}><RelationIcon relation={target.relation} classId={target.classId} /></div>
       <div className="hud-target__body">
         <div className="hud-target__name" style={{ color }} data-testid="target-name">{target.name}</div>
         <div className="hud-target__meta">{target.classLabel} · {attitudeOf(target)}</div>

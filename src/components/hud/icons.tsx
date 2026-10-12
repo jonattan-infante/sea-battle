@@ -42,6 +42,14 @@ export const Skull = (p: IconProps) => (
   </Svg>
 );
 
+// Corona del Capitán pirata (ART-DIRECTION §13: SVG propio)
+export const Crown = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 18 2 7l5 5 5-8 5 8 5-5-2 11Z" />
+    <path d="M5 21h14" />
+  </Svg>
+);
+
 export const Coins = (p: IconProps) => (
   <Svg {...p}>
     <circle cx="9" cy="9" r="6" />

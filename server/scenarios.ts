@@ -1,8 +1,8 @@
 // Escenarios deterministas para capturas de QA y UX (ART-DIRECTION §18). Solo se aplican con el modo
 // invitado permitido (nunca en Railway); en producción el mundo es siempre el del GDD.
-import { CANNON_LEVELS, SHIP_CLASSES, WRECK_LIFETIME } from '../src/game/constants';
+import { CANNON_LEVELS, CAPTAIN_KILLS_TO_SPAWN, SHIP_CLASSES, WRECK_LIFETIME } from '../src/game/constants';
 import { World } from '../src/game/types';
-import { spawnMerchant, spawnPirate } from '../src/game/world';
+import { spawnCaptain, spawnMerchant, spawnPirate } from '../src/game/world';
 
 // Punto de captura en mar abierto, fuera de la zona segura (r 110) y a ≥ 60 m de cualquier isla
 export const SHOWCASE_POINT = { x: 0, z: 200 };
@@ -53,7 +53,14 @@ export const LEGIBILITY = {
 // de pasar del 90 % que pide el criterio
 export const REPAIR_START_HULL = 0.1;
 
-export const SCENARIOS = ['showcase', 'shipyard', 'targets', 'endurance', 'repair', 'legibility'] as const;
+// Capitán pirata (AC-111, e2e/captain.spec.ts). "captain": ya hay 9 piratas hundidos y un cebo (pirata quieto, sin IA y con
+// 1 de vida) a tiro desde el borde de la zona segura; al hundirlo aparece el capitán con las reglas del GDD, en el punto
+// exterior (440 m) de un sector, fuera del radio de interés de quien esté junto al puerto. "captain-down": un capitán ya en
+// el mar, quieto, con 1 de vida y que nunca acierta, también a tiro desde el borde de la zona
+export const CAPTAIN_BAIT_POINT = { x: 0, z: 150 };
+export const CAPTAIN_DOWN_POINT = { x: 0, z: -160 };
+
+export const SCENARIOS = ['showcase', 'shipyard', 'targets', 'endurance', 'repair', 'legibility', 'captain', 'captain-down'] as const;
 export type ScenarioName = (typeof SCENARIOS)[number];
 
 export function parseScenario(value: string | undefined): ScenarioName | null {
@@ -102,6 +109,27 @@ export function applyScenario(world: World, name: ScenarioName): void {
     merchant.destination = null;
     merchant.path = [];
     merchant.ai = null;
+    return;
+  }
+  if (name === 'captain') {
+    world.killsSinceBoss = CAPTAIN_KILLS_TO_SPAWN - 1;
+    const bait = spawnPirate(world, 2);
+    bait.pos = { ...CAPTAIN_BAIT_POINT };
+    bait.heading = 0;
+    bait.ai = null;
+    bait.holdPosition = true;
+    bait.destination = null;
+    bait.path = [];
+    bait.hp = 1;
+    bait.respawnPos = { ...bait.pos };
+    return;
+  }
+  if (name === 'captain-down') {
+    const captain = spawnCaptain(world, CAPTAIN_DOWN_POINT)!;
+    captain.heading = 0;
+    captain.holdPosition = true;
+    captain.accuracyOverride = 0;
+    captain.hp = 1;
     return;
   }
   if (name === 'targets' || name === 'repair') {

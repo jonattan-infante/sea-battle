@@ -122,8 +122,18 @@ export const SHIP_CLASSES: Record<string, ShipClassStats> = {
     id: 'merchant', label: 'Mercante', kind: 'merchant', length: 22, radius: 7, maxHp: 300,
     patrolSpeed: 7, maxSpeed: 9, accel: 2.5, brake: 4, turnRate: 50 * deg, cannonsPerSide: 0, price: 0,
     cannon: null, reward: 60, wreck: 15, respawnTime: 20
+  },
+  // Jefe de I2 (§9): facción pirata (mismas reglas de hostilidad); no reaparece por tiempo, sino tras CAPTAIN_KILLS_TO_SPAWN.
+  // Aceleración y frenado no figuran en el GDD: los del Mercante, el otro NPC pesado
+  captain: {
+    id: 'captain', label: 'Capitán pirata', kind: 'pirate', length: 30, radius: 9, maxHp: 1800,
+    patrolSpeed: 6, maxSpeed: 10, accel: 2.5, brake: 4, turnRate: 60 * deg, cannonsPerSide: 6, price: 0,
+    cannon: { damage: 28, accuracy: 0.65, range: 65, reload: 4.0 }, reward: 600, wreck: 150, respawnTime: 0
   }
 };
+
+// El Capitán pirata se identifica por su clase: su kind es 'pirate' porque es de la facción hostil
+export const CAPTAIN_CLASS = 'captain';
 
 export function navClearance(classId: string): number {
   return SHIP_CLASSES[classId].length / 2 + NAV_CLEARANCE_EXTRA;
@@ -169,6 +179,26 @@ export const THREAT_WINDOW = 10; // s para elegir al que más daño hizo
 export const MERCHANT_FLEE_TIME = 12;
 export const MERCHANT_ROUTE_POINTS = { min: 4, max: 6 };
 export const NPC_RESPAWN_MIN_PLAYER_DISTANCE = 100;
+
+// IA de los hostiles por clase (§9): detección, objetivo perdido, correa alrededor del origen, órbita y patrulla
+export interface HostileAiStats {
+  aggro: number; // m: entra en combate con un jugador atacable a esta distancia
+  disengage: number; // m: objetivo perdido más allá
+  leash: number; // m alrededor del origen (la guarida del capitán)
+  orbitRadius: number;
+  orbitSpeed: number;
+  patrolRadius: number;
+}
+export const HOSTILE_AI: Record<string, HostileAiStats> = {
+  pirate: { aggro: PIRATE_AGGRO_RADIUS, disengage: PIRATE_DISENGAGE_TARGET, leash: PIRATE_LEASH, orbitRadius: PIRATE_ORBIT_RADIUS, orbitSpeed: PIRATE_ORBIT_SPEED, patrolRadius: PIRATE_PATROL_RADIUS },
+  // El GDD fija detección, órbita y correa; objetivo perdido, velocidad de órbita y patrulla son "como el pirata"
+  captain: { aggro: 90, disengage: PIRATE_DISENGAGE_TARGET, leash: 150, orbitRadius: 50, orbitSpeed: PIRATE_ORBIT_SPEED, patrolRadius: PIRATE_PATROL_RADIUS }
+};
+
+// ---- Capitán pirata (§9, I2) ----
+export const CAPTAIN_KILLS_TO_SPAWN = 10; // piratas o cañoneras hundidos desde su última muerte o desde el arranque
+export const CAPTAIN_LAIR_RADIUS = 440; // punto exterior del sector: su guarida
+export const CAPTAIN_SPAWN_MIN_PLAYER_DISTANCE = 150;
 
 // ---- Botín y economía (§10) ----
 export const STARTING_GOLD = 100;
