@@ -62,6 +62,11 @@ export function percentile(values: number[], p: number): number {
   return s[Math.min(s.length - 1, Math.max(0, Math.ceil((p / 100) * s.length) - 1))];
 }
 
+// Los logs y los registros llevan solo los 6 últimos caracteres del id del usuario de Clerk (regla de Jonattan)
+export function shortId(id: string): string {
+  return id.startsWith('user_') ? `user_…${id.slice(-6)}` : id;
+}
+
 // Registro de cada corrida en qa-artifacts/remote/ (ignorado por git), con el host y el commit medidos
 export function saveRun(name: string, host: string, data: unknown): string {
   const dir = path.join(__dirname, '..', '..', 'qa-artifacts', 'remote');

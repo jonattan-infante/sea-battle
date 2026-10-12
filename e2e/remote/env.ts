@@ -45,15 +45,16 @@ export function prodGuard(url: URL, env: Env = process.env): void {
     throw notVerified(`${url.hostname} no es localhost ni está en REMOTE_STAGING_HOSTS, así que cuenta como producción; hace falta REMOTE_ALLOW_PROD=1, y cada corrida en prod la autoriza Jonattan`);
 }
 
-// A (preferida): CLERK_SECRET_KEY de la instancia + email; entra con un token de inicio de sesión del Backend API y un
-// Testing Token, sin contraseña. C: email + contraseña, sin clave secreta (sin Testing Token)
-export type LoginMethod = { kind: 'A'; email: string; secretKey: string } | { kind: 'C'; email: string; password: string };
+// A (preferida): CLERK_SECRET_KEY de la instancia + externalId del usuario; entra con un token de inicio de sesión del
+// Backend API (estrategia ticket) y un Testing Token, sin contraseña, así que vale con cualquier identificador que tenga
+// activado la instancia (Clerk exige que el usuario tenga uno: email, teléfono o username). C: email + contraseña, sin
+// clave secreta (sin Testing Token)
+export type LoginMethod = { kind: 'A'; externalId: string; secretKey: string } | { kind: 'C'; email: string; password: string };
 
 export function loginMethod(env: Env = process.env): LoginMethod {
-  const email = env.E2E_CLERK_EMAIL;
-  if (email && env.CLERK_SECRET_KEY) return { kind: 'A', email, secretKey: env.CLERK_SECRET_KEY };
-  if (email && env.E2E_CLERK_PASSWORD) return { kind: 'C', email, password: env.E2E_CLERK_PASSWORD };
-  throw notVerified('faltan las credenciales del usuario de prueba: E2E_CLERK_EMAIL con CLERK_SECRET_KEY (A) o con E2E_CLERK_PASSWORD (C)');
+  if (env.E2E_CLERK_EXTERNAL_ID && env.CLERK_SECRET_KEY) return { kind: 'A', externalId: env.E2E_CLERK_EXTERNAL_ID, secretKey: env.CLERK_SECRET_KEY };
+  if (env.E2E_CLERK_EMAIL && env.E2E_CLERK_PASSWORD) return { kind: 'C', email: env.E2E_CLERK_EMAIL, password: env.E2E_CLERK_PASSWORD };
+  throw notVerified('faltan las credenciales del usuario de prueba: E2E_CLERK_EXTERNAL_ID con CLERK_SECRET_KEY (A) o E2E_CLERK_EMAIL con E2E_CLERK_PASSWORD (C)');
 }
 
 // Sesión del usuario de prueba que guarda el global setup y reutilizan los specs

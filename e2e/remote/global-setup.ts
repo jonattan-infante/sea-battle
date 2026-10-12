@@ -1,5 +1,6 @@
 // Arnés remoto: antes de los specs comprueba que el despliegue responde (/healthz) y entra con el usuario de prueba de
 // Clerk (método A o C, ver env.ts); guarda la sesión en .auth/ para los specs
+import { createClerkClient } from '@clerk/backend';
 import { clerk, clerkSetup } from '@clerk/testing/playwright';
 import { chromium, FullConfig } from '@playwright/test';
 import fs from 'fs';
@@ -39,7 +40,11 @@ export default async function globalSetup(config: FullConfig) {
     try {
       if (method.kind === 'A') {
         await clerkSetup({ publishableKey: instance.publishableKey, frontendApiUrl: instance.frontendApi, secretKey: method.secretKey, dotenv: false });
-        await clerk.signIn({ page, emailAddress: method.email });
+        const backend = createClerkClient({ secretKey: method.secretKey });
+        const users = await backend.users.getUserList({ externalId: [method.externalId] });
+        if (users.data.length !== 1) throw new Error(`${users.data.length} usuarios con externalId ${method.externalId} en la instancia`);
+        const { token } = await backend.signInTokens.createSignInToken({ userId: users.data[0].id, expiresInSeconds: 300 });
+        await clerk.signIn({ page, signInParams: { strategy: 'ticket', ticket: token } });
       } else {
         process.env.CLERK_FAPI = instance.frontendApi; // el helper lo exige aunque no haya Testing Token
         await clerk.signIn({ page, signInParams: { strategy: 'password', identifier: method.email, password: method.password } });

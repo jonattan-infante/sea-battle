@@ -66,7 +66,7 @@ Puente de depuración de solo lectura: `window.__SEA_BATTLE__` (`ready`, `server
 | `PORT` | Puerto HTTP y de Socket.IO |
 | `RAILWAY_GIT_COMMIT_SHA` | Lo pone Railway en los despliegues desde Git; `/healthz` lo devuelve como `commit` (`null` si falta) |
 | `BASE_URL` | `test:remote`: despliegue que se prueba |
-| `E2E_CLERK_EMAIL` + `CLERK_SECRET_KEY` | `test:remote`, inicio de sesión A (preferido): token de inicio de sesión del Backend API y Testing Token de la instancia del despliegue; sin contraseña |
+| `E2E_CLERK_EXTERNAL_ID` + `CLERK_SECRET_KEY` | `test:remote`, inicio de sesión A (preferido): busca al usuario de prueba por su `externalId` (en dev, `sea-battle-qa`) y entra con un token de inicio de sesión del Backend API (estrategia ticket) y el Testing Token de la instancia del despliegue; sin contraseña, así que vale con cualquier identificador que active la instancia, pero el usuario necesita uno (email, teléfono o username): sin ninguno, Clerk rechaza el ticket |
 | `E2E_CLERK_EMAIL` + `E2E_CLERK_PASSWORD` | `test:remote`, inicio de sesión C (sin clave secreta): solo si la instancia tiene activado el inicio de sesión con contraseña |
 | `REMOTE_CONNECTION` | `test:remote`, AC-136: etiqueta de la conexión medida (p. ej., `jonattan-casa`) |
 | `REMOTE_REDEPLOY_CMD` | `test:remote`, AC-135 (3): comando que redespliega staging; sin él, el spec espera hasta 15 min a que alguien lo haga y lo detecta por el `uptime` de `/healthz` |

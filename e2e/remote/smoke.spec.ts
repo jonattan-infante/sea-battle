@@ -7,7 +7,7 @@ import { execSync } from 'child_process';
 import { STARTING_GOLD } from '../../src/game/constants';
 import { hud, me, ships, waitFor } from '../helpers';
 import { baseUrl, isProdHost, notVerified } from './env';
-import { enterRemoteGame, formatProgress, health, moveTo, Progress, readProgress, saveRun, waitForGame } from './game';
+import { enterRemoteGame, formatProgress, health, moveTo, Progress, readProgress, saveRun, shortId, waitForGame } from './game';
 
 const AWAY_MS = 15_000; // más que los 10 s de AC-96
 const REDEPLOY_TIMEOUT_MS = 15 * 60_000;
@@ -85,7 +85,7 @@ test('AC-135 (1) recargar y (2) volver tras ≥ 15 s: los 4 campos de AC-97 no c
   const h = await health(url);
   const { playerId } = await enterRemoteGame(page);
   const s0 = await readProgress(page);
-  console.log(`AC-135 ${playerId} al entrar: ${formatProgress(s0)}`);
+  console.log(`AC-135 ${shortId(playerId)} al entrar: ${formatProgress(s0)}`);
   requireNonInitial(s0);
 
   const merchantId = await sinkMerchant(page);
@@ -111,7 +111,7 @@ test('AC-135 (1) recargar y (2) volver tras ≥ 15 s: los 4 campos de AC-97 no c
   console.log(`AC-135 (2) cerrar ${AWAY_MS / 1000} s y volver: antes ${formatProgress(before2)} · después ${formatProgress(after2)}`);
   expect.soft(after2, `AC-135 (2) cerrar ${AWAY_MS / 1000} s y volver`).toEqual(before2);
 
-  const file = saveRun('ac135', url.host, { health: h, playerId, alEntrar: s0, mercante: merchantId, pasos: [{ paso: 1, antes: before1, despues: after1 }, { paso: 2, antes: before2, despues: after2 }] });
+  const file = saveRun('ac135', url.host, { health: h, playerId: shortId(playerId), alEntrar: s0, mercante: merchantId, pasos: [{ paso: 1, antes: before1, despues: after1 }, { paso: 2, antes: before2, despues: after2 }] });
   console.log(`AC-135 registro: ${file}`);
 });
 
@@ -144,6 +144,6 @@ test('AC-135 (3) tras un redeploy: los 4 campos de AC-97 no cambian @remote', as
   const after = await readProgress(page2);
   console.log(`AC-135 (3) tras el redeploy: antes ${formatProgress(before)} · después ${formatProgress(after)}`);
   expect.soft(after, 'AC-135 (3) tras el redeploy').toEqual(before);
-  const file = saveRun('ac135-redeploy', url.host, { antes: h0, despues: h1, playerId, paso: { antes: before, despues: after } });
+  const file = saveRun('ac135-redeploy', url.host, { antes: h0, despues: h1, playerId: shortId(playerId), paso: { antes: before, despues: after } });
   console.log(`AC-135 registro: ${file}`);
 });

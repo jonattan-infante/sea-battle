@@ -1,6 +1,6 @@
 // DT-08: la guarda de prod del arnés remoto falla cerrada. Sin REMOTE_ALLOW_PROD=1 solo arrancan localhost y los hosts
 // de REMOTE_STAGING_HOSTS; cualquier otro host (el de Railway, el dominio propio de prod o uno nuevo) cuenta como prod
-import { isProdHost, prodGuard } from '../env';
+import { isProdHost, loginMethod, prodGuard } from '../env';
 
 const STAGING = { REMOTE_STAGING_HOSTS: 'sea-battle-staging.up.railway.app, Staging.Example.com' };
 
@@ -29,5 +29,24 @@ describe('guarda de prod del arnés remoto (DT-08)', () => {
     const url = new URL('https://seabattle.example.com');
     expect(() => prodGuard(url, { ...STAGING, REMOTE_ALLOW_PROD: '1' })).not.toThrow();
     expect(isProdHost(url, { ...STAGING, REMOTE_ALLOW_PROD: '1' })).toBe(true);
+  });
+});
+
+describe('método de inicio de sesión del arnés remoto', () => {
+  test('A: externalId + clave secreta, aunque también haya email y contraseña', () => {
+    const env = { E2E_CLERK_EXTERNAL_ID: 'sea-battle-qa', CLERK_SECRET_KEY: 'sk_test_x', E2E_CLERK_EMAIL: 'qa@example.com', E2E_CLERK_PASSWORD: 'p' };
+    expect(loginMethod(env)).toEqual({ kind: 'A', externalId: 'sea-battle-qa', secretKey: 'sk_test_x' });
+  });
+
+  test('C: email + contraseña sin clave secreta', () => {
+    expect(loginMethod({ E2E_CLERK_EMAIL: 'qa@example.com', E2E_CLERK_PASSWORD: 'p' })).toEqual({ kind: 'C', email: 'qa@example.com', password: 'p' });
+  });
+
+  test.each([
+    ['email + clave secreta (el A de antes)', { E2E_CLERK_EMAIL: 'qa@example.com', CLERK_SECRET_KEY: 'sk_test_x' }],
+    ['externalId sin clave secreta', { E2E_CLERK_EXTERNAL_ID: 'sea-battle-qa' }],
+    ['sin credenciales', {}]
+  ])('NO VERIFICADO: %s', (_label, env) => {
+    expect(() => loginMethod(env)).toThrow(/^REMOTE NO VERIFICADO: faltan las credenciales/);
   });
 });
