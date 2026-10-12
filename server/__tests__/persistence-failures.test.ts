@@ -239,6 +239,17 @@ function countingStore(inner: ProgressStore) {
   return { store, saves, pings };
 }
 
+// Todas las consultas del servidor de juego pasan por pool.query (createPgStore): se cuentan con su instante, fallen o no
+function countQueries(p: Pool): number[] {
+  const at: number[] = [];
+  const query = p.query.bind(p) as (...args: unknown[]) => unknown;
+  p.query = ((...args: unknown[]) => {
+    at.push(Date.now());
+    return query(...args);
+  }) as unknown as Pool['query'];
+  return at;
+}
+
 describe('AC-132: con la BD caída en partida se sigue jugando, con aviso y sin tienda', () => {
   test.each([5, 60])(
     'corte de %i s: aviso para los dos jugadores con cuenta (con y sin cambios) y no para el invitado; 0 escrituras y ≤ 1 consulta ligera/s durante el corte; tienda cerrada; al volver la BD, el aviso se va en ≤ 5 s y el oro está escrito',
@@ -296,6 +307,48 @@ describe('AC-132: con la BD caída en partida se sigue jugando, con aviso y sin 
     },
     100_000
   );
+
+  // H-24 (decisión de game-product): en reposo no se consulta la BD, así que el corte se detecta con la primera escritura
+  test('H-24: con todos en reposo, 15 s de corte sin ninguna consulta ni aviso; la primera compra se rechaza sin cambiar nada y desde ahí los dos jugadores con cuenta ven el aviso; al volver la BD, se va en ≤ 5 s y la fila sigue igual', async () => {
+    await seed('u-ana', { v: 1, ...SLOOP_ONLY });
+    await seed('u-bea', { v: 1, ...SLOOP_ONLY, gold: 5000, ownedShips: ['sloop', 'brig'] });
+    const queries = countQueries(pool);
+    await startServer(); // tiempos reales: guardado cada 2 s y sondeo cada 1 s
+    const a = await join('u-ana');
+    const b = await join('u-bea');
+    await sleep(2500); // pasa un guardado periódico: sin cambios no escribe
+    const beaRow = await rawRow('u-bea');
+    const queriesBefore = queries.length;
+    const framesAt = { a: a.frames.length, b: b.frames.length };
+
+    proxy.cut();
+    await sleep(15_000);
+    const idleQueries = queries.length - queriesBefore;
+    const warnedFrames = [...a.frames.slice(framesAt.a), ...b.frames.slice(framesAt.b)].filter((f) => f.me?.unsaved).length;
+    expect(idleQueries).toBe(0);
+    expect(warnedFrames).toBe(0);
+    expect([a.me().unsaved, b.me().unsaved]).toEqual([undefined, undefined]);
+
+    const t0 = Date.now();
+    b.c.emit(C2S.buy, { itemId: 'cannons:2' });
+    await waitFor(() => texts(b).includes('La tienda no está disponible: no podemos guardar'), 3000, 'el rechazo de la compra');
+    const rejectedMs = Date.now() - t0;
+    const bea = world().players.get('u-bea')!;
+    expect({ gold: bea.gold, cannons: bea.upgrades.cannons }).toEqual({ gold: 5000, cannons: 1 });
+    await waitFor(() => a.me().unsaved === true && b.me().unsaved === true, 3000, 'el aviso en los dos jugadores con cuenta');
+    const warnedMs = Date.now() - t0;
+
+    proxy.restore();
+    const t1 = Date.now();
+    await waitFor(() => a.me().unsaved === undefined && b.me().unsaved === undefined, 5000, 'que el aviso desaparezca para los dos');
+    const clearedMs = Date.now() - t1;
+    console.log(
+      `H-24: 15 s de corte en reposo → ${idleQueries} consultas y ${warnedFrames} frames con aviso · compra rechazada a los ${rejectedMs} ms · ` +
+        `aviso para los dos a los ${warnedMs} ms · fuera ${clearedMs} ms después de volver la BD`
+    );
+    expect(fields(b.me())).toEqual({ ...SLOOP_ONLY, gold: 5000, ownedShips: ['sloop', 'brig'] });
+    expect(await rawRow('u-bea')).toBe(beaRow); // la compra no llegó a la BD, ni durante el corte ni al volver
+  }, 60_000);
 
   test('BD colgada (no contesta): también sale el aviso y la partida sigue', async () => {
     await seed('u-fer', { v: 1, ...SLOOP_ONLY });
