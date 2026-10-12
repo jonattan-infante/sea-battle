@@ -107,8 +107,9 @@ def main():
     older = [d for d in deps if ts(d['createdAt']) < ts(dep['createdAt'])]
     if older and 'DRAIN_INSTANCES' in steps:
         prev = older[0]
+        prev_logs = logs(prev['id'], 'deploymentLogs')
         # La línea de la plataforma era «Stopping Container» sin drenaje configurado y es «sending signal SIGTERM to container» con él
-        stop = next((l['timestamp'] for l in logs(prev['id'], 'deploymentLogs') if re.match(r'(Stopping Container|sending signal SIGTERM to container)', l['message'])), None)
+        stop = next((l['timestamp'] for l in prev_logs if re.match(r'(Stopping Container|sending signal SIGTERM to container)', l['message'])), None)
         drain = steps['DRAIN_INSTANCES']
         parts = []
         if drain.get('completedAt'):
@@ -119,7 +120,35 @@ def main():
             if prev['status'] == 'REMOVED':
                 parts.append(f"SIGTERM → viejo REMOVED {(ts(prev['statusUpdatedAt']) - s).total_seconds():.1f} s")
         print(f"  relevo {mask(prev['id'])} → {mask(dep['id'])}: " + ' · '.join(parts))
+        print(f"  apagado del viejo: {shutdown_timeline(prev_logs, stop)}")
     sys.exit(0 if all(checks) else 1)
+
+
+# Las líneas del apagado (server/shutdown.ts) llevan la hora del propio proceso, porque los sellos de Railway llegan en lote:
+# «🛑 SIGTERM: … <iso>», «💾 Progreso guardado <iso> (+N ms)» (o el aviso de que no se pudo) y «🔌 Sockets cerrados <iso> (+N ms)».
+# De ahí salen los tramos de H-25: señal de la plataforma → 🛑 (la señal llega a node), 🛑 → 💾 (la escritura) y 🛑 → 🔌
+def shutdown_timeline(lines, platform_signal):
+    iso = r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)'
+    found = {}
+    for l in lines:
+        msg = l['message']
+        for key, pattern in (('🛑', r'🛑 SIGTERM: guardando el progreso antes de cerrar ' + iso), ('💾', r'💾 Progreso guardado ' + iso + r' \(\+(\d+) ms\)'),
+                             ('⚠️', r'El progreso no se pudo guardar en \d+ ms ' + iso + r' \(\+(\d+) ms\)'), ('🔌', r'🔌 Sockets cerrados ' + iso + r' \(\+(\d+) ms\)')):
+            m = re.search(pattern, msg)
+            if m and key not in found:
+                found[key] = m.groups()
+    if '🛑' not in found:
+        return 'sin la hora propia del proceso (build anterior a los logs con hora): solo hay sellos en lote'
+    parts = [f"🛑 {found['🛑'][0]}"]
+    if platform_signal:
+        parts.append(f"señal de la plataforma → 🛑 {(ts(found['🛑'][0]) - ts(platform_signal)).total_seconds() * 1000:.0f} ms")
+    if '💾' in found:
+        parts.append(f"🛑 → 💾 {found['💾'][1]} ms")
+    if '⚠️' in found:
+        parts.append(f"🛑 → aviso de escritura fallida {found['⚠️'][1]} ms")
+    if '🔌' in found:
+        parts.append(f"🛑 → 🔌 {found['🔌'][1]} ms")
+    return ' · '.join(parts)
 
 
 if __name__ == '__main__':

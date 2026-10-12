@@ -18,13 +18,18 @@ export interface ShutdownDeps {
   log: (msg: string) => void;
   exit?: (code: number) => void;
   flushTimeoutMs?: number;
+  now?: () => number; // reloj de los logs (ms desde epoch); los tests lo fijan
 }
 
-export function createShutdown({ game, io, httpServer, pool, log, exit = (code) => process.exit(code), flushTimeoutMs = SHUTDOWN_FLUSH_MS }: ShutdownDeps) {
+export function createShutdown({ game, io, httpServer, pool, log, exit = (code) => process.exit(code), flushTimeoutMs = SHUTDOWN_FLUSH_MS, now = Date.now }: ShutdownDeps) {
   let running: Promise<void> | null = null;
   return (signal: string): Promise<void> => {
     running ??= (async () => {
-      log(`🛑 ${signal}: guardando el progreso antes de cerrar`);
+      // Cada paso con la hora del propio proceso y los ms desde la señal: los sellos de Railway llegan en lote, y H-25 se
+      // mide en el servidor (del cambio de /healthz a «💾 Progreso guardado»). Los prefijos los buscan QA y check_deploy.py
+      const t0 = now();
+      const at = (t: number) => `${new Date(t).toISOString()} (+${t - t0} ms)`;
+      log(`🛑 ${signal}: guardando el progreso antes de cerrar ${new Date(t0).toISOString()}`);
       game.stop(); // sin ticks ni entradas nuevas: el estado ya no cambia
       let timer: ReturnType<typeof setTimeout> | undefined;
       const flushed = await Promise.race([
@@ -32,8 +37,9 @@ export function createShutdown({ game, io, httpServer, pool, log, exit = (code) 
         new Promise<boolean>((resolve) => (timer = setTimeout(() => resolve(false), flushTimeoutMs)))
       ]);
       clearTimeout(timer);
-      log(flushed ? '💾 Progreso guardado' : `⚠️  El progreso no se pudo guardar en ${flushTimeoutMs} ms`);
+      log(flushed ? `💾 Progreso guardado ${at(now())}` : `⚠️  El progreso no se pudo guardar en ${flushTimeoutMs} ms ${at(now())}`);
       await new Promise<void>((resolve) => io.close(() => resolve())); // ahora sí: los clientes reconectan al nuevo
+      log(`🔌 Sockets cerrados ${at(now())}`);
       httpServer.close();
       await pool?.end().catch(() => {});
       exit(0);

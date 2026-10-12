@@ -72,6 +72,12 @@ test('SIGTERM: escribe el estado de todos los jugadores y solo después desconec
   expect(rows).toEqual([350, 350]);
   expect(await exited).toEqual({ code: 0, signal: null });
   expect(child.output()).toContain('Progreso guardado');
+  // H-25: el proceso real escribe su propia hora (ISO con ms) y los ms desde la señal, en orden
+  console.log(`H-25 (SIGTERM): ${child.output().split('\n').filter((l) => /^(🛑|💾|🔌)/u.test(l)).join(' · ')}`);
+  const iso = '\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z';
+  expect(child.output()).toMatch(
+    new RegExp(`🛑 SIGTERM: guardando el progreso antes de cerrar ${iso}\\n[\\s\\S]*💾 Progreso guardado ${iso} \\(\\+\\d+ ms\\)\\n[\\s\\S]*🔌 Sockets cerrados ${iso} \\(\\+\\d+ ms\\)\\n`)
+  );
 
   proxy.delay(0);
   const again = await start();
@@ -80,18 +86,46 @@ test('SIGTERM: escribe el estado de todos los jugadores y solo después desconec
 });
 
 describe('orden del apagado (createShutdown)', () => {
-  // Dobles mínimos: registran el orden en que se llama a cada pieza
-  function harness(flush: () => Promise<boolean>) {
+  // Dobles mínimos: registran el orden en que se llama a cada pieza y lo que se loguea; onClose corre al cerrar io
+  function harness(flush: () => Promise<boolean>, opts: { now?: () => number; onClose?: () => void } = {}) {
     const order: string[] = [];
+    const lines: string[] = [];
     const game = { stop: () => order.push('stop'), flushProgress: () => flush().then((ok) => (order.push(ok ? 'flush' : 'flush-fallido'), ok)) } as unknown as GameServer;
-    const io = { close: (cb: () => void) => (order.push('io.close'), cb()) } as never;
+    const io = { close: (cb: () => void) => (order.push('io.close'), opts.onClose?.(), cb()) } as never;
     const httpServer = { close: () => order.push('http.close') } as never;
     const pool = { end: async () => void order.push('pool.end') } as never;
     let resolveExit: (code: number) => void = () => {};
     const exited = new Promise<number>((r) => (resolveExit = r));
-    const shutdown = createShutdown({ game, io, httpServer, pool, log: () => {}, exit: (code) => (order.push(`exit ${code}`), resolveExit(code)), flushTimeoutMs: 200 });
-    return { order, shutdown, exited };
+    const log = (msg: string) => void lines.push(msg);
+    const shutdown = createShutdown({ game, io, httpServer, pool, log, exit: (code) => (order.push(`exit ${code}`), resolveExit(code)), flushTimeoutMs: 200, now: opts.now });
+    return { order, lines, shutdown, exited };
   }
+
+  // H-25: N se mide en el servidor, del cambio de /healthz a «💾 Progreso guardado», con la hora del propio proceso; los
+  // sellos de Railway llegan en lote. Los prefijos no cambian: los buscan QA y scripts/railway/check_deploy.py
+  test('cada paso del apagado lleva la hora del proceso (ISO con ms) y los ms desde la señal: 🛑, 💾 y 🔌, en ese orden', async () => {
+    let clock = Date.parse('2026-10-12T18:20:37.500Z');
+    const h = harness(
+      async () => {
+        clock += 120; // la escritura
+        return true;
+      },
+      { now: () => clock, onClose: () => (clock += 35) } // el cierre de los sockets
+    );
+    await h.shutdown('SIGTERM');
+    expect(h.lines).toEqual([
+      '🛑 SIGTERM: guardando el progreso antes de cerrar 2026-10-12T18:20:37.500Z',
+      '💾 Progreso guardado 2026-10-12T18:20:37.620Z (+120 ms)',
+      '🔌 Sockets cerrados 2026-10-12T18:20:37.655Z (+155 ms)'
+    ]);
+  });
+
+  test('si la escritura no llega en su plazo, el aviso también lleva la hora y los ms', async () => {
+    const h = harness(() => new Promise<boolean>(() => {}));
+    await h.shutdown('SIGTERM');
+    expect(h.lines[1]).toMatch(/^⚠️ {2}El progreso no se pudo guardar en 200 ms \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z \(\+\d+ ms\)$/);
+    expect(h.lines[2]).toMatch(/^🔌 Sockets cerrados /);
+  });
 
   test('para la simulación, escribe y solo después cierra las conexiones; sale con 0', async () => {
     const h = harness(async () => true);
