@@ -1,0 +1,181 @@
+// Acumulador de triángulos con color por vértice: fusiona piezas en una sola geometría (1 draw call).
+// Todo sale no indexado, con atributos position, normal y color (lineal), como pide ASSET-SPEC §8.
+import * as THREE from 'three';
+
+export type Vec3 = [number, number, number];
+export type VertexColorFn = (x: number, y: number, z: number, triangle: number) => THREE.Color;
+
+const MIN_AREA = 1e-6;
+const va = new THREE.Vector3();
+const vb = new THREE.Vector3();
+const vc = new THREE.Vector3();
+const ab = new THREE.Vector3();
+const ac = new THREE.Vector3();
+
+const colorCache = new Map<string, THREE.Color>();
+
+// THREE.Color desde un hex sRGB, convertido a lineal y cacheado
+export function lin(hex: string): THREE.Color {
+  let c = colorCache.get(hex);
+  if (!c) {
+    c = new THREE.Color(hex);
+    colorCache.set(hex, c);
+  }
+  return c;
+}
+
+export class GeoBuilder {
+  private readonly pos: number[] = [];
+  private readonly col: number[] = [];
+  private readonly box = new THREE.Box3();
+  private boxTracking = false;
+  // Rangos de triángulos [inicio, fin) añadidos dentro de mark() (las velas, para AS-V14)
+  readonly marks: [number, number][] = [];
+  // Máscara de borde por vértice (`_rim_mask`, D18): valor que se escribe en lo que se añada a continuación
+  rim = 0;
+  private readonly rimValues: number[] | null;
+
+  constructor(options: { rim?: boolean } = {}) {
+    this.rimValues = options.rim ? [] : null;
+  }
+
+  get triangles(): number {
+    return this.pos.length / 9;
+  }
+
+  mark(fn: () => void): void {
+    const t0 = this.triangles;
+    fn();
+    if (this.triangles > t0) this.marks.push([t0, this.triangles]);
+  }
+
+  // Caja envolvente de lo añadido entre beginBox() y endBox() (para medir solo el casco, AS-V03)
+  beginBox(): void {
+    this.box.makeEmpty();
+    this.boxTracking = true;
+  }
+
+  endBox(): THREE.Box3 {
+    this.boxTracking = false;
+    return this.box.clone();
+  }
+
+  tri(a: Vec3, b: Vec3, c: Vec3, color: THREE.Color, colorB = color, colorC = color): void {
+    va.fromArray(a);
+    vb.fromArray(b);
+    vc.fromArray(c);
+    ab.subVectors(vb, va);
+    ac.subVectors(vc, va);
+    if (ab.cross(ac).length() * 0.5 < MIN_AREA) return; // quads degenerados en la proa
+    this.push(va, color);
+    this.push(vb, colorB);
+    this.push(vc, colorC);
+  }
+
+  // Color fijo o por vértice (a, b, c, d): la oclusión horneada oscurece solo un borde de la cara (D23)
+  quad(a: Vec3, b: Vec3, c: Vec3, d: Vec3, color: THREE.Color, colorB = color, colorC = color, colorD = color): void {
+    this.tri(a, b, c, color, colorB, colorC);
+    this.tri(a, c, d, color, colorC, colorD);
+  }
+
+  // Añade una geometría de three transformada; el color es fijo o por vértice
+  add(geometry: THREE.BufferGeometry, matrix: THREE.Matrix4, color: THREE.Color | VertexColorFn, skipTriangle?: (t: number) => boolean): void {
+    const g = geometry.index ? geometry.toNonIndexed() : geometry;
+    const p = g.getAttribute('position');
+    const fn = typeof color === 'function' ? color : null;
+    for (let i = 0; i + 2 < p.count; i += 3) {
+      const t = i / 3;
+      if (skipTriangle?.(t)) continue;
+      va.fromBufferAttribute(p, i);
+      vb.fromBufferAttribute(p, i + 1);
+      vc.fromBufferAttribute(p, i + 2);
+      const ca = fn ? fn(va.x, va.y, va.z, t).clone() : (color as THREE.Color);
+      const cb = fn ? fn(vb.x, vb.y, vb.z, t).clone() : (color as THREE.Color);
+      const cc = fn ? fn(vc.x, vc.y, vc.z, t).clone() : (color as THREE.Color);
+      va.applyMatrix4(matrix);
+      vb.applyMatrix4(matrix);
+      vc.applyMatrix4(matrix);
+      this.tri(va.toArray() as Vec3, vb.toArray() as Vec3, vc.toArray() as Vec3, ca, cb, cc);
+    }
+    if (g !== geometry) g.dispose();
+    geometry.dispose();
+  }
+
+  build(): THREE.BufferGeometry {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
+    if (this.rimValues) g.setAttribute('_rim_mask', new THREE.Float32BufferAttribute(this.rimValues, 1));
+    g.computeVertexNormals(); // no indexada → normales planas por cara
+    g.computeBoundingBox();
+    g.computeBoundingSphere();
+    return g;
+  }
+
+  private push(v: THREE.Vector3, c: THREE.Color): void {
+    this.pos.push(v.x, v.y, v.z);
+    this.col.push(c.r, c.g, c.b);
+    this.rimValues?.push(this.rim);
+    if (this.boxTracking) this.box.expandByPoint(v);
+  }
+}
+
+// Normales con pliegue (ASSET-SPEC §6, D23): cada vértice promedia las normales de las caras que comparten su posición
+// (rejilla de 1 cm) y forman con la suya menos de `angle`; los cantos más agudos siguen duros. Es el algoritmo de
+// BufferGeometryUtils.toCreasedNormals de three, que es ESM y no carga en Jest. Geometría no indexada
+export function creaseNormals(geometry: THREE.BufferGeometry, angle: number): void {
+  const pos = geometry.getAttribute('position');
+  const tris = pos.count / 3;
+  const face = new Float32Array(tris * 3);
+  const shared = new Map<string, number[]>();
+  const key = (i: number) => `${~~(pos.getX(i) * 100)},${~~(pos.getY(i) * 100)},${~~(pos.getZ(i) * 100)}`;
+  for (let t = 0; t < tris; t++) {
+    va.fromBufferAttribute(pos, 3 * t);
+    vb.fromBufferAttribute(pos, 3 * t + 1);
+    vc.fromBufferAttribute(pos, 3 * t + 2);
+    ab.subVectors(vc, vb).cross(ac.subVectors(va, vb)).normalize();
+    face[3 * t] = ab.x;
+    face[3 * t + 1] = ab.y;
+    face[3 * t + 2] = ab.z;
+    for (let k = 0; k < 3; k++) {
+      const h = key(3 * t + k);
+      const list = shared.get(h);
+      if (list) list.push(t);
+      else shared.set(h, [t]);
+    }
+  }
+  const cos = Math.cos(angle);
+  const normals = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) {
+    const t = Math.floor(i / 3);
+    let x = 0;
+    let y = 0;
+    let z = 0;
+    for (const o of shared.get(key(i))!) {
+      if (face[3 * t] * face[3 * o] + face[3 * t + 1] * face[3 * o + 1] + face[3 * t + 2] * face[3 * o + 2] < cos) continue;
+      x += face[3 * o];
+      y += face[3 * o + 1];
+      z += face[3 * o + 2];
+    }
+    const len = Math.hypot(x, y, z) || 1;
+    normals[3 * i] = x / len;
+    normals[3 * i + 1] = y / len;
+    normals[3 * i + 2] = z / len;
+  }
+  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+}
+
+const m4 = new THREE.Matrix4();
+const q = new THREE.Quaternion();
+const e = new THREE.Euler();
+const s = new THREE.Vector3();
+const t = new THREE.Vector3();
+
+// Matriz TRS reutilizable (rotación en radianes, orden XYZ salvo que se indique)
+export function trs(x: number, y: number, z: number, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1, order: THREE.EulerOrder = 'XYZ'): THREE.Matrix4 {
+  e.set(rx, ry, rz, order);
+  q.setFromEuler(e);
+  t.set(x, y, z);
+  s.set(sx, sy, sz);
+  return m4.clone().compose(t, q, s);
+}
