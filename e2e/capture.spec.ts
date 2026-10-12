@@ -1,6 +1,6 @@
 // Capturas estándar para QA y UX (ART-DIRECTION §18) sobre el escenario determinista "showcase"
 // (server/scenarios.ts): pirata a 45 m, mercante a 40 m, pirata junto a la isla I5 y restos.
-import { Browser, Page, test } from '@playwright/test';
+import { Browser, expect, Page, test } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 import { PORTS } from '../playwright.config';
@@ -101,7 +101,9 @@ test.describe('Capturas @capture', () => {
   }
 
   // AD-32 (D39): el pirata de la escena "gallery" bajo el minimapa, con la placa a 4 px del borde inferior del panel
-  // (oculta: está a menos de 8 px) y a 24 px (ya visible)
+  // (oculta: está a menos de 8 px) y a 24 px del último bloque del HUD bajo el minimapa (visible). En escritorio ese
+  // bloque es el propio minimapa; en 390×844, «Zona segura», que ocupa todo el ancho 8 px más abajo y es bloque desde D41
+  // (O-10)
   for (const vp of VIEWPORTS) {
     test(`placa bajo el minimapa en ${vp.name} (AD-32)`, async ({ browser }) => {
       test.setTimeout(60_000);
@@ -119,23 +121,40 @@ test.describe('Capturas @capture', () => {
           (window as unknown as { __capScene: typeof scene }).__capScene = scene;
         });
         await page.waitForTimeout(1500);
-        for (const [name, gap] of [['hud-plate-under', 4], ['hud-plate-near', 24]] as const) {
-          await page.evaluate(async (gap) => {
+        for (const [name, gap, stack] of [['hud-plate-under', 4, false], ['hud-plate-near', 24, true]] as const) {
+          await page.evaluate(async ([gap, stack]) => {
             const rt = window.__SEA_BATTLE__!.runtime();
             const scene = (window as unknown as { __capScene: { setPose(id: string, x: number, z: number, h: number): void; getShip(id: string): { x: number; z: number } | undefined } }).__capScene;
             const frames = (n: number) => new Promise<void>((resolve) => { const f = () => (--n <= 0 ? resolve() : requestAnimationFrame(f)); requestAnimationFrame(f); });
             const mm = document.querySelector('[data-testid="minimap"]')!.getBoundingClientRect();
+            const zone = document.querySelector('[data-testid="safe-zone"]')?.getBoundingClientRect();
+            const below = stack && zone && zone.height > 0 && zone.left < mm.right && zone.right > mm.left ? Math.max(mm.bottom, zone.bottom) : mm.bottom;
             for (let i = 0; i < 3; i++) {
               const p = document.querySelector('[data-plate][data-ship-id="g-pirate"] .wo-plate__body')!.getBoundingClientRect();
               const s = scene.getShip('g-pirate')!;
               const o = rt.project(s.x, s.z)!, px = rt.project(s.x + 1, s.z)!, pz = rt.project(s.x, s.z + 1)!;
-              const dx = mm.left + mm.width / 2 - (p.left + p.width / 2), dy = mm.bottom + gap - p.top;
+              const dx = mm.left + mm.width / 2 - (p.left + p.width / 2), dy = below + gap - p.top;
               scene.setPose('g-pirate', s.x + dx / (px.sx - o.sx), s.z + dy / (pz.sy - o.sy), Math.PI / 2);
               await frames(3);
             }
-          }, gap);
+          }, [gap, stack] as const);
           await page.waitForTimeout(400); // vuelta con el fundido de 150 ms
           await shot(page, vp, name);
+          // El par documenta los dos estados: oculta a 4 px y visible a ≥ 8 px (±1) de cualquier bloque del HUD
+          const plate = await page.evaluate(() => {
+            const root = document.querySelector<HTMLElement>('[data-plate][data-ship-id="g-pirate"]')!;
+            const body = root.querySelector('.wo-plate__body')!;
+            const cs = getComputedStyle(root);
+            const op = cs.display === 'none' || cs.visibility === 'hidden' ? 0 : Number(cs.opacity) * Number(getComputedStyle(body).opacity);
+            const p = body.getBoundingClientRect();
+            const blocks = Array.from(document.querySelectorAll('[data-hud-block]')).map((e) => e.getBoundingClientRect()).filter((b) => b.width > 0 && b.height > 0);
+            return { op, sep: Math.min(...blocks.map((b) => Math.max(b.left - p.right, p.left - b.right, b.top - p.bottom, p.top - b.bottom))) };
+          });
+          console.log(`AD-32 captura ${vp.name}-${name}: opacidad ${plate.op.toFixed(2)} · separación mín. a un bloque del HUD ${plate.sep.toFixed(1)} px`);
+          if (stack) {
+            expect.soft(plate.op, `${vp.name}-${name}: placa visible`).toBeGreaterThan(0.99);
+            expect.soft(plate.sep, `${vp.name}-${name}: a ≥ 8 px ±1 de cualquier bloque`).toBeGreaterThanOrEqual(7);
+          } else expect.soft(plate.op, `${vp.name}-${name}: placa oculta`).toBe(0);
         }
         await page.evaluate(() => window.__SEA_BATTLE__!.runtime().stopScene());
       } finally {

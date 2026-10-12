@@ -178,6 +178,7 @@ async function trajectory(page: Page, paths: PathSpec[]): Promise<PathResult[]> 
 
 interface EnteringResult {
   toastFrames: number; // frames con el aviso en el DOM
+  unmarked: number; // frames con el aviso sin data-hud-block (D41)
   violations: number; // frames con el aviso y la placa visible a < 7 px (8 ±1 de redondeo) o cruzándose
   maxArea: number;
   minSep: number;
@@ -231,11 +232,13 @@ async function enteringToast(page: Page, label: string, trials: number): Promise
       const box = (e: Element) => { const r = e.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; };
       const loop = () => {
         if (!w.__ad32run) return;
-        const toast = Array.from(document.querySelectorAll('[data-testid="toasts"] > .toast[data-hud-block]:not(.toast--zone)')).find((e) => e.getBoundingClientRect().height > 0);
+        // El aviso se localiza sin data-hud-block, que es lo que se prueba: si lo pierde (O-10), falla el cruce y no la
+        // precondición
+        const toast = Array.from(document.querySelectorAll('[data-testid="toasts"] > .toast:not(.toast--zone)')).find((e) => e.getBoundingClientRect().height > 0);
         const root = document.querySelector<HTMLElement>(`[data-plate][data-ship-id="${ID}"]`)!;
         const cs = getComputedStyle(root);
         const op = cs.display === 'none' || cs.visibility === 'hidden' ? 0 : Number(cs.opacity) * Number(getComputedStyle(root.querySelector('.wo-plate__body')!).opacity);
-        w.__ad32log.push({ t: performance.now(), toast: toast ? box(toast) : null, op, plate: box(root.querySelector('.wo-plate__body')!) });
+        w.__ad32log.push({ t: performance.now(), toast: toast ? box(toast) : null, marked: !!toast?.hasAttribute('data-hud-block'), op, plate: box(root.querySelector('.wo-plate__body')!) });
         requestAnimationFrame(loop);
       };
       requestAnimationFrame(loop);
@@ -245,16 +248,17 @@ async function enteringToast(page: Page, label: string, trials: number): Promise
     await page.waitForTimeout(3500 + 1200); // TOAST_MS, la vuelta y margen
     results.push(await page.evaluate(() => {
       type Box = { x: number; y: number; w: number; h: number };
-      const w = window as unknown as { __ad32log: { t: number; toast: Box | null; op: number; plate: Box }[]; __ad32run: boolean };
+      const w = window as unknown as { __ad32log: { t: number; toast: Box | null; marked: boolean; op: number; plate: Box }[]; __ad32run: boolean };
       w.__ad32run = false;
       const log = w.__ad32log;
       const sep = (a: Box, b: Box) => Math.max(b.x - (a.x + a.w), a.x - (b.x + b.w), b.y - (a.y + a.h), a.y - (b.y + b.h));
       const area = (a: Box, b: Box) => Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
-      let toastFrames = 0, violations = 0, maxArea = 0, minSep = Infinity, worst = '';
+      let toastFrames = 0, unmarked = 0, violations = 0, maxArea = 0, minSep = Infinity, worst = '';
       let gone = -1;
       log.forEach((f, i) => {
         if (f.toast) {
           toastFrames++;
+          if (!f.marked) unmarked++;
           if (f.op > 0) {
             const a = area(f.plate, f.toast), s = sep(f.plate, f.toast);
             if (a > maxArea) maxArea = a;
@@ -271,11 +275,11 @@ async function enteringToast(page: Page, label: string, trials: number): Promise
         const back = log.slice(gone).find((f) => f.op >= 0.999);
         returnMs = back ? back.t - log[gone].t : null;
       }
-      return { toastFrames, violations, maxArea, minSep, returnMs, worst };
+      return { toastFrames, unmarked, violations, maxArea, minSep, returnMs, worst };
     }));
   }
   for (const [i, r] of results.entries()) {
-    console.log(`AD-32 ${label} · aviso que entra ${i + 1}/${results.length}: ${r.toastFrames} frames con el aviso · ${r.violations} frames con la placa visible encima o a < 7 px (${r.worst || '—'}) · cruce máx. ${r.maxArea.toFixed(0)} px² · separación mín. visible ${Number.isFinite(r.minSep) ? `${r.minSep.toFixed(1)} px` : '— (oculta)'} · vuelta ${r.returnMs === null ? '—' : `${r.returnMs.toFixed(0)} ms`}`);
+    console.log(`AD-32 ${label} · aviso que entra ${i + 1}/${results.length}: ${r.toastFrames} frames con el aviso (${r.unmarked} sin data-hud-block) · ${r.violations} frames con la placa visible encima o a < 7 px (${r.worst || '—'}) · cruce máx. ${r.maxArea.toFixed(0)} px² · separación mín. visible ${Number.isFinite(r.minSep) ? `${r.minSep.toFixed(1)} px` : '— (oculta)'} · vuelta ${r.returnMs === null ? '—' : `${r.returnMs.toFixed(0)} ms`}`);
   }
   return results;
 }
@@ -284,6 +288,7 @@ function expectEntering(results: EnteringResult[]) {
   for (const [i, r] of results.entries()) {
     expect.soft(r.toastFrames, `aviso ${i + 1}: el aviso se pintó`).toBeGreaterThan(10);
     expect.soft(r.violations, `aviso ${i + 1}: placa oculta desde el primer frame del aviso (${r.worst})`).toBe(0);
+    expect.soft(r.unmarked, `aviso ${i + 1}: el aviso es un bloque del HUD (data-hud-block, D41) en todos sus frames`).toBe(0);
     expect.soft(r.returnMs ?? Infinity, `aviso ${i + 1}: la placa vuelve en ≤ 250 ms cuando el aviso sale`).toBeLessThanOrEqual(250);
   }
 }
