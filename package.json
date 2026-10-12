@@ -52,7 +52,8 @@
     "testEnvironment": "node",
     "roots": [
       "<rootDir>/src",
-      "<rootDir>/server"
+      "<rootDir>/server",
+      "<rootDir>/e2e"
     ],
     "testMatch": [
       "**/__tests__/**/*.test.ts"

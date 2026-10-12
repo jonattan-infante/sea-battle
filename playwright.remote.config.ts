@@ -12,6 +12,7 @@ const url = process.env.BASE_URL && URL.canParse(process.env.BASE_URL) ? new URL
 
 export default defineConfig({
   testDir: './e2e/remote',
+  testMatch: '*.spec.ts', // __tests__/ es de Jest
   globalSetup: './e2e/remote/global-setup.ts',
   fullyParallel: false,
   workers: 1,

@@ -6,8 +6,9 @@ import path from 'path';
 
 const ROOT = path.join(__dirname, '..', '..');
 const ENV_FILE = path.join(ROOT, '.env.remote.local');
-// Producción conocida; REMOTE_PROD_HOSTS la sustituye (hosts separados por comas)
-const DEFAULT_PROD_HOSTS = 'sea-battle-production-5eba.up.railway.app';
+const LOCAL_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
+
+type Env = Record<string, string | undefined>;
 
 // Sin despliegue, sin login o sin el puente de depuración no se puede medir: la corrida es NO VERIFICADO, no un rojo
 // del juego (como AC-84 y AC-91)
@@ -20,7 +21,7 @@ export function loadRemoteEnv(): void {
   if (fs.existsSync(ENV_FILE)) process.loadEnvFile(ENV_FILE);
 }
 
-export function baseUrl(env: NodeJS.ProcessEnv = process.env): URL {
+export function baseUrl(env: Env = process.env): URL {
   if (!env.BASE_URL) throw notVerified('falta BASE_URL (p. ej., BASE_URL=https://staging.example.com npm run test:remote)');
   try {
     return new URL(env.BASE_URL);
@@ -30,18 +31,25 @@ export function baseUrl(env: NodeJS.ProcessEnv = process.env): URL {
 }
 
 // Una corrida contra producción mete un barco de prueba en el mundo de los jugadores: solo con REMOTE_ALLOW_PROD=1,
-// que se pone cuando Jonattan autoriza esa corrida (como un deploy)
-export function prodGuard(url: URL, env: NodeJS.ProcessEnv = process.env): void {
-  const prod = (env.REMOTE_PROD_HOSTS ?? DEFAULT_PROD_HOSTS).split(',').map((h) => h.trim().toLowerCase()).filter(Boolean);
-  if (prod.includes(url.hostname.toLowerCase()) && env.REMOTE_ALLOW_PROD !== '1')
-    throw notVerified(`${url.hostname} es producción; hace falta REMOTE_ALLOW_PROD=1, y cada corrida en prod la autoriza Jonattan`);
+// que se pone cuando Jonattan autoriza esa corrida (como un deploy). La guarda falla cerrada (DT-08): solo localhost y
+// los hosts de REMOTE_STAGING_HOSTS (separados por comas) no son prod; cualquier otro lo es, así un dominio nuevo de
+// prod queda protegido sin que nadie tenga que añadirlo
+export function isProdHost(url: URL, env: Env = process.env): boolean {
+  const host = url.hostname.toLowerCase();
+  const staging = (env.REMOTE_STAGING_HOSTS ?? '').split(',').map((h) => h.trim().toLowerCase()).filter(Boolean);
+  return !LOCAL_HOSTS.includes(host) && !staging.includes(host);
+}
+
+export function prodGuard(url: URL, env: Env = process.env): void {
+  if (isProdHost(url, env) && env.REMOTE_ALLOW_PROD !== '1')
+    throw notVerified(`${url.hostname} no es localhost ni está en REMOTE_STAGING_HOSTS, así que cuenta como producción; hace falta REMOTE_ALLOW_PROD=1, y cada corrida en prod la autoriza Jonattan`);
 }
 
 // A (preferida): CLERK_SECRET_KEY de la instancia + email; entra con un token de inicio de sesión del Backend API y un
 // Testing Token, sin contraseña. C: email + contraseña, sin clave secreta (sin Testing Token)
 export type LoginMethod = { kind: 'A'; email: string; secretKey: string } | { kind: 'C'; email: string; password: string };
 
-export function loginMethod(env: NodeJS.ProcessEnv = process.env): LoginMethod {
+export function loginMethod(env: Env = process.env): LoginMethod {
   const email = env.E2E_CLERK_EMAIL;
   if (email && env.CLERK_SECRET_KEY) return { kind: 'A', email, secretKey: env.CLERK_SECRET_KEY };
   if (email && env.E2E_CLERK_PASSWORD) return { kind: 'C', email, password: env.E2E_CLERK_PASSWORD };
