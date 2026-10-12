@@ -300,10 +300,18 @@ Comportamiento propio: **mantiene la distancia**. Su alcance (65 m) supera al ca
 
 ### Capitán pirata: el jefe (I2)
 En Seafight aparece un "almirante" tras hundir 10 NPC de un tipo, y los almirantes son agresivos (REFERENCE §8: S12, S13).
-- **Aparición:** cuando se hunden 10 piratas o cañoneras (no mercantes) desde su última muerte o desde el arranque. Nace en el sector pirata con menos jugadores, en su punto exterior (radio de 440 m), a ≥ 150 m de cualquier jugador. Ese punto es su **guarida**. Nunca hay 2 vivos.
-- **Combate:** detecta a ≤ 90 m, orbita a 50 m y dispara a ≤ 65 m. Elige objetivo y hace represalia como el pirata.
-- **Correa:** 150 m alrededor de la guarida. Si se aleja más o pierde al objetivo, vuelve y recupera el 100 % de la vida, como el pirata. Para hundirlo hay que comprometerse.
-- **Aviso a todos:** al aparecer, "¡El Capitán pirata ha aparecido en el sector NE!" y un marcador propio en el minimapa, visible desde cualquier punto del mapa. Al hundirse, el feed dice "El Capitán pirata ha caído: A, B y C" (hasta 3 nombres, por daño, y "y N más").
+- **Aparición:** cuando se hunden 10 piratas o cañoneras (no mercantes) desde su última muerte o desde el arranque. Nace en el sector pirata con menos jugadores, en su punto exterior (radio de 440 m), a ≥ 150 m de cualquier jugador. Ese punto es su **guarida**. Nunca hay 2 vivos. Precisiones (H-305):
+  - **Sector con menos jugadores:** se cuentan los jugadores vivos de cada cuadrante por el signo de sus coordenadas (§4), y los empates se deciden al azar con la semilla.
+  - **Punto exterior:** el de 440 m sobre la diagonal del cuadrante. Si está a menos de 150 m de un jugador o no es navegable, vale el punto libre más cercano del mismo arco, a pasos de 2,5°, sin salir del abanico de aparición de los piratas. Si no hay ninguno libre en el arco, se prueba el siguiente sector. Si no hay ninguno en todo el mapa, se reintenta en el tick siguiente.
+- **Combate:** detecta a ≤ 90 m, orbita a 50 m y dispara a ≤ 65 m. Elige objetivo y hace represalia como el pirata. Los demás parámetros son también los del pirata: pierde al objetivo a > 110 m, orbita a 8 m/s, patrulla a ≤ 120 m de su guarida con esperas de 2–5 s y da por llegado el regreso a ≤ 10 m. Acelera a 2,5 m/s² y frena a 4 m/s², como la Fragata, que tiene su misma velocidad máxima.
+- **Órbita real = nominal (H-305, pregunta 2):** la órbita compartida de los NPC se queda un 9,6 % por dentro del radio nominal: el capitán orbita a 45,2–45,4 m para 50 m, y el pirata tiene el mismo sesgo (datos de dev-npc). **Se corrige el controlador compartido en I2**, no las constantes, para que la mediana real caiga dentro del ±5 % del radio nominal en todas las clases. Por qué:
+  - con el sesgo, el capitán orbitaría a la misma distancia real que el pirata nominal (45 m);
+  - la mediana del pirata (~40,7 m) queda a 0,7 m del límite de AC-48;
+  - la cañonera (62 m) caería a ~56 m, fuera de los 62 ±4 m de AC-113 y pegada a su umbral de huida de 55 m.
+
+  Como la precisión no depende de la distancia (§7), el daño por segundo no cambia mientras el NPC está a tiro. Aun así, AC-48, AC-53 y AC-60 se vuelven a medir.
+- **Correa:** 150 m alrededor de la guarida. Si se aleja más o pierde al objetivo, vuelve y recupera el 100 % de la vida, como el pirata. **Al recuperarla se borra su registro de daño**, así que el combate siguiente empieza de cero. Para hundirlo hay que comprometerse.
+- **Aviso a todos** (texto de ART-DIRECTION D49): al aparecer, «¡Capitán pirata en el noroeste, sector B2!». La región es el cuadrante de su guarida (noreste, noroeste, suroeste o sureste), y la celda es la de la rejilla del minimapa en la que está la guarida. En pantalla, «sector» solo nombra la celda de la rejilla; los cuadrantes nunca se muestran como «sector NE». Además, el capitán tiene un marcador propio en el minimapa, visible desde cualquier punto del mapa. **Quien entra con el capitán ya vivo no recibe el aviso**, pero ve el marcador desde el snapshot completo de entrada. Al hundirse, el feed dice "El Capitán pirata ha caído: A, B y C" (hasta 3 nombres, ordenados por daño, y "y N más"). **Los nombres son los de quienes cobran:** los que lo dañaron en los últimos 60 s, la misma ventana del reparto (§10).
 - **Reparto:** proporcional al daño (§10), así que premia ir en grupo.
 
 ### Requisitos de arte de los NPC de I2 (qué deben comunicar; el diseño es de `game-ux`)
@@ -327,7 +335,7 @@ En Seafight aparece un "almirante" tras hundir 10 NPC de un tipo, y los almirant
 | Bergantín (cañones N2) vs Cañonera | 15–22 s | 10–25 % |
 | Balandra N1 vs Cañonera | — | 55–80 % (no es un objetivo para N1) |
 
-*Referencia de `game-product` (Monte Carlo, 1 000 duelos, ambos a tiro): 2 Bergantines contra el Capitán, 18,0 s, 32 % y 0,00 muertes; Bergantín contra Cañonera, 18,0 s y 17 %; Balandra contra Cañonera, 68 %. En el juego real, la cañonera mantiene la distancia y alarga los duelos.*
+*Referencia de `game-product` (Monte Carlo, 1 000 duelos, ambos a tiro): 2 Bergantines contra el Capitán, 18,0 s, 32 % y 0,00 muertes; Bergantín contra Cañonera, 18,0 s y 17 %; Balandra contra Cañonera, 68 %. En el juego real, la cañonera mantiene la distancia y alarga los duelos. Medido con la IA real del Capitán (H-305, dev-npc): con 2 Bergantines, el objetivo pierde el 25,0 %, dentro de la banda del 20–45 %.*
 
 ## 10. Botín y economía
 
@@ -351,7 +359,7 @@ En Seafight aparece un "almirante" tras hundir 10 NPC de un tipo, y los almirant
 
 **Riesgo:** el margen sobre el mínimo es de 1,3 min. **Cómo encaja I2:**
 - La cañonera sustituye a 4 piratas (la población total sigue en 20) y cumple la regla de recompensa de §9. Por eso no debería subir el oro por segundo de combate.
-- El jefe queda fuera de la curva: el bot del AC-60 no lo ataca, no entra a menos de 200 m de su guarida y, si el capitán lo elige, navega al puerto.
+- El jefe queda fuera de la curva: el bot del AC-60 no lo ataca, no entra a menos de 200 m de su guarida y, si el capitán lo elige, navega al puerto. **Medido con H-305** (dev-npc): la semilla 3 compra todo en 44,3 min, por debajo de 45, y la mediana de las 5 semillas sigue dentro de 45–70 min. AC-60 pasa, porque se juzga por la mediana, pero el margen se estrecha. Se vigila al volver a medir con H-306.
 - Si con I2 el AC-60 sale de rango, la palanca es la recompensa de la cañonera (y sus restos), en pasos de 10 oro. No se tocan pirata, mercante ni precios.
 
 ## 11. Puerto, mejoras y barcos
@@ -425,7 +433,7 @@ El layout, la paleta y la forma los define `game-ux`. Aquí solo se fija qué de
 | Números de daño y salpicaduras | **Un número por andanada** = suma de sus impactos (`impactos × daño`), no uno por bala. Si la andanada no acierta ninguna bala: "Fallo", solo cuando el tirador o el objetivo es el jugador propio. Cada bala fallada deja una salpicadura | Fuera de React |
 | Etiquetas de barcos | Nombre + barra de vida; tipo distinguible **sin depender solo del color** | Fuera de React |
 | Minimapa (P1) | Mapa completo (islas, puerto, zona segura) + entidades dentro del área de interés; propio, jugadores, piratas, cañoneras, mercantes y capitán con **color y forma**. Clic o arrastre mueve la vista (I2) | ≤ 2 Hz |
-| Aviso del jefe (I2) | Aviso a todos al aparecer el capitán, con su sector; marcador visible en el minimapa desde cualquier punto; feed al hundirlo | Al cambiar |
+| Aviso del jefe (I2) | Aviso a todos al aparecer el capitán, con la región y la celda de la rejilla de su guarida (D49); marcador visible en el minimapa desde cualquier punto; feed al hundirlo con quienes cobran | Al cambiar |
 | Vista libre (I2) | Botón **Centrar** visible solo en vista libre e indicador en el borde de la pantalla hacia el barco propio | Fuera de React (el indicador) |
 | Atacante fuera de pantalla (I2) | Si un barco que te está disparando no se ve, un indicador en el borde apunta hacia él mientras dure el ataque y 3 s después. Comparte componente con el indicador de vista libre | Fuera de React |
 | Zona segura | Borde visible en el mundo + aviso "Zona segura" en el HUD | Al cambiar |
