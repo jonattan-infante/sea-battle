@@ -65,6 +65,10 @@ async function instrument(page: Page) {
     document.addEventListener('click', (e) => {
       if ((e.target as Element | null)?.closest?.('[data-testid="m-attack"]')) w.__INPUT__.push({ t: performance.now(), code: 'm-attack', repeat: false });
     }, true);
+    // Clic en el agua (AC-128 d): el lienzo del juego recibe el puntero
+    document.addEventListener('pointerdown', (e) => {
+      if ((e.target as Element | null)?.tagName === 'CANVAS') w.__INPUT__.push({ t: performance.now(), code: 'water', repeat: false });
+    }, true);
     let last: string | null | undefined;
     new MutationObserver(() => {
       const s = state();
@@ -103,9 +107,13 @@ function serverRepairing(net: Net, myId: string, initial = false): boolean {
 
 const actionState = (page: Page) => page.getByTestId('action-state');
 
-// Sin reparar, confirmado por el servidor (AC-128 b)
+// Sin reparar, confirmado por el servidor (AC-128 b, d). Solo envía repair(false) si hace falta: con el retardo simulado,
+// un repair(false) innecesario saldría ya dentro de la ronda siguiente y se contaría como suyo
 async function resetRepair(page: Page) {
-  await page.evaluate(() => (window.__SEA_BATTLE__!.runtime() as unknown as { client: { repair: (on: boolean) => void } }).client.repair(false));
+  await page.evaluate(() => {
+    const client = (window.__SEA_BATTLE__!.runtime() as unknown as { client: { repair: (on: boolean) => void; myRepairing: () => boolean } }).client;
+    if (client.myRepairing()) client.repair(false);
+  });
   await waitFor(() => me(page), (s) => !!s && !s.repairing, 5000, 50);
   await expect(actionState(page)).not.toHaveAttribute('data-state', 'repairing');
 }
@@ -582,6 +590,109 @@ test.describe('Reparar y atacar cruzados con el casco dañado (AC-128)', () => {
       await setNetDelay(page, 0);
       report(`AC-128 (b): Espacio y luego R (retardo ${delay} ms)`, results, `mercantes agotados: ${JSON.stringify(targets.log)}`);
       for (const r of results) expect.soft(r.ok, `Espacio → R, retardo ${r.delay} ms, Δ ${r.gap} ms: ${r.intents}, servidor ${r.server}, HUD ${r.hud}`).toBe(true);
+    });
+  }
+});
+
+// AC-128 (d) (H-21): navegar deja de reparar (GDD §8, world.ts moveTo). Sin reparar, R → clic en el agua → R: el segundo
+// R repara, porque el clic ya canceló la reparación aunque el servidor aún no lo haya confirmado, y el barco termina
+// reparando y sin destino (frena, AC-38)
+test.describe('Reparar, navegar y reparar con el casco dañado (AC-128 d)', () => {
+  test.beforeEach(serve('repair'));
+
+  // Un punto de agua en pantalla: el lienzo bajo el puntero, sin barcos a < 60 px ni elementos del HUD
+  async function waterPoint(page: Page): Promise<{ x: number; y: number }> {
+    const mine = (await me(page))!;
+    const others = (await ships(page)).filter((s) => s.screen).map((s) => s.screen!);
+    const candidates = [[-160, -110], [160, -110], [-160, 110], [160, 110], [0, -160], [0, 160]].map(([dx, dy]) => ({ x: mine.screen!.sx + dx, y: mine.screen!.sy + dy }));
+    for (const c of candidates) {
+      const onCanvas = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.tagName === 'CANVAS', [c.x, c.y]);
+      if (onCanvas && others.every((o) => Math.hypot(o.sx - c.x, o.sy - c.y) >= 60)) return c;
+    }
+    throw new Error('sin un punto de agua libre en pantalla');
+  }
+
+  for (const delay of DELAYS) {
+    test(`AC-128 (d): R → clic en el agua → R a Δ ∈ {80, 120, 200} ms con ${delay} ms de retardo → exactamente repair(true) → moveTo → repair(true), el servidor reparando y el HUD al día en ≤ 50 ms sin desdecirse`, async ({ page }) => {
+      test.setTimeout(180_000);
+      await instrument(page);
+      const net = trackSocket(page);
+      await enterGame(page, own.url);
+      const myId = (await me(page))!.id;
+      await page.mouse.move(5, 450);
+      await setNetDelay(page, delay);
+      const expected = ['repairing', 'idle', 'repairing'];
+      const lines: string[] = [];
+      const fails: string[] = [];
+      for (const gap of CROSS_GAPS) {
+        let attempts = 0;
+        let round: { realGaps: number[]; raw: { name: string; data: unknown }[]; repairing: boolean; drift: number; latencies: (number | null)[]; sequence: (string | null)[]; frames: number; changes: number; off: (string | null)[]; hull: number };
+        do {
+          attempts++;
+          await resetRepair(page);
+          const water = await waterPoint(page);
+          const hull = await hullRatio(page);
+          const t0 = (await marks(page)).now;
+          net.reset();
+          const s1 = Date.now();
+          await page.keyboard.press('KeyR');
+          await page.waitForTimeout(Math.max(0, gap - (Date.now() - s1)));
+          const s2 = Date.now();
+          await page.mouse.click(water.x, water.y);
+          await page.waitForTimeout(Math.max(0, gap - (Date.now() - s2)));
+          await page.keyboard.press('KeyR');
+          await page.mouse.move(5, 450);
+          await page.waitForTimeout(Math.max(2 * delay + 900, SAMPLE_MS + 200));
+          // Sin destino (AC-38): repara frenado, no sigue hacia el punto del clic
+          const p1 = (await me(page))!;
+          await page.waitForTimeout(400);
+          const p2 = (await me(page))!;
+          const m = await marks(page);
+          const inputs = m.input.filter((i) => i.t >= t0 && !i.repeat && (i.code === 'KeyR' || i.code === 'water'));
+          const action = m.action.filter((a) => a.t >= t0);
+          const latencies = inputs.map((p, i) => {
+            const hit = action.find((a) => a.t >= p.t && a.s === expected[i]);
+            return hit ? hit.t - p.t : null;
+          });
+          const last = inputs[inputs.length - 1]?.t ?? t0;
+          const window500 = m.frames.filter((f) => f.t >= last && f.t <= last + SAMPLE_MS);
+          round = {
+            realGaps: inputs.slice(1).map((p, i) => p.t - inputs[i].t),
+            raw: intents(net),
+            repairing: serverRepairing(net, myId, false),
+            drift: Math.hypot(p2.x - p1.x, p2.z - p1.z),
+            latencies,
+            sequence: action.map((a) => a.s),
+            frames: window500.length,
+            changes: window500.filter((f, i) => i > 0 && f.t > last + HUD_MS && f.s !== window500[i - 1].s).length,
+            off: window500.filter((f) => f.t > last + HUD_MS && f.s !== 'repairing').map((f) => f.s),
+            hull
+          };
+        } while (!(round.realGaps.length === 2 && round.realGaps.every((g) => Math.abs(g - gap) <= GAP_TOLERANCE_MS)) && attempts < GAP_ATTEMPTS);
+        const names = round.raw.map((i) => i.name);
+        const ok =
+          round.realGaps.length === 2 &&
+          round.realGaps.every((g) => Math.abs(g - gap) <= GAP_TOLERANCE_MS) &&
+          round.hull <= MAX_HULL &&
+          JSON.stringify(names) === JSON.stringify(['repair', 'moveTo', 'repair']) &&
+          JSON.stringify(round.raw[0]?.data) === JSON.stringify({ on: true }) &&
+          JSON.stringify(round.raw[2]?.data) === JSON.stringify({ on: true }) &&
+          round.repairing &&
+          round.drift < 0.5 &&
+          round.latencies.length === 3 &&
+          round.latencies.every((l) => l !== null && l <= HUD_MS) &&
+          JSON.stringify(round.sequence) === JSON.stringify(expected) &&
+          round.frames >= MIN_FRAMES &&
+          round.changes === 0 &&
+          round.off.length === 0;
+        const line = `retardo ${delay} ms · Δ ${gap} (real ${round.realGaps.map((g) => g.toFixed(0)).join(' / ')}) ms → ${JSON.stringify(round.raw.map((i) => (i.name === 'repair' ? `repair(${(i.data as { on: boolean }).on})` : i.name)))} · servidor: ${round.repairing ? 'reparando' : 'sin reparar'}, ${round.drift.toFixed(2)} m en 400 ms · HUD ${fmtLat(round.latencies)} · estados ${JSON.stringify(round.sequence)} · ${round.frames} frames en 500 ms, ${round.changes} cambios tras 50 ms${round.off.length ? ` (${[...new Set(round.off)].join(',')})` : ''} · casco ${(round.hull * 100).toFixed(0)} %${fmtTries(attempts)} · ${ok ? 'OK' : 'FALLA'}`;
+        lines.push(`  ${line}`);
+        if (!ok) fails.push(line);
+      }
+      await resetRepair(page);
+      await setNetDelay(page, 0);
+      console.log(`AC-128 (d): R, clic en el agua y R (retardo ${delay} ms)\n${lines.join('\n')}`);
+      expect(fails, 'R → clic en el agua → R').toEqual([]);
     });
   }
 });

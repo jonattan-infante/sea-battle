@@ -170,7 +170,10 @@ export class GameClient {
   }
 
   // ---- Intenciones (GDD §13) ----
+  // Una orden de navegación deja de reparar (GDD §8, world.ts moveTo): se apunta, para que el siguiente Reparar repare en
+  // vez de leer el "reparando" viejo del servidor (H-21)
   moveTo(x: number, z: number): void {
+    if (this.myRepairing()) push(this.repairIntents, false);
     this.socket.emit(C2S.moveTo, { x: Math.round(x * 100) / 100, z: Math.round(z * 100) / 100 });
   }
   stop(): void {

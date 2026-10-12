@@ -23,10 +23,12 @@ function setup() {
   };
   frame({}, true);
   const sent = () => emit.mock.calls.map((c) => c[0]);
+  const payloads = () => emit.mock.calls.map((c) => c[1]);
   return {
     client,
     frame,
     sent,
+    payloads,
     advance: (ms: number) => (clock += ms),
     done: () => {
       client.dispose();
@@ -170,6 +172,39 @@ describe('DT-01: intención pendiente frente al estado del servidor', () => {
         expect(client.myTargetId()).toBe('pirate-1');
         expect(client.myRepairing()).toBe(false);
       }
+    } finally {
+      done();
+    }
+  });
+
+  test('H-21: R, clic en el agua y R con el servidor atrasado dan repair(true) → moveTo → repair(true), y queda reparando', () => {
+    const { client, frame, sent, payloads, advance, done } = setup();
+    try {
+      frame({ hp: 500 });
+      client.repair(!client.myRepairing());
+      advance(120);
+      client.moveTo(30, 40);
+      expect(client.myRepairing()).toBe(false); // navegar deja de reparar aunque el servidor aún no lo diga
+      advance(120);
+      client.repair(!client.myRepairing());
+      expect(sent()).toEqual([C2S.repair, C2S.moveTo, C2S.repair]);
+      expect(payloads()[2]).toEqual({ on: true });
+      frame({ r: true }); // llega el primero, atrasado
+      expect(client.myRepairing()).toBe(true);
+    } finally {
+      done();
+    }
+  });
+
+  test('H-21: navegar sin reparar no apunta nada en la cola de reparación', () => {
+    const { client, frame, done } = setup();
+    try {
+      client.moveTo(30, 40);
+      client.moveTo(31, 41);
+      frame({});
+      expect(client.myRepairing()).toBe(false);
+      client.repair(!client.myRepairing()); // casco entero: no se apunta (AC-128 c), así que sigue sin reparar
+      expect(client.myRepairing()).toBe(false);
     } finally {
       done();
     }

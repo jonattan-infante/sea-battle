@@ -321,6 +321,7 @@ export default function GameApp({ guest }: { guest: boolean }) {
   const onWaterClick = useCallback(
     (x: number, z: number) => {
       runtime?.client.moveTo(x, z);
+      syncRef.current(); // navegar deja de reparar (H-21): el HUD lo refleja ya, como con Reparar y Atacar
       completeHint(0);
     },
     [runtime]
