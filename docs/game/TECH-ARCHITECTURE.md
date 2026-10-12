@@ -26,6 +26,7 @@ Dueño: `game-developer`. Fuentes de verdad: `GDD.md` y `BACKLOG.md` (qué se co
 | Red cliente | `src/client/game-client.ts` | Sin React. Fusiona los deltas en muestras completas por entidad e interpola con un retraso fijo de 100 ms, sin extrapolar |
 | Render | `src/client/{art,runtime,overlays}.ts`, `models/`, `vfx/`, `src/components/game/` | `useFrame` muta refs; prohibido `setState` por frame. Placas y números en DOM posicionados por ref |
 | HUD | `src/client/hud-store.ts`, `hud-logic.ts`, `src/components/hud/` | El store solo cambia con los datos (≤ 10 Hz). Lo que avanza con el reloj (recarga, protección, cuenta atrás) se pinta por ref desde un único `requestAnimationFrame` (AC-83) |
+| Runtime | `package.json` (`engines.node`), `.nvmrc`, `.github/workflows/ci.yml` | Node 24 en local, en la CI y en Railway (DT-14). Railpack toma la mayor de `engines.node` (`24.x` → la última 24); sin ella usaría su «lts», que pasa a Node 26 el 2026-10-28. La CI lee `.nvmrc`. El npm de Node 24.21 no ejecuta los scripts de instalación de las dependencias sin `allowScripts`; ninguno hace falta (son avisos o descargas de respaldo de binarios que ya llegan como dependencias opcionales) |
 
 ## 2. Red (GDD §13)
 

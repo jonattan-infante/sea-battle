@@ -19,8 +19,9 @@ git clone <repository-url>
 cd sea-battle
 ```
 
-2. Instala las dependencias:
+2. Usa Node 24 (el de Railway; lo fijan `.nvmrc` y `engines` en `package.json`) e instala las dependencias:
 ```bash
+nvm use
 npm install
 ```
 
@@ -54,6 +55,7 @@ Abre [http://localhost:3000](http://localhost:3000) en tu navegador.
 1. **Sube el código a GitHub** y crea un nuevo proyecto en Railway desde ese repositorio.
 
 2. **Configura Railway:**
+   - Railway (Railpack) toma la versión de Node de `engines.node` en `package.json` (24.x)
    - Railway detecta `npm run build` (build: `next build` + `tsc -p tsconfig.server.json`) y `npm start` (start: `NODE_ENV=production node dist/server/index.js`) desde `package.json`
    - **Nunca** definas `AUTH_BYPASS` en Railway: el servidor se niega a arrancar si lo detecta junto a las variables `RAILWAY_*`
    - Genera un dominio público en la pestaña "Settings" > "Networking"
