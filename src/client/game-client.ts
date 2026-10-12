@@ -7,7 +7,7 @@ import { C2S, S2C } from '../game/protocol';
 import { GameEvent, Notice, PlayerView, ServerFrame, ShipSnapshot, ShipState, Welcome, WreckView } from '../game/types';
 import { lerp, lerpAngle } from '../game/vec';
 
-export type ConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'failed' | 'full' | 'kicked' | 'unauthorized';
+export type ConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'failed' | 'full' | 'kicked' | 'unauthorized' | 'load-failed';
 
 // Estado interpolado de un barco, reutilizado entre frames (sin asignaciones por frame)
 export interface RenderShip {
@@ -54,6 +54,9 @@ const DELAY_S = INTERPOLATION_DELAY_MS / 1000;
 const EVENT_LEAD_S = 0.05;
 // Reintentos de reconexión: 1 s, 2 s y 4 s (AC-99)
 const RECONNECT_ATTEMPTS = 3;
+// AC-131: plazo de un reintento de carga. El servidor contesta en ≤ 3 s aunque la BD esté colgada; esto cubre el caso en
+// que no contesta nada, para que «Reintentando…» no se quede para siempre
+export const LOAD_RETRY_TIMEOUT_MS = 8000;
 // DT-01 (GDD §5, regla de entrada): una intención de ataque o reparación queda pendiente hasta que el servidor la
 // confirma o pasa este tiempo (si la rechaza, vuelve a mandar su estado). Cubre de sobra un RTT de Railway más un tick
 const INTENT_TTL_MS = 1500;
@@ -89,6 +92,7 @@ export class GameClient {
   private pendingEvents: { t: number; event: GameEvent }[] = [];
   private readonly targetIntents: Intent<string | null>[] = [];
   private readonly repairIntents: Intent<boolean>[] = [];
+  private loadAttempt: { promise: Promise<boolean>; settle: (ok: boolean) => void } | null = null;
 
   private eventListeners = new Set<Listener<GameEvent>>();
   private playerListeners = new Set<Listener<PlayerView>>();
@@ -113,34 +117,46 @@ export class GameClient {
     });
 
     this.socket.on('connect', () => {
-      this.setState('connected');
+      // AC-131: durante un reintento de carga el overlay sigue («Reintentando…») hasta que llegue welcome o el fallo
+      if (this.state !== 'load-failed') this.setState('connected');
       this.socket.emit(C2S.join, { name: this.options.name ?? undefined });
     });
     this.socket.on('disconnect', (reason) => {
-      if (this.state === 'full' || this.state === 'kicked') return;
+      if (this.state === 'full' || this.state === 'kicked' || this.state === 'load-failed') return;
       // Desconexión iniciada por el servidor: Socket.IO no reintenta solo
       if (reason === 'io server disconnect') this.socket.connect();
       this.setState('reconnecting');
     });
     this.socket.on('connect_error', (err) => {
-      if (err.message === 'unauthorized') this.setState('unauthorized');
+      if (err.message !== 'unauthorized') return;
+      this.setState('unauthorized');
+      this.settleLoad(false);
     });
-    this.socket.io.on('reconnect_failed', () => this.setState('failed'));
+    this.socket.io.on('reconnect_failed', () => {
+      this.setState('failed');
+      this.settleLoad(false);
+    });
 
     this.socket.on(S2C.welcome, (w: Welcome) => {
       this.welcome = w;
       this.snapshotInterval = 1 / w.snapshotRate;
       this.clockOffset = performance.now() - w.time * 1000;
       this.welcomeListeners.forEach((l) => l(w));
+      if (this.state === 'load-failed') this.setState('connected');
+      this.settleLoad(true);
     });
     this.socket.on(S2C.frame, (f: ServerFrame) => this.receiveFrame(f));
     this.socket.on(S2C.full, () => {
       this.setState('full');
       this.socket.disconnect();
     });
-    this.socket.on(S2C.kicked, (n: Notice) => {
-      this.setState('kicked');
-      this.noticeListeners.forEach((l) => l({ kind: 'error', text: n.text }));
+    // AC-133: el overlay lo explica con los textos de D50; no hace falta además un toast detrás del velo
+    this.socket.on(S2C.kicked, () => this.setState('kicked'));
+    // AC-131: sin progreso no se entra al mundo ni se reintenta solo; lo decide el jugador con «Reintentar»
+    this.socket.on(S2C.progressError, () => {
+      this.setState('load-failed');
+      this.settleLoad(false);
+      this.socket.disconnect();
     });
   }
 
@@ -155,7 +171,30 @@ export class GameClient {
     this.socket.connect();
   }
 
+  // AC-131: un solo intento de carga a la vez. Se resuelve en true si entra al mundo (welcome) y en false si vuelve a
+  // fallar, si el servidor no está o si vence el plazo
+  retryLoad(): Promise<boolean> {
+    if (this.loadAttempt) return this.loadAttempt.promise;
+    let settle!: (ok: boolean) => void;
+    const promise = new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => this.settleLoad(false), LOAD_RETRY_TIMEOUT_MS);
+      settle = (ok) => {
+        clearTimeout(timer);
+        this.loadAttempt = null;
+        resolve(ok);
+      };
+    });
+    this.loadAttempt = { promise, settle };
+    this.socket.connect();
+    return promise;
+  }
+
+  private settleLoad(ok: boolean): void {
+    this.loadAttempt?.settle(ok);
+  }
+
   dispose(): void {
+    this.settleLoad(false);
     this.socket.removeAllListeners();
     this.socket.io.removeAllListeners();
     this.socket.disconnect();

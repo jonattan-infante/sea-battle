@@ -61,6 +61,7 @@ interface HudState {
   hint: number | null; // pista de primera sesión (0 navegar, 1 seleccionar, 2 atacar)
   goldGain: { id: number; amount: number } | null;
   killedBy: { name: string; relation: Relation } | null;
+  saveWarning: boolean; // aviso persistente de AC-132 (D50): la BD no guarda; no es un toast
   select: (id: string | null) => void;
   setShopOpen: (open: boolean) => void;
   pushToast: (kind: Toast['kind'], text: string) => void;
@@ -93,6 +94,7 @@ export const useHud = create<HudState>((set) => ({
   hint: null,
   goldGain: null,
   killedBy: null,
+  saveWarning: false,
   select: (id) => set({ selectedId: id }),
   setShopOpen: (open) => set({ shopOpen: open }),
   pushToast: (kind, text) => {
@@ -118,6 +120,44 @@ export const useHud = create<HudState>((set) => ({
     setTimeout(() => useHud.setState((s) => (s.feed.some((f) => f.id === id) ? { feed: s.feed.filter((f) => f.id !== id) } : s)), FEED_MS);
   }
 }));
+
+// AC-132 (D50, ART-DIRECTION §12.5): el aviso aparece en la misma llamada en que llega el estado del servidor y se queda
+// al menos 3 s, para que un corte de un instante no parpadee. Al confirmarse la escritura se quita y en su lugar sale el
+// toast de éxito; Puerto vuelve en ese mismo commit, porque se deriva de saveWarning
+export const SAVE_WARNING_MIN_MS = 3000;
+// El aviso se pinta en el commit que sigue a la llegada del estado, unos ms después: con 50 ms de margen, medido en el DOM
+// nunca dura menos de 3 s (sin margen, el e2e midió 2 999,9 ms)
+export const SAVE_WARNING_HOLD_MS = SAVE_WARNING_MIN_MS + 50;
+export const SAVED_TEXT = 'Progreso guardado';
+let warningSince = 0;
+let warningExit: ReturnType<typeof setTimeout> | undefined;
+
+function clearSaveWarning() {
+  warningExit = undefined;
+  useHud.setState({ saveWarning: false });
+  useHud.getState().pushToast('ok', SAVED_TEXT);
+}
+
+export function syncUnsaved(unsaved: boolean, now = performance.now()): void {
+  if (unsaved) {
+    clearTimeout(warningExit);
+    warningExit = undefined;
+    if (useHud.getState().saveWarning) return;
+    warningSince = now;
+    useHud.setState({ saveWarning: true });
+    return;
+  }
+  if (!useHud.getState().saveWarning || warningExit !== undefined) return;
+  const left = warningSince + SAVE_WARNING_HOLD_MS - now;
+  if (left <= 0) clearSaveWarning();
+  else warningExit = setTimeout(clearSaveWarning, left);
+}
+
+export function resetSaveWarning(): void {
+  clearTimeout(warningExit);
+  warningExit = undefined;
+  if (useHud.getState().saveWarning) useHud.setState({ saveWarning: false });
+}
 
 // Compara superficialmente para no notificar a React si nada cambió
 export function sameShallow<T extends object>(a: T | null, b: T | null): boolean {

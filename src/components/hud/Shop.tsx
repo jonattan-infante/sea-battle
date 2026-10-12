@@ -1,6 +1,6 @@
 'use client';
 // Astillero del puerto (ART-DIRECTION §14, GDD §11). El servidor valida cada compra; aquí solo se explica
-// por qué un botón está desactivado.
+// por qué un botón está desactivado. Con la BD caída (AC-132, D50) no se cierra: muestra una franja y bloquea las compras.
 import React, { useEffect, useRef, useState } from 'react';
 import {
   CANNON_LEVELS,
@@ -11,9 +11,10 @@ import {
   UPGRADE_LEVELS,
   UpgradeId
 } from '../../game/constants';
+import { SHOP_UNAVAILABLE } from '../../client/hud-logic';
 import { useHud } from '../../client/hud-store';
 import type { HudActions } from './Hud';
-import { Close, Coins, Crosshair, Sailboat, Shield } from './icons';
+import { Close, CloudOff, Coins, Crosshair, Sailboat, Shield } from './icons';
 
 const fmt = (n: number) => n.toLocaleString('es-ES');
 const dec = (n: number) => n.toLocaleString('es-ES', { maximumFractionDigits: 1 });
@@ -42,7 +43,7 @@ function statsLine(upgrade: UpgradeId, level: number, classId: string): React.Re
   return <>{label} {value(level)} → <b>{value(next)}{unit}</b> (×{dec(m[level - 1])} → ×{dec(m[next - 1])})</>;
 }
 
-function UpgradeCard({ upgrade, level, gold, classId, flash, onBuy }: { upgrade: UpgradeId; level: number; gold: number; classId: string; flash: boolean; onBuy: () => void }) {
+function UpgradeCard({ upgrade, level, gold, classId, flash, locked, onBuy }: { upgrade: UpgradeId; level: number; gold: number; classId: string; flash: boolean; locked: boolean; onBuy: () => void }) {
   const def = UPGRADE_LEVELS[upgrade];
   const maxed = level >= MAX_UPGRADE_LEVEL;
   const price = maxed ? 0 : def.prices[level];
@@ -66,7 +67,7 @@ function UpgradeCard({ upgrade, level, gold, classId, flash, onBuy }: { upgrade:
             <>
               {missing > 0 && <span className="card__why">Te faltan {fmt(missing)}</span>}
               <span className="card__price"><Coins size={16} /> {fmt(price)}</span>
-              <button type="button" className="btn btn--primary" disabled={missing > 0} onClick={onBuy} data-testid={`buy-${upgrade}-${level + 1}`}>
+              <button type="button" className="btn btn--primary" disabled={locked || missing > 0} onClick={onBuy} data-testid={`buy-${upgrade}-${level + 1}`}>
                 Mejorar
               </button>
             </>
@@ -77,7 +78,7 @@ function UpgradeCard({ upgrade, level, gold, classId, flash, onBuy }: { upgrade:
   );
 }
 
-function ShipCard({ classId, owned, active, gold, hullLevel, onBuy, onUse }: { classId: PlayerShipClass; owned: boolean; active: boolean; gold: number; hullLevel: number; onBuy: () => void; onUse: () => void }) {
+function ShipCard({ classId, owned, active, gold, hullLevel, locked, onBuy, onUse }: { classId: PlayerShipClass; owned: boolean; active: boolean; gold: number; hullLevel: number; locked: boolean; onBuy: () => void; onUse: () => void }) {
   const c = SHIP_CLASSES[classId];
   const hp = Math.round(c.maxHp * UPGRADE_LEVELS.hull.multipliers[hullLevel - 1]);
   const missing = c.price - gold;
@@ -93,12 +94,12 @@ function ShipCard({ classId, owned, active, gold, hullLevel, onBuy, onUse }: { c
           {active ? (
             <span className="stamp">En uso</span>
           ) : owned ? (
-            <button type="button" className="btn btn--secondary" onClick={onUse} data-testid={`use-${classId}`}>Usar</button>
+            <button type="button" className="btn btn--secondary" disabled={locked} onClick={onUse} data-testid={`use-${classId}`}>Usar</button>
           ) : (
             <>
               {missing > 0 && <span className="card__why">Te faltan {fmt(missing)}</span>}
               <span className="card__price"><Coins size={16} /> {fmt(c.price)}</span>
-              <button type="button" className="btn btn--primary" disabled={missing > 0} onClick={onBuy} data-testid={`buy-ship-${classId}`}>Comprar</button>
+              <button type="button" className="btn btn--primary" disabled={locked || missing > 0} onClick={onBuy} data-testid={`buy-ship-${classId}`}>Comprar</button>
             </>
           )}
         </div>
@@ -111,6 +112,7 @@ export default function Shop({ actions }: { actions: HudActions }) {
   const player = useHud((s) => s.player);
   const inSafe = useHud((s) => !!s.me?.inSafeZone && s.me.state === 'alive');
   const setShopOpen = useHud((s) => s.setShopOpen);
+  const locked = useHud((s) => s.saveWarning);
   const [tab, setTab] = useState<'upgrades' | 'ships'>('upgrades');
   const [flash, setFlash] = useState<UpgradeId | null>(null);
   const prev = useRef(player?.upgrades);
@@ -145,6 +147,7 @@ export default function Shop({ actions }: { actions: HudActions }) {
           <button type="button" role="tab" aria-selected={tab === 'upgrades'} className={`shop__tab ${tab === 'upgrades' ? 'is-active' : ''}`} onClick={() => setTab('upgrades')}>Mejoras</button>
           <button type="button" role="tab" aria-selected={tab === 'ships'} className={`shop__tab ${tab === 'ships' ? 'is-active' : ''}`} onClick={() => setTab('ships')} data-testid="tab-ships">Barcos</button>
         </div>
+        {locked && <div className="shop__unsaved" role="status" data-testid="shop-unsaved"><CloudOff size={16} /> {SHOP_UNAVAILABLE}</div>}
         <div className="shop__grid">
           {tab === 'upgrades'
             ? (['cannons', 'hull', 'sails'] as UpgradeId[]).map((u) => (
@@ -155,6 +158,7 @@ export default function Shop({ actions }: { actions: HudActions }) {
                   gold={player.gold}
                   classId={player.activeShip}
                   flash={flash === u}
+                  locked={locked}
                   onBuy={() => actions.buy(`${u}:${player.upgrades[u] + 1}`)}
                 />
               ))
@@ -166,6 +170,7 @@ export default function Shop({ actions }: { actions: HudActions }) {
                   active={player.activeShip === c}
                   gold={player.gold}
                   hullLevel={player.upgrades.hull}
+                  locked={locked}
                   onBuy={() => actions.buy(`ship:${c}`)}
                   onUse={() => actions.selectShip(c)}
                 />

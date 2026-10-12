@@ -35,6 +35,19 @@ export function isLowHp(me: Pick<MeHud, 'state' | 'hp' | 'maxHp'>): boolean {
   return me.state === 'alive' && me.hp / me.maxHp < LOW_HP_WARNING;
 }
 
+// Por qué Puerto no abre (§12.4). Con la BD caída manda el corte, también fuera de la zona (AC-132, D50: «mientras dure
+// el corte, pulsar Puerto o P no abre la tienda»); si no, la zona segura (AC-66). null: abre
+export const SHOP_UNAVAILABLE = 'La tienda no está disponible: no podemos guardar';
+export interface PortBlock {
+  title: string;
+  toast: { kind: 'warn' | 'danger'; text: string };
+}
+export function portBlock(me: Pick<MeHud, 'state' | 'inSafeZone'> | null, saveWarning: boolean): PortBlock | null {
+  if (saveWarning) return { title: SHOP_UNAVAILABLE, toast: { kind: 'danger', text: SHOP_UNAVAILABLE } };
+  if (me?.state === 'alive' && me.inSafeZone) return null;
+  return { title: 'Solo en la zona segura', toast: { kind: 'warn', text: 'El puerto solo abre en la zona segura' } };
+}
+
 // Misma regla que canAttack en src/game/world.ts, con los datos interpolados del cliente
 export function canAttackClient(client: GameClient, me: RenderShip | undefined, target: RenderShip | undefined): boolean {
   if (!me || !target || me.state !== 'alive' || target.state !== 'alive' || me.id === target.id) return false;

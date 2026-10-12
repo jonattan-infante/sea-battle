@@ -2,7 +2,7 @@
 // Muerte (ART-DIRECTION §15) y estados de conexión (§16.2). La cuenta atrás corre por ref (sin commits).
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { DEATH_COUNTDOWN } from '../../game/constants';
-import type { GameClient } from '../../client/game-client';
+import type { ConnectionState, GameClient } from '../../client/game-client';
 import { addTicker } from '../../client/hud-logic';
 import { useHud } from '../../client/hud-store';
 import type { HudActions } from './Hud';
@@ -70,13 +70,51 @@ export function DeathOverlay({ client, actions }: { client: GameClient; actions:
   );
 }
 
+// Un solo componente para todos los estados de conexión y de progreso (D50, §16.2): la tarjeta .offline con una tabla de
+// textos. AC-131 no tiene juego detrás: va sobre el fondo de «Conectando», sin velo
+interface OverlayCopy {
+  title: string;
+  body: string;
+  detail?: string;
+  retry: boolean;
+  exit: boolean;
+}
+
+const LOAD_DETAIL = 'Lo que tenías guardado sigue intacto.';
+const LOAD_RETRY_FAILED = 'Sigue sin responder. Prueba de nuevo en unos segundos.';
+
+function copyFor(connection: ConnectionState, attempt: number, loadFailed: boolean): OverlayCopy {
+  switch (connection) {
+    case 'failed':
+      return { title: 'Sin conexión', body: 'No pudimos reconectar con el servidor.', retry: true, exit: true };
+    case 'load-failed':
+      return { title: 'Progreso no disponible', body: 'No podemos cargar tu progreso ahora mismo', detail: loadFailed ? LOAD_RETRY_FAILED : LOAD_DETAIL, retry: true, exit: true };
+    case 'kicked':
+      return { title: 'Sesión en otra pestaña', body: 'Has abierto el juego en otra pestaña', detail: 'Tu barco sigue en la otra: solo hay uno por cuenta.', retry: false, exit: true };
+    case 'unauthorized':
+      return { title: 'Sesión no válida', body: 'Vuelve a iniciar sesión para seguir jugando.', retry: false, exit: true };
+    default:
+      return { title: 'Sin conexión', body: `Reintentando (${Math.max(1, attempt)}/3)…`, retry: false, exit: false };
+  }
+}
+
 export function ConnectionOverlay({ actions }: { actions: HudActions }) {
   const connection = useHud((s) => s.connection);
   const attempt = useHud((s) => s.reconnectAttempt);
   // AC-126: "Salir" sondea el servidor 2 s antes de navegar; si no responde, se queda aquí y lo explica
   const [exit, setExit] = useState<'idle' | 'probing' | 'unreachable'>('idle');
+  // AC-131: "Reintentar" lanza un solo intento de carga a la vez; si falla, cambia el detalle
+  const [load, setLoad] = useState<'idle' | 'busy' | 'failed'>('idle');
+  const retryRef = useRef<HTMLButtonElement>(null);
+  const exitRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    if (connection === 'connected') setExit('idle');
+    if (connection !== 'connected') return;
+    setExit('idle');
+    setLoad('idle');
+  }, [connection]);
+  // Al abrirse, el foco va al primario (o a "Salir" si es el único): Enter funciona sin buscarlo (D50)
+  useLayoutEffect(() => {
+    (retryRef.current ?? exitRef.current)?.focus();
   }, [connection]);
   if (connection === 'connected' || connection === 'connecting' || connection === 'full') return null;
   const onExit = async () => {
@@ -84,33 +122,34 @@ export function ConnectionOverlay({ actions }: { actions: HudActions }) {
     setExit('probing');
     setExit((await actions.exit()) ? 'idle' : 'unreachable');
   };
-  let title = 'Sin conexión';
-  let body: React.ReactNode = `Reintentando (${Math.max(1, attempt)}/3)…`;
-  let buttons = false;
-  if (connection === 'failed') {
-    body = 'No pudimos reconectar con el servidor.';
-    buttons = true;
-  } else if (connection === 'kicked') {
-    title = 'Sesión en otra pestaña';
-    body = 'Abriste el juego en otra pestaña.';
-    buttons = true;
-  } else if (connection === 'unauthorized') {
-    title = 'Sesión no válida';
-    body = 'Vuelve a iniciar sesión para seguir jugando.';
-    buttons = true;
-  }
+  const onRetry = async () => {
+    if (connection !== 'load-failed') return actions.retry();
+    if (load === 'busy') return;
+    setLoad('busy');
+    // Si entra, el overlay se desmonta con connection = 'connected'; si no, vuelve a estar activo con otro detalle
+    setLoad((await actions.retryLoad()) ? 'idle' : 'failed');
+  };
+  const copy = copyFor(connection, attempt, load === 'failed');
+  const busy = load === 'busy';
+  // AC-126: el aviso del sondeo fallido sustituye al detalle mientras se vea
+  const detail = exit === 'unreachable' ? null : copy.detail;
   return (
-    <div className="modal-scrim" data-testid="connection-overlay" data-state={connection}>
-      <section className="panel offline" role="alertdialog" aria-labelledby="offline-title">
-        <h2 id="offline-title" className="font-pirate">{title}</h2>
-        <p>{body}</p>
-        {exit === 'unreachable' && <p className="offline__notice" role="status" data-testid="exit-unreachable">El servidor no responde. Vuelve a intentarlo en unos segundos</p>}
-        {buttons && (
-          <div className="flex gap-3">
-            {connection !== 'kicked' && connection !== 'unauthorized' && (
-              <button type="button" className="btn btn--primary" onClick={actions.retry} data-testid="btn-retry">Reintentar</button>
+    <div className={connection === 'load-failed' ? 'offline-screen' : 'modal-scrim'} data-testid="connection-overlay" data-state={connection}>
+      <section className="panel offline" role="alertdialog" aria-labelledby="offline-title" aria-describedby="offline-body">
+        <h2 id="offline-title" className="font-pirate">{copy.title}</h2>
+        <p id="offline-body" className="offline__body">{copy.body}</p>
+        {detail && <p className="offline__detail" data-testid="offline-detail">{detail}</p>}
+        {exit === 'unreachable' && <p className="offline__detail" role="status" data-testid="exit-unreachable">El servidor no responde. Vuelve a intentarlo en unos segundos</p>}
+        {(copy.retry || copy.exit) && (
+          <div className="offline__actions">
+            {copy.retry && (
+              // Como «Salir» en AC-126 e: sin disabled, para que conserve el foco y los clics de más lleguen aquí y no lancen otro
+              // intento; mientras espera se ve deshabilitado (CSS de aria-busy)
+              <button ref={retryRef} type="button" className="btn btn--primary" onClick={onRetry} aria-busy={busy} data-testid="btn-retry">
+                {busy ? 'Reintentando…' : 'Reintentar'}
+              </button>
             )}
-            <button type="button" className="btn btn--secondary" onClick={onExit} aria-busy={exit === 'probing'} data-testid="btn-exit">
+            <button ref={exitRef} type="button" className="btn btn--secondary" onClick={onExit} aria-busy={exit === 'probing'} data-testid="btn-exit">
               {exit === 'probing' ? 'Saliendo…' : 'Salir'}
             </button>
           </div>

@@ -20,6 +20,7 @@ export const S2C = {
   welcome: 'welcome',
   frame: 'frame', // ServerFrame: deltas + eventos + vista privada + avisos
   kicked: 'kicked', // se abrió otra pestaña con el mismo usuario
+  progressError: 'progressError', // no se pudo cargar el progreso al unirse (AC-131): no se entra al mundo
   full: 'serverFull'
 } as const;
 

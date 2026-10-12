@@ -5,13 +5,13 @@ import React, { useEffect, useLayoutEffect, useRef } from 'react';
 import { REPAIR_RATE, REPAIR_RATE_UNDER_FIRE } from '../../game/constants';
 import type { GameClient } from '../../client/game-client';
 import { HINTS } from '../../client/hints';
-import { addTicker, hudSignals, isLowHp } from '../../client/hud-logic';
+import { addTicker, hudSignals, isLowHp, portBlock } from '../../client/hud-logic';
 import { MeHud, Relation, TargetHud, useHud } from '../../client/hud-store';
 import { HUD_BLOCKS_EVENT } from '../../client/overlays';
-import { Alert, Anchor, Close, Coins, Crosshair, Sailboat, Shield, Skull, Star, Stop, Store, Swords, Target, Wrench } from './icons';
+import { Alert, Anchor, Close, CloudOff, Coins, Crosshair, Sailboat, Shield, Skull, Star, Stop, Store, Swords, Target, Wrench } from './icons';
 import Minimap, { ViewRect } from './Minimap';
 import Shop from './Shop';
-import { ConnectionOverlay, DeathOverlay } from './Overlays';
+import { DeathOverlay } from './Overlays';
 
 export interface HudActions {
   toggleAttack: () => void;
@@ -24,6 +24,7 @@ export interface HudActions {
   buy: (itemId: string) => void;
   selectShip: (classId: 'sloop' | 'brig' | 'frigate') => void;
   retry: () => void;
+  retryLoad: () => Promise<boolean>; // AC-131: true si entra al mundo con su progreso; un solo intento a la vez
   exit: () => Promise<boolean>; // false si el servidor no responde en 2 s (AC-126): no se sale de la partida
 }
 
@@ -178,17 +179,20 @@ function GoldPanel() {
 // ---------- Toasts, aviso de zona y feed ----------
 
 // Cada aviso visible es un bloque del HUD para las placas (ART-DIRECTION §11.4, D41). Entran y salen de golpe: en el mismo
-// commit, antes de pintar, la capa de placas relee las cajas y oculta las que quedan debajo
+// commit, antes de pintar, la capa de placas relee las cajas y oculta las que quedan debajo. El aviso de guardado
+// (AC-132, D50) va el primero, por encima de «Zona segura», y como ella no caduca ni cuenta en el cupo de toasts
 function Toasts() {
   const toasts = useHud((s) => s.toasts);
   const inSafe = useHud((s) => s.me?.inSafeZone && s.me.state === 'alive');
+  const unsaved = useHud((s) => s.saveWarning);
   const feed = useHud((s) => s.feed);
-  const blocksKey = `${toasts.map((t) => t.id).join()}|${feed.map((f) => f.id).join()}|${!!inSafe}`;
+  const blocksKey = `${toasts.map((t) => t.id).join()}|${feed.map((f) => f.id).join()}|${!!inSafe}|${unsaved}`;
   useLayoutEffect(() => {
     window.dispatchEvent(new Event(HUD_BLOCKS_EVENT));
   }, [blocksKey]);
   return (
     <div className="hud-toasts" role="status" aria-live="polite" data-testid="toasts">
+      {unsaved && <div className="toast toast--warn toast--unsaved" data-testid="save-warning" data-hud-block=""><CloudOff size={16} /> Progreso sin guardar, reintentando…</div>}
       {inSafe && <div className="toast toast--zone" data-testid="safe-zone" data-hud-block=""><Shield size={16} /> Zona segura</div>}
       {toasts.map((t) => (
         <div key={t.id} className={`toast toast--${t.kind}`} data-hud-block="">{t.text}</div>
@@ -223,14 +227,17 @@ interface ActionModel {
   low: boolean;
   alive: boolean;
   portEnabled: boolean;
+  portTitle: string;
 }
 
 function useActionModel(): ActionModel | null {
   const me = useHud((s) => s.me);
   const target = useHud((s) => s.target);
+  const unsaved = useHud((s) => s.saveWarning);
   if (!me) return null;
   const alive = me.state === 'alive';
   const attacking = me.action === 'firing' || me.action === 'armed';
+  const port = portBlock(me, unsaved);
   return {
     alive,
     attacking,
@@ -239,7 +246,8 @@ function useActionModel(): ActionModel | null {
     repairing: me.action === 'repairing',
     repairEnabled: alive && (me.action === 'repairing' || me.hp < me.maxHp),
     low: isLowHp(me),
-    portEnabled: alive && me.inSafeZone
+    portEnabled: !port,
+    portTitle: port?.title ?? 'Puerto (P)'
   };
 }
 
@@ -307,14 +315,14 @@ function ActionBar({ actions }: { actions: HudActions }) {
         <span className="slot__icon"><Stop size={28} /></span>
         <span className="slot__label">Detener</span>
       </button>
-      {/* DT-02 (AC-66): fuera de la zona se ve desactivado con aria-disabled y no con disabled, para que el clic
-          o el toque lleguen a togglePort y muestren el aviso "El puerto solo abre en la zona segura" */}
+      {/* DT-02 (AC-66): fuera de la zona, o con la BD caída (AC-132), se ve desactivado con aria-disabled y no con
+          disabled, para que el clic o el toque lleguen a togglePort y muestren el aviso con el motivo */}
       <button
         type="button"
         className="slot"
         aria-disabled={!m.portEnabled}
         onClick={actions.togglePort}
-        title={m.portEnabled ? 'Puerto (P)' : 'Solo en la zona segura'}
+        title={m.portTitle}
         data-testid="btn-port"
       >
         <span className="slot__key">P</span>
@@ -345,7 +353,7 @@ function MobileButtons({ actions }: { actions: HudActions }) {
         <Wrench size={22} />
         Reparar
       </button>
-      <button type="button" className="hud-mobile-btn hud-mobile-btn--port" aria-disabled={!m.portEnabled} onClick={actions.togglePort} data-testid="m-port" data-hud-block="" aria-label="Puerto" title={m.portEnabled ? 'Puerto' : 'Solo en la zona segura'}>
+      <button type="button" className="hud-mobile-btn hud-mobile-btn--port" aria-disabled={!m.portEnabled} onClick={actions.togglePort} data-testid="m-port" data-hud-block="" aria-label="Puerto" title={m.portEnabled ? 'Puerto' : m.portTitle}>
         <Store size={22} />
         Puerto
       </button>
@@ -385,7 +393,7 @@ function placeHint(el: HTMLElement) {
 function Hint() {
   const hint = useHud((s) => s.hint);
   // Cambia solo cuando entra o sale un toast (o una línea del feed, que en móvil es un toast): pocas veces por minuto
-  const toastKey = useHud((s) => `${s.toasts.map((t) => t.id).join()}|${s.feed.map((f) => f.id).join()}|${s.me?.inSafeZone && s.me.state === 'alive'}`);
+  const toastKey = useHud((s) => `${s.toasts.map((t) => t.id).join()}|${s.feed.map((f) => f.id).join()}|${s.me?.inSafeZone && s.me.state === 'alive'}|${s.saveWarning}`);
   const ref = useRef<HTMLDivElement>(null);
   const visible = hint !== null && hint < HINTS.length;
 
@@ -437,7 +445,6 @@ export default function Hud({ client, actions, islands, viewRect }: { client: Ga
       </div>
       {shopOpen && <Shop actions={actions} />}
       <DeathOverlay client={client} actions={actions} />
-      <ConnectionOverlay actions={actions} />
     </>
   );
 }

@@ -151,6 +151,7 @@ body {
 .toast--warn { border-left-color: var(--ui-gold); }
 .toast--danger { border-left-color: var(--ui-danger); }
 .toast--zone { border-left-color: var(--ui-info); color: var(--ui-info); }
+.toast--unsaved svg { flex: none; color: var(--ui-gold); } /* AC-132 (D50): cloud-off de 16 px en oro */
 .feed-as-toast { display: none; }
 
 .hud-feed { position: absolute; left: 16px; bottom: 16px; width: 360px; height: 112px; display: flex; flex-direction: column; justify-content: flex-end; gap: 4px; pointer-events: none; }
@@ -255,6 +256,7 @@ body {
 .shop__tabs { display: flex; gap: 24px; padding: 0 20px; border-bottom: 1px solid var(--paper-line); }
 .shop__tab { font-size: 15px; font-weight: 600; padding: 10px 0; color: var(--ink-soft); border-bottom: 3px solid transparent; }
 .shop__tab.is-active { color: var(--ink-title); border-bottom-color: var(--ink-title); }
+.shop__unsaved { height: 40px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 20px; background: var(--paper-card); border-bottom: 1px solid var(--paper-line); color: #a23b2a; font-size: 14px; } /* AC-132 (D50, §14) */
 .shop__grid { flex: 1; overflow: auto; padding: 16px 20px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-content: start; }
 .card { min-height: 128px; background: var(--paper-card); border: 1px solid var(--paper-line); border-radius: 8px; padding: 12px; display: flex; gap: 12px; }
 .card.is-bought { animation: bought 300ms ease both; }
@@ -273,7 +275,7 @@ body {
 .btn--primary { background: var(--btn-primary); color: #fff; }
 .btn--primary:hover { filter: brightness(1.1); }
 .btn--secondary { border: 1.5px solid var(--btn-primary); color: var(--btn-primary); background: transparent; }
-.btn:disabled { background: var(--btn-disabled); color: var(--btn-disabled-text); border-color: transparent; cursor: not-allowed; filter: none; }
+.btn:disabled, .btn--primary[aria-busy="true"] { background: var(--btn-disabled); color: var(--btn-disabled-text); border-color: transparent; cursor: not-allowed; filter: none; }
 .stamp { border: 2px solid var(--ui-gold-lo); color: var(--ui-gold-lo); border-radius: 6px; padding: 4px 10px; font-weight: 700; text-transform: uppercase; font-size: 13px; }
 
 @media (max-width: 699.98px) {
@@ -299,7 +301,16 @@ body {
 .connecting svg { animation: spin 2s linear infinite; color: var(--ui-gold); }
 .offline { width: 400px; max-width: calc(100vw - 32px); min-height: 220px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 20px; text-align: center; }
 .offline h2 { font-size: 32px; color: var(--ui-gold); }
+.offline__body { font-size: 16px; color: var(--ui-text); }
+.offline__detail { font-size: 14px; color: var(--ui-text-dim); }
 .offline .btn--secondary { color: var(--ui-text); border-color: var(--ui-text); }
+/* D50: ≥ 48 px en pantallas táctiles, como los botones del HUD (§12.2). También con el diseño móvil (los mismos cortes que
+   el HUD), porque Chromium no siempre emula pointer: coarse en un contexto táctil (nota de AC-110 en gameplay.spec.ts) */
+@media (pointer: coarse), (max-width: 699.98px), (max-height: 499.98px) { .offline .btn { height: 48px; } }
+/* AC-131 (D50): sin juego detrás. Va sobre el fondo de «Conectando», sin velo ni rosa; si queda un mundo de una sesión
+   anterior (reconexión tras un deploy), se oculta entero: ni lienzo ni bloques del HUD */
+.offline-screen { position: absolute; inset: 0; z-index: 40; display: grid; place-items: center; background: linear-gradient(#0f3f5c, #1a5f86); }
+.game-root.is-load-failed > :not(.offline-screen) { visibility: hidden; }
 
 /* ---------- Landing (§16.1) ---------- */
 .landing { position: relative; min-height: 100dvh; background: #06111a; color: var(--ui-text); overflow-x: hidden; }

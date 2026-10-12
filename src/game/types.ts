@@ -179,6 +179,7 @@ export interface PlayerView {
   kills: number;
   deaths: number;
   death: { by: string | null; goldLost: number; respawnAt: number } | null; // respawnAt en tiempo de servidor
+  unsaved?: boolean; // AC-132: la BD no guarda (solo jugadores con cuenta); al volver a false, la escritura está confirmada
 }
 
 export interface Welcome {

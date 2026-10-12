@@ -7,12 +7,12 @@ import { PlayerShipClass } from '../game/constants';
 import { GameEvent, Welcome } from '../game/types';
 import { probeServerOnce } from '../client/exit-probe';
 import { GameClient } from '../client/game-client';
-import { canAttackClient, cannonFor, classLabel, cycleTarget, hudSignals, inSafeZone, relationOf } from '../client/hud-logic';
-import { MeHud, TargetHud, sameShallow, useHud } from '../client/hud-store';
+import { canAttackClient, cannonFor, classLabel, cycleTarget, hudSignals, inSafeZone, portBlock, relationOf } from '../client/hud-logic';
+import { MeHud, resetSaveWarning, sameShallow, syncUnsaved, TargetHud, useHud } from '../client/hud-store';
 import { attachOverlays, createRuntime, disposeRuntime, GameRuntime } from '../client/runtime';
 import GameCanvas from './game/GameCanvas';
 import Hud, { HudActions } from './hud/Hud';
-import { Connecting } from './hud/Overlays';
+import { ConnectionOverlay, Connecting } from './hud/Overlays';
 
 const GUEST_KEY = 'sea-battle-guest-id';
 const HINTS_KEY = 'sea-battle-hints';
@@ -214,7 +214,12 @@ export default function GameApp({ guest }: { guest: boolean }) {
         if (connection === 'connected') useHud.setState({ reconnectAttempt: 0 });
         if (connection === 'full') router.replace('/?full=1');
       }),
-      client.onPlayer((player) => useHud.setState({ player })),
+      client.onPlayer((player) => {
+        useHud.setState({ player });
+        // AC-132: el aviso llega en el mismo commit que el estado del servidor. Lo decide el servidor (autoritativo): a un
+        // invitado nunca le marca unsaved, porque no escribe en la BD; si lo hiciera por error, el e2e lo vería
+        syncUnsaved(player.unsaved === true);
+      }),
       client.onNotice((n) => hud.pushToast(n.kind === 'error' ? 'danger' : 'ok', n.text)),
       client.onEvent(onEvent),
       client.onWelcome((w) => setWelcome(w))
@@ -235,6 +240,7 @@ export default function GameApp({ guest }: { guest: boolean }) {
       client.dispose();
       setRuntime(null);
       setWelcome(null);
+      resetSaveWarning();
       useHud.setState({ me: null, target: null, player: null, selectedId: null, shopOpen: false, killedBy: null, toasts: [], feed: [] });
     };
     // El nombre se fija al conectar; getToken se lee por ref en cada intento
@@ -293,9 +299,11 @@ export default function GameApp({ guest }: { guest: boolean }) {
       },
       togglePort: () => {
         const st = useHud.getState();
-        if (st.shopOpen) st.setShopOpen(false);
-        else if (st.me?.inSafeZone && st.me.state === 'alive') st.setShopOpen(true);
-        else st.pushToast('warn', 'El puerto solo abre en la zona segura');
+        if (st.shopOpen) return st.setShopOpen(false);
+        // Fuera de la zona (AC-66) o con la BD caída (AC-132) no abre: el toast explica por qué (en móvil no hay title)
+        const block = portBlock(st.me, st.saveWarning);
+        if (block) st.pushToast(block.toast.kind, block.toast.text);
+        else st.setShopOpen(true);
       },
       deselect: () => useHud.getState().select(null),
       respawn: () => {
@@ -307,6 +315,7 @@ export default function GameApp({ guest }: { guest: boolean }) {
       buy: (itemId: string) => client.buy(itemId),
       selectShip: (classId: PlayerShipClass) => client.selectShip(classId),
       retry: () => client.retry(),
+      retryLoad: () => client.retryLoad(),
       // AC-126 (DT-03): con el servidor caído, router.push acabaría en la página de error del navegador; antes se sondea
       // /healthz (exit-probe.ts): si responde, se navega; si no, el overlay lo explica y sigue Reintentar
       exit: async () => {
@@ -346,6 +355,9 @@ export default function GameApp({ guest }: { guest: boolean }) {
       const el = e.target as HTMLElement | null;
       if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
+      // Sin partida que mandar (AC-131, AC-133): las teclas no generan intenciones y Enter y Espacio quedan para el overlay
+      const { connection } = useHud.getState();
+      if (connection === 'load-failed' || connection === 'kicked') return;
       // Una pulsación, como mucho una intención (GDD §5): la autorrepetición de una tecla mantenida no cuenta
       if (e.repeat) {
         if (e.code === 'Space' || e.code === 'Tab') e.preventDefault();
@@ -414,8 +426,8 @@ export default function GameApp({ guest }: { guest: boolean }) {
       ships: () => [...client.getShips()].map((s) => view(s)),
       player: () => client.player,
       hud: () => {
-        const { me, target, selectedId, shopOpen, connection, hint, feed, toasts } = useHud.getState();
-        return { me, target, selectedId, shopOpen, connection, hint, feed, toasts };
+        const { me, target, selectedId, shopOpen, connection, hint, feed, toasts, saveWarning } = useHud.getState();
+        return { me, target, selectedId, shopOpen, connection, hint, feed, toasts, saveWarning };
       },
       renderInfo: () => ({ ...runtime.renderInfo }),
       runtime: () => runtime
@@ -426,9 +438,12 @@ export default function GameApp({ guest }: { guest: boolean }) {
   }, [runtime]);
 
   const dead = useHud((s) => !!s.player?.death);
+  // AC-131: sin progreso no se entra al mundo. El overlay va sobre el fondo de «Conectando»; si queda el mundo de una
+  // sesión anterior, el CSS lo oculta (.is-load-failed)
+  const loadFailed = useHud((s) => s.connection === 'load-failed');
 
   return (
-    <main className={`game-root ${dead ? 'is-dead' : ''}`}>
+    <main className={`game-root ${dead ? 'is-dead' : ''} ${loadFailed ? 'is-load-failed' : ''}`}>
       {runtime && welcome && actions ? (
         <>
           <GameCanvas runtime={runtime} onWaterClick={onWaterClick} onShipClick={onShipClick} onShipDoubleClick={onShipDoubleClick} />
@@ -437,8 +452,9 @@ export default function GameApp({ guest }: { guest: boolean }) {
           <Hud client={runtime.client} actions={actions} islands={welcome.islands} viewRect={() => runtime.viewRect()} />
         </>
       ) : (
-        <Connecting />
+        !loadFailed && <Connecting />
       )}
+      {actions && (welcome || loadFailed) && <ConnectionOverlay actions={actions} />}
     </main>
   );
 }

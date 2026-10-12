@@ -35,6 +35,11 @@ Dueño: `game-developer`. Fuentes de verdad: `GDD.md` y `BACKLOG.md` (qué se co
 - **Desconexión**: el barco queda 10 s en el mundo y se puede atacar. Si el jugador reconecta, recupera el mismo barco (AC-96).
 - **Servidor lleno**: cuentan los clientes conectados más los barcos en margen de reconexión. El jugador 21 recibe `serverFull` y vuelve a la landing con `?full=1` (AC-12).
 - **Cliente**: Socket.IO hace 3 reintentos (1, 2 y 4 s, sin aleatorizar) y después ofrece "Reintentar" o "Salir" (AC-99).
+- **Estados de progreso en el cliente** (D50): un solo `ConnectionOverlay` con la tabla de §16.2 de ART-DIRECTION.
+  - `progressError` antes de `welcome` deja el cliente en `load-failed`: no se monta el mundo, el que quede de una sesión anterior se oculta y nada reintenta solo. «Reintentar» (`GameClient.retryLoad`) lanza un solo intento a la vez, que acaba en `welcome` o en el mismo fallo (plazo de 8 s si el servidor no contesta) (AC-131).
+  - `kicked` se queda sin los reintentos de AC-99 (AC-133).
+  - `PlayerView.unsaved` enciende el aviso persistente y bloquea Puerto y la tienda. El aviso se queda ≥ 3 s y sale con «Progreso guardado» (`syncUnsaved` en `hud-store.ts`, AC-132).
+  - El e2e del cliente (`e2e/progress-states.spec.ts`) hace de BD caída con `page.routeWebSocket`: se traga el `join` y responde `progressError`, o añade `unsaved` a la vista privada.
 
 Medido (Jest + socket real, `server/__tests__/game-server.test.ts`): con 20 clientes y 20 NPC en combate durante 30 s simulados, el peor cliente recibe 10,00 msg/s y 10,03 KB/s.
 

@@ -1,5 +1,6 @@
 // Iconos de línea 24×24, trazo de 2 px y currentColor (ART-DIRECTION §13). Sin dependencias. Swords copia el de
-// Lucide (ISC) y Coins y Wrench siguen su construcción; el resto son dibujos propios.
+// Lucide (ISC) y Coins y Wrench siguen su construcción; el resto son dibujos propios. CloudOff copia el de Lucide (ISC,
+// lucide-static 0.469.0): progreso sin guardar (D50).
 import React from 'react';
 
 type IconProps = { size?: number; className?: string; title?: string };
@@ -120,6 +121,14 @@ export const Compass = (p: IconProps) => (
   <Svg {...p}>
     <circle cx="12" cy="12" r="10" />
     <path d="m16 8-2.5 5.5L8 16l2.5-5.5Z" />
+  </Svg>
+);
+
+export const CloudOff = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="m2 2 20 20" />
+    <path d="M5.782 5.782A7 7 0 0 0 9 19h8.5a4.5 4.5 0 0 0 1.307-.193" />
+    <path d="M21.532 16.5A4.5 4.5 0 0 0 17.5 10h-1.79A7.008 7.008 0 0 0 10 5.07" />
   </Svg>
 );
 
