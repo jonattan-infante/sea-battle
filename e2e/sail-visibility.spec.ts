@@ -15,18 +15,18 @@ interface SailRow {
 }
 
 test.describe('Visibilidad de velas @perf', () => {
-  test('AC-102: Balandra, Bergantín, Fragata, Pirata y Mercante conservan ≥ 25 % de vela en todos los rumbos (LOD0 y LOD1)', async ({ page }) => {
+  test('AC-102: Balandra, Bergantín, Fragata, Pirata, Mercante y Capitán conservan ≥ 25 % de vela en todos los rumbos (LOD0 y LOD1)', async ({ page }) => {
     await enterGame(page);
     const rows: SailRow[] = await page.evaluate(() => {
       const rt = window.__SEA_BATTLE__!.runtime();
       return ([0, 1] as const).flatMap((lod) =>
-        rt.measureSails(['sloop', 'brig', 'frigate', 'pirate', 'merchant'], false, lod).map((r) => ({
+        rt.measureSails(['sloop', 'brig', 'frigate', 'pirate', 'merchant', 'captain'], false, lod).map((r) => ({
           classId: r.classId, lod: r.lod, headings: r.pixels.length, min: r.min, max: r.max, minHeadingDeg: r.minHeadingDeg, ratio: r.ratio
         }))
       );
     });
     for (const r of rows) console.log(`AC-102: ${r.classId} LOD${r.lod} · ratio ${r.ratio.toFixed(3)} (mín. ${r.min} px a ${r.minHeadingDeg}° / máx. ${r.max} px)`);
-    expect(rows).toHaveLength(10);
+    expect(rows).toHaveLength(12);
     for (const r of rows) {
       expect(r.headings, `${r.classId} LOD${r.lod}: rumbos medidos`).toBe(24);
       expect(r.min, `${r.classId} LOD${r.lod}: vela visible en el peor rumbo`).toBeGreaterThan(0);

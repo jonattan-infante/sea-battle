@@ -16,10 +16,10 @@ import { SHIP_LOOKS } from '../src/client/art';
 import type { ShipKind } from '../src/game/constants';
 import { enterGame } from './helpers';
 
-const CLASSES = ['sloop', 'brig', 'frigate', 'pirate', 'merchant'] as const;
-const CANNONS: Record<string, number> = { sloop: 4, brig: 6, frigate: 8, pirate: 4, merchant: 0 }; // por banda
-const LOOK: Record<string, ShipKind> = { sloop: 'player', brig: 'player', frigate: 'player', pirate: 'pirate', merchant: 'merchant' };
-const BUDGET: Record<string, number> = { sloop: 2500, brig: 2500, frigate: 2500, pirate: 2000, merchant: 2000 }; // tris LOD0 (§5)
+const CLASSES = ['sloop', 'brig', 'frigate', 'pirate', 'merchant', 'captain'] as const; // + el Capitán de I2
+const CANNONS: Record<string, number> = { sloop: 4, brig: 6, frigate: 8, pirate: 4, merchant: 0, captain: 6 }; // por banda
+const LOOK: Record<string, ShipKind> = { sloop: 'player', brig: 'player', frigate: 'player', pirate: 'pirate', merchant: 'merchant', captain: 'pirate' };
+const BUDGET: Record<string, number> = { sloop: 2500, brig: 2500, frigate: 2500, pirate: 2000, merchant: 2000, captain: 2500 }; // tris LOD0 (§5)
 const HEADINGS = [0, 90, 180, 270];
 const SHOTS = 3; // capturas por pose, separadas 0,5 s (balanceo distinto)
 const OUT = process.env.D23_OUT;
@@ -466,7 +466,7 @@ const lab = (hex: string) => {
   return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
 };
 const AS_V20_CONTRAST = 15;
-const AS_V21 = { classes: ['sloop', 'brig', 'frigate', 'pirate'], rMedian: 0.4, rHigh: 0.7, etaClass: 0.8, etaHigh: 0.85, share: 0.15 }; // D40; el Mercante se registra (D9)
+const AS_V21 = { classes: ['sloop', 'brig', 'frigate', 'pirate', 'captain'], rMedian: 0.4, rHigh: 0.7, etaClass: 0.8, etaHigh: 0.85, share: 0.15 }; // D40; el Mercante se registra (D9)
 const MOBILE_N1_PPM = 2.82; // 390×844 con N1 (ASSET-SPEC §7): Balandra, Bergantín (banda), Pirata y Mercante en LOD1
 const LOD1_CLASSES = ['sloop', 'brig', 'pirate', 'merchant'];
 const legible = (q: Port) => q.core >= 2 && q.contrast >= AS_V20_CONTRAST; // AS-V20 (D38): núcleo ≥ 2 px y contraste ≥ 15
@@ -633,7 +633,7 @@ test.describe('Detalle interno de los cascos @perf', () => {
       if (v.deg === 180) expect.soft(v.sailL, `AD-10 ${v.classId}`)[LOOK[v.classId] === 'pirate' ? 'toBeLessThanOrEqual' : 'toBeGreaterThanOrEqual'](LOOK[v.classId] === 'pirate' ? 25 : 80);
       expect.soft(v.ad25, `AD-25 ${v.classId} ${v.deg}°`).toBeLessThanOrEqual(6);
     }
-    // AS-V21 (b) (D40): η por clase ≤ 0,80; sobre las 4 clases, r con mediana ≤ 0,40 y ≤ 15 % de velas con r ≥ 0,70 o con
+    // AS-V21 (b) (D40): η por clase ≤ 0,80; sobre todas las clases, r con mediana ≤ 0,40 y ≤ 15 % de velas con r ≥ 0,70 o con
     // η ≥ 0,85
     expect.soft(v21.length, 'AS-V21: velas medidas').toBeGreaterThan(0);
     for (const c of v21class) if (c.classId !== 'merchant') expect.soft(c.eta, `AS-V21 ${c.classId}: η`).toBeLessThanOrEqual(AS_V21.etaClass);

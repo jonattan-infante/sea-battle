@@ -36,6 +36,7 @@ const AO = 0.85;
 const AO_HEIGHT = 0.4;
 const ao = (c: THREE.Color) => c.clone().multiplyScalar(AO);
 
+const STANDARD = { w: 6.0, h: 4.0, mark: 2.0 }; // estandarte del Capitán (D25), m
 const BAND = 1.0; // franja de portas (D36), m: contiene la porta de 0,8 m con 0,1 m de franja arriba y abajo en la maestra
 // Paños (D36, D40): ancho de paño (w), m, de cuadras y cangrejas y, en el jugador y la paleta pirata, también de los paños
 // radiales de foques y latinas. El mercante conserva sus filas de foque y latina de `row` m (D36)
@@ -108,7 +109,7 @@ interface MastDef {
   topY?: number; // cofa (LOD0)
 }
 
-interface BoxDef { size: Vec3; pos: Vec3; kind: 'castle' | 'lantern' | 'cargo' }
+interface BoxDef { size: Vec3; pos: Vec3; kind: 'castle' | 'lantern' | 'cargo' | 'figurehead' }
 interface FireAt { z: number; y?: number }
 
 export interface ShipRecipe {
@@ -131,8 +132,9 @@ export interface ShipRecipe {
   cannonZ: number[];
   cannonY: number;
   cannon: [number, number, number]; // radio superior (boca), inferior, largo
-  sailStyle: 'plain' | 'notched' | 'striped';
-  flagStyle: 'pennant' | 'flag';
+  sailStyle: 'plain' | 'notched' | 'striped' | 'banded'; // banded: 4 filas con la inferior de franja (Capitán, I2)
+  sailStripe?: string; // franja propia de la receta (D46) cuando su facción no la tiene
+  flagStyle: 'pennant' | 'flag' | 'standard'; // standard: el estandarte del Capitán (D25)
   trimRail: boolean;
   cannonScale: number; // escala del fogonazo y del humo (VFX §1)
   knifeOpen?: number; // apertura de las velas de cuchillo (D12): 25° por defecto, 35° solo si la clase no pasa AS-V14
@@ -243,13 +245,38 @@ const MERCHANT: ShipRecipe = {
   radius: 12, mastHeight: 17.5, pick: [4.9, 17.5, 11.0]
 };
 
+// Capitán pirata (I2, jefe; §8.4, D43, D45, D46): perfil fino con caída de 6°, cuadras negras con la fila inferior de
+// franja roja, sin foques (el bauprés solo lleva el mascarón), el estandarte en lugar de la bandera, el cañón de la Fragata
+// (misma F y misma línea de cañones) y cofas solo en el trinquete y la mayor
+const CAPTAIN: ShipRecipe = {
+  assetId: 'npc_pirate_captain', sbKind: 'npc', look: 'pirate',
+  L: 30, B: 8.0, F: 2.8, D: 1.5, bowsprit: 8.0, railH: 1.0, profile: 'fine', rake: 6 * deg,
+  masts: [
+    { z: 9.0, h: 21, squares: [{ w: 10.4, h: 4.2, yb: 5.2 }, { w: 8.4, h: 3.6, yb: 9.8 }], topY: 9.5 },
+    { z: 0, h: 24, squares: [{ w: 11.4, h: 4.6, yb: 5.2 }, { w: 9.4, h: 4.0, yb: 10.2 }, { w: 7.0, h: 2.8, yb: 14.6 }], topY: 9.9 },
+    { z: -8.5, h: 18, gaff: { A: [-8.9, 5.2], B: [-8.9, 12.0], C: [-15.0, 13.4], D: [-16.4, 5.8] } }
+  ],
+  flagMast: 1,
+  jibs: [],
+  boxes: [
+    { size: [6.4, 1.6, 8.0], pos: [0, 3.96, -11.0], kind: 'castle' },
+    { size: [0.6, 1.0, 1.2], pos: [0, 3.2, 15.3], kind: 'figurehead' }
+  ],
+  barrels: [],
+  fire: [undefined, undefined, { z: -9.0, y: 5.06 }], // _03 sobre el alcázar, en su tapa (4,76) + 0,3 (AS-V17)
+  cannonZ: [-8.5, -5.1, -1.7, 1.7, 5.1, 8.5], cannonY: 1.68, cannon: [0.26, 0.32, 1.6],
+  sailStyle: 'banded', sailStripe: SHIP_LOOKS.pirate.band, flagStyle: 'standard', trimRail: true, cannonScale: 1.2,
+  radius: 16, mastHeight: 24, pick: [6.0, 24.0, 15.0]
+};
+
 // classId de la simulación (src/game/constants.ts) → receta
 export const SHIP_RECIPES: Record<string, ShipRecipe> = {
   sloop: SLOOP,
   brig: BRIGANTINE,
   frigate: FRIGATE,
   pirate: PIRATE,
-  merchant: MERCHANT
+  merchant: MERCHANT,
+  captain: CAPTAIN
 };
 
 export const LOD_PX: [number, number] = [72, 64]; // LOD0 si L·ppm ≥ 72; LOD1 si < 64 (histéresis)
@@ -402,10 +429,11 @@ function opened(group: THREE.Matrix4, p: Vec3, axis: Vec3, free: Vec3, open: num
 const dist3 = (a: Vec3, b: Vec3) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 
 function squareSail(g: GeoBuilder, r: ShipRecipe, look: ShipLook, group: THREE.Matrix4, mast: MastDef, sail: SquareSail, lod: 0 | 1, rm: number): void {
-  // LOD0 (D36, D37): paños de CLOTH.w m, nx = max(4, 2·round(w / 2·CLOTH.w)); con muescas, múltiplo de 4 para conservar
-  // los vértices en u' = 0,25 y 0,75. LOD1: 4 columnas, lisa. 3 filas; las franjas del mercante, 5
-  const q = r.sailStyle === 'notched' ? 4 : 2;
-  const segs: [number, number] = [lod === 0 ? Math.max(4, q * Math.round(sail.w / (q * CLOTH[r.look].w))) : 4, r.sailStyle === 'striped' ? 5 : 3];
+  // LOD0 (D36, D37): paños de CLOTH.w m, nx = max(4, 2·round(w / 2·CLOTH.w)); en la paleta pirata, múltiplo de 4 para
+  // conservar los vértices en u' = 0,25 y 0,75 (§8.2). LOD1: 4 columnas, lisa. 3 filas; las franjas del mercante, 5, y
+  // las del Capitán, 4
+  const q = r.look === 'pirate' ? 4 : 2;
+  const segs: [number, number] = [lod === 0 ? Math.max(4, q * Math.round(sail.w / (q * CLOTH[r.look].w))) : 4, r.sailStyle === 'striped' ? 5 : r.sailStyle === 'banded' ? 4 : 3];
   const plane = new THREE.PlaneGeometry(sail.w, sail.h, segs[0], segs[1]);
   const pos = plane.getAttribute('position');
   for (let i = 0; i < pos.count; i++) {
@@ -423,12 +451,14 @@ function squareSail(g: GeoBuilder, r: ShipRecipe, look: ShipLook, group: THREE.M
   const stripe = look.sailStripe ? lin(look.sailStripe) : lin(look.sail);
   const cloth = lod === 0 ? clothColors(r, look, g.marks.length, segs[0]) : null;
   const cLod1 = lin(look.sailLod1);
-  // PlaneGeometry: 2 triángulos por celda, filas de arriba abajo. Filas 1 y 3 desde arriba en el color de franja; en
-  // LOD0, cada columna de lona con el tono de su paño (todas las filas igual); en LOD1, lisa en sail.lod1
+  // PlaneGeometry: 2 triángulos por celda, filas de arriba abajo. En los dos LOD, en el color de franja: las filas 1 y 3
+  // desde arriba del mercante y la fila inferior del Capitán (D46). En LOD0, cada columna de lona con el tono de su paño
+  // (todas las filas igual); en LOD1, lisa en sail.lod1
   const color = (_x: number, _y: number, _z: number, t: number) => {
     const cell = Math.floor(t / 2);
     const row = Math.floor(cell / segs[0]);
     if (r.sailStyle === 'striped' && (row === 1 || row === 3)) return stripe;
+    if (r.sailStyle === 'banded' && row === 3) return stripe;
     return cloth ? cloth[cell % segs[0]] : cLod1;
   };
   g.mark(() => g.add(plane, sailM, color));
@@ -485,6 +515,7 @@ function knifeSail(g: GeoBuilder, r: ShipRecipe, look: ShipLook, m: THREE.Matrix
 function boxColors(look: ShipLook, kind: BoxDef['kind']): (x: number, y: number, z: number, t: number) => THREE.Color {
   // BoxGeometry no indexada: 2 triángulos por cara en el orden +X, −X, +Y, −Y, +Z, −Z
   if (kind === 'lantern') return () => lin(look.lantern);
+  if (kind === 'figurehead') return () => lin(look.trim);
   const side = lin(kind === 'cargo' ? look.cargo : look.rail);
   return (_x, _y, _z, t) => (Math.floor(t / 2) === 2 ? lin(look.deck) : side);
 }
@@ -516,8 +547,13 @@ function castle(g: GeoBuilder, look: ShipLook, box: BoxDef, planks: boolean): vo
   }
 }
 
+// Paleta de un barco: la de su facción con lo propio de la receta (la franja del Capitán, D46)
+export function shipLook(r: ShipRecipe): ShipLook {
+  return r.sailStripe ? { ...SHIP_LOOKS[r.look], sailStripe: r.sailStripe } : SHIP_LOOKS[r.look];
+}
+
 function buildLod(r: ShipRecipe, lod: 0 | 1): { geometry: THREE.BufferGeometry; hullBox: THREE.Box3; triangles: number; sails: [number, number][] } {
-  const look = SHIP_LOOKS[r.look];
+  const look = shipLook(r);
   const g = new GeoBuilder({ rim: true });
   const rm = 0.022 * r.L;
   const cMast = lin(look.mast);
@@ -597,7 +633,7 @@ function buildLod(r: ShipRecipe, lod: 0 | 1): { geometry: THREE.BufferGeometry; 
   }
 
   for (const box of r.boxes) {
-    if (lod === 1 && box.kind !== 'castle') continue;
+    if (lod === 1 && box.kind !== 'castle') continue; // LOD1 quita también el mascarón del Capitán (D45)
     if (box.kind === 'castle') {
       g.rim = 1;
       castle(g, look, box, lod === 0);
@@ -640,6 +676,16 @@ function flag(g: GeoBuilder, r: ShipRecipe, look: ShipLook, group: THREE.Matrix4
   const t = (p: Vec3): Vec3 => new THREE.Vector3(...p).applyMatrix4(group).toArray() as Vec3;
   if (r.flagStyle === 'pennant') {
     g.tri(t([0, top, mast.z]), t([0, top - 0.5 * kf, mast.z]), t([0, top - 0.25 * kf, mast.z - 2.4 * kf]), lin(look.flag));
+    return;
+  }
+  if (r.flagStyle === 'standard') {
+    // Estandarte del Capitán (D25; se queda en LOD1, §7): 6,0 × 4,0 m en `flagMark` con un cuadro de 2,0 m en `flag` en
+    // las dos caras, los colores de la bandera pirata invertidos
+    const at = group.clone().multiply(trs(0, top - STANDARD.h / 2, mast.z - STANDARD.w / 2, 0, Math.PI / 2));
+    g.add(new THREE.PlaneGeometry(STANDARD.w, STANDARD.h), at, lin(look.flagMark ?? look.flag));
+    for (const side of [1, -1]) {
+      g.add(new THREE.PlaneGeometry(STANDARD.mark, STANDARD.mark), group.clone().multiply(trs(side * 0.01, top - STANDARD.h / 2, mast.z - STANDARD.w / 2, 0, Math.PI / 2)), lin(look.flag));
+    }
     return;
   }
   // Bandera en el plano YZ que ondea hacia popa, con un cuadro claro en las dos caras

@@ -4,10 +4,11 @@ import * as THREE from 'three';
 import { ISLANDS } from '../../../game/constants';
 import { buildBuoyGeometry, buildIslands, buildLootGeometry, buildPalmGeometry } from '../island-geometry';
 import { SHIP_LOOKS, TOP_FACE } from '../../art';
-import { buildShipAsset, clothTones, deckHalfBeam, deckY, getShipModel, ShipExtras } from '../ship-geometry';
+import { buildShipAsset, clothTones, deckHalfBeam, deckY, getShipModel, ShipExtras, shipLook } from '../ship-geometry';
 
-const CLASSES = ['sloop', 'brig', 'frigate', 'pirate', 'merchant'] as const;
+const CLASSES = ['sloop', 'brig', 'frigate', 'pirate', 'merchant', 'captain'] as const;
 const BUDGET = { ship: [2500, 800], npc: [2000, 700] } as const;
+const BUDGET_BY_ID: Record<string, readonly [number, number]> = { npc_pirate_captain: [2500, 800] }; // §5: el Capitán pirata, NPC con presupuesto propio
 const EXTRAS_KEYS: (keyof ShipExtras)[] = [
   'sb_version', 'sb_kind', 'sb_id', 'sb_length', 'sb_beam', 'sb_freeboard', 'sb_draft', 'sb_mast_height',
   'sb_radius', 'sb_pick', 'sb_cannons_per_side', 'sb_lod_px'
@@ -81,7 +82,7 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
   });
 
   test('AS-V08: triángulos dentro del presupuesto de §5 por LOD', () => {
-    const [b0, b1] = BUDGET[extras.sb_kind];
+    const [b0, b1] = BUDGET_BY_ID[id] ?? BUDGET[extras.sb_kind];
     expect(tris(model.lods[0])).toBeLessThanOrEqual(b0);
     expect(tris(model.lods[1])).toBeLessThanOrEqual(b1);
     expect(tris(model.lods[1])).toBeLessThan(tris(model.lods[0]));
@@ -104,7 +105,7 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
   });
 
   test('AS-V09 (D18): _rim_mask vale 1 solo en el casco (loft y castillos) y 0 en velas y aparejo', () => {
-    const hull = new THREE.Color(SHIP_LOOKS[model.recipe.look].hull);
+    const hull = new THREE.Color(shipLook(model.recipe).hull);
     model.lods.forEach((geometry, lod) => {
       const rim = geometry.getAttribute('_rim_mask');
       const color = geometry.getAttribute('color');
@@ -124,7 +125,7 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
   });
 
   test('AS-V14 (base): los rangos de vela de cada LOD solo contienen vértices de los tonos de lona o de franja (LOD1: sail.lod1)', () => {
-    const look = SHIP_LOOKS[model.recipe.look];
+    const look = shipLook(model.recipe);
     model.lods.forEach((geometry, lod) => {
       const tones = lod === 0 ? [look.sail, look.sailMid, look.sailAlt] : [look.sailLod1];
       const allowed = [...tones, look.sailStripe].filter((c): c is string => !!c).map((hex) => new THREE.Color(hex));
@@ -151,7 +152,7 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
   };
 
   test('D23: tablas de cubierta (deck.alt) y paneles de lona (sail.alt) en LOD0, no en LOD1; oclusión ×0,85 en LOD0', () => {
-    const look = SHIP_LOOKS[model.recipe.look];
+    const look = shipLook(model.recipe);
     const [lod0, lod1] = model.lods;
     expect(colorCount(lod0, look.deckAlt)).toBeGreaterThan(0);
     expect(colorCount(lod1, look.deckAlt)).toBe(0);
@@ -166,7 +167,7 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
   });
 
   test('D40 (O-8): LOD1 pinta la cubierta y las tapas lisas con el albedo de la media de las tablas, sin deck ni deck.alt', () => {
-    const look = SHIP_LOOKS[model.recipe.look];
+    const look = shipLook(model.recipe);
     const [lod0, lod1] = model.lods;
     expect(look.deckLod1).toBe(model.recipe.look === 'pirate' ? '#67462D' : '#BD8D59');
     expect(colorCount(lod1, look.deckLod1)).toBeGreaterThan(0);
@@ -217,7 +218,7 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
 
   test('D36: franja de portas de 1,0 m centrada en la línea de cañones en la maestra, con la porta dentro; sin portas, 0,30–0,55·F', () => {
     const r = model.recipe;
-    const look = SHIP_LOOKS[r.look];
+    const look = shipLook(r);
     const pos = model.lods[0].getAttribute('position');
     const color = model.lods[0].getAttribute('color');
     const ys: number[] = [];
@@ -234,7 +235,7 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
 
   test('D36: tapas de castillos y camaretas en n = 2·ceil(w/2 / 0,5) tablas deck / deck.alt en LOD0; lisas en LOD1', () => {
     const r = model.recipe;
-    const look = SHIP_LOOKS[r.look];
+    const look = shipLook(r);
     for (const box of r.boxes.filter((b) => b.kind === 'castle')) {
       const [w, h, d] = box.size;
       const top = box.pos[1] + h / 2;
@@ -267,7 +268,7 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
     const threeTones = r.look !== 'merchant';
     const p = r.look === 'pirate' ? 0.5 : r.look === 'merchant' ? 0.7 : 0.55;
     const plan: { kind: string; n: number; tris: [number, number] }[] = [];
-    const rows = r.sailStyle === 'striped' ? 5 : 3;
+    const rows = r.sailStyle === 'striped' ? 5 : r.sailStyle === 'banded' ? 4 : 3;
     for (const mast of r.masts) {
       for (const s of mast.squares ?? []) {
         const nx = r.look === 'pirate' ? Math.max(4, 4 * Math.round(s.w / 2.0)) : r.look === 'merchant' ? Math.max(4, 2 * Math.round(s.w / 1.4)) : Math.max(4, 2 * Math.round(s.w / 1.1));
@@ -296,10 +297,11 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
   };
 
   test('D40: rejillas de las velas (paños de 0,55 m, 0,5 m en la paleta pirata; foques y latinas radiales × 3 filas; mercante como en D36) en LOD0, lisas en LOD1', () => {
-    const r = model.recipe;
     const plan = sailPlan();
-    // ASSET-SPEC §8.4: las dos cuadras del pirata llevan 16 y 12 columnas (paños de 0,48 y 0,5 m)
-    if (r.look === 'pirate') expect(plan.filter((q) => q.kind === 'cuadra').map((q) => q.n)).toEqual([16, 12]);
+    // ASSET-SPEC §8.4: las dos cuadras del pirata llevan 16 y 12 columnas (paños de 0,48 y 0,5 m), y las 5 del Capitán, 20,
+    // 16, 24, 20 y 16
+    const squares: Record<string, number[]> = { pirate: [16, 12], captain: [20, 16, 24, 20, 16] };
+    if (squares[model.classId]) expect(plan.filter((q) => q.kind === 'cuadra').map((q) => q.n)).toEqual(squares[model.classId]);
     model.sails.forEach((ranges, lod) => expect(ranges.map(([a, b]) => b - a)).toEqual(plan.map((q) => q.tris[lod])));
   });
 
@@ -307,13 +309,16 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
   // mismo tono y cada tono en ⌊n/3⌋ o ⌈n/3⌉ paños. Los paños salen de la geometría: triángulos del mismo color que
   // comparten una arista forman un paño; si dos vecinos repitieran tono se fundirían y saldrían menos de n
   if (model.recipe.look !== 'merchant') test('AS-V21 (a): 3 tonos barajados por vela, sin vecinos iguales y repartidos ⌊n/3⌋–⌈n/3⌉', () => {
-    const look = SHIP_LOOKS[model.recipe.look];
+    const look = shipLook(model.recipe);
     const tones = [look.sail, look.sailMid!, look.sailAlt].map((h) => new THREE.Color(h));
     const geometry = model.lods[0];
     const pos = geometry.getAttribute('position');
     const color = geometry.getAttribute('color');
     const key = (v: number) => `${pos.getX(v).toFixed(4)},${pos.getY(v).toFixed(4)},${pos.getZ(v).toFixed(4)}`;
     const toneOf = (v: number) => tones.findIndex((c) => Math.abs(c.r - color.getX(v)) + Math.abs(c.g - color.getY(v)) + Math.abs(c.b - color.getZ(v)) < 1e-4);
+    // La franja roja del Capitán (D46) no es lona: queda fuera de los paños
+    const stripe = look.sailStripe ? new THREE.Color(look.sailStripe) : null;
+    const isStripe = (t: number) => !!stripe && [0, 1, 2].every((k) => Math.abs(stripe.r - color.getX(3 * t + k)) + Math.abs(stripe.g - color.getY(3 * t + k)) + Math.abs(stripe.b - color.getZ(3 * t + k)) < 1e-4);
     const plan = sailPlan();
     model.sails[0].forEach(([t0, t1], s) => {
       const n = plan[s].n;
@@ -323,6 +328,10 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
       const tone: number[] = [];
       const edges = new Map<string, number[]>();
       for (let t = t0; t < t1; t++) {
+        if (isStripe(t)) {
+          tone.push(-1);
+          continue;
+        }
         const tt = [toneOf(3 * t), toneOf(3 * t + 1), toneOf(3 * t + 2)];
         expect(tt[0]).toBeGreaterThanOrEqual(0); // (1) solo los 3 tonos
         expect(tt[1]).toBe(tt[0]); // cada paño es de un solo color
@@ -336,7 +345,7 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
       }
       for (const ts of edges.values()) for (const t of ts.slice(1)) if (tone[t] === tone[ts[0]]) parent[find(t)] = find(ts[0]);
       const cloths = new Map<number, number>(); // raíz → tono
-      tone.forEach((c, i) => cloths.set(find(i), c));
+      tone.forEach((c, i) => { if (c >= 0) cloths.set(find(i), c); });
       expect({ vela: s, tipo: plan[s].kind, paños: cloths.size }).toEqual({ vela: s, tipo: plan[s].kind, paños: n }); // (2) sin vecinos iguales
       for (const ts of edges.values()) for (const t of ts.slice(1)) if (find(t) !== find(ts[0])) expect(tone[t]).not.toBe(tone[ts[0]]);
       const count = [0, 1, 2].map((c) => [...cloths.values()].filter((v) => v === c).length);
@@ -344,9 +353,40 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
     });
   });
 
+  // ASSET-SPEC §8.4 y §7 (I2, D45, D46): rasgos del Capitán. En los dos LOD, el estandarte de 6,0 × 4,0 m en `flagMark`
+  // con el cuadro de 2,0 m en `flag` en las dos caras, a popa del palo mayor (rasgo de identidad, AD-28), y la fila
+  // inferior de cada cuadra de franja en `sailStripe` = `band`; el mascarón en `trim` delante de la roda, solo en LOD0
+  if (classId === 'captain') test('I2: estandarte y franja roja del Capitán en LOD0 y LOD1; mascarón solo en LOD0', () => {
+    const look = shipLook(model.recipe);
+    model.lods.forEach((geometry, lod) => {
+      const pos = geometry.getAttribute('position');
+      const color = geometry.getAttribute('color');
+      const area = (hex: string, keep: (c: THREE.Vector3) => boolean = () => true) => {
+        let a = 0;
+        for (let t = 0; t < pos.count / 3; t++) {
+          if (![0, 1, 2].every((k) => sameColor(color, 3 * t + k, hex))) continue;
+          const p = [0, 1, 2].map((k) => new THREE.Vector3().fromBufferAttribute(pos, 3 * t + k));
+          if (!keep(p[0].clone().add(p[1]).add(p[2]).divideScalar(3))) continue;
+          a += new THREE.Vector3().subVectors(p[1], p[0]).cross(new THREE.Vector3().subVectors(p[2], p[0])).length() / 2;
+        }
+        return a;
+      };
+      const aloft = (c: THREE.Vector3) => c.y > 18 && c.z < 0;
+      expect({ lod, campo: area(look.flagMark!, aloft) }).toEqual({ lod, campo: expect.closeTo(24, 3) });
+      expect({ lod, cuadro: area(look.flag, aloft) }).toEqual({ lod, cuadro: expect.closeTo(8, 3) });
+      expect({ lod, mascarón: area(look.trim, (c) => c.z > 14.6) }).toEqual({ lod, mascarón: lod === 0 ? expect.closeTo(2 * (0.6 * 1.0 + 1.0 * 1.2 + 0.6 * 1.2), 3) : 0 });
+      expect(look.sailStripe).toBe(look.band);
+      let red = 0;
+      for (const [t0, t1] of model.sails[lod]) for (let t = t0; t < t1; t++) if (sameColor(color, 3 * t, look.sailStripe!)) red++;
+      const squares = model.recipe.masts.flatMap((m) => m.squares ?? []);
+      const nx = lod === 0 ? [20, 16, 24, 20, 16] : squares.map(() => 4);
+      expect({ lod, filaRoja: red }).toEqual({ lod, filaRoja: nx.reduce((a, n) => a + 2 * n, 0) });
+    });
+  });
+
   test('D36: porta de 1 quad hacia afuera (2 tris) y cañón sin tapa interior (18 tris) en LOD0; nada en LOD1', () => {
     const r = model.recipe;
-    const look = SHIP_LOOKS[r.look];
+    const look = shipLook(r);
     const n = r.cannonZ.length * 2;
     model.lods.forEach((geometry, lod) => {
       const pos = geometry.getAttribute('position');

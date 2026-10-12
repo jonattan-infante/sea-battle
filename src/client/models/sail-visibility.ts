@@ -4,8 +4,8 @@
 // tapan en el juego. Además devuelve una hoja de contacto con el barco iluminado para revisar a ojo.
 // measureShipValues (AD-10, D8): L* de velas y casco con el pipeline real del canvas (tone mapping y sRGB).
 import * as THREE from 'three';
-import { LIGHTING, PALETTE, SHIP_LOOKS } from '../art';
-import { createShipMaterial, getShipModel, LOD_PX } from './ship-geometry';
+import { LIGHTING, PALETTE } from '../art';
+import { createShipMaterial, getShipModel, LOD_PX, shipLook } from './ship-geometry';
 
 export const SAIL_HEADINGS_DEG = Array.from({ length: 24 }, (_, i) => i * 15);
 export const SAIL_MIN_RATIO = 0.25;
@@ -259,7 +259,7 @@ export function measureShipValues(
     const model = getShipModel(classId);
     const lod: 0 | 1 = lodOverride ?? (model.extras.sb_length * ppm >= LOD_PX[0] ? 0 : 1);
     const geometry = model.lods[lod];
-    const look = SHIP_LOOKS[model.recipe.look];
+    const look = shipLook(model.recipe);
     const withAo = (...hex: string[]) => hex.flatMap((h) => [new THREE.Color(h), new THREE.Color(h).multiplyScalar(0.85)]);
     // Cubierta: tablas de LOD0 y cara lisa de LOD1 (deckLod1, D40)
     const mask = maskGeometry(geometry, model.sails[lod], withAo(look.hull), look.sailStripe ? new THREE.Color(look.sailStripe) : undefined, withAo(look.deck, look.deckAlt, look.deckLod1));
