@@ -261,7 +261,7 @@ export function measureShipValues(
     const geometry = model.lods[lod];
     const look = shipLook(model.recipe);
     const withAo = (...hex: string[]) => hex.flatMap((h) => [new THREE.Color(h), new THREE.Color(h).multiplyScalar(0.85)]);
-    // Cubierta: tablas de LOD0 y cara lisa de LOD1 (deckLod1, D40)
+    // Cubierta: tablas de LOD0 (los 3 tonos de D62, o los 2 de D36 en el Capitán) y cara lisa de LOD1 (deckLod1, D40)
     const mask = maskGeometry(geometry, model.sails[lod], withAo(look.hull), look.sailStripe ? new THREE.Color(look.sailStripe) : undefined, withAo(look.deck, look.deckAlt, look.deckLod1));
     const { camera, size } = framing(geometry, ppm, elevation);
     const maskMesh = new THREE.Mesh(mask, maskMaterial);

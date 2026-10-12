@@ -44,14 +44,19 @@ export const PALETTE = {
 export const TOP_FACE = {
   sand: { albedo: '#D8C392', target: PALETTE.sand },
   grass: { albedo: '#589444', target: PALETTE.grass },
-  // Tablas de cubierta a ±7 de L* de la cubierta en pantalla (#C9965E; pirata #6E4B30), que queda como su media (D36, AD-25)
-  deck: { albedo: '#CF9F6A', target: '#DDA970' }, // tabla clara, jugador y mercante
-  deckPirate: { albedo: '#78563C', target: '#805C40' },
-  deckAlt: { albedo: '#AA7C49', target: '#B5844D' }, // tabla oscura, jugador y mercante
-  deckAltPirate: { albedo: '#56371F', target: '#5C3B21' },
-  // Cubierta y tapas lisas de LOD1 (D40, ASSET-SPEC §7): la media en pantalla de las tablas que LOD1 quita
+  // Tablas de cubierta en 3 tonos (D62, ASSET-SPEC §8.2.2): clara y oscura a ±14 de L* de la cubierta en pantalla
+  // (#C9965E; pirata #6E4B30), el doble que en D36, para que el salto entre vecinas siga en ≈ 14
+  deck: { albedo: '#E1B17B', target: '#F0BC82' }, // tabla clara, jugador y mercante
+  deckPirate: { albedo: '#89664B', target: '#926D4F' },
+  deckAlt: { albedo: '#976B39', target: '#A1723C' }, // tabla oscura, jugador y mercante
+  deckAltPirate: { albedo: '#452811', target: '#4A2B12' },
+  // deck.mid: tabla media y trancanil (D62) = media en pantalla de las tablas (AD-25), cubierta y tapas lisas de LOD1
+  // (D40, ASSET-SPEC §7) y tapas de la carga
   deckMean: { albedo: '#BD8D59', target: '#C9965E' },
   deckMeanPirate: { albedo: '#67462D', target: '#6E4B30' },
+  // Los 2 tonos alternos de D36 (±7 de L*), que conserva el Capitán (paleta pirata) hasta medir AD-28 en I2 (§8.2.2)
+  deckD36Pirate: { albedo: '#78563C', target: '#805C40' },
+  deckAltD36Pirate: { albedo: '#56371F', target: '#5C3B21' },
   cargo: { albedo: '#A5723B', target: PALETTE.cargo }
 } as const;
 
@@ -60,8 +65,9 @@ export interface ShipLook {
   hull: string;
   band: string;
   bottom: string;
-  deck: string;
-  deckAlt: string; // tablas de cubierta alternas (D23)
+  deck: string; // tabla clara
+  deckMid: string | null; // tabla media y trancanil (D62): con ella, 3 tonos barajados (§8.2.2); null = 2 alternos (D36)
+  deckAlt: string; // tabla oscura
   deckLod1: string; // cubierta y tapas lisas de LOD1: albedo de la media de las tablas (D40)
   rail: string;
   mast: string;
@@ -84,15 +90,15 @@ const SHARED = { cannon: '#26282B', gunport: '#1A1410', trim: '#D9A93F', lantern
 
 export const SHIP_LOOKS: Record<ShipKind, ShipLook> = {
   player: {
-    ...SHARED, hull: '#4A2F1C', band: '#D4A548', bottom: '#3A2416', deck: TOP_FACE.deck.albedo, deckAlt: TOP_FACE.deckAlt.albedo, deckLod1: TOP_FACE.deckMean.albedo,
+    ...SHARED, hull: '#4A2F1C', band: '#D4A548', bottom: '#3A2416', deck: TOP_FACE.deck.albedo, deckMid: TOP_FACE.deckMean.albedo, deckAlt: TOP_FACE.deckAlt.albedo, deckLod1: TOP_FACE.deckMean.albedo,
     rail: '#6B4426', mast: '#6B4426', sail: '#FBF3E3', sailMid: '#DED7C8', sailAlt: '#C2BBAC', sailLod1: '#E0D9C9', sailStripe: null, flag: '#F2C14E', flagMark: null
   },
   pirate: {
-    ...SHARED, hull: '#2A2523', band: '#B3261E', bottom: '#1C1817', deck: TOP_FACE.deckPirate.albedo, deckAlt: TOP_FACE.deckAltPirate.albedo, deckLod1: TOP_FACE.deckMeanPirate.albedo,
+    ...SHARED, hull: '#2A2523', band: '#B3261E', bottom: '#1C1817', deck: TOP_FACE.deckPirate.albedo, deckMid: TOP_FACE.deckMeanPirate.albedo, deckAlt: TOP_FACE.deckAltPirate.albedo, deckLod1: TOP_FACE.deckMeanPirate.albedo,
     rail: '#3A2A20', mast: '#3A2A20', sail: '#4A494D', sailMid: '#303033', sailAlt: '#171619', sailLod1: '#353438', sailStripe: null, flag: '#111111', flagMark: '#F5F1E6'
   },
   merchant: {
-    ...SHARED, hull: '#6E4A2C', band: '#E8DCC0', bottom: '#3A2416', deck: TOP_FACE.deck.albedo, deckAlt: TOP_FACE.deckAlt.albedo, deckLod1: TOP_FACE.deckMean.albedo,
+    ...SHARED, hull: '#6E4A2C', band: '#E8DCC0', bottom: '#3A2416', deck: TOP_FACE.deck.albedo, deckMid: TOP_FACE.deckMean.albedo, deckAlt: TOP_FACE.deckAlt.albedo, deckLod1: TOP_FACE.deckMean.albedo,
     rail: '#6B4426', mast: '#6B4426', sail: '#EADFC6', sailMid: null, sailAlt: '#D9CEB6', sailLod1: '#E2D7BE', sailStripe: '#2F7FB8', flag: '#2F7FB8', flagMark: '#F5F1E6'
   }
 };

@@ -3,7 +3,7 @@
 // +X babor; origen en la flotación, en el centro de la eslora del casco. Mismo contrato que un .glb futuro.
 import * as THREE from 'three';
 import { ShipKind } from '../../game/constants';
-import { RING_COLORS, SHIP_LOOKS, ShipLook } from '../art';
+import { RING_COLORS, SHIP_LOOKS, ShipLook, TOP_FACE } from '../art';
 import { creaseNormals, GeoBuilder, lin, trs, Vec3 } from './geometry-utils';
 
 const deg = Math.PI / 180;
@@ -65,6 +65,40 @@ export function clothTones(assetId: string, sail: number, n: number): number[] {
     out.push(...ok[hash32(key, sail, group) % ok.length]);
   }
   return out.slice(0, n);
+}
+
+// §8.2.2 (D62): tonos de las n tablas de la superficie s (0 = cubierta; 1, 2… = tapas de castillos y camaretas en el
+// orden de la receta): 0 deck, 1 deck.mid, 2 deck.alt. En la cubierta, el trancanil (j = 0 y n − 1) va en deck.mid. El
+// interior va en grupos de 3 tablas, cada uno una permutación elegida por un hash de (clase, s, grupo) entre las que
+// (i) no empiezan por el tono de la tabla anterior, (ii) no repiten la permutación del grupo anterior, (iii) si quedan 2
+// tablas, son clara y oscura, y (iv) en la cubierta, no dejan en deck.mid la última tabla del interior, junto al trancanil
+export function deckTones(assetId: string, s: number, n: number): number[] {
+  const main = s === 0;
+  const m = main ? n - 2 : n;
+  const key = strHash(`${assetId}:deck`);
+  const out: number[] = [];
+  let prev = main ? 1 : -1;
+  let prevPerm = -1;
+  for (let group = 0; out.length < m; group++) {
+    const left = m - out.length;
+    const ok = PERMS.flatMap((p, i) =>
+      p[0] !== prev && i !== prevPerm && (left !== 2 || (p[0] !== 1 && p[1] !== 1)) && !(main && left <= 3 && p[left - 1] === 1) ? [i] : []
+    );
+    if (!ok.length) throw new Error(`§8.2.2: sin permutación para ${assetId}, superficie ${s}, ${n} tablas`);
+    const pick = ok[hash32(key, s, group) % ok.length];
+    out.push(...PERMS[pick].slice(0, Math.min(3, left)));
+    prev = out[out.length - 1];
+    prevPerm = pick;
+  }
+  return main ? [1, ...out, 1] : out;
+}
+
+// Colores de las n tablas de la superficie s en LOD0: los 3 tonos de §8.2.2 (D62) o, sin deck.mid (el Capitán),
+// deck / deck.alt alternos (D36)
+function plankColors(r: ShipRecipe, look: ShipLook, s: number, n: number): THREE.Color[] {
+  if (!look.deckMid) return Array.from({ length: n }, (_, j) => lin(j % 2 ? look.deckAlt : look.deck));
+  const tones = [lin(look.deck), lin(look.deckMid), lin(look.deckAlt)];
+  return deckTones(r.assetId, s, n).map((t) => tones[t]);
 }
 
 interface Station { a: number; b: number; s: number; k: number }
@@ -134,6 +168,7 @@ export interface ShipRecipe {
   cannon: [number, number, number]; // radio superior (boca), inferior, largo
   sailStyle: 'plain' | 'notched' | 'striped' | 'banded'; // banded: 4 filas con la inferior de franja (Capitán, I2)
   sailStripe?: string; // franja propia de la receta (D46) cuando su facción no la tiene
+  deckD36?: readonly [string, string]; // tablas alternas de D36 (clara, oscura) en lugar de los 3 tonos de §8.2.2 (I2)
   flagStyle: 'pennant' | 'flag' | 'standard'; // standard: el estandarte del Capitán (D25)
   trimRail: boolean;
   cannonScale: number; // escala del fogonazo y del humo (VFX §1)
@@ -266,6 +301,8 @@ const CAPTAIN: ShipRecipe = {
   fire: [undefined, undefined, { z: -9.0, y: 5.06 }], // _03 sobre el alcázar, en su tapa (4,76) + 0,3 (AS-V17)
   cannonZ: [-8.5, -5.1, -1.7, 1.7, 5.1, 8.5], cannonY: 1.68, cannon: [0.26, 0.32, 1.6],
   sailStyle: 'banded', sailStripe: SHIP_LOOKS.pirate.band, flagStyle: 'standard', trimRail: true, cannonScale: 1.2,
+  // Conserva las tablas de D36 hasta que I2 mida AD-28 con los 3 tonos (ASSET-SPEC §8.2.2, D62)
+  deckD36: [TOP_FACE.deckD36Pirate.albedo, TOP_FACE.deckAltD36Pirate.albedo],
   radius: 16, mastHeight: 24, pick: [6.0, 24.0, 15.0]
 };
 
@@ -313,6 +350,9 @@ export interface ShipModel {
   triangles: [number, number];
   hullBox: THREE.Box3; // caja del casco de LOD0, sin bauprés (AS-V03)
   sails: [[number, number][], [number, number][]]; // rangos de triángulos de vela por LOD (AS-V14)
+  // Tablas por LOD y superficie (0 = cubierta; 1, 2… = tapas en el orden de la receta): un rango de triángulos por tabla,
+  // de babor a estribor en la cubierta y en X en las tapas (AS-V22 a). En LOD1, una sola «tabla» lisa por superficie
+  decks: [[number, number][][], [number, number][][]];
   extras: ShipExtras;
   sockets: ShipSockets;
 }
@@ -349,18 +389,18 @@ function section(r: ShipRecipe, u: number, side: 1 | -1): Vec3[] {
   ];
 }
 
-function loftHull(g: GeoBuilder, r: ShipRecipe, look: ShipLook, stations: readonly number[], planks: boolean): void {
+function loftHull(g: GeoBuilder, r: ShipRecipe, look: ShipLook, stations: readonly number[], planks: boolean): [number, number][] {
   const cHull = lin(look.hull);
   const cRail = lin(r.trimRail ? look.trim : look.rail);
   // [de, a, color arriba, color abajo]: la cara V2–V3 lleva la oclusión en su borde inferior (la flotación, D23)
   const strips: [number, number, THREE.Color, THREE.Color][] = [
     [1, 0, cRail, cRail], [1, 2, cHull, cHull], [2, 3, lin(look.band), lin(look.band)], [3, 4, cHull, ao(cHull)], [4, 5, lin(look.bottom), lin(look.bottom)]
   ];
-  // Cubierta (D23): en LOD0, n = 2·ceil(B/2 / 0,5) tablas longitudinales alternas deck / deck.alt de ≈ 0,5 m, con las
-  // tiras junto a la borda oscurecidas; en LOD1, una sola cara en `deckLod1`, la media de las tablas (D40)
+  // Cubierta (D23, D62): en LOD0, n = 2·ceil(B/2 / 0,5) tablas longitudinales de ≈ 0,5 m en los tonos de §8.2.2, con las
+  // tiras junto a la borda (el trancanil) oscurecidas; en LOD1, una sola cara en `deckLod1`, la media de las tablas (D40)
   const n = planks ? 2 * Math.ceil(r.B / 2 / 0.5) : 1;
-  const deck = planks ? [lin(look.deck), lin(look.deckAlt)] : [lin(look.deckLod1)];
-  const plankColor = (j: number) => (planks && (j === 0 || j === n - 1) ? ao(deck[j % 2]) : deck[j % 2]);
+  const deck = planks ? plankColors(r, look, 0, n) : [lin(look.deckLod1)];
+  const plankColor = (j: number) => (planks && (j === 0 || j === n - 1) ? ao(deck[j]) : deck[j]);
   const across = (p: Vec3, q: Vec3, f: number): Vec3 => [p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f, p[2] + (q[2] - p[2]) * f];
   const secs = stations.map((u) => ({ port: section(r, u, 1), stbd: section(r, u, -1) }));
   for (let i = 0; i < secs.length - 1; i++) {
@@ -369,15 +409,23 @@ function loftHull(g: GeoBuilder, r: ShipRecipe, look: ShipLook, stations: readon
     for (const [a, b] of [[s0.port, s1.port], [s0.stbd, s1.stbd]]) {
       for (const [p, q, cp, cq] of strips) g.quad(a[p], a[q], b[q], b[p], cp, cq, cq, cp);
     }
-    for (let j = 0; j < n; j++) {
-      const f0 = j / n;
-      const f1 = (j + 1) / n;
+  }
+  // Las tablas, una tras otra: cada una ocupa un rango contiguo de triángulos (model.decks)
+  const planksAt: [number, number][] = [];
+  for (let j = 0; j < n; j++) {
+    const t0 = g.triangles;
+    const f0 = j / n;
+    const f1 = (j + 1) / n;
+    for (let i = 0; i < secs.length - 1; i++) {
+      const [s0, s1] = [secs[i], secs[i + 1]];
       g.quad(across(s0.port[1], s0.stbd[1], f0), across(s0.port[1], s0.stbd[1], f1), across(s1.port[1], s1.stbd[1], f1), across(s1.port[1], s1.stbd[1], f0), plankColor(j));
     }
+    planksAt.push([t0, g.triangles]);
   }
   // Tapas: espejo de popa y proa (solo si la proa tiene manga en u = +0,5)
   cap(g, secs[0], cHull);
   if (sample(PROFILES[r.profile], 0.5).a > 0) cap(g, secs[secs.length - 1], cHull);
+  return planksAt;
 }
 
 function cap(g: GeoBuilder, sec: { port: Vec3[]; stbd: Vec3[] }, color: THREE.Color): void {
@@ -517,13 +565,14 @@ function boxColors(look: ShipLook, kind: BoxDef['kind']): (x: number, y: number,
   if (kind === 'lantern') return () => lin(look.lantern);
   if (kind === 'figurehead') return () => lin(look.trim);
   const side = lin(kind === 'cargo' ? look.cargo : look.rail);
-  return (_x, _y, _z, t) => (Math.floor(t / 2) === 2 ? lin(look.deck) : side);
+  const top = lin(look.deckMid ?? look.deck); // tapa de la carga en deck.mid (D62)
+  return (_x, _y, _z, t) => (Math.floor(t / 2) === 2 ? top : side);
 }
 
 // Castillos y camaretas: costados en `rail` con sus primeros 0,4 m oscurecidos (oclusión horneada, D23) y tapa en
-// tablas deck / deck.alt en LOD0 (D36) o lisa en `deckLod1`, la media de las tablas, en LOD1 (D40); sin cara inferior,
-// que queda dentro del casco. Normales hacia afuera
-function castle(g: GeoBuilder, look: ShipLook, box: BoxDef, planks: boolean): void {
+// tablas en LOD0 (D36), con los tonos de §8.2.2 de su superficie s (D62), o lisa en `deckLod1`, la media de las tablas,
+// en LOD1 (D40); sin cara inferior, que queda dentro del casco. Normales hacia afuera. Devuelve el rango de cada tabla
+function castle(g: GeoBuilder, r: ShipRecipe, look: ShipLook, box: BoxDef, planks: boolean, s: number): [number, number][] {
   const [w, h, d] = box.size;
   const [x, y, z] = box.pos;
   const [x0, x1, y0, y1, z0, z1] = [x - w / 2, x + w / 2, y - h / 2, y + h / 2, z - d / 2, z + d / 2];
@@ -539,20 +588,30 @@ function castle(g: GeoBuilder, look: ShipLook, box: BoxDef, planks: boolean): vo
   }
   // Tapa: n = 2·ceil(w/2 / 0,5) tablas a lo largo de Z sobre el ancho w (D36)
   const n = planks ? 2 * Math.ceil(w / 2 / 0.5) : 1;
-  const deck = planks ? [lin(look.deck), lin(look.deckAlt)] : [lin(look.deckLod1)];
+  const deck = planks ? plankColors(r, look, s, n) : [lin(look.deckLod1)];
+  const planksAt: [number, number][] = [];
   for (let j = 0; j < n; j++) {
     const a = x0 + (w * j) / n;
     const b = x0 + (w * (j + 1)) / n;
-    g.quad([a, y1, z0], [a, y1, z1], [b, y1, z1], [b, y1, z0], deck[j % 2]);
+    const t0 = g.triangles;
+    g.quad([a, y1, z0], [a, y1, z1], [b, y1, z1], [b, y1, z0], deck[j]);
+    planksAt.push([t0, g.triangles]);
   }
+  return planksAt;
 }
 
-// Paleta de un barco: la de su facción con lo propio de la receta (la franja del Capitán, D46)
+// Paleta de un barco: la de su facción con lo propio de la receta (la franja del Capitán, D46, y sus tablas de D36)
 export function shipLook(r: ShipRecipe): ShipLook {
-  return r.sailStripe ? { ...SHIP_LOOKS[r.look], sailStripe: r.sailStripe } : SHIP_LOOKS[r.look];
+  const look = SHIP_LOOKS[r.look];
+  if (!r.sailStripe && !r.deckD36) return look;
+  return {
+    ...look,
+    ...(r.sailStripe && { sailStripe: r.sailStripe }),
+    ...(r.deckD36 && { deck: r.deckD36[0], deckMid: null, deckAlt: r.deckD36[1] })
+  };
 }
 
-function buildLod(r: ShipRecipe, lod: 0 | 1): { geometry: THREE.BufferGeometry; hullBox: THREE.Box3; triangles: number; sails: [number, number][] } {
+function buildLod(r: ShipRecipe, lod: 0 | 1): { geometry: THREE.BufferGeometry; hullBox: THREE.Box3; triangles: number; sails: [number, number][]; decks: [number, number][][] } {
   const look = shipLook(r);
   const g = new GeoBuilder({ rim: true });
   const rm = 0.022 * r.L;
@@ -563,7 +622,7 @@ function buildLod(r: ShipRecipe, lod: 0 | 1): { geometry: THREE.BufferGeometry; 
   // _rim_mask = 1 solo en el casco: loft (con borda y cubierta), castillos y camaretas (D18, ASSET-SPEC §6)
   g.beginBox();
   g.rim = 1;
-  loftHull(g, r, look, lod === 0 ? LOD0_STATIONS : LOD1_STATIONS, lod === 0);
+  const decks = [loftHull(g, r, look, lod === 0 ? LOD0_STATIONS : LOD1_STATIONS, lod === 0)];
   g.rim = 0;
   const hullBox = g.endBox();
 
@@ -636,7 +695,7 @@ function buildLod(r: ShipRecipe, lod: 0 | 1): { geometry: THREE.BufferGeometry; 
     if (lod === 1 && box.kind !== 'castle') continue; // LOD1 quita también el mascarón del Capitán (D45)
     if (box.kind === 'castle') {
       g.rim = 1;
-      castle(g, look, box, lod === 0);
+      decks.push(castle(g, r, look, box, lod === 0, decks.length));
       g.rim = 0;
     } else {
       g.add(new THREE.BoxGeometry(...box.size), trs(...box.pos), boxColors(look, box.kind));
@@ -667,7 +726,7 @@ function buildLod(r: ShipRecipe, lod: 0 | 1): { geometry: THREE.BufferGeometry; 
   // cubierta, borda y franjas siguen duros
   const geometry = g.build();
   creaseNormals(geometry, 40 * deg);
-  return { geometry, hullBox, triangles: g.triangles, sails: g.marks };
+  return { geometry, hullBox, triangles: g.triangles, sails: g.marks, decks };
 }
 
 function flag(g: GeoBuilder, r: ShipRecipe, look: ShipLook, group: THREE.Matrix4, mast: MastDef): void {
@@ -738,6 +797,7 @@ export function getShipModel(classId: string): ShipModel {
     triangles: [lod0.triangles, lod1.triangles],
     hullBox: lod0.hullBox,
     sails: [lod0.sails, lod1.sails],
+    decks: [lod0.decks, lod1.decks],
     extras: {
       sb_version: 1,
       sb_kind: r.sbKind,

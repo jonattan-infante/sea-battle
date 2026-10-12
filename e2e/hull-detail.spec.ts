@@ -1,5 +1,5 @@
-// D23 c, D36 y D40 (ASSET-SPEC §11: AS-V18 sin facetas, AS-V19 textura interna, AS-V20 cañones legibles, AS-V21 carácter
-// de la lona; ART-DIRECTION AD-10, AD-25, AD-26 y AD-33) medidos sobre el render del juego. Escena sintética 'gallery': las 5 clases quietas, con la vida
+// D23 c, D36, D40 y D62 (ASSET-SPEC §11: AS-V18 sin facetas, AS-V19 textura interna, AS-V20 cañones legibles, AS-V21 y
+// AS-V22 carácter de la lona y de la cubierta; ART-DIRECTION AD-10, AD-25, AD-26 y AD-33) medidos sobre el render del juego. Escena sintética 'gallery': las 5 clases quietas, con la vida
 // entera y sin efectos; la que se mide va al foco con su rumbo y las demás quedan a 2 km. 1440×900 a zoom 1,0×: N1 (la
 // sesión nueva, 6,20 px/m) para AS-V18/V19 y AD-26, y N3 (5,04 px/m, D28) para AS-V20. Por pose, el mismo frame
 // congelado se dibuja 4 veces:
@@ -7,7 +7,8 @@
 //   sin   sin la malla del barco: silueta = píxeles con ΔE76 ≥ 3 (AS-V19, AD-26)
 //   alb   solo albedo: hemisférica blanca de intensidad π y sol apagado, así MeshStandardMaterial devuelve el vertex
 //         color (irradiancia × albedo / π); localiza los bordes de color de AS-V18 y la franja de portas de AS-V20
-//   ids   regiones como vertex color: costado (casco con |n_y| ≤ 0,6), cubierta, cada vela y cañones/portas
+//   ids   regiones como vertex color: costado (casco con |n_y| ≤ 0,6), cubierta y tapas (model.decks, AS-V22), cada
+//         vela y cañones/portas
 // Con D23_OUT=<carpeta> guarda los recortes de cada pose (k = 0) y un JSON con todas las cifras, para QA.
 import { expect, Page, test } from '@playwright/test';
 import fs from 'fs';
@@ -40,6 +41,8 @@ interface Port {
   contrast: number; // mediana de L* de esa franja − mediana de L* del núcleo (NaN con núcleo < 2 px: no legible)
 }
 
+interface Profile { px: number; lines: number; n: number; r: number; eta: number; range: number }
+
 interface Shot {
   ppm: number;
   lod: number;
@@ -52,17 +55,18 @@ interface Shot {
   ports: Port[]; // AS-V20: componentes de cañón o porta junto a la franja
   rejected: { x: number; y: number; w: number; h: number; why: 'caja' | 'sin franja' }[]; // AS-V20: las descartadas
   cloth: { sail: number; px: number; axis: 1 | 2; lines: number; n: number; r: number; eta: number; range: number }[]; // AS-V21 (b), por vela
+  deck: Profile | { px: number; skip: string } | null; // AS-V22 (b): la cubierta y las tapas juntas; null sin los tonos de D62
   crops?: Record<string, string>;
 }
 
 // Mide una pose: se ejecuta en la página (sin acceso a nada de Node)
-async function measurePose([id, keep, bandHex]: [string, boolean, string]): Promise<Shot> {
+async function measurePose([id, keep, bandHex, measureDeck]: [string, boolean, string, boolean]): Promise<Shot> {
   type V3 = { x: number; y: number; z: number };
   type Attr = { count: number; array: Float32Array; clone(): Attr; getX(i: number): number; getY(i: number): number; getZ(i: number): number };
   type Light = { isLight?: boolean; isHemisphereLight?: boolean; intensity: number; color: { clone(): unknown; copy(c: unknown): void; setRGB(r: number, g: number, b: number): void }; groundColor?: Light['color'] };
   type Node = Light & { visible: boolean; isMesh?: boolean; isPoints?: boolean; isLine?: boolean; isSprite?: boolean };
   interface Loose {
-    views: Map<string, { lod: number; model: { sails: [number, number][][] }; mesh: { visible: boolean; geometry: { getAttribute(n: string): Attr; setAttribute(n: string, a: Attr): void } } }>;
+    views: Map<string, { lod: number; model: { sails: [number, number][][]; decks: [number, number][][][] }; mesh: { visible: boolean; geometry: { getAttribute(n: string): Attr; setAttribute(n: string, a: Attr): void } } }>;
     rootScene: { traverse(fn: (o: Node) => void): void };
     stats(): { ppm: number };
     setPaused(p: boolean): void;
@@ -107,6 +111,8 @@ async function measurePose([id, keep, bandHex]: [string, boolean, string]): Prom
   const LEVELS = [0, 0.1, 0.35, 1]; // → sRGB 0, 89, 160, 255
   const sails = view.model.sails[view.lod];
   const tris = pos.count / 3;
+  const deckTri = new Uint8Array(tris); // tablas de la cubierta y de las tapas (model.decks, D62)
+  for (const surface of view.model.decks[view.lod]) for (const [a, b] of surface) deckTri.fill(1, a, b);
   const set = (t: number, r: number, g: number, b: number) => { for (let k = 0; k < 3; k++) ids.array.set([r, g, b], (3 * t + k) * 3); };
   const setPort = (t: number, v: number) => { for (let k = 0; k < 3; k++) portIds.array.set([v, v, v], (3 * t + k) * 3); };
   const p = (i: number): V3 => ({ x: pos.getX(i), y: pos.getY(i), z: pos.getZ(i) });
@@ -114,6 +120,7 @@ async function measurePose([id, keep, bandHex]: [string, boolean, string]): Prom
     setPort(t, near(3 * t, dark[0]) || near(3 * t, dark[1]) ? 1 : 0);
     const s = sails.findIndex(([a, b]) => t >= a && t < b);
     if (s >= 0) { set(t, 1, LEVELS[(s >> 2) & 3], LEVELS[s & 3]); continue; }
+    if (deckTri[t]) { set(t, 0, LEVELS[2], 0); continue; }
     if (near(3 * t, dark[0]) || near(3 * t, dark[1])) { set(t, 0, 1, 1); continue; }
     if (rim.getX(3 * t) > 0.5) {
       const a = p(3 * t), b = p(3 * t + 1), c = p(3 * t + 2);
@@ -213,7 +220,7 @@ async function measurePose([id, keep, bandHex]: [string, boolean, string]): Prom
 
   // Regiones. Costado y velas, del pase de ids: solo píxeles puros (los mezclados por el antialias quedan fuera). Cañón o
   // porta (AS-V20), del pase de cobertura: ≥ 50 %
-  const region = new Int16Array(N).fill(-1); // -2 costado, -3 cañón/porta, ≥ 0 vela
+  const region = new Int16Array(N).fill(-1); // -2 costado, -3 cañón/porta, -4 cubierta y tapas, ≥ 0 vela
   const lvl = (v: number) => [0, 89, 160, 255].findIndex((q) => Math.abs(v - q) <= 10);
   for (let i = 0; i < N; i++) {
     const r = D.data[4 * i], g = D.data[4 * i + 1], b = D.data[4 * i + 2];
@@ -221,6 +228,7 @@ async function measurePose([id, keep, bandHex]: [string, boolean, string]): Prom
       const gi = lvl(g), bi = lvl(b);
       if (gi >= 0 && bi >= 0) region[i] = gi * 4 + bi;
     } else if (r < 40 && g > 215 && b < 40) region[i] = -2;
+    else if (r < 40 && Math.abs(g - 160) <= 10 && b < 40) region[i] = -4;
     if (mask[i] && E.data[4 * i] >= 128) region[i] = -3; // en la silueta: fuera solo queda el color de fondo
   }
 
@@ -248,7 +256,7 @@ async function measurePose([id, keep, bandHex]: [string, boolean, string]): Prom
   for (let y = y0; y <= y1; y++) {
     for (let x = x0; x <= x1; x++) {
       const r = region[y * W + x];
-      if (r === -1 || r === -3) continue;
+      if (r === -1 || r === -3 || r === -4) continue; // AS-V18: costado y velas
       const q = boxes.get(r) ?? { n: 0, x0: x, x1: x, y0: y, y1: y };
       q.n++; q.x0 = Math.min(q.x0, x); q.x1 = Math.max(q.x1, x); q.y0 = Math.min(q.y0, y); q.y1 = Math.max(q.y1, y);
       boxes.set(r, q);
@@ -385,50 +393,73 @@ async function measurePose([id, keep, bandHex]: [string, boolean, string]): Prom
     return best / v;
   };
   const pct = (p: number[], k: number) => { const q = [...p].sort((a, b) => a - b), t = (k / 100) * (q.length - 1), lo = Math.floor(t); return q[lo] + (q[Math.min(lo + 1, q.length - 1)] - q[lo]) * (t - lo); };
-  const cloth: Shot['cloth'] = [];
-  for (const [rid, q] of boxes) {
-    if (rid < 0 || q.n < 120) continue;
-    const at = (x: number, y: number) => region[y * W + x] === rid;
+  // Líneas de AS-V21 (b) en la región M1 (erosionada) en la dirección θ: paralelas cada 2 px hasta ±40 px del centroide,
+  // tramos continuos de ≥ 12 px; se quedan las de ≥ 60 % de la más larga, con r, η y rango de cada una
+  const profile = (M1: Uint8Array, box: { x0: number; x1: number; y0: number; y1: number }, theta: number) => {
+    let m1 = 0, sx = 0, sy = 0;
+    for (let y = box.y0; y <= box.y1; y++) for (let x = box.x0; x <= box.x1; x++) if (M1[y * W + x]) { m1++; sx += x; sy += y; }
+    const cx = sx / m1, cy = sy / m1, T = Math.trunc(Math.hypot(box.x1 - box.x0, box.y1 - box.y0)) + 2;
+    const [dx, dy] = [Math.cos(theta), Math.sin(theta)], [nx, ny] = [-dy, dx];
+    const lines: number[][] = [];
+    for (let o = -40; o <= 40; o += 2) {
+      let run: number[] = [];
+      for (let t = -T; t <= T; t++) {
+        const x = rint(cx + nx * o + dx * t), y = rint(cy + ny * o + dy * t);
+        const inside = x >= 0 && x < W && y >= 0 && y < H && M1[y * W + x] === 1;
+        if (inside && run[run.length - 1] !== y * W + x) run.push(y * W + x);
+        else if (!inside && run.length) { if (run.length >= 12) lines.push(run); run = []; }
+      }
+      if (run.length >= 12) lines.push(run);
+    }
+    if (!lines.length) return null;
+    const nmax = Math.max(...lines.map((l) => l.length));
+    const ds = lines.filter((l) => l.length >= 0.6 * nmax).map((l) => {
+      const p = l.map((i) => LA[3 * i]), x = detrend(p);
+      return { r: acPeak(x), eta: otsu(x), range: pct(p, 95) - pct(p, 5) };
+    });
+    return { lines: ds.length, n: nmax, r: median(ds.map((d) => d.r)), eta: median(ds.map((d) => d.eta)), range: median(ds.map((d) => d.range)) };
+  };
+  // Erosión de 1 px (4 vecinos), caja de lo que queda y dirección dominante del gradiente del albedo (tensor de estructura
+  // con los píxeles de |∇L*| ≥ 2)
+  const erodeAndOrient = (inRegion: (x: number, y: number) => boolean, q: { x0: number; x1: number; y0: number; y1: number }) => {
     const M1 = new Uint8Array(N);
-    let m1 = 0, sx = 0, sy = 0, mx0 = W, mx1 = 0, my0 = H, my1 = 0, jxx = 0, jyy = 0, jxy = 0, use = 0;
+    let m1 = 0, mx0 = W, mx1 = 0, my0 = H, my1 = 0, jxx = 0, jyy = 0, jxy = 0, use = 0;
     for (let y = Math.max(1, q.y0); y <= Math.min(H - 2, q.y1); y++) {
       for (let x = Math.max(1, q.x0); x <= Math.min(W - 2, q.x1); x++) {
-        if (!(at(x, y) && at(x - 1, y) && at(x + 1, y) && at(x, y - 1) && at(x, y + 1))) continue;
+        if (!(inRegion(x, y) && inRegion(x - 1, y) && inRegion(x + 1, y) && inRegion(x, y - 1) && inRegion(x, y + 1))) continue;
         const i = y * W + x;
-        M1[i] = 1; m1++; sx += x; sy += y;
+        M1[i] = 1; m1++;
         mx0 = Math.min(mx0, x); mx1 = Math.max(mx1, x); my0 = Math.min(my0, y); my1 = Math.max(my1, y);
         const gx = (LC[3 * (i + 1)] - LC[3 * (i - 1)]) / 2, gy = (LC[3 * (i + W)] - LC[3 * (i - W)]) / 2;
         if (Math.hypot(gx, gy) < 2) continue;
         jxx += gx * gx; jyy += gy * gy; jxy += gx * gy; use++;
       }
     }
+    return { M1, m1, use, box: { x0: mx0, x1: mx1, y0: my0, y1: my1 }, theta: 0.5 * Math.atan2(2 * jxy, jxx - jyy) };
+  };
+  const cloth: Shot['cloth'] = [];
+  for (const [rid, q] of boxes) {
+    if (rid < 0 || q.n < 120) continue;
+    const { M1, m1, use, box, theta } = erodeAndOrient((x, y) => region[y * W + x] === rid, q);
     if (m1 < 40 || use < 10) continue;
-    const cx = sx / m1, cy = sy / m1, T = Math.trunc(Math.hypot(mx1 - mx0, my1 - my0)) + 2;
-    const theta = 0.5 * Math.atan2(2 * jxy, jxx - jyy);
-    const sample = (th: number) => {
-      const [dx, dy] = [Math.cos(th), Math.sin(th)], [nx, ny] = [-dy, dx];
-      const lines: number[][] = [];
-      for (let o = -40; o <= 40; o += 2) {
-        let run: number[] = [];
-        for (let t = -T; t <= T; t++) {
-          const x = rint(cx + nx * o + dx * t), y = rint(cy + ny * o + dy * t);
-          const inside = x >= 0 && x < W && y >= 0 && y < H && M1[y * W + x] === 1;
-          if (inside && run[run.length - 1] !== y * W + x) run.push(y * W + x);
-          else if (!inside && run.length) { if (run.length >= 12) lines.push(run); run = []; }
-        }
-        if (run.length >= 12) lines.push(run);
-      }
-      return lines;
-    };
-    let axis: 1 | 2 = 1, lines = sample(theta);
-    if (!lines.length) { axis = 2; lines = sample(theta + Math.PI / 2); }
-    if (!lines.length) continue;
-    const nmax = Math.max(...lines.map((l) => l.length));
-    const ds = lines.filter((l) => l.length >= 0.6 * nmax).map((l) => {
-      const p = l.map((i) => LA[3 * i]), x = detrend(p);
-      return { r: acPeak(x), eta: otsu(x), range: pct(p, 95) - pct(p, 5) };
-    });
-    cloth.push({ sail: rid, px: q.n, axis, lines: ds.length, n: nmax, r: median(ds.map((d) => d.r)), eta: median(ds.map((d) => d.eta)), range: median(ds.map((d) => d.range)) });
+    let axis: 1 | 2 = 1, d = profile(M1, box, theta);
+    if (!d) { axis = 2; d = profile(M1, box, theta + Math.PI / 2); }
+    if (!d) continue;
+    cloth.push({ sail: rid, px: q.n, axis, ...d });
+  }
+
+  // AS-V22 (b) (D62): la cubierta y las tapas juntas, del pase de ids (las superficies de model.decks), como las velas:
+  // solo píxeles puros, erosionada 1 px y con ≥ 120 px. Solo líneas a través de las tablas: sin tramos de ≥ 12 px en la
+  // dirección del tensor, la región no se mide
+  let deck: Shot['deck'] = null;
+  if (measureDeck) {
+    const { M1, m1, use, box, theta } = erodeAndOrient((x, y) => region[y * W + x] === -4, { x0, x1, y0, y1 });
+    if (m1 < 120) deck = { px: m1, skip: 'menos de 120 px' };
+    else if (use < 10) deck = { px: m1, skip: 'sin gradiente' };
+    else {
+      const d = profile(M1, box, theta);
+      deck = d ? { px: m1, ...d } : { px: m1, skip: 'sin tramos a través de las tablas' };
+    }
   }
 
   let crops: Record<string, string> | undefined;
@@ -443,7 +474,7 @@ async function measurePose([id, keep, bandHex]: [string, boolean, string]): Prom
     };
     crops = { con: crop(A), sin: crop(B), alb: crop(C), ids: crop(D), cob: crop(E) };
   }
-  return { ppm, lod: view.lod, calls: withShip.calls - without.calls, triangles: withShip.triangles - without.triangles, mask: maskPx, interior, texture: interior ? textured / interior : 0, regions, ports, rejected, cloth, crops };
+  return { ppm, lod: view.lod, calls: withShip.calls - without.calls, triangles: withShip.triangles - without.triangles, mask: maskPx, interior, texture: interior ? textured / interior : 0, regions, ports, rejected, cloth, deck, crops };
 }
 
 interface Row extends Omit<Shot, 'crops'> {
@@ -467,6 +498,9 @@ const lab = (hex: string) => {
 };
 const AS_V20_CONTRAST = 15;
 const AS_V21 = { classes: ['sloop', 'brig', 'frigate', 'pirate', 'captain'], rMedian: 0.4, rHigh: 0.7, etaClass: 0.8, etaHigh: 0.85, share: 0.15 }; // D40; el Mercante se registra (D9)
+const AS_V22 = { ...AS_V21, classes: ['sloop', 'brig', 'frigate', 'pirate'] }; // D62: los umbrales de AS-V21 (b); el Mercante se registra
+// El Capitán conserva las tablas de D36 (ASSET-SPEC §8.2.2) y no entra en AS-V22 (I2)
+const MEASURE_DECK = (classId: string) => classId !== 'captain';
 const MOBILE_N1_PPM = 2.82; // 390×844 con N1 (ASSET-SPEC §7): Balandra, Bergantín (banda), Pirata y Mercante en LOD1
 const LOD1_CLASSES = ['sloop', 'brig', 'pirate', 'merchant'];
 const legible = (q: Port) => q.core >= 2 && q.contrast >= AS_V20_CONTRAST; // AS-V20 (D38): núcleo ≥ 2 px y contraste ≥ 15
@@ -499,7 +533,7 @@ async function gallery(page: Page, level: number, headings: number[], out?: stri
       await page.waitForTimeout(800);
       for (let k = 0; k < SHOTS; k++) {
         // Con N3 siempre se piden los recortes: si la captura no cumple AS-V20, se adjuntan al reporte con sus componentes
-        const { crops, ...shot } = await page.evaluate(measurePose, [id, (!!out && k === 0) || level === 3, SHIP_LOOKS[LOOK[classId]].band] as [string, boolean, string]);
+        const { crops, ...shot } = await page.evaluate(measurePose, [id, (!!out && k === 0) || level === 3, SHIP_LOOKS[LOOK[classId]].band, MEASURE_DECK(classId)] as [string, boolean, string, boolean]);
         rows.push({ classId, level, deg, k, ...shot });
         const counted = CANNONS[classId] ? shot.ports.filter(legible).length : shot.ports.length;
         const failed = level === 3 && counted !== CANNONS[classId];
@@ -519,7 +553,7 @@ async function gallery(page: Page, level: number, headings: number[], out?: stri
 }
 
 test.describe('Detalle interno de los cascos @perf', () => {
-  test('D23 c, D36 y D40: AS-V19 ≥ 55 %, AS-V18 sin facetas, AS-V20 con contraste local, AS-V21, AD-10, AD-25, AD-26, AD-33 y 1 draw call por barco en su presupuesto', async ({ page }) => {
+  test('D23 c, D36, D40 y D62: AS-V19 ≥ 55 %, AS-V18 sin facetas, AS-V20 con contraste local, AS-V21, AS-V22, AD-10, AD-25, AD-26, AD-33 y 1 draw call por barco en su presupuesto', async ({ page }) => {
     test.setTimeout(420_000);
     await enterGame(page);
     if (OUT) fs.mkdirSync(OUT, { recursive: true });
@@ -581,6 +615,18 @@ test.describe('Detalle interno de los cascos @perf', () => {
       const cs = v21all.filter((c) => c.classId === classId);
       return { classId, sails: cs.length, eta: cs.length ? med(cs.map((c) => c.eta)) : NaN, r: cs.length ? med(cs.map((c) => c.r)) : NaN, range: cs.length ? med(cs.map((c) => c.range)) : NaN };
     });
+    // AS-V22 (b) (D62): una región por clase y rumbo (la primera captura de cada pose, la de los recortes de D23_OUT), con N1
+    // en los 4 rumbos; las regiones no medibles y el Mercante se registran
+    const v22all = rows.filter((r) => r.level === 1 && r.k === 0 && r.deck).map((r) => ({ classId: r.classId, deg: r.deg, ...r.deck! }));
+    const v22m = v22all.flatMap((d) => ('skip' in d ? [] : [d]));
+    const v22 = v22m.filter((d) => AS_V22.classes.includes(d.classId));
+    const v22r = v22.length ? med(v22.map((d) => d.r)) : NaN;
+    const v22rHigh = share(v22.map((d) => d.r), AS_V22.rHigh);
+    const v22etaHigh = share(v22.map((d) => d.eta), AS_V22.etaHigh);
+    const v22class = [...AS_V22.classes, 'merchant'].map((classId) => {
+      const ds = v22m.filter((d) => d.classId === classId);
+      return { classId, regions: ds.length, eta: ds.length ? med(ds.map((d) => d.eta)) : NaN, r: ds.length ? med(ds.map((d) => d.r)) : NaN, range: ds.length ? med(ds.map((d) => d.range)) : NaN };
+    });
     // AD-33: por clase, L* medio de la vela y color medio de la cubierta (ponderados por píxeles en los 3 rumbos, para el
     // registro) y el salto en cada rumbo, que es lo que se aserta (D46)
     const avg = (vs: { px: number; v: number[] }[]) => { const n = vs.reduce((a, q) => a + q.px, 0); return [0, 1, 2].map((i) => vs.reduce((a, q) => a + q.px * q.v[i], 0) / n); };
@@ -611,9 +657,12 @@ test.describe('Detalle interno de los cascos @perf', () => {
     for (const v of sails) console.log(`AD-10/AD-25 ${v.classId.padEnd(8)} ${String(v.deg).padStart(3)}°: lona L* ${v.sailL.toFixed(1)}${v.stripeL ? ` (franjas ${v.stripeL.toFixed(1)})` : ''} · cubierta ${v.deckHex} (ΔE76 ${v.ad25.toFixed(1)} del token)`);
     console.log(`AS-V21 (b): ${v21.length} velas · r mediana ${v21r.toFixed(2)} (≤ ${AS_V21.rMedian}) · r ≥ ${AS_V21.rHigh}: ${(100 * v21rHigh).toFixed(0)} % · η ≥ ${AS_V21.etaHigh}: ${(100 * v21etaHigh).toFixed(0)} % (≤ ${100 * AS_V21.share} %) · rango ${med(v21.map((c) => c.range)).toFixed(1)}`);
     for (const c of v21class) console.log(`AS-V21 ${c.classId.padEnd(8)}: ${c.sails} velas · η ${c.eta.toFixed(2)}${c.classId === 'merchant' ? ' (sin asertar)' : ` (≤ ${AS_V21.etaClass})`} · r ${c.r.toFixed(2)} · rango ${c.range.toFixed(1)}`);
+    console.log(`AS-V22 (b): ${v22.length} regiones · r mediana ${v22r.toFixed(2)} (≤ ${AS_V22.rMedian}) · r ≥ ${AS_V22.rHigh}: ${(100 * v22rHigh).toFixed(0)} % · η ≥ ${AS_V22.etaHigh}: ${(100 * v22etaHigh).toFixed(0)} % (≤ ${100 * AS_V22.share} %) · rango ${v22.length ? med(v22.map((d) => d.range)).toFixed(1) : '—'}`);
+    for (const c of v22class) console.log(`AS-V22 ${c.classId.padEnd(8)}: ${c.regions} regiones · η ${c.eta.toFixed(2)}${c.classId === 'merchant' ? ' (sin asertar)' : ` (≤ ${AS_V22.etaClass})`} · r ${c.r.toFixed(2)} · rango ${c.range.toFixed(1)}`);
+    for (const d of v22all) console.log(`AS-V22 ${d.classId.padEnd(8)} ${String(d.deg).padStart(3)}°: ${d.px} px · ${'skip' in d ? `sin medir (${d.skip})` : `${d.lines} líneas de ${d.n} px · r ${d.r.toFixed(2)} · η ${d.eta.toFixed(2)} · rango ${d.range.toFixed(1)}`}`);
     for (const a of ad33) console.log(`AD-33 ${a.classId.padEnd(8)}: vela L* ${a.sail0.toFixed(1)} → ${a.sail1.toFixed(1)} (Δ ${a.dL >= 0 ? '+' : ''}${a.dL.toFixed(1)}) · cubierta ${a.deck0} → ${a.deck1} (ΔE76 ${a.dE.toFixed(1)}) · por rumbo ${a.poses.map((q) => `${q.deg}° vela ${q.dL >= 0 ? '+' : ''}${q.dL.toFixed(1)} cubierta ${q.dE.toFixed(1)}`).join(' · ')}`);
     for (const v of ad25m) console.log(`AD-25 390×844 LOD1 ${v.classId.padEnd(8)} ${String(v.deg).padStart(3)}°: cubierta ${v.deckHex} (${v.px} px) · ΔE76 ${v.dE.toFixed(1)} del token`);
-    if (OUT) fs.writeFileSync(path.join(OUT, 'd36.json'), JSON.stringify({ ppm, rows, summary, ad26, sails, v21: v21all, ad33, ad25m }, null, 1));
+    if (OUT) fs.writeFileSync(path.join(OUT, 'd36.json'), JSON.stringify({ ppm, rows, summary, ad26, sails, v21: v21all, v22: v22all, ad33, ad25m }, null, 1));
 
     for (const p of summary) {
       expect(p.lod, `${p.classId} N${p.level} ${p.deg}°: LOD0 en escritorio`).toBe(0);
@@ -645,6 +694,12 @@ test.describe('Detalle interno de los cascos @perf', () => {
     expect.soft(v21r, 'AS-V21: mediana de r').toBeLessThanOrEqual(AS_V21.rMedian);
     expect.soft(v21rHigh, 'AS-V21: velas con r ≥ 0,70').toBeLessThanOrEqual(AS_V21.share);
     expect.soft(v21etaHigh, 'AS-V21: velas con η ≥ 0,85').toBeLessThanOrEqual(AS_V21.share);
+    // AS-V22 (b) (D62): los mismos umbrales sobre las regiones medibles de la cubierta de las 4 clases en los 4 rumbos
+    expect.soft(v22.length, 'AS-V22: regiones medidas').toBeGreaterThan(0);
+    for (const c of v22class) if (c.classId !== 'merchant') expect.soft(c.eta, `AS-V22 ${c.classId}: η`).toBeLessThanOrEqual(AS_V22.etaClass);
+    expect.soft(v22r, 'AS-V22: mediana de r').toBeLessThanOrEqual(AS_V22.rMedian);
+    expect.soft(v22rHigh, 'AS-V22: regiones con r ≥ 0,70').toBeLessThanOrEqual(AS_V22.share);
+    expect.soft(v22etaHigh, 'AS-V22: regiones con η ≥ 0,85').toBeLessThanOrEqual(AS_V22.share);
     // AD-33 (D40, D46): |ΔL*| de la vela ≤ 3 y ΔE76 de la cubierta ≤ 3 entre LOD0 y LOD1 en cada rumbo. AD-25 en LOD1
     // (390×844): ≤ 4
     for (const a of ad33) {

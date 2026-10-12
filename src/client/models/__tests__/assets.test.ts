@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { ISLANDS } from '../../../game/constants';
 import { buildBuoyGeometry, buildIslands, buildLootGeometry, buildPalmGeometry } from '../island-geometry';
 import { SHIP_LOOKS, TOP_FACE } from '../../art';
-import { buildShipAsset, clothTones, deckHalfBeam, deckY, getShipModel, ShipExtras, shipLook } from '../ship-geometry';
+import { buildShipAsset, clothTones, deckHalfBeam, deckTones, deckY, getShipModel, SHIP_RECIPES, ShipExtras, shipLook } from '../ship-geometry';
 
 const CLASSES = ['sloop', 'brig', 'frigate', 'pirate', 'merchant', 'captain'] as const;
 const BUDGET = { ship: [2500, 800], npc: [2000, 700] } as const;
@@ -172,7 +172,10 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
     expect(look.deckLod1).toBe(model.recipe.look === 'pirate' ? '#67462D' : '#BD8D59');
     expect(colorCount(lod1, look.deckLod1)).toBeGreaterThan(0);
     expect(colorCount(lod1, look.deck)).toBe(0);
-    expect(colorCount(lod0, look.deckLod1)).toBe(0); // LOD0: la media sale de las tablas
+    // D62: deck.mid, la tabla media y el trancanil de LOD0, es el mismo hex que la cara lisa de LOD1, así que LOD1 no cambia.
+    // Sin él (el Capitán, con las tablas de D36), LOD0 no usa ese color: la media sale de las tablas
+    if (look.deckMid) expect(look.deckMid).toBe(look.deckLod1);
+    else expect(colorCount(lod0, look.deckLod1)).toBe(0);
   });
 
   test('D23: normales con pliegue de 40° (material sin flat shading): el costado es continuo y el canto de cubierta, duro', () => {
@@ -233,7 +236,7 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
     }
   });
 
-  test('D36: tapas de castillos y camaretas en n = 2·ceil(w/2 / 0,5) tablas deck / deck.alt en LOD0; lisas en LOD1', () => {
+  test('D36, D62: tapas de castillos y camaretas en n = 2·ceil(w/2 / 0,5) tablas en LOD0 (3 tonos; el Capitán, deck / deck.alt); lisas en LOD1', () => {
     const r = model.recipe;
     const look = shipLook(r);
     for (const box of r.boxes.filter((b) => b.kind === 'castle')) {
@@ -249,10 +252,11 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
           const vs = [3 * t, 3 * t + 1, 3 * t + 2];
           if (!vs.every((v) => Math.abs(pos.getY(v) - top) < 1e-6 && Math.abs(pos.getX(v) - box.pos[0]) <= w / 2 + 1e-6 && Math.abs(pos.getZ(v) - box.pos[2]) <= d / 2 + 1e-6)) continue;
           count++;
-          colors.add(sameColor(color, vs[0], look.deck) ? 'deck' : sameColor(color, vs[0], look.deckAlt) ? 'deckAlt' : sameColor(color, vs[0], look.deckLod1) ? 'deckLod1' : 'otro');
+          const mid = lod === 0 && look.deckMid && sameColor(color, vs[0], look.deckMid);
+          colors.add(sameColor(color, vs[0], look.deck) ? 'deck' : sameColor(color, vs[0], look.deckAlt) ? 'deckAlt' : mid ? 'deckMid' : sameColor(color, vs[0], look.deckLod1) ? 'deckLod1' : 'otro');
         }
         expect(count).toBe(lod === 0 ? 2 * n : 2);
-        expect([...colors].sort()).toEqual(lod === 0 ? ['deck', 'deckAlt'] : ['deckLod1']);
+        expect([...colors].sort()).toEqual(lod === 1 ? ['deckLod1'] : look.deckMid && n >= 3 ? ['deck', 'deckAlt', 'deckMid'] : ['deck', 'deckAlt']);
       });
     }
   });
@@ -384,6 +388,52 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
     });
   });
 
+  // AS-V22 (a) (D62, ASSET-SPEC §8.2.2): las tablas de LOD0 por superficie (model.decks: 0 = cubierta, 1… = tapas), cada
+  // una de un solo color. (1) Solo los 3 tonos de la paleta, con la oclusión ×0,85 en j = 0 y n − 1 de la cubierta y en
+  // ninguna otra; (2) vecinas de distinto tono; (3) trancanil en deck.mid; (4) en el interior de m tablas, cada tono en
+  // ⌊m/3⌋ o ⌈m/3⌉, y tantas claras como oscuras si m mod 3 = 2; (5) dos grupos completos seguidos no repiten permutación;
+  // (6) la secuencia es la de deckTones, que es determinista. El Capitán conserva deck / deck.alt alternos (D36)
+  test('AS-V22 (a): tablas de cubierta y tapas en 3 tonos con trancanil medio, sin vecinas iguales ni grupos repetidos', () => {
+    const r = model.recipe;
+    const look = shipLook(r);
+    const color = model.lods[0].getAttribute('color');
+    const rgb = (v: number) => [color.getX(v), color.getY(v), color.getZ(v)];
+    const near = (a: number[], hex: string, k = 1) => { const c = new THREE.Color(hex).multiplyScalar(k); return Math.abs(a[0] - c.r) + Math.abs(a[1] - c.g) + Math.abs(a[2] - c.b) < 1e-4; };
+    // Tablas de la cubierta según §8.2.2: 10 en la Balandra, el Pirata y el Capitán (B 8,0 → 16), 14 en el Bergantín,
+    // 16 en el Mercante y 18 en la Fragata; tapas, una superficie por castillo, en el orden de la receta
+    const castles = r.boxes.filter((b) => b.kind === 'castle');
+    expect(model.decks[0].map((p) => p.length)).toEqual([2 * Math.ceil(r.B / 2 / 0.5), ...castles.map((b) => 2 * Math.ceil(b.size[0] / 2 / 0.5))]);
+    expect(model.decks[1].map((p) => p.length)).toEqual(model.decks[0].map(() => 1));
+    const palette = look.deckMid ? [look.deck, look.deckMid, look.deckAlt] : [look.deck, look.deckAlt];
+    model.decks[0].forEach((planks, s) => {
+      const n = planks.length;
+      const tones = planks.map(([t0, t1], j) => {
+        expect(t1 - t0).toBeGreaterThan(0); // la cubierta, a lo largo de los tramos (sin los triángulos degenerados); 1 quad en las tapas
+        if (s > 0) expect(t1 - t0).toBe(2);
+        const first = rgb(3 * t0);
+        for (let v = 3 * t0; v < 3 * t1; v++) expect(rgb(v).every((c, i) => Math.abs(c - first[i]) < 1e-6)).toBe(true); // una pieza, un color
+        const k = s === 0 && (j === 0 || j === n - 1) ? 0.85 : 1;
+        const t = palette.findIndex((h) => near(first, h, k));
+        expect(t).toBeGreaterThanOrEqual(0); // (1)
+        return t;
+      });
+      for (let j = 1; j < n; j++) expect(tones[j]).not.toBe(tones[j - 1]); // (2)
+      if (!look.deckMid) {
+        expect(tones).toEqual(tones.map((_, j) => j % 2)); // D36: deck / deck.alt alternos
+        return;
+      }
+      if (s === 0) expect([tones[0], tones[n - 1]]).toEqual([1, 1]); // (3)
+      const inner = s === 0 ? tones.slice(1, -1) : tones;
+      const m = inner.length;
+      const count = (c: number) => inner.filter((t) => t === c).length;
+      for (const c of [0, 1, 2]) expect([Math.floor(m / 3), Math.ceil(m / 3)]).toContain(count(c)); // (4)
+      if (m % 3 === 2) expect(count(0)).toBe(count(2));
+      for (let g = 0; 3 * g + 6 <= m; g++) expect(inner.slice(3 * g + 3, 3 * g + 6)).not.toEqual(inner.slice(3 * g, 3 * g + 3)); // (5)
+      expect(tones).toEqual(deckTones(r.assetId, s, n)); // (6)
+      expect(deckTones(r.assetId, s, n)).toEqual(deckTones(r.assetId, s, n));
+    });
+  });
+
   test('D36: porta de 1 quad hacia afuera (2 tris) y cañón sin tapa interior (18 tris) en LOD0; nada en LOD1', () => {
     const r = model.recipe;
     const look = shipLook(r);
@@ -441,23 +491,35 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
   });
 });
 
-// D36 (ART-DIRECTION §4.2–4.2.1): pasos de L* de los alternos, medidos sobre los hex en pantalla
-describe('Paleta de tablas y lona (D36, D40)', () => {
+// D36, D62 (ART-DIRECTION §4.2–4.2.1): pasos de L* de las tablas, medidos sobre los hex en pantalla
+describe('Paleta de tablas y lona (D36, D40, D62)', () => {
   const L = (hex: string) => {
     const c = new THREE.Color(hex); // lineal
     const Y = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
     return Y > 0.008856 ? 116 * Math.cbrt(Y) - 16 : 903.3 * Y;
   };
 
-  test('tablas a ±7 de L* de la cubierta en pantalla (#C9965E; pirata #6E4B30), con su albedo compensado', () => {
-    expect(L(TOP_FACE.deck.target) - L('#C9965E')).toBeCloseTo(7, 0);
-    expect(L(TOP_FACE.deckAlt.target) - L('#C9965E')).toBeCloseTo(-7, 0);
-    expect(L(TOP_FACE.deckPirate.target) - L('#6E4B30')).toBeCloseTo(7, 0);
-    expect(L(TOP_FACE.deckAltPirate.target) - L('#6E4B30')).toBeCloseTo(-7, 0);
-    expect(SHIP_LOOKS.player.deck).toBe(TOP_FACE.deck.albedo);
-    expect(SHIP_LOOKS.player.deckAlt).toBe(TOP_FACE.deckAlt.albedo);
-    expect(SHIP_LOOKS.pirate.deck).toBe(TOP_FACE.deckPirate.albedo);
-    expect(SHIP_LOOKS.merchant.deckAlt).toBe(TOP_FACE.deckAlt.albedo);
+  test('D62: tablas clara y oscura a ±14 de L* de deck.mid, la cubierta en pantalla (#C9965E; pirata #6E4B30), que queda en su punto medio en sRGB', () => {
+    expect([TOP_FACE.deck, TOP_FACE.deckMean, TOP_FACE.deckAlt].map((t) => [t.albedo, t.target])).toEqual([['#E1B17B', '#F0BC82'], ['#BD8D59', '#C9965E'], ['#976B39', '#A1723C']]);
+    expect([TOP_FACE.deckPirate, TOP_FACE.deckMeanPirate, TOP_FACE.deckAltPirate].map((t) => [t.albedo, t.target])).toEqual([['#89664B', '#926D4F'], ['#67462D', '#6E4B30'], ['#452811', '#4A2B12']]);
+    expect(L(TOP_FACE.deck.target) - L('#C9965E')).toBeCloseTo(14, 0);
+    expect(L(TOP_FACE.deckAlt.target) - L('#C9965E')).toBeCloseTo(-14, 0);
+    expect(L(TOP_FACE.deckPirate.target) - L('#6E4B30')).toBeCloseTo(14, 0);
+    expect(L(TOP_FACE.deckAltPirate.target) - L('#6E4B30')).toBeCloseTo(-14, 0);
+    const byte = (h: string, i: number) => parseInt(h.slice(1 + 2 * i, 3 + 2 * i), 16);
+    for (const look of [SHIP_LOOKS.player, SHIP_LOOKS.pirate, SHIP_LOOKS.merchant]) {
+      expect(look.deckMid).toBe(look.deckLod1);
+      for (let i = 0; i < 3; i++) expect(Math.abs(byte(look.deckMid!, i) - (byte(look.deck, i) + byte(look.deckAlt, i)) / 2)).toBeLessThanOrEqual(1);
+    }
+    expect([SHIP_LOOKS.player.deck, SHIP_LOOKS.player.deckAlt, SHIP_LOOKS.merchant.deck, SHIP_LOOKS.merchant.deckAlt]).toEqual([TOP_FACE.deck.albedo, TOP_FACE.deckAlt.albedo, TOP_FACE.deck.albedo, TOP_FACE.deckAlt.albedo]);
+    expect([SHIP_LOOKS.pirate.deck, SHIP_LOOKS.pirate.deckAlt]).toEqual([TOP_FACE.deckPirate.albedo, TOP_FACE.deckAltPirate.albedo]);
+  });
+
+  test('D36 en el Capitán (§8.2.2): sus tablas siguen a ±7 de L* de #6E4B30, alternas y sin deck.mid', () => {
+    expect(L(TOP_FACE.deckD36Pirate.target) - L('#6E4B30')).toBeCloseTo(7, 0);
+    expect(L(TOP_FACE.deckAltD36Pirate.target) - L('#6E4B30')).toBeCloseTo(-7, 0);
+    const look = shipLook(SHIP_RECIPES.captain);
+    expect([look.deck, look.deckMid, look.deckAlt, look.deckLod1]).toEqual([TOP_FACE.deckD36Pirate.albedo, null, TOP_FACE.deckAltD36Pirate.albedo, '#67462D']);
   });
 
   test('D40: tonos de lona (§4.2): L* 96,1 / 86,2 / 76,1 en el jugador y 31,2 / 20,0 / 7,5 en el pirata; sail.mid, punto medio en sRGB', () => {
@@ -500,6 +562,42 @@ describe('Paleta de tablas y lona (D36, D40)', () => {
             expect(k === Math.floor(n / 3) || k === Math.ceil(n / 3)).toBe(true);
           }
           if (n === 30) expect(clothTones(id, sail, 12)).toEqual(t.slice(0, 12)); // un prefijo no depende de n
+        }
+      }
+    }
+  });
+
+  // §8.2.2 (D62): con cualquier elección del hash siempre queda al menos una permutación que cumple (i)–(iv). Se recorren
+  // todas las ramas (no solo las que elige el hash) para la cubierta (s = 0, trancanil) y las tapas, hasta 24 tablas
+  test('§8.2.2: las reglas (i)–(iv) siempre dejan alguna permutación, y deckTones cumple AS-V22 (a) con cualquier clave', () => {
+    const PERMS = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
+    for (const main of [true, false]) {
+      for (let n = main ? 4 : 2; n <= 24; n++) {
+        const m = main ? n - 2 : n;
+        let leaves = 0;
+        const walk = (len: number, prev: number, prevPerm: number) => {
+          if (len >= m) { leaves++; return; }
+          const left = m - len;
+          const ok = PERMS.flatMap((p, i) => (p[0] !== prev && i !== prevPerm && (left !== 2 || (p[0] !== 1 && p[1] !== 1)) && !(main && left <= 3 && p[left - 1] === 1) ? [i] : []));
+          expect(ok.length).toBeGreaterThan(0);
+          for (const i of ok) walk(len + Math.min(3, left), PERMS[i][Math.min(3, left) - 1], i);
+        };
+        walk(0, main ? 1 : -1, -1);
+        expect(leaves).toBeGreaterThan(0);
+      }
+    }
+    for (const id of [...Object.values(SHIP_RECIPES).map((r) => r.assetId), 'npc_test_a', 'npc_test_b']) {
+      for (let s = 0; s < 4; s++) {
+        for (let n = s === 0 ? 4 : 2; n <= 24; n++) {
+          const t = deckTones(id, s, n);
+          expect(t).toHaveLength(n);
+          for (let j = 1; j < n; j++) expect(t[j]).not.toBe(t[j - 1]);
+          const inner = s === 0 ? t.slice(1, -1) : t;
+          if (s === 0) expect([t[0], t[n - 1]]).toEqual([1, 1]);
+          const m = inner.length;
+          for (const c of [0, 1, 2]) expect([Math.floor(m / 3), Math.ceil(m / 3)]).toContain(inner.filter((v) => v === c).length);
+          if (m % 3 === 2) expect(inner.filter((v) => v === 0).length).toBe(inner.filter((v) => v === 2).length);
+          for (let g = 0; 3 * g + 6 <= m; g++) expect(inner.slice(3 * g + 3, 3 * g + 6)).not.toEqual(inner.slice(3 * g, 3 * g + 3));
         }
       }
     }
