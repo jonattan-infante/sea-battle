@@ -267,6 +267,8 @@ Lectura de diseño: la Balandra repara 32 HP/s y, bajo fuego, 12 HP/s. Contra un
 
 Eslora y radio de colisión: Pirata 20 m / 6 m, Mercante 22 m / 7 m, Cañonera 28 m / 8 m, Capitán 30 m / 9 m.
 
+Aceleración y frenado: Pirata 3 / 5 m/s², Mercante 2,5 / 4 m/s², Cañonera 2,5 / 4 m/s² y Capitán 2,5 / 4 m/s² (los tres últimos, como la Fragata, §6).
+
 **Regla de recompensa** (para que añadir tipos no suba el oro por segundo de combate): hostiles ≈ 0,23 × vida (pirata 105/450; cañonera 210/900) y pasivos ≈ 0,20 × vida (mercante 60/300). El jefe lleva una prima de riesgo (0,33 × vida) porque es raro y exige grupo o una Fragata mejorada.
 
 ### IA del pirata
@@ -303,7 +305,7 @@ En Seafight aparece un "almirante" tras hundir 10 NPC de un tipo, y los almirant
 - **Aparición:** cuando se hunden 10 piratas o cañoneras (no mercantes) desde su última muerte o desde el arranque. Nace en el sector pirata con menos jugadores, en su punto exterior (radio de 440 m), a ≥ 150 m de cualquier jugador. Ese punto es su **guarida**. Nunca hay 2 vivos.
 - **Combate:** detecta a ≤ 90 m, orbita a 50 m y dispara a ≤ 65 m. Elige objetivo y hace represalia como el pirata.
 - **Correa:** 150 m alrededor de la guarida. Si se aleja más o pierde al objetivo, vuelve y recupera el 100 % de la vida, como el pirata. Para hundirlo hay que comprometerse.
-- **Aviso a todos:** al aparecer, "¡El Capitán pirata ha aparecido en el sector NE!" y un marcador propio en el minimapa, visible desde cualquier punto del mapa. Al hundirse, el feed dice "El Capitán pirata ha caído: A, B y C" (hasta 3 nombres, por daño, y "y N más").
+- **Aviso a todos** (texto de ART-DIRECTION D49): al aparecer, «¡Capitán pirata en el <región>, sector <celda>!», p. ej., «¡Capitán pirata en el noroeste, sector B2!». La región es el cuadrante de su guarida, escrito entero (noreste, noroeste, suroeste o sureste), y la celda es la de la rejilla del minimapa en la que está la guarida. En pantalla, «sector» solo nombra la celda de la rejilla; los cuadrantes nunca se muestran como «sector NE». Además, el capitán tiene un marcador propio en el minimapa, visible desde cualquier punto del mapa. Al hundirse, el feed dice "El Capitán pirata ha caído: A, B y C" (hasta 3 nombres, por daño, y "y N más").
 - **Reparto:** proporcional al daño (§10), así que premia ir en grupo.
 
 ### Requisitos de arte de los NPC de I2 (qué deben comunicar; el diseño es de `game-ux`)
