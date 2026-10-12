@@ -16,10 +16,14 @@ import { SHIP_LOOKS } from '../src/client/art';
 import type { ShipKind } from '../src/game/constants';
 import { enterGame } from './helpers';
 
-const CLASSES = ['sloop', 'brig', 'frigate', 'pirate', 'merchant', 'captain'] as const; // + el Capitán de I2
-const CANNONS: Record<string, number> = { sloop: 4, brig: 6, frigate: 8, pirate: 4, merchant: 0, captain: 6 }; // por banda
-const LOOK: Record<string, ShipKind> = { sloop: 'player', brig: 'player', frigate: 'player', pirate: 'pirate', merchant: 'merchant', captain: 'pirate' };
-const BUDGET: Record<string, number> = { sloop: 2500, brig: 2500, frigate: 2500, pirate: 2000, merchant: 2000, captain: 2500 }; // tris LOD0 (§5)
+const CLASSES = ['sloop', 'brig', 'frigate', 'pirate', 'merchant', 'captain', 'gunboat'] as const; // + el Capitán y la Cañonera de I2
+// AS-V20 mide las portas del costado: la Cañonera lleva los cañones sobre cubierta y la mide AD-28 (e2e/hostile-signatures)
+const AS_V20_CLASSES: readonly string[] = CLASSES.filter((c) => c !== 'gunboat');
+const CANNONS: Record<string, number> = { sloop: 4, brig: 6, frigate: 8, pirate: 4, merchant: 0, captain: 6, gunboat: 6 }; // por banda
+const LOOK: Record<string, ShipKind> = { sloop: 'player', brig: 'player', frigate: 'player', pirate: 'pirate', merchant: 'merchant', captain: 'pirate', gunboat: 'pirate' };
+// AD-25: cubierta en pantalla = media de sus tablas (D36); la Cañonera tiene la suya (§8.4)
+const DECK_TOKEN = (classId: string) => (classId === 'gunboat' ? '#9A8466' : LOOK[classId] === 'pirate' ? '#6E4B30' : '#C9965E');
+const BUDGET: Record<string, number> = { sloop: 2500, brig: 2500, frigate: 2500, pirate: 2000, merchant: 2000, captain: 2500, gunboat: 2000 }; // tris LOD0 (§5)
 const HEADINGS = [0, 90, 180, 270];
 const SHOTS = 3; // capturas por pose, separadas 0,5 s (balanceo distinto)
 const OUT = process.env.D23_OUT;
@@ -466,13 +470,13 @@ const lab = (hex: string) => {
   return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
 };
 const AS_V20_CONTRAST = 15;
-const AS_V21 = { classes: ['sloop', 'brig', 'frigate', 'pirate', 'captain'], rMedian: 0.4, rHigh: 0.7, etaClass: 0.8, etaHigh: 0.85, share: 0.15 }; // D40; el Mercante se registra (D9)
+const AS_V21 = { classes: ['sloop', 'brig', 'frigate', 'pirate', 'captain', 'gunboat'], rMedian: 0.4, rHigh: 0.7, etaClass: 0.8, etaHigh: 0.85, share: 0.15 }; // D40; el Mercante se registra (D9)
 const MOBILE_N1_PPM = 2.82; // 390×844 con N1 (ASSET-SPEC §7): Balandra, Bergantín (banda), Pirata y Mercante en LOD1
 const LOD1_CLASSES = ['sloop', 'brig', 'pirate', 'merchant'];
 const legible = (q: Port) => q.core >= 2 && q.contrast >= AS_V20_CONTRAST; // AS-V20 (D38): núcleo ≥ 2 px y contraste ≥ 15
 
 // Una pasada por la galería con un nivel de cañón (encuadre de §6.2): cada clase al foco con cada rumbo, SHOTS capturas
-async function gallery(page: Page, level: number, headings: number[], out?: string): Promise<Row[]> {
+async function gallery(page: Page, level: number, headings: number[], out?: string, classes: readonly string[] = CLASSES): Promise<Row[]> {
   const setup = await page.evaluate((level) => {
     const rt = window.__SEA_BATTLE__!.runtime();
     rt.setCameraPreset('game');
@@ -491,7 +495,7 @@ async function gallery(page: Page, level: number, headings: number[], out?: stri
       (window as unknown as { __gallery: { setPose(id: string, x: number, z: number, h: number): void } }).__gallery.setPose(id, x, z, (deg * Math.PI) / 180);
     }, [id, x, z, deg] as [string, number, number, number]);
   const rows: Row[] = [];
-  for (const classId of CLASSES) {
+  for (const classId of classes) {
     const id = `g-${classId}`; // galleryScene: un barco por clase, aparcado en su hueco i hasta que le toca
     const i = setup.ids.indexOf(id);
     for (const deg of headings) {
@@ -534,7 +538,7 @@ test.describe('Detalle interno de los cascos @perf', () => {
     // las clases que allí van en LOD1, con su ppm
     const lodPair = await page.evaluate(([classes, ppm]) => ([0, 1] as const).map((lod) => window.__SEA_BATTLE__!.runtime().measureShipValues(classes, [0, 90, 180], ppm, lod)), [[...CLASSES], ppm] as [string[], number]);
     const mobile = await page.evaluate(([classes, ppm]) => window.__SEA_BATTLE__!.runtime().measureShipValues(classes, [0, 90, 180, 270], ppm, 1), [LOD1_CLASSES, MOBILE_N1_PPM] as [string[], number]);
-    const n3 = await gallery(page, 3, [90, 270], OUT);
+    const n3 = await gallery(page, 3, [90, 270], OUT, AS_V20_CLASSES);
     await page.evaluate(() => {
       const rt = window.__SEA_BATTLE__!.runtime();
       for (const k of ['add', 'alpha', 'water'] as const) rt.effects[k].mesh.visible = true;
@@ -542,7 +546,7 @@ test.describe('Detalle interno de los cascos @perf', () => {
     });
 
     const rows = [...n1, ...n3];
-    const summary = CLASSES.flatMap((classId) => ([[1, HEADINGS], [3, [90, 270]]] as const).flatMap(([level, headings]) => headings.map((deg) => {
+    const summary = CLASSES.flatMap((classId) => ([[1, HEADINGS], [3, [90, 270]]] as const).filter(([level]) => level === 1 || AS_V20_CLASSES.includes(classId)).flatMap(([level, headings]) => headings.map((deg) => {
       const rs = rows.filter((r) => r.classId === classId && r.level === level && r.deg === deg);
       const lines = rs.flatMap((r) => r.regions.flatMap((g) => g.steps));
       return {
@@ -564,7 +568,7 @@ test.describe('Detalle interno de los cascos @perf', () => {
     })));
     const sails = values.map((v) => {
       const look = SHIP_LOOKS[LOOK[v.classId]];
-      const token = LOOK[v.classId] === 'pirate' ? '#6E4B30' : '#C9965E'; // cubierta en pantalla = media de las tablas (D36)
+      const token = DECK_TOKEN(v.classId);
       const [a, b] = [lab(v.deckHex), lab(token)];
       return { classId: v.classId, deg: v.headingDeg, sailL: v.sailL, stripeL: v.stripeL, deckHex: v.deckHex, ad25: Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]), alt: lstar(look.sailAlt) };
     });
@@ -598,7 +602,7 @@ test.describe('Detalle interno de los cascos @perf', () => {
       return { classId, sail0: sailL(l0), sail1: sailL(l1), deck0: deck(l0), deck1: deck(l1), dL: sailL(l1) - sailL(l0), dE: Math.hypot(d0[0] - d1[0], d0[1] - d1[1], d0[2] - d1[2]), poses };
     });
     const ad25m = mobile.map((v) => {
-      const [a, b] = [lab(v.deckHex), lab(LOOK[v.classId] === 'pirate' ? '#6E4B30' : '#C9965E')];
+      const [a, b] = [lab(v.deckHex), lab(DECK_TOKEN(v.classId))];
       return { classId: v.classId, deg: v.headingDeg, deckHex: v.deckHex, px: v.deckPixels, dE: Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) };
     });
 

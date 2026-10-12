@@ -52,6 +52,10 @@ export const TOP_FACE = {
   // Cubierta y tapas lisas de LOD1 (D40, ASSET-SPEC §7): la media en pantalla de las tablas que LOD1 quita
   deckMean: { albedo: '#BD8D59', target: '#C9965E' },
   deckMeanPirate: { albedo: '#67462D', target: '#6E4B30' },
+  // Cubierta propia de la Cañonera (ASSET-SPEC §8.4, I2): tablas a ±7 de L* de #9A8466 y su media lisa en LOD1
+  deckGunboat: { albedo: '#A28D72', target: '#AD9678' },
+  deckAltGunboat: { albedo: '#7E6B51', target: '#877255' },
+  deckMeanGunboat: { albedo: '#907C61', target: '#9A8466' },
   cargo: { albedo: '#A5723B', target: PALETTE.cargo }
 } as const;
 
