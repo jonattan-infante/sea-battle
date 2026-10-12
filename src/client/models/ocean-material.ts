@@ -17,6 +17,20 @@ const WAVES: [number, number, number][] = [
 ];
 const WIND = new THREE.Vector2(0.707, -0.707); // hacia el NE en XZ, igual que el viento del humo (VFX §2)
 
+// §7.3 Espuma de cresta (D23, cifras de D42): cresta de la ola × vetas estiradas 3:1 a lo largo del viento × rachas, que
+// la agrupan y dejan limpio el resto del mar. La cresta se evalúa en un punto desplazado por ruido, así las filas de
+// espuma serpentean en vez de formar diagonales rectas cada 23 m. AD-27 la mide en 12 vistas fijas de mar abierto
+// (e2e/ocean-foam.spec.ts)
+export const CREST_FOAM = {
+  height: [0.55, 0.95], // smoothstep sobre la altura h_w, evaluada en el punto desplazado
+  warp: [18, 40], // m de desplazamiento máximo y escala del ruido que lo da
+  streak: [6, 2], // m a lo largo y a lo ancho del viento del ruido de vetas
+  streakEdge: [0.45, 0.65], // smoothstep sobre ese ruido
+  gustScale: 35, // m del ruido de rachas
+  gustEdge: [0.6, 0.8], // smoothstep sobre el ruido de rachas
+  strength: 0.3 // mezcla máxima hacia ocean.foam
+};
+
 const vertexShader = /* glsl */ `
 varying vec3 vWorld;
 void main() {
@@ -50,6 +64,11 @@ uniform vec3 uEdge;
 uniform vec3 uCalm;
 uniform vec3 uBorder;
 uniform vec3 uSafeLine;
+uniform vec2 uWind;
+uniform vec4 uFoamCrest; // smoothstep de h (x, y) y del ruido de vetas (z, w)
+uniform vec2 uFoamStreak; // 1 / m a lo largo y a lo ancho del viento
+uniform vec4 uFoamGust; // 1 / escala de las rachas, smoothstep (y, z) y fuerza (w)
+uniform vec2 uFoamWarp; // desplazamiento máximo (m) y 1 / escala del ruido de la cresta desplazada
 varying vec3 vWorld;
 
 float hash(vec2 p) {
@@ -120,8 +139,19 @@ void main() {
   float fres = 0.02 + 0.98 * pow(1.0 - clamp(dot(n, uViewDir), 0.0, 1.0), 5.0);
   c = mix(c, uSky, 0.6 * fres);
 
-  // §7.3 Espuma de cresta (en manchas) y de orilla (ondas que avanzan hacia la costa)
-  float crest = smoothstep(0.72, 0.95, h) * 0.35 * step(0.5, vnoise(p * 0.45 + drift * 0.5));
+  // §7.3 Espuma de cresta (D23, D42): vetas a lo largo del viento, agrupadas en rachas; y de orilla (ondas hacia la costa)
+  vec2 pw = vec2(dot(p, uWind), dot(p, vec2(-uWind.y, uWind.x)));
+  float streak = vnoise(pw * uFoamStreak + 0.5 * drift);
+  float gust = smoothstep(uFoamGust.y, uFoamGust.z, vnoise(p * uFoamGust.x + 0.15 * drift));
+  vec2 wd = 0.1 * drift;
+  vec2 pf = p + uFoamWarp.x * (vec2(vnoise(p * uFoamWarp.y + 3.1 + wd), vnoise(p * uFoamWarp.y + 11.7 + wd)) * 2.0 - 1.0);
+  float hw = 0.0;
+  for (int i = 0; i < 4; i++) {
+    vec4 w = uWaves[i];
+    hw += uWaveAmp[i] * sin(w.z * dot(w.xy, pf) - w.w * uTime);
+  }
+  hw = hw / (uWaveAmp.x + uWaveAmp.y + uWaveAmp.z + uWaveAmp.w) * ampScale;
+  float crest = smoothstep(uFoamCrest.x, uFoamCrest.y, hw) * smoothstep(uFoamCrest.z, uFoamCrest.w, streak) * gust * uFoamGust.w;
   float band = step(0.0, dIsle) * (1.0 - smoothstep(2.0, 2.5, dIsle));
   float shore = band * (0.5 + 0.5 * sin(dIsle * 2.4 - uTime * 1.6)) * 0.8;
   c = mix(c, uFoam, clamp(crest + shore, 0.0, 1.0));
@@ -197,7 +227,12 @@ export function createOceanMaterial(islands: IslandDef[]): THREE.ShaderMaterial 
       uEdge: { value: col(PALETTE.oceanEdge) },
       uCalm: { value: col(PALETTE.calmWater) },
       uBorder: { value: col(PALETTE.mapBorder) },
-      uSafeLine: { value: col(PALETTE.safeBorder) }
+      uSafeLine: { value: col(PALETTE.safeBorder) },
+      uWind: { value: WIND.clone() },
+      uFoamCrest: { value: new THREE.Vector4(...CREST_FOAM.height, ...CREST_FOAM.streakEdge) },
+      uFoamStreak: { value: new THREE.Vector2(1 / CREST_FOAM.streak[0], 1 / CREST_FOAM.streak[1]) },
+      uFoamGust: { value: new THREE.Vector4(1 / CREST_FOAM.gustScale, ...CREST_FOAM.gustEdge, CREST_FOAM.strength) },
+      uFoamWarp: { value: new THREE.Vector2(CREST_FOAM.warp[0], 1 / CREST_FOAM.warp[1]) }
     }
   });
 }

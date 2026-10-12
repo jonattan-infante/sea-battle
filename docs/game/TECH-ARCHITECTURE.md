@@ -47,7 +47,8 @@ Medido (Jest + socket real, `server/__tests__/game-server.test.ts`): con 20 clie
 | `npm run test:e2e` | Playwright contra el build de producción, con 3 servidores: invitado (3100), invitado sin NPC (3101) y sin invitado (3102) |
 | `npm run test:perf` | Commits de React (hook de DevTools inyectado), frames de WebSocket y `renderInfo` |
 | `npm run test:soak` | AC-91: corrida larga de 10 min (`e2e/endurance.spec.ts`, escenario `endurance` en un servidor propio) con una muestra por minuto tras forzar el GC por CDP: heap, nodos DOM, escuchas JS, geometrías y texturas, y commits/s. Fuera de `verify` y de `test:e2e`; la ejecuta game-qa. `AC91_MINUTES=2` la acorta para validar el harness (10 muestras igualmente) |
-| `npm run qa:capture` | Capturas estándar en `qa-artifacts/` (escritorio 1440×900 y móvil 390×844) |
+| `npm run qa:capture` | Capturas estándar en `qa-artifacts/` (escritorio 1440×900 y móvil 390×844). Incluye AD-27 (`e2e/ocean-foam.spec.ts`, servidor propio sin NPC): la espuma se mide en las 12 vistas fijas de D42 con el pase de solo océano (`runtime.captureOceanPass`) y se asertan la mediana y las guardas, periodicidad (R23) incluida, y que el shader compile. Cada vista (PNG + JSON con la proyección y los uniforms) queda en `qa-artifacts/render/ad27/` |
+| `scripts/ad27/*.py` | Modelo del shader del océano en numpy (`oceanmodel.py`) que sintetiza cada captura de AD-27 solo con su JSON. `validate_full.py` lo compara con las capturas reales; `predict_full.py` y `sets12.py` predicen las cifras sobre vistas al azar. Necesita Python 3 con numpy y Pillow; no forma parte de `verify` |
 | `npm run verify` | typecheck + test + build (lo mismo que la CI) |
 
 Puente de depuración de solo lectura: `window.__SEA_BATTLE__` (`ready`, `serverTime`, `me`, `ships` con coordenadas de pantalla, `player`, `hud`, `renderInfo` y `runtime`).

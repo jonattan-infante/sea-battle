@@ -69,6 +69,20 @@ export interface RenderInfo {
   triangles: number;
 }
 
+// AD-27 (D42): pase de solo océano para medir la espuma y reproducir cada píxel fuera del navegador (scripts/ad27/)
+export interface OceanPass {
+  png: string; // data URL del canvas: sin HUD ni placas, que son DOM
+  time: number; // uTime fijado (s)
+  pxW: number;
+  pxH: number;
+  ppm: number;
+  corners: { x: number; z: number }[]; // agua bajo las esquinas: arriba izq., arriba der., abajo izq., abajo der.
+  uniforms: Record<string, unknown>; // uniforms del océano en valores planos (vectores y colores lineales → arrays)
+}
+
+const plainUniform = (v: unknown): unknown =>
+  Array.isArray(v) ? v.map(plainUniform) : v instanceof THREE.Color ? [v.r, v.g, v.b] : v && typeof (v as THREE.Vector4).toArray === 'function' ? (v as THREE.Vector4).toArray() : v;
+
 // Estado de render de un barco (malla propia, material propio, temporizadores de efectos)
 interface ShipView extends LabelTarget {
   id: string;
@@ -1080,6 +1094,27 @@ export class GameRuntime implements OverlayHost {
   captureImage(type = 'image/webp', quality = 0.9): string | null {
     if (!this.renderFrame()) return null;
     return this.gl!.domElement.toDataURL(type, quality);
+  }
+
+  // AD-27 (D42): captura del océano solo, con su reloj fijado en `time` s. Barcos y VFX se ocultan solo durante este
+  // render síncrono (el bucle de frames no se intercala) y el siguiente frame repone uTime
+  captureOceanPass(time: number): OceanPass | null {
+    if (!this.camReady || !this.gl) return null;
+    const shown = [...this.views.values()].filter((v) => v.mesh.visible);
+    const vfx = this.effects.group.visible;
+    const u = this.ocean.material.uniforms;
+    const t = u.uTime.value;
+    for (const v of shown) v.mesh.visible = false;
+    this.effects.group.visible = false;
+    u.uTime.value = time;
+    const png = this.captureImage('image/png');
+    const uniforms = Object.fromEntries(Object.entries(u).map(([k, { value }]) => [k, plainUniform(value)]));
+    u.uTime.value = t;
+    this.effects.group.visible = vfx;
+    for (const v of shown) v.mesh.visible = true;
+    if (!png) return null;
+    const corners = [[0, 0], [this.viewW, 0], [0, this.viewH], [this.viewW, this.viewH]].map(([x, y]) => this.screenToWorld(x, y)!);
+    return { png, time, pxW: this.gl.domElement.width, pxH: this.gl.domElement.height, ppm: this.ppm, corners, uniforms };
   }
 
   // VFX-01: draw calls de los efectos = con VFX − sin VFX
