@@ -7,6 +7,7 @@ import type { GameClient } from '../../client/game-client';
 import { HINTS } from '../../client/hints';
 import { addTicker, hudSignals, isLowHp } from '../../client/hud-logic';
 import { MeHud, Relation, TargetHud, useHud } from '../../client/hud-store';
+import { HUD_BLOCKS_EVENT } from '../../client/overlays';
 import { Alert, Anchor, Close, Coins, Crosshair, Sailboat, Shield, Skull, Star, Stop, Store, Swords, Target, Wrench } from './icons';
 import Minimap, { ViewRect } from './Minimap';
 import Shop from './Shop';
@@ -176,19 +177,25 @@ function GoldPanel() {
 
 // ---------- Toasts, aviso de zona y feed ----------
 
+// Cada aviso visible es un bloque del HUD para las placas (ART-DIRECTION §11.4, D41). Entran y salen de golpe: en el mismo
+// commit, antes de pintar, la capa de placas relee las cajas y oculta las que quedan debajo
 function Toasts() {
   const toasts = useHud((s) => s.toasts);
   const inSafe = useHud((s) => s.me?.inSafeZone && s.me.state === 'alive');
   const feed = useHud((s) => s.feed);
+  const blocksKey = `${toasts.map((t) => t.id).join()}|${feed.map((f) => f.id).join()}|${!!inSafe}`;
+  useLayoutEffect(() => {
+    window.dispatchEvent(new Event(HUD_BLOCKS_EVENT));
+  }, [blocksKey]);
   return (
     <div className="hud-toasts" role="status" aria-live="polite" data-testid="toasts">
-      {inSafe && <div className="toast toast--zone" data-testid="safe-zone"><Shield size={16} /> Zona segura</div>}
+      {inSafe && <div className="toast toast--zone" data-testid="safe-zone" data-hud-block=""><Shield size={16} /> Zona segura</div>}
       {toasts.map((t) => (
-        <div key={t.id} className={`toast toast--${t.kind}`}>{t.text}</div>
+        <div key={t.id} className={`toast toast--${t.kind}`} data-hud-block="">{t.text}</div>
       ))}
-      {/* En móvil el feed no tiene caja propia: sus líneas van como toasts (§12.2) */}
+      {/* En móvil el feed no tiene caja propia: sus líneas van como toasts (§12.2). En escritorio miden 0 × 0 y no cuentan */}
       {feed.map((f) => (
-        <div key={`f${f.id}`} className={`toast feed-as-toast toast--${f.tone === 'danger' ? 'danger' : f.tone === 'gold' ? 'warn' : 'ok'}`}>{f.text}</div>
+        <div key={`f${f.id}`} className={`toast feed-as-toast toast--${f.tone === 'danger' ? 'danger' : f.tone === 'gold' ? 'warn' : 'ok'}`} data-hud-block="">{f.text}</div>
       ))}
     </div>
   );

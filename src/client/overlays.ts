@@ -8,6 +8,10 @@ import type { RenderShip } from './game-client';
 export { relationOf };
 export type { Relation };
 
+// D41: el HUD lo emite en el commit en que cambia la lista de avisos (antes de pintar). La capa de placas relee entonces
+// las cajas de los bloques y oculta ya las placas que quedan debajo, sin esperar a la siguiente pasada a 10 Hz
+export const HUD_BLOCKS_EVENT = 'sea-battle:hud-blocks';
+
 // Iconos de línea de Lucide (ISC), 24×24, trazo 2 px, currentColor (ART-DIRECTION §13)
 const ICONS = {
   star: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',
@@ -131,11 +135,13 @@ export class LabelLayer {
   // fase de lectura del declutter y al cambiar el tamaño de la ventana. Por frame solo se usan estas cajas guardadas
   private readonly blocks: number[] = []; // x, y, w, h
   private readonly onResize = () => this.readBlocks();
+  private readonly onBlocksChanged = () => this.refreshBlocks();
   private lastTick = 0;
 
   constructor(private readonly container: HTMLElement, private readonly host: OverlayHost) {
     for (let i = 0; i < LABEL.pool; i++) this.plates.push(this.createPlate());
     window.addEventListener('resize', this.onResize);
+    window.addEventListener(HUD_BLOCKS_EVENT, this.onBlocksChanged);
   }
 
   private createPlate(): Plate {
@@ -415,6 +421,16 @@ export class LabelLayer {
     }
   }
 
+  // D41: un aviso que entra de golpe oculta en el mismo commit las placas que tapa, con su última posición escrita.
+  // Volver a mostrarlas no corre prisa: lo decide position() en el frame siguiente
+  private refreshBlocks(): void {
+    this.readBlocks();
+    const now = performance.now();
+    for (const plate of this.byId.values()) {
+      if (plate.display && !plate.hud && this.underHud(plate.sx + plate.bx, plate.sy, plate.bw, plate.bh, LABEL.hudHidePx)) this.setHud(plate, true, now);
+    }
+  }
+
   // ¿La caja, ampliada `margin` px por cada lado, se cruza con algún bloque del HUD?
   private underHud(x: number, y: number, w: number, h: number, margin: number): boolean {
     const b = this.blocks;
@@ -523,6 +539,7 @@ export class LabelLayer {
 
   dispose(): void {
     window.removeEventListener('resize', this.onResize);
+    window.removeEventListener(HUD_BLOCKS_EVENT, this.onBlocksChanged);
     for (const plate of this.plates) plate.root.remove();
     this.byId.clear();
   }
