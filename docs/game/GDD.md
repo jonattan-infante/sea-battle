@@ -50,13 +50,13 @@
 | Mundo | 1 mapa, 1 puerto con zona segura, 6 islas, límites duros |
 | Barcos del jugador | 3 clases: Balandra, Bergantín y Fragata |
 | Combate | Selección, ataque persistente con andanadas, alcance, recarga, precisión, números de daño y reparación |
-| NPC | Pirata (hostil) y Mercante (pasivo). **Incremento I2 (P1):** Cañonera pirata (hostil, mantiene la distancia) y Capitán pirata (jefe) |
-| Cámara | Sigue al barco. **I2 (P1):** vista libre con arrastre, minimapa y flechas, y vuelta al barco (§5) |
+| NPC | Pirata (hostil) y Mercante (pasivo). **Incremento I2 (P1), en la versión 1.1.0** (Q12): Cañonera pirata (hostil, mantiene la distancia) y Capitán pirata (jefe) |
+| Cámara | Sigue al barco. **I2 (P1), en la 1.1.0:** vista libre con arrastre, minimapa y flechas, y vuelta al barco (§5) |
 | Economía | Oro: recompensas por hundir, restos flotantes (P1), tienda de mejoras y barcos |
 | Muerte | Hundimiento, pantalla de muerte, reaparición en el puerto y protección |
 | Multijugador | 20 jugadores por servidor. PvE cooperativo (P0) y PvP fuera de la zona segura (P1) |
 | Plataformas | Escritorio (ratón + teclado) y móvil (táctil), Chrome/Safari/Firefox actuales |
-| Autenticación | Clerk. Modo invitado solo en local (`AUTH_BYPASS=1`) |
+| Autenticación | Clerk; desde la 1.0.0, la instancia de producción en un dominio propio (Q13). Modo invitado solo en local (`AUTH_BYPASS=1`) |
 
 ### Fuera (y por qué)
 | Fuera | Motivo |
@@ -387,12 +387,12 @@ En Seafight aparece un "almirante" tras hundir 10 NPC de un tipo, y los almirant
 | Simulación | 20 Hz, autoritativa en el servidor |
 | Snapshots | 10 Hz, **solo deltas** de las entidades que cambiaron dentro del área de interés (radio de 300 m alrededor del barco y, en vista libre (I2), también alrededor del centro de la vista). Snapshot completo al entrar. **Si no cambia nada, no se envía nada.** El Capitán pirata vivo se envía siempre, para el marcador del minimapa |
 | Interpolación en el cliente | Búfer de 100 ms. Sin predicción, también para el barco propio. El marcador de clic es inmediato y local. |
-| Latencia del clic al movimiento visible | Entre 0 y 50 ms hasta el tick, entre 0 y 100 ms hasta el snapshot y 100 ms de búfer, más la red y el render. Medido en local: 263–309 ms. En producción hay que sumar el RTT. Es aceptable para un control por clic: "For RTS games, 250 milliseconds of command latency was not even noticed… between 250 and 500 msec was very playable" ([Bettner y Terrano, GDC 2001](https://www.gamedeveloper.com/programming/1500-archers-on-a-28-8-network-programming-in-age-of-empires-and-beyond)). La respuesta inmediata la da el marcador (≤ 50 ms). Por encima de 500 ms con el RTT real, se evalúa la predicción del barco propio (P2). |
+| Latencia del clic al movimiento visible | Entre 0 y 50 ms hasta el tick, entre 0 y 100 ms hasta el snapshot y 100 ms de búfer, más la red y el render. Medido en local: 263–309 ms. En producción hay que sumar el RTT. Es aceptable para un control por clic: "For RTS games, 250 milliseconds of command latency was not even noticed… between 250 and 500 msec was very playable" ([Bettner y Terrano, GDC 2001](https://www.gamedeveloper.com/programming/1500-archers-on-a-28-8-network-programming-in-age-of-empires-and-beyond)). La respuesta inmediata la da el marcador (≤ 50 ms). Por encima de 500 ms con el RTT real, se evalúa la predicción del barco propio (P2). **Umbral en Railway: p95 ≤ 500 ms**, medido con AC-136 desde conexiones domésticas reales. Si no se cumple, bloquea la 1.0.0. |
 | Presupuesto de bajada | ≤ 10 mensajes/s y ≤ 12 KB/s de media por cliente con el servidor lleno. En vista libre (I2): ≤ 10 mensajes/s y ≤ 16 KB/s |
 | Subida en reposo | **0 mensajes** de juego si el jugador no actúa (el latido de Engine.IO queda excluido) |
 | Límite de intenciones | 10/s por cliente (ráfaga de 20). El exceso se descarta. |
 | Desconexión (P1) | El barco se queda 10 s en el mundo y se le puede atacar. Si el jugador reconecta en ese tiempo, recupera el mismo barco. |
-| Persistencia (P1) | Oro, mejoras, barcos en propiedad y barco activo, por `userId` de Clerk. El invitado no persiste. |
+| Persistencia (P0 para la 1.0.0) | Oro, mejoras, barcos en propiedad y barco activo, por el `userId` del JWT verificado de Clerk, en **Postgres en Railway** (Q2). El invitado no persiste. La vida y la posición no se guardan. Las compras y el cambio de barco se escriben antes de confirmarse; el oro, en ≤ 5 s. Un redeploy no pierde nada, y una sola sesión por `userId`. Si la BD falla al entrar, no se juega con un estado por defecto; si falla durante la partida, se sigue jugando sin tienda y con aviso (BACKLOG AC-129 a AC-133). |
 
 **Intenciones (cliente → servidor)**. La selección es local y no viaja por la red.
 
@@ -466,19 +466,23 @@ El layout, la paleta y la forma los define `game-ux`. Aquí solo se fija qué de
 | Mensajes cliente → servidor en reposo | 0 en 10 s |
 | Tick de simulación con servidor lleno | p99 ≤ 4 ms (Node 20), el menor de 3 repeticiones de 2 000 ticks (AC-03) |
 | Crecimiento de la memoria JS del cliente (heap de V8 + ArrayBuffer) en 10 min de combate en régimen, tras el calentamiento (AC-91) | ≤ 15 MB |
+| Del clic al movimiento visible, en Railway con el RTT real (AC-136) | p95 ≤ 500 ms |
 
 ## 17. Preguntas abiertas para Jonattan
 
 | # | Pregunta | Propuesta por defecto |
 |---|---|---|
 | Q1 | ¿PvP en el slice? | P1: libre fuera de la zona segura, con protección al reaparecer |
-| Q2 | ¿Persistir el progreso por usuario de Clerk? ¿Dónde: el `@vercel/kv` actual o algo en Railway? | P1, sí. El almacén lo decide `game-developer` según el coste que apruebes |
+| Q2 | ¿Persistir el progreso por usuario de Clerk? ¿Dónde: el `@vercel/kv` actual o algo en Railway? | **Respondida: Postgres en Railway (Jonattan, 2026-10-11).** Entra en la 1.0.0. Qué se guarda y cómo está en §13; el criterio es AC-97 + AC-129 a AC-133 |
 | Q3 | ¿La reparación es gratis o es un sumidero de oro? | Gratis (la condición es detenerse y no disparar) |
 | Q4 | ¿Una penalización por muerte del 10 % del oro es aceptable? | Sí |
 | Q5 | ¿Sin monetización ni moneda premium en el slice? | Confirmar que queda fuera |
 | Q6 | ¿Bastan 20 jugadores y 1 sala para el lanzamiento? | Sí; varias salas en P2 |
 | Q7 | ¿El nombre visible es el usuario de Clerk o un nombre de barco que elige el jugador? | El usuario de Clerk |
 | Q8 | ¿Interfaz solo en español o con i18n? | Solo español |
-| Q9 | ¿Cuál es el portátil de referencia para el AC de 60 fps? | MacBook Air M1 o un portátil con Intel Iris Xe |
+| Q9 | ¿Cuál es el portátil de referencia para el AC de 60 fps? | MacBook Air M1 o un portátil con Intel Iris Xe. **Hace falta para cerrar la 1.0.0** (AC-90 en AC-138) |
 | Q10 | ¿Habrá un monstruo marino en un incremento futuro? En Seafight solo se dañan con arpones (REFERENCE §6). Hay dos caminos: añadir arpones como segunda arma (fiel al referente, más trabajo) o un monstruo que se dañe con cañones (adaptación) | P3. Decidir después de medir I2 |
-| Q11 | ¿Se aprueba el incremento I2 (H-305 Capitán pirata, H-306 Cañonera pirata, y E13 vista libre + AC-124)? El lead lo presentó tras `eb579e5` | **Respondida: Sí (Jonattan, 2026-10-11).** Se hace en el orden de la cola: Capitán → vista libre → Cañonera. El reparto está en BACKLOG, "Incremento I2". Es lo único que desbloquea **NPC (7)** y **Cámara (8)**, las dos dimensiones frente a Seafight que solo suben con I2 (QA-6 §13). Lo demás ya está definido: reglas en §5 y §9, AC-54, AC-55 y AC-111 a AC-124, y arte en ART-DIRECTION §12.8 y AD-28 a AD-31 |
+| Q11 | ¿Se aprueba el incremento I2 (H-305 Capitán pirata, H-306 Cañonera pirata, y E13 vista libre + AC-124)? El lead lo presentó tras `eb579e5` | **Respondida: Sí (Jonattan, 2026-10-11).** Se hace en el orden de la cola: Capitán → vista libre → Cañonera. El reparto está en BACKLOG, "Incremento I2". Es lo único que desbloquea **NPC (7)** y **Cámara (8)**, las dos dimensiones frente a Seafight que solo suben con I2 (QA-6 §13). Lo demás ya está definido: reglas en §5 y §9, AC-54, AC-55 y AC-111 a AC-124, y arte en ART-DIRECTION §12.8 y AD-28 a AD-31. **Q12 lo mueve a la 1.1.0** |
+| Q12 | ¿Qué entra en la 1.0.0? | **Respondida: alcance A (Jonattan, 2026-10-11).** Entra el juego aprobado por QA más los bloqueos de publicación (persistencia, Clerk de producción, staging, latencia en Railway y el cierre de QA). **I2 completo pasa a 1.1.0**: H-305, H-306, E13 + AC-124 y AC-115. El arte del Capitán (`264363e`) entra latente, sin aparecer en partida. Rama `chore/release-1-0-0` desde `434b160`. Criterios: BACKLOG, «Release 1.0.0» |
+| Q13 | ¿Clerk de producción? ¿En qué dominio? | **Respondida en parte (Jonattan, 2026-10-11): instancia de producción con un dominio propio de Jonattan.** Clerk no admite dominios de hosting como `*.up.railway.app` (`provider_domain_operation_not_allowed`), y hoy prod usa claves de desarrollo. **Falta el nombre del dominio**, que pregunta el lead; sin él, AC-134 no se puede cerrar |
+| Q14 | ¿Un entorno de staging antes de prod? | **Respondida: sí, en Railway (Jonattan, 2026-10-11)**, con su propia BD. El candidato pasa por staging (AC-135 y AC-136) antes de prod |
