@@ -266,18 +266,7 @@ test.describe('Corrida larga @soak', () => {
       await test.info().attach('ac91-samples.json', { body: JSON.stringify(report, null, 2), contentType: 'application/json' });
       if (MINUTES !== 10) console.log(`AC-91: corrida corta de ${MINUTES} min para validar el harness; el veredicto del AC exige AC91_MINUTES=10`);
 
-      // La carga es el "dado" de AC-91: sin ella no se puede hablar de deriva. Si falta, la corrida es NO VERIFICADO (en rojo
-      // para que nadie la lea como verde) y no se evalúan las métricas de deriva
-      const shortfall = [
-        measured.cycles < CYCLES_REQUIRED && `${measured.cycles} ciclos < ${CYCLES_REQUIRED}`,
-        measured.volleys === 0 && '0 andanadas propias',
-        measured.damageTaken === 0 && '0 de daño recibido',
-        measured.repairs === 0 && '0 reparaciones'
-      ].filter(Boolean);
-      if (shortfall.length > 0) {
-        console.log('AC-91: carga insuficiente; las métricas de deriva del resumen no se evalúan');
-        throw new Error(`AC-91 NO VERIFICADO (carga insuficiente: ${shortfall.join('; ')})`);
-      }
+      const errorsBeforeDrift = test.info().errors.length;
       expect.soft(report.memory.delta, 'memoria JS (heap + externa): final − base ≤ 15 MB').toBeLessThanOrEqual(15);
       expect.soft(memorySlope, 'memoria JS (heap + externa): pendiente ≤ 1 MB/min en los minutos 5–10').toBeLessThanOrEqual(1);
       expect.soft(last.nodes, 'nodos DOM: final ≤ base × 1,05').toBeLessThanOrEqual(report.nodes.limit);
@@ -289,6 +278,20 @@ test.describe('Corrida larga @soak', () => {
       if (INTERVAL_MS >= 60_000) expect.soft(lastPair, 'commits/s: media de los intervalos 9 y 10 ≤ media de los intervalos 1 y 2 × 1,2').toBeLessThanOrEqual(firstPair * 1.2);
       else console.log(`AC-91 (informativo con ventanas de ${INTERVAL_MS / 1000} s): commits/s de los intervalos 9 y 10 ${lastPair.toFixed(2)} frente a ${(firstPair * 1.2).toFixed(2)} (intervalos 1 y 2 × 1,2)`);
       expect.soft(Math.max(...rates), 'commits/s: siempre ≤ 10').toBeLessThanOrEqual(10);
+
+      // Veredicto según la carga (AC-91): la carga es el "dado" del AC y la deriva se evalúa siempre. Con la carga incompleta
+      // nunca hay verde: si alguna deriva falla es RECHAZADO (menos carga solo puede ocultar una fuga, no fabricarla) y la
+      // falta de carga se anota aparte; si ninguna falla, NO VERIFICADO. Los hundimientos propios no invalidan nada
+      const shortfall = [
+        measured.cycles < CYCLES_REQUIRED && `${measured.cycles} ciclos < ${CYCLES_REQUIRED}`,
+        measured.volleys === 0 && '0 andanadas propias',
+        measured.damageTaken === 0 && '0 de daño recibido',
+        measured.repairs === 0 && '0 reparaciones'
+      ].filter(Boolean);
+      if (shortfall.length > 0) {
+        if (test.info().errors.length > errorsBeforeDrift) console.log(`AC-91: la deriva falla (RECHAZADO) y además falta carga: ${shortfall.join('; ')}`);
+        else throw new Error(`AC-91 NO VERIFICADO (carga insuficiente: ${shortfall.join('; ')})`);
+      }
     } finally {
       await server.kill();
     }
