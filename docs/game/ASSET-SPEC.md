@@ -356,7 +356,7 @@ Notación: vela cuadra = `w × h @ y_b` (ancho × alto en la altura de su borde 
 |---|---|
 | L / B / F / D / bauprés / railH | 20 / 5,0 / 1,6 / 0,9 / 6,0 / 0,56 m |
 | Mástiles | Trinquete z = +4,5, h = 16 · Mayor z = −2,5, h = 17,5 · `rake` = 8° |
-| Trinquete (cuadras con muescas) | 7,6 × 3,2 @ 3,6 · 6,0 × 2,8 @ 7,2. LOD0: `PlaneGeometry(w, h, nx, 3)` con `nx = max(4, 4·round(w / 2.4))` (16 y 12 columnas; paños de 0,48 y 0,5 m, D40). LOD1: `(w, h, 4, 3)`. La rejilla `(w, h, 4, 2)` que había aquí era anterior a D23 (D36 c). Los vértices inferiores en u' = 0,25 y 0,75 suben 0,6 m (borde raído) |
+| Trinquete (cuadras con muescas) | 7,6 × 3,2 @ 3,6 · 6,0 × 2,8 @ 7,2. LOD0: `PlaneGeometry(w, h, nx, 3)` con `nx = max(4, 4·round(w / 2.0))` (16 y 12 columnas; paños de 0,48 y 0,5 m, D40; corregido en D44, decía `/ 2.4`). LOD1: `(w, h, 4, 3)`. La rejilla `(w, h, 4, 2)` que había aquí era anterior a D23 (D36 c). Los vértices inferiores en u' = 0,25 y 0,75 suben 0,6 m (borde raído) |
 | Mayor | Cangreja A (−2,9, 3,4) · B (−2,9, 12,0) · C (−9,4, 13,4) · D (−10,4, 3,9) |
 | Foque | H (0, 13,1, 4,8) · T (0, 4,39, 15,58) · C (0, 2,96, 9,65) |
 | Colores | `hull #2A2523` · `band #B3261E` · `bottom #1C1817` · `deck #6E4B30` · `rail/mast #3A2A20` · lona `sail #4A494D` / `sail.mid #303033` / `sail.alt #171619` (D40, §8.2.1); LOD1 `sail.lod1 #353438` |
