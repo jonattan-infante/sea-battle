@@ -210,7 +210,12 @@ export const LABEL = {
   reloadPx: 18,
   reloadGapPx: 6, // hueco entre el indicador y el borde izquierdo de la placa propia
   reloadTopPx: 2,
-  reloadFlashMs: 120
+  reloadFlashMs: 120,
+  // §11.4 (D39): a menos de 8 px de un bloque del HUD la placa se oculta en el mismo frame y vuelve a ≥ 16 px
+  // (histéresis) con el fundido fade-in de 150 ms
+  hudHidePx: 8,
+  hudShowPx: 16,
+  hudFadeMs: 150
 };
 
 // ---- VFX §9 Números flotantes (tiempos; color, tamaño y peso por tipo en world-overlays.css) ----

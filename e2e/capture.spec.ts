@@ -99,4 +99,48 @@ test.describe('Capturas @capture', () => {
       }
     });
   }
+
+  // AD-32 (D39): el pirata de la escena "gallery" bajo el minimapa, con la placa a 4 px del borde inferior del panel
+  // (oculta: está a menos de 8 px) y a 24 px (ya visible)
+  for (const vp of VIEWPORTS) {
+    test(`placa bajo el minimapa en ${vp.name} (AD-32)`, async ({ browser }) => {
+      test.setTimeout(60_000);
+      const page = await newPage(browser, vp);
+      try {
+        await enterGame(page, SHOWCASE);
+        await page.mouse.move(5, 450);
+        await page.evaluate(() => {
+          const rt = window.__SEA_BATTLE__!.runtime();
+          rt.setCameraPreset('game');
+          rt.setZoomLevel(1);
+          const scene = rt.startScene('gallery');
+          scene.setPose('g-sloop', scene.focus.x + 10_000, scene.focus.z, Math.PI / 2);
+          scene.setPose('g-pirate', scene.focus.x, scene.focus.z, Math.PI / 2);
+          (window as unknown as { __capScene: typeof scene }).__capScene = scene;
+        });
+        await page.waitForTimeout(1500);
+        for (const [name, gap] of [['hud-plate-under', 4], ['hud-plate-near', 24]] as const) {
+          await page.evaluate(async (gap) => {
+            const rt = window.__SEA_BATTLE__!.runtime();
+            const scene = (window as unknown as { __capScene: { setPose(id: string, x: number, z: number, h: number): void; getShip(id: string): { x: number; z: number } | undefined } }).__capScene;
+            const frames = (n: number) => new Promise<void>((resolve) => { const f = () => (--n <= 0 ? resolve() : requestAnimationFrame(f)); requestAnimationFrame(f); });
+            const mm = document.querySelector('[data-testid="minimap"]')!.getBoundingClientRect();
+            for (let i = 0; i < 3; i++) {
+              const p = document.querySelector('[data-plate][data-ship-id="g-pirate"] .wo-plate__body')!.getBoundingClientRect();
+              const s = scene.getShip('g-pirate')!;
+              const o = rt.project(s.x, s.z)!, px = rt.project(s.x + 1, s.z)!, pz = rt.project(s.x, s.z + 1)!;
+              const dx = mm.left + mm.width / 2 - (p.left + p.width / 2), dy = mm.bottom + gap - p.top;
+              scene.setPose('g-pirate', s.x + dx / (px.sx - o.sx), s.z + dy / (pz.sy - o.sy), Math.PI / 2);
+              await frames(3);
+            }
+          }, gap);
+          await page.waitForTimeout(400); // vuelta con el fundido de 150 ms
+          await shot(page, vp, name);
+        }
+        await page.evaluate(() => window.__SEA_BATTLE__!.runtime().stopScene());
+      } finally {
+        await page.context().close();
+      }
+    });
+  }
 });

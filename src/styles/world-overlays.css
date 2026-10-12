@@ -83,6 +83,13 @@
 .wo-plate.is-compact .wo-plate__meter { height: auto; margin-top: 0; }
 .wo-plate.is-compact .wo-plate__body { min-width: 0; padding: 0; background: transparent; }
 
+/* Bajo un bloque del HUD (§11.4, D39): oculta en el mismo frame y sin transición; vuelve con el fundido fade-in
+   (globals.css). La opacidad va en los hijos porque la raíz lleva en línea la del hundimiento, que overlays.ts escribe
+   por frame: una animación en la raíz la pisaría mientras dura */
+.wo-plate.is-hud { visibility: hidden; }
+.wo-plate.is-hud > * { opacity: 0; }
+.wo-plate.is-entering > * { animation: fade-in var(--hud-fade) ease-out; }
+
 /* ---- Recarga junto a la placa propia (§11.3, AC-73) ---- */
 .wo-reload {
   --p: 0;

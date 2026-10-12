@@ -95,7 +95,7 @@ function PlayerPanel({ client }: { client: GameClient }) {
   } else if (me.action === 'armed') base = <><Swords size={12} /> Fuera de alcance</>;
 
   return (
-    <section className={`panel hud-player ${low ? 'is-low' : ''}`} data-testid="player-frame">
+    <section className={`panel hud-player ${low ? 'is-low' : ''}`} data-testid="player-frame" data-hud-block="">
       <div className="hud-class-icon"><Sailboat size={30} /></div>
       <div className="hud-player__body">
         <div className="hud-player__name">
@@ -130,7 +130,7 @@ function TargetPanel({ actions }: { actions: HudActions }) {
   if (!target) return null;
   const color = RELATION_COLOR[target.relation];
   return (
-    <section className="panel hud-target" data-testid="target-frame" data-target-id={target.id}>
+    <section className="panel hud-target" data-testid="target-frame" data-target-id={target.id} data-hud-block="">
       <div className="hud-target__icon" style={{ color }}><RelationIcon relation={target.relation} /></div>
       <div className="hud-target__body">
         <div className="hud-target__name" style={{ color }} data-testid="target-name">{target.name}</div>
@@ -166,7 +166,7 @@ function GoldPanel() {
   const gold = useHud((s) => s.player?.gold ?? 0);
   const gain = useHud((s) => s.goldGain);
   return (
-    <section className="panel hud-gold" data-testid="player-gold-panel">
+    <section className="panel hud-gold" data-testid="player-gold-panel" data-hud-block="">
       <span className="hud-gold__coin"><Coins size={20} /></span>
       <strong data-testid="player-gold">{fmt(gold)}</strong>
       {gain && <span key={gain.id} className="hud-gold__gain">+{fmt(gain.amount)}</span>}
@@ -199,7 +199,7 @@ function Feed() {
   return (
     <div className="hud-feed" data-testid="feed" aria-live="polite">
       {feed.map((f) => (
-        <div key={f.id} className={`feed-line feed-line--${f.tone}`}>{f.text}</div>
+        <div key={f.id} className={`feed-line feed-line--${f.tone}`} data-hud-block="">{f.text}</div>
       ))}
     </div>
   );
@@ -264,7 +264,7 @@ function ActionBar({ actions }: { actions: HudActions }) {
   useReloadLayer(reloadRef, !!m?.attacking);
   if (!m) return null;
   return (
-    <nav className="panel hud-actions" aria-label="Acciones" data-testid="action-bar">
+    <nav className="panel hud-actions" aria-label="Acciones" data-testid="action-bar" data-hud-block="">
       <button
         type="button"
         className={`slot ${m.attacking && !m.armed ? 'is-active' : ''} ${m.armed ? 'is-armed' : ''}`}
@@ -325,20 +325,20 @@ function MobileButtons({ actions }: { actions: HudActions }) {
   if (!m) return null;
   return (
     <>
-      <button type="button" className={`hud-mobile-btn hud-mobile-btn--attack ${m.attacking ? 'is-active' : ''}`} disabled={!m.attackEnabled} onClick={actions.toggleAttack} data-testid="m-attack" aria-label="Atacar">
+      <button type="button" className={`hud-mobile-btn hud-mobile-btn--attack ${m.attacking ? 'is-active' : ''}`} disabled={!m.attackEnabled} onClick={actions.toggleAttack} data-testid="m-attack" data-hud-block="" aria-label="Atacar">
         <span className="slot__reload" ref={reloadRef} />
         <Crosshair size={28} />
         Atacar
       </button>
-      <button type="button" className="hud-mobile-btn hud-mobile-btn--target" disabled={!m.alive} onClick={() => actions.cycleTarget(false)} data-testid="m-target" aria-label="Objetivo">
+      <button type="button" className="hud-mobile-btn hud-mobile-btn--target" disabled={!m.alive} onClick={() => actions.cycleTarget(false)} data-testid="m-target" data-hud-block="" aria-label="Objetivo">
         <Target size={22} />
         Objetivo
       </button>
-      <button type="button" className={`hud-mobile-btn hud-mobile-btn--repair ${m.repairing ? 'is-active' : ''} ${m.low && !m.repairing ? 'is-pulse' : ''}`} disabled={!m.repairEnabled} onClick={actions.toggleRepair} data-testid="m-repair" aria-label="Reparar">
+      <button type="button" className={`hud-mobile-btn hud-mobile-btn--repair ${m.repairing ? 'is-active' : ''} ${m.low && !m.repairing ? 'is-pulse' : ''}`} disabled={!m.repairEnabled} onClick={actions.toggleRepair} data-testid="m-repair" data-hud-block="" aria-label="Reparar">
         <Wrench size={22} />
         Reparar
       </button>
-      <button type="button" className="hud-mobile-btn hud-mobile-btn--port" aria-disabled={!m.portEnabled} onClick={actions.togglePort} data-testid="m-port" aria-label="Puerto" title={m.portEnabled ? 'Puerto' : 'Solo en la zona segura'}>
+      <button type="button" className="hud-mobile-btn hud-mobile-btn--port" aria-disabled={!m.portEnabled} onClick={actions.togglePort} data-testid="m-port" data-hud-block="" aria-label="Puerto" title={m.portEnabled ? 'Puerto' : 'Solo en la zona segura'}>
         <Store size={22} />
         Puerto
       </button>

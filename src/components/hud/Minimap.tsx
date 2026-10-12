@@ -1,5 +1,6 @@
 'use client';
-// Minimapa (P1, ART-DIRECTION §12.1 y §4.3): canvas 2D redibujado a 2 Hz, sin commits de React (AC-77).
+// Minimapa (P1, ART-DIRECTION §12.1 y §4.3): canvas 2D redibujado a 2 Hz, sin commits de React (AC-77). El sector va
+// en el pie del mismo panel (D39), sobre su fondo, y el panel entero es un bloque del HUD para las placas (§11.4).
 // Pantalla: +X a la derecha y −Z arriba (norte), igual que la cámara del juego.
 import React, { useEffect, useRef } from 'react';
 import { INTEREST_RADIUS, MAP_HALF_SIZE, PORT_POSITION, SAFE_ZONE_RADIUS } from '../../game/constants';
@@ -149,11 +150,9 @@ export default function Minimap({ client, islands, viewRect }: { client: GameCli
   }, [client, islands, viewRect]);
 
   return (
-    <>
-      <section className="panel hud-minimap" aria-label="Minimapa" data-testid="minimap">
-        <canvas ref={canvasRef} />
-      </section>
+    <section className="panel hud-minimap" aria-label="Minimapa" data-testid="minimap" data-hud-block="">
+      <canvas ref={canvasRef} />
       <div className="hud-coords" ref={coordsRef} data-testid="coords" />
-    </>
+    </section>
   );
 }

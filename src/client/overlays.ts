@@ -101,6 +101,15 @@ interface Plate {
   w: number;
   h: number;
   sizeDirty: boolean;
+  // caja colocada en el declutter, relativa al ancla en x y a la posición escrita en y (§11.2 y §11.4)
+  bx: number;
+  bw: number;
+  bh: number;
+  slot: number; // índice en placed, o −1 si no ocupa sitio
+  // bajo un bloque del HUD (§11.4)
+  hud: boolean;
+  entering: boolean;
+  enterUntil: number;
   // declutter
   priority: number;
   dist: number;
@@ -118,10 +127,15 @@ export class LabelLayer {
   private readonly byId = new Map<string, Plate>();
   private readonly order: Plate[] = [];
   private readonly placed: number[] = []; // rects colocados: x, y, w, h
+  // Bloques del HUD (§11.4, D39): cajas de los [data-hud-block] visibles, relativas al contenedor, leídas a 10 Hz en la
+  // fase de lectura del declutter y al cambiar el tamaño de la ventana. Por frame solo se usan estas cajas guardadas
+  private readonly blocks: number[] = []; // x, y, w, h
+  private readonly onResize = () => this.readBlocks();
   private lastTick = 0;
 
   constructor(private readonly container: HTMLElement, private readonly host: OverlayHost) {
     for (let i = 0; i < LABEL.pool; i++) this.plates.push(this.createPlate());
+    window.addEventListener('resize', this.onResize);
   }
 
   private createPlate(): Plate {
@@ -137,6 +151,7 @@ export class LabelLayer {
     root.style.setProperty('--reload-size', `${LABEL.reloadPx}px`);
     root.style.setProperty('--reload-gap', `${LABEL.reloadGapPx}px`);
     root.style.setProperty('--reload-top', `${LABEL.reloadTopPx}px`);
+    root.style.setProperty('--hud-fade', `${LABEL.hudFadeMs}ms`);
     const body = el('div', 'wo-plate__body', root);
     const row = el('div', 'wo-plate__row', body);
     const icon = el('span', 'wo-plate__icon', row);
@@ -149,10 +164,12 @@ export class LabelLayer {
     const fill = el('div', 'wo-plate__fill', bar);
     // Caja estimada hasta la primera medida en modo completo (world-overlays.css): ancho mínimo + borde, y alto de
     // las 2 filas (16 + 1 + 12) + padding 2 × 2 + borde 2
+    const w = barW + 2 * LABEL.padX + 2;
     return {
       id: '', target: null, root, body, row, icon, name, status, bar, trail, fill, reload: null,
       relation: null, nameText: '', statusKey: '', fillPx: -1, low: false, attacker: false,
-      mode: 'full', display: false, dy: 0, sx: NaN, sy: NaN, opacity: 1, w: barW + 2 * LABEL.padX + 2, h: 35, sizeDirty: true,
+      mode: 'full', display: false, dy: 0, sx: NaN, sy: NaN, opacity: 1, w, h: 35, sizeDirty: true,
+      bx: -w / 2, bw: w, bh: 35, slot: -1, hud: false, entering: false, enterUntil: 0,
       priority: 4, dist: 0, onScreen: false, reloadP: -1, reloadVisible: false, reloadReady: false, reloadFlash: false
     };
   }
@@ -289,6 +306,25 @@ export class LabelLayer {
     plate.display = display;
     plate.root.style.display = display ? 'block' : 'none';
     if (display) plate.sizeDirty = true;
+    else if (plate.hud || plate.entering) {
+      // Sin dibujar no hay HUD que esquivar: al volver se decide en su primer frame, sin fundido heredado
+      plate.hud = false;
+      plate.entering = false;
+      plate.root.classList.remove('is-hud', 'is-entering');
+    }
+  }
+
+  // §11.4: oculta en el mismo frame y sin transición; al volver, fundido de entrada en los hijos (world-overlays.css), que
+  // no pisa la opacidad del hundimiento escrita en línea en la raíz. Sin fundido con movimiento reducido
+  private setHud(plate: Plate, hud: boolean, now: number): void {
+    plate.hud = hud;
+    plate.root.classList.toggle('is-hud', hud);
+    const entering = !hud && !this.host.reducedMotion;
+    if (entering !== plate.entering) {
+      plate.entering = entering;
+      plate.root.classList.toggle('is-entering', entering);
+    }
+    if (entering) plate.enterUntil = now + LABEL.hudFadeMs + 50; // margen de 3 frames para que la animación acabe
   }
 
   private anchor(plate: Plate): void {
@@ -313,6 +349,7 @@ export class LabelLayer {
         plate.sizeDirty = false;
       }
     }
+    this.readBlocks();
     for (const plate of this.byId.values()) {
       const ship = plate.target!.ship;
       const visible = ship.state === 'alive' || (ship.state === 'sinking' && plate.opacity > 0);
@@ -357,10 +394,32 @@ export class LabelLayer {
     }
   }
 
-  private hits(x: number, y: number, w: number, h: number, gap: number): boolean {
+  private hits(x: number, y: number, w: number, h: number, gap: number, skip = -1): boolean {
     const p = this.placed;
     for (let i = 0; i < p.length; i += 4) {
+      if (i === skip) continue;
       if (x < p[i] + p[i + 2] + gap && x + w + gap > p[i] && y < p[i + 1] + p[i + 3] + gap && y + h + gap > p[i + 1]) return true;
+    }
+    return false;
+  }
+
+  private readBlocks(): void {
+    const blocks = this.blocks;
+    blocks.length = 0;
+    const els = this.container.ownerDocument.querySelectorAll<HTMLElement>('[data-hud-block]');
+    if (els.length === 0) return;
+    const c = this.container.getBoundingClientRect();
+    for (let i = 0; i < els.length; i++) {
+      const r = els[i].getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) blocks.push(r.left - c.left, r.top - c.top, r.width, r.height); // display: none da 0 × 0
+    }
+  }
+
+  // ¿La caja, ampliada `margin` px por cada lado, se cruza con algún bloque del HUD?
+  private underHud(x: number, y: number, w: number, h: number, margin: number): boolean {
+    const b = this.blocks;
+    for (let i = 0; i < b.length; i += 4) {
+      if (x - margin < b[i] + b[i + 2] && x + w + margin > b[i] && y - margin < b[i + 1] + b[i + 3] && y + h + margin > b[i + 1]) return true;
     }
     return false;
   }
@@ -369,6 +428,13 @@ export class LabelLayer {
     if (mode !== plate.mode) plate.root.classList.toggle('is-compact', mode === 'compact');
     plate.mode = mode;
     plate.dy = dy;
+    plate.bx = x - plate.sx;
+    plate.bw = w;
+    plate.bh = h;
+    // §11.4: una placa bajo el HUD no ocupa sitio, así que sus vecinas conservan su posición natural
+    plate.slot = -1;
+    if (this.underHud(x, plate.sy + dy, w, h, plate.hud ? LABEL.hudShowPx : LABEL.hudHidePx)) return;
+    plate.slot = this.placed.length;
     this.placed.push(x, plate.sy + dy, w, h);
   }
 
@@ -394,6 +460,18 @@ export class LabelLayer {
       }
       const alpha = opacity < 1 ? opacity.toFixed(2) : '';
       if (plate.root.style.opacity !== alpha) plate.root.style.opacity = alpha;
+      // §11.4 (D39): con la caja colocada (completa o compacta, con su dy y la recarga de la propia), a < 8 px de un
+      // bloque del HUD se oculta en este mismo frame; vuelve a ≥ 16 px si su sitio del declutter sigue libre
+      const bx = sx + plate.bx;
+      if (!plate.hud) {
+        if (this.underHud(bx, sy, plate.bw, plate.bh, LABEL.hudHidePx)) this.setHud(plate, true, now);
+      } else if (!this.underHud(bx, sy, plate.bw, plate.bh, LABEL.hudShowPx) && !this.hits(bx, sy, plate.bw, plate.bh, LABEL.gapPx, plate.slot)) {
+        this.setHud(plate, false, now);
+      }
+      if (plate.entering && now >= plate.enterUntil) {
+        plate.entering = false;
+        plate.root.classList.remove('is-entering');
+      }
       if (plate.reload && plate.id === myId) this.updateReload(plate);
     }
   }
@@ -427,7 +505,7 @@ export class LabelLayer {
   visibleRects(): { id: string; x: number; y: number; w: number; h: number; mode: PlateMode; reload: boolean }[] {
     const out: { id: string; x: number; y: number; w: number; h: number; mode: PlateMode; reload: boolean }[] = [];
     for (const plate of this.byId.values()) {
-      if (!plate.display) continue;
+      if (!plate.display || plate.hud) continue;
       const r = plate.body.getBoundingClientRect();
       let x0 = r.left, y0 = r.top, x1 = r.right, y1 = r.bottom;
       const reload = !!plate.reload && plate.reloadVisible;
@@ -444,6 +522,7 @@ export class LabelLayer {
   }
 
   dispose(): void {
+    window.removeEventListener('resize', this.onResize);
     for (const plate of this.plates) plate.root.remove();
     this.byId.clear();
   }
