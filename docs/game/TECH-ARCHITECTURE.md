@@ -63,6 +63,7 @@ Medido (Jest + socket real, `server/__tests__/game-server.test.ts`): con 20 clie
 | `npm run qa:capture` | Capturas estándar en `qa-artifacts/` (escritorio 1440×900 y móvil 390×844). Incluye AD-27 (`e2e/ocean-foam.spec.ts`, servidor propio sin NPC): la espuma se mide en las 12 vistas fijas de D42 con el pase de solo océano (`runtime.captureOceanPass`) y se asertan la mediana y las guardas, periodicidad (R23) incluida, y que el shader compile. Cada vista (PNG + JSON con la proyección y los uniforms) queda en `qa-artifacts/render/ad27/` |
 | `scripts/ad27/*.py` | Modelo del shader del océano en numpy (`oceanmodel.py`) que sintetiza cada captura de AD-27 solo con su JSON. `validate_full.py` lo compara con las capturas reales; `predict_full.py` y `sets12.py` predicen las cifras sobre vistas al azar. Necesita Python 3 con numpy y Pillow; no forma parte de `verify` |
 | `npm run verify` | typecheck + test + build (lo mismo que la CI) |
+| `npm run test:remote` | Contra un despliegue real: `BASE_URL=https://… npm run test:remote` (`playwright.remote.config.ts`, specs en `e2e/remote/`). Sin servidores locales ni `AUTH_BYPASS`, y fuera de `verify` y de `test:e2e`. El global setup comprueba `/healthz` (registra el `commit`), entra con un usuario de prueba de Clerk (`@clerk/testing`) y guarda la sesión en `.auth/`. Sin `BASE_URL`, sin respuesta, sin login o sin `window.__SEA_BATTLE__`, la corrida es **REMOTE NO VERIFICADO**, no un rojo del juego. Contra producción solo corre con `REMOTE_ALLOW_PROD=1`, y cada corrida la autoriza Jonattan. Trace siempre apagado |
 
 Puente de depuración de solo lectura: `window.__SEA_BATTLE__` (`ready`, `serverTime`, `me`, `ships` con coordenadas de pantalla, `player`, `hud`, `renderInfo` y `runtime`).
 
@@ -76,6 +77,13 @@ Puente de depuración de solo lectura: `window.__SEA_BATTLE__` (`ready`, `server
 | `AUTH_BYPASS=1` | Modo invitado, solo local o e2e. Prohibido con `RAILWAY_*` presentes |
 | `SEA_BATTLE_NPCS=0` | Servidor de prueba sin NPC (AC-83, AC-87) |
 | `PORT` | Puerto HTTP y de Socket.IO |
+| `RAILWAY_GIT_COMMIT_SHA` | Lo pone Railway en los despliegues desde Git; `/healthz` lo devuelve como `commit` (`null` si falta) |
+| `BASE_URL` | `test:remote`: despliegue que se prueba |
+| `E2E_CLERK_EMAIL` + `CLERK_SECRET_KEY` | `test:remote`, inicio de sesión A (preferido): token de inicio de sesión del Backend API y Testing Token de la instancia del despliegue; sin contraseña |
+| `E2E_CLERK_EMAIL` + `E2E_CLERK_PASSWORD` | `test:remote`, inicio de sesión C (sin clave secreta): solo si la instancia tiene activado el inicio de sesión con contraseña |
+| `REMOTE_PROD_HOSTS`, `REMOTE_ALLOW_PROD=1` | `test:remote`: hosts de producción (por defecto, el de Railway) y permiso explícito para correr contra ellos |
+
+Las variables de `test:remote` van en `.env.remote.local` (lo ignora `.env*` en `.gitignore`) o en el entorno, que manda sobre el archivo. Nunca se commitean ni se imprimen. La clave publicable y el Frontend API de Clerk se leen del propio despliegue, así no se mezcla otra instancia.
 
 ## 6. Pendiente y decisiones abiertas
 
