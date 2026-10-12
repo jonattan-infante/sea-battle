@@ -22,7 +22,11 @@ const WARMUP_TIMEOUT_MS = 300_000;
 
 interface Sample {
   minute: number; // minutos reales desde el inicio de la carga
-  heapMB: number; // Runtime.getHeapUsage → usedSize, tras el GC
+  // Memoria JS (AC-91, QA-6 H-19) = heap usado de V8 + memoria externa de los ArrayBuffer, de Runtime.getHeapUsage tras
+  // el GC. Los arrays tipados (geometría, partículas, interpolación) viven fuera de usedSize
+  memoryMB: number;
+  heapUsedMB: number; // usedSize
+  externalMB: number; // backingStorageSize
   nodes: number; // Performance.getMetrics → Nodes
   listeners: number; // Performance.getMetrics → JSEventListeners
   geometries: number; // renderer.info.memory
@@ -70,6 +74,8 @@ async function sample(page: Page, cdp: CDPSession, t0: number, prev: { commits: 
   await cdp.send('HeapProfiler.collectGarbage');
   await cdp.send('HeapProfiler.collectGarbage');
   const heap = await cdp.send('Runtime.getHeapUsage');
+  // Sin la memoria externa la corrida no vale (AC-91): un fallo aquí es NO VERIFICADO, no un verde
+  if (typeof heap.backingStorageSize !== 'number') throw new Error('AC-91 NO VERIFICADO: Runtime.getHeapUsage no devuelve backingStorageSize (memoria externa de los ArrayBuffer)');
   const { metrics } = await cdp.send('Performance.getMetrics');
   const metric = (name: string) => metrics.find((m) => m.name === name)?.value ?? NaN;
   const memory = await page.evaluate(() => window.__SEA_BATTLE__!.runtime().memoryInfo());
@@ -77,7 +83,9 @@ async function sample(page: Page, cdp: CDPSession, t0: number, prev: { commits: 
   const now = Date.now();
   return {
     minute: (now - t0) / 60_000,
-    heapMB: heap.usedSize / MB,
+    memoryMB: (heap.usedSize + heap.backingStorageSize) / MB,
+    heapUsedMB: heap.usedSize / MB,
+    externalMB: heap.backingStorageSize / MB,
     nodes: metric('Nodes'),
     listeners: metric('JSEventListeners'),
     geometries: memory.geometries,
@@ -213,7 +221,7 @@ test.describe('Corrida larga @soak', () => {
         prev = { commits: s.commits, at: t0 + s.minute * 60_000 };
         samples.push(s);
         nextSample += INTERVAL_MS;
-        console.log(`AC-91 muestra ${samples.length}/${SAMPLES} (${s.minute.toFixed(2)} min): heap ${s.heapMB.toFixed(2)} MB · nodos ${s.nodes} · escuchas ${s.listeners} · geometrías ${s.geometries} · texturas ${s.textures} · ${s.commitsPerSecond.toFixed(2)} commits/s · ${s.cycles} ciclos · ${load.volleys - warm.volleys} andanadas propias · ${load.damageTaken - warm.damageTaken} de daño recibido · ${repairs - warm.repairs} reparaciones · ${deaths - warm.deaths} hundimientos propios`);
+        console.log(`AC-91 muestra ${samples.length}/${SAMPLES} (${s.minute.toFixed(2)} min): memoria ${s.memoryMB.toFixed(2)} MB (heap ${s.heapUsedMB.toFixed(2)} + externa ${s.externalMB.toFixed(2)}) · nodos ${s.nodes} · escuchas ${s.listeners} · geometrías ${s.geometries} · texturas ${s.textures} · ${s.commitsPerSecond.toFixed(2)} commits/s · ${s.cycles} ciclos · ${load.volleys - warm.volleys} andanadas propias · ${load.damageTaken - warm.damageTaken} de daño recibido · ${repairs - warm.repairs} reparaciones · ${deaths - warm.deaths} hundimientos propios`);
       }
       const measured = {
         cycles: load.cycles - warm.cycles,
@@ -229,19 +237,29 @@ test.describe('Corrida larga @soak', () => {
       const last = samples[SAMPLES - 1];
       const early = samples.slice(0, 5); // minutos 1–5
       const late = samples.slice(4); // minutos 5–10
-      const heapSlope = slope(late.map((s) => ({ x: s.minute, y: s.heapMB })));
+      const memorySlope = slope(late.map((s) => ({ x: s.minute, y: s.memoryMB })));
       const maxOf = (list: Sample[], k: 'geometries' | 'textures') => Math.max(...list.map((s) => s[k]));
       const rates = samples.map((s) => s.commitsPerSecond);
+      // Pares de intervalos (QA-6 §10.2): la mezcla de ataque y reparación de un minuto suelto no da un falso rojo
+      const firstPair = (rates[0] + rates[1]) / 2;
+      const lastPair = (rates[SAMPLES - 2] + rates[SAMPLES - 1]) / 2;
       const report = {
         minutes: MINUTES,
         warmup: warm,
         load: { ...measured, required: CYCLES_REQUIRED },
-        heap: { base: base.heapMB, final: last.heapMB, delta: last.heapMB - base.heapMB, slopeMinutes5to10: heapSlope },
+        memory: {
+          base: base.memoryMB,
+          final: last.memoryMB,
+          delta: last.memoryMB - base.memoryMB,
+          slopeMinutes5to10: memorySlope,
+          heapUsed: { base: base.heapUsedMB, final: last.heapUsedMB },
+          external: { base: base.externalMB, final: last.externalMB }
+        },
         nodes: { base: base.nodes, final: last.nodes, limit: base.nodes * 1.05 },
         listeners: { base: base.listeners, final: last.listeners, limit: base.listeners * 1.05 },
         geometries: { max1to5: maxOf(early, 'geometries'), max5to10: maxOf(late, 'geometries') },
         textures: { max1to5: maxOf(early, 'textures'), max5to10: maxOf(late, 'textures') },
-        commitsPerSecond: { minute1: rates[0], minute10: rates[SAMPLES - 1], max: Math.max(...rates) },
+        commitsPerSecond: { intervals1and2: firstPair, intervals9and10: lastPair, max: Math.max(...rates) },
         samples
       };
       console.log(`AC-91 resumen: ${JSON.stringify({ ...report, samples: undefined })}`);
@@ -252,16 +270,16 @@ test.describe('Corrida larga @soak', () => {
       expect.soft(measured.volleys, 'el barco propio ataca').toBeGreaterThan(0);
       expect.soft(measured.damageTaken, 'el barco propio recibe daño').toBeGreaterThan(0);
       expect.soft(measured.repairs, 'el barco propio repara').toBeGreaterThan(0);
-      expect.soft(report.heap.delta, 'heap: final − base ≤ 15 MB').toBeLessThanOrEqual(15);
-      expect.soft(heapSlope, 'heap: pendiente ≤ 1 MB/min en los minutos 5–10').toBeLessThanOrEqual(1);
+      expect.soft(report.memory.delta, 'memoria JS (heap + externa): final − base ≤ 15 MB').toBeLessThanOrEqual(15);
+      expect.soft(memorySlope, 'memoria JS (heap + externa): pendiente ≤ 1 MB/min en los minutos 5–10').toBeLessThanOrEqual(1);
       expect.soft(last.nodes, 'nodos DOM: final ≤ base × 1,05').toBeLessThanOrEqual(report.nodes.limit);
       expect.soft(last.listeners, 'escuchas JS: final ≤ base × 1,05').toBeLessThanOrEqual(report.listeners.limit);
       expect.soft(report.geometries.max5to10, 'geometrías: máx(5–10) ≤ máx(1–5) + 2').toBeLessThanOrEqual(report.geometries.max1to5 + 2);
       expect.soft(report.textures.max5to10, 'texturas: máx(5–10) ≤ máx(1–5) + 2').toBeLessThanOrEqual(report.textures.max1to5 + 2);
-      // Con ventanas de 12 s (corrida corta) el cociente es ruido: la mezcla de ataque y reparación de una ventana varía
-      // más que el 20 %. Solo se aserta con las ventanas de 60 s del AC
-      if (INTERVAL_MS >= 60_000) expect.soft(rates[SAMPLES - 1], 'commits/s: minuto 10 ≤ minuto 1 × 1,2').toBeLessThanOrEqual(rates[0] * 1.2);
-      else console.log(`AC-91 (informativo con ventanas de ${INTERVAL_MS / 1000} s): commits/s del último intervalo ${rates[SAMPLES - 1].toFixed(2)} frente a ${(rates[0] * 1.2).toFixed(2)} (primero × 1,2)`);
+      // Con ventanas de 12 s (corrida corta) el cociente es ruido (±25 %, más que el 20 % que se mide): solo se aserta con
+      // las ventanas de 60 s del AC
+      if (INTERVAL_MS >= 60_000) expect.soft(lastPair, 'commits/s: media de los intervalos 9 y 10 ≤ media de los intervalos 1 y 2 × 1,2').toBeLessThanOrEqual(firstPair * 1.2);
+      else console.log(`AC-91 (informativo con ventanas de ${INTERVAL_MS / 1000} s): commits/s de los intervalos 9 y 10 ${lastPair.toFixed(2)} frente a ${(firstPair * 1.2).toFixed(2)} (intervalos 1 y 2 × 1,2)`);
       expect.soft(Math.max(...rates), 'commits/s: siempre ≤ 10').toBeLessThanOrEqual(10);
     } finally {
       await server.kill();
