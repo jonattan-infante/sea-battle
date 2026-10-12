@@ -121,7 +121,8 @@ function spyStore(inner: ProgressStore) {
       }
       if (failing) throw new Error('BD caída (test)');
       return inner.save(userId, progress, revision);
-    }
+    },
+    ping: () => (failing ? Promise.reject(new Error('BD caída (test)')) : inner.ping())
   };
   const spy = {
     store,

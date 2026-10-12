@@ -67,8 +67,16 @@ Cuándo se escribe:
 | Oro | Cada 2 s, solo si cambió algo (huella): en reposo, cero consultas. Queda escrito en ≤ 5 s (AC-130 b) |
 | Desconexión | En el acto, sin esperar los 10 s del barco (AC-130 c) |
 
+Si la BD falla:
+
+| Momento | Qué pasa |
+|---|---|
+| Al entrar (AC-131) | Plazos de 3 s al conectar y por consulta (`server/db/pool.ts`). BD caída, colgada o registro que no pasa el parser → `S2C.progressError` y no se entra al mundo; no se escribe nada, así que la fila queda igual byte a byte. Los reintentos de `join` en el mismo socket gastan fichas del límite de intenciones |
+| En partida (AC-132) | La primera escritura que falla pone la persistencia en «degradada»: `PlayerView.unsaved` para todos los jugadores con cuenta (nunca para el invitado), y la tienda y el cambio de barco se rechazan con «La tienda no está disponible: no podemos guardar». Mientras dura el corte no se reintenta ninguna escritura: el guardado periódico se para y solo hay un `SELECT 1` por segundo, sin solaparse (con la BD colgada, cada uno espera su plazo de 3 s). Cuando responde, se escribe todo lo pendiente y `unsaved` desaparece en el frame siguiente: ≤ 5 s desde que vuelve la BD, dure lo que dure el corte (opción B de game-product). Si alguien carga su progreso bien durante el corte, se escribe en el acto |
+
 - El invitado no escribe nunca. El usuario de prueba de los e2e (`testUser`, guardado como `test-<id>`) solo existe con el modo invitado, fuera de Railway.
 - **Limitación conocida (P3):** entre validar una compra y aplicarla pasa la escritura (~20 ms). Si en ese rato el jugador pierde oro (muerte), el precio se descuenta con suelo 0 (`applyPurchase` en `src/game/world.ts`, con su test).
+- El cliente de estos estados es el de D50 (`ConnectionOverlay`, `syncUnsaved`; ver arriba). `e2e/persistence-db.spec.ts` lo prueba de punta a punta con la BD real detrás de un proxy TCP (`server/__tests__/fixtures/pg-proxy.ts`: `cut` = parada, `hang` = colgada), que también usan los tests de Jest.
 - Tests: Postgres real. El `globalSetup` de Jest usa `TEST_DATABASE_URL` (la CI la da con un service container `postgres:16`) o levanta un clúster temporal con `initdb` en un puerto libre, que un vigía para y borra aunque Jest muera. Cada archivo usa su propio schema (`search_path`). Los tests de `kill -9` lanzan el servidor en un proceso hijo (`server/__tests__/fixtures/game-process.ts`).
 
 ## 3. Harnesses
@@ -112,6 +120,6 @@ Las variables de `test:remote` van en `.env.remote.local` (lo ignora `.env*` en 
 
 ## 5. Pendiente y decisiones abiertas
 
-- Persistencia por `userId` (AC-97): Postgres en Railway (GDD Q2, §2.1). Fallos de la BD al entrar y en partida (AC-131, AC-132), sesión única entre pestañas (AC-133) y vaciado en `SIGTERM`: en curso.
+- Persistencia por `userId` (AC-97): Postgres en Railway (GDD Q2, §2.1). Sesión única entre pestañas (AC-133), vaciado en `SIGTERM` y `railway.json`: en curso.
 - El ping del HUD (solo si es > 200 ms) necesita medir la latencia sin enviar mensajes en reposo (AC-86); está pendiente de diseño.
 - Capitán pirata, munición especial y sonido: P2.

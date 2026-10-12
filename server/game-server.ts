@@ -64,6 +64,7 @@ export interface GameServerOptions {
   log?: (msg: string) => void;
   store?: ProgressStore; // progreso guardado de los usuarios de Clerk (AC-97); sin él, todo vive en memoria
   saveIntervalMs?: number; // guardado periódico del oro (por defecto 2 s)
+  probeIntervalMs?: number; // con la BD caída, cada cuánto se comprueba si volvió (por defecto 1 s)
 }
 
 export interface GameServer {
@@ -124,9 +125,12 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
           persistence?.forget(userId);
         },
         saveIntervalMs: options.saveIntervalMs,
+        probeIntervalMs: options.probeIntervalMs,
         log
       })
     : null;
+  // Con la BD caída, la tienda y el cambio de barco se cierran para todos los jugadores con cuenta (AC-132)
+  const shopClosed = (userId: string) => !!persistence?.isDegraded() && persistence.isTracked(userId);
 
   io.use(async (socket, next) => {
     try {
@@ -268,6 +272,7 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
         if (result.ok) c.notices.push({ kind: 'info', text: 'Compra realizada' });
         return result;
       }
+      if (shopClosed(userId)) return { ok: false, reason: SHOP_UNAVAILABLE_TEXT };
       if (purchasing.has(userId)) return { ok: false, reason: 'Compra en curso' };
       const plan = planBuy(world, userId, item);
       if (!plan.ok) return plan;
@@ -277,6 +282,7 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
     });
     on(C2S.selectShip, parseSelectShip, ({ classId }, c) => {
       if (!persisted()) return selectShip(world, userId, classId);
+      if (shopClosed(userId)) return { ok: false, reason: SHOP_UNAVAILABLE_TEXT };
       if (purchasing.has(userId)) return { ok: false, reason: 'Compra en curso' };
       const plan = planSelectShip(world, userId, classId);
       if (!plan.ok) return plan;
@@ -366,6 +372,7 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
     if (visibleEvents.length) frame.e = visibleEvents;
     if (full) frame.w = world.wrecks.map((w) => ({ id: w.id, x: w.pos.x, z: w.pos.z, gold: w.gold, expiresAt: w.expiresAt }));
     const view = playerView(world, client.userId);
+    if (view && shopClosed(client.userId)) view.unsaved = true; // aviso persistente (AC-132)
     const viewKey = view ? JSON.stringify(view) : '';
     if (view && viewKey !== client.lastView) {
       frame.me = view;
