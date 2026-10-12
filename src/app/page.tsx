@@ -1,40 +1,52 @@
-import Image from "next/image";
 import Link from "next/link";
+import LandingBackdrop from "../components/LandingBackdrop";
+import { isAuthBypassAllowed } from "../lib/auth-bypass";
 
-export default function Home() {
+// El botón de invitado depende del entorno en tiempo de ejecución, no del de build (AC-10)
+export const dynamic = "force-dynamic";
+
+const FEATURES = [
+  { title: "Navega", text: "Haz clic en el mar y tu barco pone rumbo solo, esquivando las islas." },
+  { title: "Combate", text: "Fija un objetivo: tus cañones disparan andanadas mientras esté a tiro." },
+  { title: "Mejora", text: "Invierte el botín en cañones, casco y velas, y pasa a Bergantín y Fragata." },
+];
+
+export default async function Home({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  const params = await searchParams;
+  const guest = isAuthBypassAllowed();
+  const full = params.full === "1";
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-blue-900 via-blue-700 to-blue-500 flex flex-col items-center justify-center px-4 py-8">
-      <div className="max-w-4xl mx-auto text-center">
-        {/* Imagen de referencia */}
-        <div className="mb-8">
-          <Image
-            src="https://images.unsplash.com/photo-1506905925346-21bda4d32df4?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80"
-            alt="Batallas de barcos piratas en el mar"
-            width={800}
-            height={400}
-            className="rounded-lg shadow-2xl mx-auto"
-            priority
-          />
+    <main className="landing">
+      <section className="landing__hero">
+        <LandingBackdrop />
+        <div className="landing__content">
+          <h1 className="landing__logo font-pirate">Sea Battle</h1>
+          <p className="landing__tagline">Navega, hunde piratas y conviértete en el terror de los mares.</p>
+          {full && (
+            <div className="toast toast--danger landing__full" role="alert" data-testid="server-full">
+              Servidor lleno. Inténtalo en unos minutos.
+            </div>
+          )}
+          <div className="landing__ctas">
+            <Link href="/game" className="cta" data-testid="cta-play">Zarpar</Link>
+            {guest && (
+              <Link href="/game?guest=1" className="cta-ghost" data-testid="cta-guest">Jugar como invitado</Link>
+            )}
+          </div>
         </div>
-
-        {/* Título del juego */}
-        <h1 className="text-4xl md:text-6xl font-bold text-white mb-4 drop-shadow-lg">
-          Sea Battle
-        </h1>
-
-        {/* Descripción breve */}
-        <p className="text-lg md:text-xl text-blue-100 mb-8 max-w-2xl mx-auto leading-relaxed">
-          Embárcate en una épica aventura naval y enfrenta a temibles barcos piratas en intensas batallas.
-          ¡Demuestra tu valentía y conviértete en el rey de los mares!
-        </p>
-
-        {/* Botón para acceder al juego */}
-        <Link href="/game">
-          <button className="bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-3 px-8 rounded-full text-lg md:text-xl transition duration-300 transform hover:scale-105 shadow-lg">
-            Jugar Ahora
-          </button>
-        </Link>
-      </div>
-    </div>
+      </section>
+      <section className="landing__strip" aria-label="Cómo se juega">
+        {FEATURES.map((f) => (
+          <article key={f.title} className="feature">
+            <div className="feature__art font-pirate text-4xl" aria-hidden>{f.title}</div>
+            <div className="feature__text">
+              <strong>{f.title}</strong>
+              {f.text}
+            </div>
+          </article>
+        ))}
+      </section>
+    </main>
   );
 }
