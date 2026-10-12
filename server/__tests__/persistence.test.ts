@@ -14,7 +14,7 @@ import { createPool } from '../db/pool';
 import { createGameServer, GameServer, GameServerOptions } from '../game-server';
 import { createPgStore, ProgressStore } from '../persistence';
 import { SavedProgress } from '../progress';
-import { joinGame, Joined, sleep, waitFor } from './fixtures/game-socket';
+import { connectGame, joinGame, Joined, sleep, waitFor } from './fixtures/game-socket';
 import { createTestDb, TestDb } from './pg/test-db';
 
 // Identidad de prueba: el token es el userId; los que empiezan por guest- son invitados
@@ -407,6 +407,79 @@ describe('AC-130: cuándo se escribe', () => {
     await waitFor(async () => (await rowOf('u-hugo'))!.state.gold === 678, 1000, 'el oro escrito al desconectar');
     expect(Date.now() - t0).toBeLessThan(1000);
     expect(shipOfPlayer(world(), 'u-hugo')).toBeDefined(); // el barco sigue en el mundo (AC-96)
+  });
+});
+
+describe('AC-133: una sola sesión por userId; la pestaña nueva manda', () => {
+  test('la nueva toma el mismo barco con el mismo oro, vida y posición; la anterior sale con «Has abierto el juego en otra pestaña»; nunca hay dos barcos y el oro no se duplica', async () => {
+    await seed('u-tab', { ...SLOOP_ONLY, gold: 500 });
+    const spy = spyStore(createPgStore(pool));
+    await startServer({ saveIntervalMs: 60_000, store: spy.store });
+    const first = await join('u-tab');
+    const ship = shipOfPlayer(world(), 'u-tab')!;
+    ship.hp = 321;
+    ship.pos = { x: 40, z: 60 };
+    world().players.get('u-tab')!.gold += 50;
+    // Si la pestaña nueva releyera la BD, vería este valor en vez del de la memoria
+    await db.admin.query('UPDATE player_progress SET state = $2 WHERE user_id = $1', ['u-tab', { v: 1, ...SLOOP_ONLY, gold: 9999 }]);
+    const kicked = new Promise<Notice>((resolve) => first.c.once(S2C.kicked, resolve));
+    const disconnected = new Promise<string>((resolve) => first.c.once('disconnect', resolve));
+
+    const second = await join('u-tab');
+    expect((await kicked).text).toBe('Has abierto el juego en otra pestaña');
+    expect(await disconnected).toBe('io server disconnect');
+    expect(second.welcome.shipId).toBe(first.welcome.shipId);
+    expect(second.me().gold).toBe(550);
+    const again = shipOfPlayer(world(), 'u-tab')!;
+    expect({ hp: again.hp, x: again.pos.x, z: again.pos.z }).toEqual({ hp: 321, x: 40, z: 60 });
+    expect([...world().ships.values()].filter((s) => s.ownerId === 'u-tab')).toHaveLength(1);
+    expect(game!.onlinePlayers()).toBe(1);
+    expect(spy.calls.load).toBe(1); // la pestaña nueva usa la memoria: no relee la BD
+
+    await game!.flushProgress();
+    expect((await rowOf('u-tab'))!.state.gold).toBe(550); // ni 1 100 ni 9 999
+  });
+
+  test('dos pestañas que entran a la vez (las dos cargando de la BD): queda una sola, con un solo barco y el mismo oro', async () => {
+    await seed('u-tab2', { ...SLOOP_ONLY, gold: 500 });
+    await startServer();
+    const open = async () => {
+      const c = connectGame(url, { token: 'u-tab2' });
+      sockets.push(c);
+      await new Promise<void>((resolve) => c.once('connect', () => resolve()));
+      return c;
+    };
+    const [c1, c2] = await Promise.all([open(), open()]);
+    const outcome = (c: ClientSocket) =>
+      new Promise<string>((resolve) => {
+        c.once(S2C.welcome, () => c.once(S2C.kicked, () => resolve('expulsada')));
+        c.once('disconnect', () => resolve('expulsada'));
+        setTimeout(() => resolve('activa'), 1500);
+      });
+    const results = Promise.all([outcome(c1), outcome(c2)]);
+    c1.emit(C2S.join, {});
+    c2.emit(C2S.join, {});
+    expect((await results).sort()).toEqual(['activa', 'expulsada']);
+    expect([...world().ships.values()].filter((s) => s.ownerId === 'u-tab2')).toHaveLength(1);
+    expect(world().players.get('u-tab2')!.gold).toBe(500);
+    expect(game!.onlinePlayers()).toBe(1);
+  });
+});
+
+describe('AC-129: durante el apagado no entra nadie', () => {
+  test('tras stop() (SIGTERM) un join no recibe bienvenida ni carga nada', async () => {
+    await seed('u-tarde', SLOOP_ONLY);
+    const spy = spyStore(createPgStore(pool));
+    await startServer({ store: spy.store });
+    game!.stop();
+    const c = connectGame(url, { token: 'u-tarde' });
+    sockets.push(c);
+    await new Promise<void>((resolve) => c.once('connect', () => resolve()));
+    let welcomed = false;
+    c.once(S2C.welcome, () => (welcomed = true));
+    c.emit(C2S.join, {});
+    await sleep(300);
+    expect({ welcomed, loads: spy.calls.load, inWorld: world().players.has('u-tarde') }).toEqual({ welcomed: false, loads: 0, inWorld: false });
   });
 });
 

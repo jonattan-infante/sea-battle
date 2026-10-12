@@ -72,7 +72,7 @@ export interface Persistence {
   commit: (userId: string, next: SavedProgress, apply: () => void) => Promise<boolean>;
   saveNow: (userId: string) => void; // al desconectarse (AC-130 c)
   saveState: (userId: string) => 'saved' | 'pending' | 'dirty'; // ¿lo que hay en memoria ya está escrito?
-  flush: () => Promise<void>; // escribe todo lo que cambió y espera a la cola entera
+  flush: () => Promise<boolean>; // escribe todo lo que cambió y espera a la cola entera; false si alguna escritura falló
   isDegraded: () => boolean; // la BD no responde: tienda cerrada y aviso (AC-132)
   close: () => void;
 }
@@ -217,7 +217,8 @@ export function createPersistence(options: PersistenceOptions): Persistence {
       return !progress || progressKey(progress) === t.savedKey ? 'saved' : 'dirty';
     },
     flush: async () => {
-      await Promise.all([...users].map(([userId, t]) => saveCurrent(userId, t)));
+      const results = await Promise.all([...users].map(([userId, t]) => saveCurrent(userId, t)));
+      return !results.includes(false);
     },
     isDegraded: () => degraded,
     close: () => {

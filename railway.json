@@ -1,0 +1,10 @@
+{
+  "$schema": "https://backboard.railway.app/railway.schema.json",
+  "deploy": {
+    "startCommand": "node dist/server/index.js",
+    "healthcheckPath": "/healthz",
+    "numReplicas": 1,
+    "overlapSeconds": 0,
+    "drainingSeconds": 15
+  }
+}

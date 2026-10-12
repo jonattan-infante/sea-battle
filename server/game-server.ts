@@ -72,10 +72,10 @@ export interface GameServer {
   onlinePlayers: () => number;
   tick: () => void;
   stop: () => void;
-  flushProgress: () => Promise<void>; // escribe ya todo el progreso que cambió y espera (apagado, tests)
+  flushProgress: () => Promise<boolean>; // escribe ya todo el progreso que cambió y espera; false si algo no se pudo escribir
 }
 
-const KICKED_TEXT = 'Abriste el juego en otra pestaña';
+const KICKED_TEXT = 'Has abierto el juego en otra pestaña'; // AC-133
 const PROGRESS_ERROR_TEXT = 'No podemos cargar tu progreso ahora mismo';
 const SHOP_UNAVAILABLE_TEXT = 'La tienda no está disponible: no podemos guardar';
 
@@ -105,6 +105,7 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
   let pendingEvents: GameEvent[] = [];
   const purchasing = new Set<string>(); // usuarios con una compra o un cambio de barco esperando a la BD
   const departing = new Set<string>(); // desconectados que salen de la memoria al retirar su barco (AC-129)
+  let stopped = false; // apagado (SIGTERM): no entra nadie más
 
   const persistence = options.store
     ? createPersistence({
@@ -220,7 +221,7 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
 
     // join se procesa una vez por socket y no gasta fichas; solo los reintentos tras un fallo de carga las gastan
     socket.on(C2S.join, (raw: unknown) => {
-      if (client || joining) return;
+      if (client || joining || stopped) return;
       if (joinAttempts++ > 0 && !takeToken()) return;
       const data = parseJoin(raw);
       if (!data || rejectIfFull()) return;
@@ -452,10 +453,11 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
     onlinePlayers: () => clients.size,
     tick,
     stop: () => {
+      stopped = true;
       if (interval) clearInterval(interval);
       persistence?.close();
     },
-    flushProgress: () => persistence?.flush() ?? Promise.resolve()
+    flushProgress: () => persistence?.flush() ?? Promise.resolve(true)
   };
 }
 

@@ -66,6 +66,7 @@ Cuándo se escribe:
 | Compra o cambio de barco | El mundo valida (`planBuy`, `planSelectShip`), se escribe y solo entonces se aplica y se confirma (AC-130 a). Si falla, se rechaza y no cambia nada. Una a la vez por usuario («Compra en curso») |
 | Oro | Cada 2 s, solo si cambió algo (huella): en reposo, cero consultas. Queda escrito en ≤ 5 s (AC-130 b) |
 | Desconexión | En el acto, sin esperar los 10 s del barco (AC-130 c) |
+| `SIGTERM` (redeploy) | `server/shutdown.ts`: no entra nadie más y se para la simulación, se escribe el progreso de todos y **solo después** se cierran las conexiones, para que el cliente que reconecta al despliegue nuevo cargue lo ya escrito (AC-129). Con la BD colgada, la escritura tiene un plazo de 10 s, por debajo de los 15 s de drenaje de `railway.json`; después sale con 0 igualmente |
 
 Si la BD falla:
 
@@ -75,9 +76,11 @@ Si la BD falla:
 | En partida (AC-132) | La primera escritura que falla pone la persistencia en «degradada»: `PlayerView.unsaved` para todos los jugadores con cuenta (nunca para el invitado), y la tienda y el cambio de barco se rechazan con «La tienda no está disponible: no podemos guardar». Mientras dura el corte no se reintenta ninguna escritura: el guardado periódico se para y solo hay un `SELECT 1` por segundo, sin solaparse (con la BD colgada, cada uno espera su plazo de 3 s). Cuando responde, se escribe todo lo pendiente y `unsaved` desaparece en el frame siguiente: ≤ 5 s desde que vuelve la BD, dure lo que dure el corte (opción B de game-product). Si alguien carga su progreso bien durante el corte, se escribe en el acto |
 
 - El invitado no escribe nunca. El usuario de prueba de los e2e (`testUser`, guardado como `test-<id>`) solo existe con el modo invitado, fuera de Railway.
+- **Una sesión por `userId` (AC-133):** la pestaña nueva toma el mismo barco desde la memoria, sin releer la BD, y la vieja recibe `kicked` («Has abierto el juego en otra pestaña») y se queda sin reintentos (cliente de D50). Dos pestañas que entran a la vez dejan una sola, con un solo barco.
+- **Despliegue (`railway.json`):** `node dist/server/index.js` directo (con `npm start`, el `SIGTERM` podría no llegar a `node`), 1 réplica, solape 0 (un solo mundo y un solo escritor por `userId`), drenaje de 15 s y healthcheck en `/healthz`. En Railway, `server/railway-env.ts` fija `NODE_ENV=production` en el código, como primer import de `index.ts`, antes de que Next.js y React lo lean.
 - **Limitación conocida (P3):** entre validar una compra y aplicarla pasa la escritura (~20 ms). Si en ese rato el jugador pierde oro (muerte), el precio se descuenta con suelo 0 (`applyPurchase` en `src/game/world.ts`, con su test).
 - El cliente de estos estados es el de D50 (`ConnectionOverlay`, `syncUnsaved`; ver arriba). `e2e/persistence-db.spec.ts` lo prueba de punta a punta con la BD real detrás de un proxy TCP (`server/__tests__/fixtures/pg-proxy.ts`: `cut` = parada, `hang` = colgada), que también usan los tests de Jest.
-- Tests: Postgres real. El `globalSetup` de Jest usa `TEST_DATABASE_URL` (la CI la da con un service container `postgres:16`) o levanta un clúster temporal con `initdb` en un puerto libre, que un vigía para y borra aunque Jest muera. Cada archivo usa su propio schema (`search_path`). Los tests de `kill -9` lanzan el servidor en un proceso hijo (`server/__tests__/fixtures/game-process.ts`).
+- Tests: Postgres real. El `globalSetup` de Jest usa `TEST_DATABASE_URL` (la CI la da con un service container `postgres:16`) o levanta un clúster temporal con `initdb` en un puerto libre, que un vigía para y borra aunque Jest muera. Cada archivo usa su propio schema (`search_path`). Los tests de `kill -9` y de `SIGTERM` lanzan el servidor en un proceso hijo (`server/__tests__/fixtures/game-process.ts`), con el mismo arranque y el mismo apagado que `index.ts`; el proxy de la BD puede retrasar lo que le llega (`delay`) para ver que se escribe antes de desconectar.
 
 ## 3. Harnesses
 
@@ -123,6 +126,6 @@ Las variables de `test:remote` van en `.env.remote.local` (lo ignora `.env*` en 
 
 ## 5. Pendiente y decisiones abiertas
 
-- Persistencia por `userId` (AC-97): Postgres en Railway (GDD Q2, §2.1). Sesión única entre pestañas (AC-133), vaciado en `SIGTERM` y `railway.json`: en curso.
+- Persistencia por `userId` (AC-97 y AC-129 a AC-133): Postgres en Railway (GDD Q2, §2.1). Falta validarla en staging tras un redeploy (AC-135).
 - El ping del HUD (solo si es > 200 ms) necesita medir la latencia sin enviar mensajes en reposo (AC-86); está pendiente de diseño.
 - Capitán pirata, munición especial y sonido: P2.

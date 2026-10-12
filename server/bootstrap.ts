@@ -6,7 +6,7 @@ import { isAuthBypassAllowed, isRailway } from '../src/lib/auth-bypass';
 import { authenticateHandshake } from './auth';
 import { migrate } from './db/migrate';
 import { createPool } from './db/pool';
-import { createGameServer, GameServer } from './game-server';
+import { createGameServer, GameServer, GameServerOptions } from './game-server';
 import { createPgStore } from './persistence';
 import { applyScenario, parseScenario } from './scenarios';
 
@@ -22,7 +22,8 @@ export interface GameStack {
   pool: Pool | null; // null: sin BD (solo fuera de Railway), todo en memoria
 }
 
-export async function startGame(io: Server, env: Env = process.env, log: (msg: string) => void = () => {}): Promise<GameStack> {
+// overrides: solo para el proceso de los tests (p. ej., sin guardado periódico); server/index.ts no lo usa
+export async function startGame(io: Server, env: Env = process.env, log: (msg: string) => void = () => {}, overrides: Partial<GameServerOptions> = {}): Promise<GameStack> {
   const configError = databaseConfigError(env);
   if (configError) throw new Error(configError);
   let pool: Pool | null = null;
@@ -44,7 +45,8 @@ export async function startGame(io: Server, env: Env = process.env, log: (msg: s
     // Escenarios de prueba: solo con el modo invitado permitido, que nunca se activa en Railway
     setup: isAuthBypassAllowed(env) && scenario ? (world) => applyScenario(world, scenario) : undefined,
     store: pool ? createPgStore(pool) : undefined,
-    log
+    log,
+    ...overrides
   });
   return { game, pool };
 }

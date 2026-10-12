@@ -9,7 +9,7 @@ import { startTempCluster, TempCluster } from '../server/__tests__/pg/cluster';
 import { migrate } from '../server/db/migrate';
 import { createPool } from '../server/db/pool';
 import { SavedProgress } from '../server/progress';
-import { waitFor } from './helpers';
+import { trackSocket, waitFor } from './helpers';
 import { OwnServer, startOwnServer } from './own-server';
 
 let cluster: TempCluster;
@@ -90,4 +90,32 @@ test('AC-97: un invitado vuelve a 100 de oro tras reiniciar el servidor y no esc
   expect((await progress(page))?.gold).toBe(100);
   const guests = await sql<{ n: number }>("SELECT count(*)::int AS n FROM player_progress WHERE user_id NOT LIKE 'test-%'");
   expect(guests[0].n).toBe(0);
+});
+
+test('AC-133: al abrir el juego en otra pestaña, la vieja queda en «Sesión en otra pestaña» sin reintentos y la nueva sigue con el mismo barco y el mismo oro', async ({ browser }) => {
+  test.setTimeout(120_000);
+  await sql('INSERT INTO player_progress (user_id, state) VALUES ($1, $2)', ['test-tab', { v: 1, gold: 1234, upgrades: { cannons: 1, hull: 1, sails: 1 }, ownedShips: ['sloop'], activeShip: 'sloop' }]);
+  const ctx = await browser.newContext();
+  try {
+    const old = await ctx.newPage();
+    const oldSocket = trackSocket(old);
+    await open(old, '?testUser=tab');
+    const oldShip = await old.evaluate(() => window.__SEA_BATTLE__!.me() as { id: string } | null);
+    const fresh = await ctx.newPage();
+    await open(fresh, '?testUser=tab');
+
+    const overlay = old.getByTestId('connection-overlay');
+    await expect(overlay).toHaveAttribute('data-state', 'kicked');
+    await expect(overlay).toContainText('Has abierto el juego en otra pestaña');
+    await expect(old.getByTestId('btn-retry')).toHaveCount(0);
+    const joinsAfterKick = oldSocket.sent.filter((m) => m.startsWith('42["join"')).length;
+    await old.waitForTimeout(8000); // más que los reintentos de AC-99 (1 + 2 + 4 s)
+    expect(oldSocket.sent.filter((m) => m.startsWith('42["join"')).length).toBe(joinsAfterKick);
+
+    const freshShip = await fresh.evaluate(() => window.__SEA_BATTLE__!.me() as { id: string } | null);
+    expect(freshShip?.id).toBe(oldShip?.id);
+    expect((await progress(fresh))?.gold).toBe(1234);
+  } finally {
+    await ctx.close();
+  }
 });

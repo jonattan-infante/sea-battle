@@ -143,7 +143,7 @@ describe('Servidor — conexión y snapshot inicial', () => {
     const first = await join('u1');
     const kicked = once<{ text: string }>(first.c, S2C.kicked);
     await join('u1');
-    expect((await kicked).text).toBe('Abriste el juego en otra pestaña');
+    expect((await kicked).text).toBe('Has abierto el juego en otra pestaña');
     await flush();
     expect(game.onlinePlayers()).toBe(1);
     expect([...game.world.ships.values()].filter((s) => s.ownerId === 'u1')).toHaveLength(1);

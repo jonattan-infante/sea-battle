@@ -1,6 +1,7 @@
 // Proxy TCP delante del Postgres de los tests, para cortar la BD sin pararla (AC-131, AC-132): `cut` rechaza las
 // conexiones nuevas y corta las abiertas (BD parada), `hang` acepta y no contesta (BD colgada) y `restore` vuelve a
-// reenviar. Lo usan Jest y los e2e (el servidor propio recibe la URL del proxy como DATABASE_URL)
+// reenviar. `delay` retrasa lo que va hacia la BD, en orden (AC-129: ver si el apagado escribe antes de cerrar). Lo usan
+// Jest y los e2e (el servidor propio recibe la URL del proxy como DATABASE_URL)
 import net from 'net';
 
 export type ProxyMode = 'pass' | 'cut' | 'hang';
@@ -11,6 +12,7 @@ export interface PgProxy {
   cut: () => void;
   hang: () => void;
   restore: () => void;
+  delay: (ms: number) => void;
   close: () => Promise<void>;
 }
 
@@ -19,6 +21,7 @@ export async function startPgProxy(targetUrl: string): Promise<PgProxy> {
   const targetHost = target.hostname;
   const targetPort = Number(target.port || 5432);
   let mode: ProxyMode = 'pass';
+  let delayMs = 0;
   const sockets = new Set<net.Socket>();
   const track = (s: net.Socket) => {
     sockets.add(s);
@@ -40,7 +43,13 @@ export async function startPgProxy(targetUrl: string): Promise<PgProxy> {
     track(upstream);
     client.on('close', () => upstream.destroy());
     upstream.on('close', () => client.destroy());
-    client.pipe(upstream);
+    // Hacia la BD, cada trozo sale con el retraso vigente; el orden se conserva porque cada uno espera a que salga el anterior
+    let last = Date.now();
+    client.on('data', (chunk) => {
+      const at = Math.max(last, Date.now() + delayMs);
+      last = at;
+      setTimeout(() => upstream.writable && upstream.write(chunk), at - Date.now());
+    });
     upstream.pipe(client);
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -61,6 +70,7 @@ export async function startPgProxy(targetUrl: string): Promise<PgProxy> {
       mode = 'hang';
       for (const s of sockets) {
         s.unpipe();
+        s.removeAllListeners('data');
         s.pause();
       }
     },
@@ -69,6 +79,9 @@ export async function startPgProxy(targetUrl: string): Promise<PgProxy> {
     restore: () => {
       if (mode === 'hang') dropAll();
       mode = 'pass';
+    },
+    delay: (ms) => {
+      delayMs = ms;
     },
     close: async () => {
       dropAll();
