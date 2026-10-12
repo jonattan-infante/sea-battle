@@ -392,7 +392,7 @@ En Seafight aparece un "almirante" tras hundir 10 NPC de un tipo, y los almirant
 | Subida en reposo | **0 mensajes** de juego si el jugador no actúa (el latido de Engine.IO queda excluido) |
 | Límite de intenciones | 10/s por cliente (ráfaga de 20). El exceso se descarta. |
 | Desconexión (P1) | El barco se queda 10 s en el mundo y se le puede atacar. Si el jugador reconecta en ese tiempo, recupera el mismo barco. |
-| Persistencia (P0 para la 1.0.0) | Oro, mejoras, barcos en propiedad y barco activo, por el `userId` del JWT verificado de Clerk, en **Postgres en Railway** (Q2). El invitado no persiste. La vida y la posición no se guardan. Las compras y el cambio de barco se escriben antes de confirmarse; el oro, en ≤ 5 s. Un redeploy no pierde nada, y una sola sesión por `userId`. Si la BD falla al entrar, no se juega con un estado por defecto; si falla durante la partida, se sigue jugando sin tienda y con aviso (BACKLOG AC-129 a AC-133). |
+| Persistencia (P0 para la 1.0.0) | Oro, mejoras, barcos en propiedad y barco activo, por el `userId` del JWT verificado de Clerk, en **Postgres en Railway** (Q2). El invitado no persiste. La vida y la posición no se guardan. Las compras y el cambio de barco se escriben antes de confirmarse; el oro, en ≤ 5 s. Un redeploy no pierde nada, y una sola sesión por `userId`. Si la BD falla al entrar, no se juega con un estado por defecto; si falla durante la partida, todos los jugadores con cuenta siguen jugando sin tienda y con aviso, y el invitado no nota nada (BACKLOG AC-129 a AC-133). Los límites aceptados (compra al morir, corte en cada deploy) están en BACKLOG, «Conocidos de la 1.0.0». |
 
 **Intenciones (cliente → servidor)**. La selección es local y no viaja por la red.
 
