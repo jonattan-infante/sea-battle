@@ -6,7 +6,7 @@ import { chromium, FullConfig } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 import type { Health } from '../../server/health';
-import { baseUrl, loadRemoteEnv, loginMethod, notVerified, prodGuard, stateFile } from './env';
+import { baseUrl, failureReason, loadRemoteEnv, loginMethod, notVerified, prodGuard, stateFile } from './env';
 
 export default async function globalSetup(config: FullConfig) {
   loadRemoteEnv();
@@ -47,11 +47,11 @@ export default async function globalSetup(config: FullConfig) {
         await clerk.signIn({ page, signInParams: { strategy: 'ticket', ticket: token } });
       } else {
         process.env.CLERK_FAPI = instance.frontendApi; // el helper lo exige aunque no haya Testing Token
-        await clerk.signIn({ page, signInParams: { strategy: 'password', identifier: method.email, password: method.password } });
+        await clerk.signIn({ page, signInParams: { strategy: 'password', identifier: method.username, password: method.password } });
       }
       await page.waitForFunction(() => !!window.Clerk.user, null, { timeout: 15_000 });
     } catch (e) {
-      throw notVerified(`no se pudo iniciar sesión con el usuario de prueba (método ${method.kind}): ${(e as Error).message.split('\n')[0]}`);
+      throw notVerified(`no se pudo iniciar sesión con el usuario de prueba (método ${method.kind}): ${failureReason(e)}`);
     }
     fs.mkdirSync(path.dirname(stateFile(url)), { recursive: true });
     await context.storageState({ path: stateFile(url) });

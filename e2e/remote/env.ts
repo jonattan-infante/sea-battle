@@ -47,14 +47,28 @@ export function prodGuard(url: URL, env: Env = process.env): void {
 
 // A (preferida): CLERK_SECRET_KEY de la instancia + externalId del usuario; entra con un token de inicio de sesión del
 // Backend API (estrategia ticket) y un Testing Token, sin contraseña, así que vale con cualquier identificador que tenga
-// activado la instancia (Clerk exige que el usuario tenga uno: email, teléfono o username). C: email + contraseña, sin
-// clave secreta (sin Testing Token)
-export type LoginMethod = { kind: 'A'; externalId: string; secretKey: string } | { kind: 'C'; email: string; password: string };
+// activado la instancia (Clerk exige que el usuario tenga uno: email, teléfono o username). C: nombre de usuario +
+// contraseña, sin clave secreta (sin Testing Token). Con Q13 las cuentas no tienen correo (O-13); E2E_CLERK_USERNAME es
+// del usuario del e2e del login, que nunca es el del arnés remoto
+export type LoginMethod = { kind: 'A'; externalId: string; secretKey: string } | { kind: 'C'; username: string; password: string };
 
 export function loginMethod(env: Env = process.env): LoginMethod {
   if (env.E2E_CLERK_EXTERNAL_ID && env.CLERK_SECRET_KEY) return { kind: 'A', externalId: env.E2E_CLERK_EXTERNAL_ID, secretKey: env.CLERK_SECRET_KEY };
-  if (env.E2E_CLERK_EMAIL && env.E2E_CLERK_PASSWORD) return { kind: 'C', email: env.E2E_CLERK_EMAIL, password: env.E2E_CLERK_PASSWORD };
-  throw notVerified('faltan las credenciales del usuario de prueba: E2E_CLERK_EXTERNAL_ID con CLERK_SECRET_KEY (A) o E2E_CLERK_EMAIL con E2E_CLERK_PASSWORD (C)');
+  if (env.E2E_REMOTE_USERNAME && env.E2E_CLERK_PASSWORD) return { kind: 'C', username: env.E2E_REMOTE_USERNAME, password: env.E2E_CLERK_PASSWORD };
+  throw notVerified('faltan las credenciales del usuario de prueba: E2E_CLERK_EXTERNAL_ID con CLERK_SECRET_KEY (A) o E2E_REMOTE_USERNAME con E2E_CLERK_PASSWORD (C)');
+}
+
+// Motivo de un inicio de sesión fallido para el NO VERIFICADO: la primera línea no vacía del mensaje o, si no hay, el
+// nombre del error, con el código y el mensaje de su primer error de Clerk si los trae. Sin red, @clerk/backend lanza un
+// ClerkAPIResponseError con el mensaje vacío y errors[0] = unexpected_error: fetch failed (O-13)
+export function failureReason(e: unknown): string {
+  const message = e instanceof Error ? e.message : String(e);
+  const line = message.split('\n').map((l) => l.trim()).find(Boolean);
+  if (line) return line;
+  if (!(e instanceof Error)) return 'error sin mensaje';
+  const first = (e as Error & { errors?: { code?: string; message?: string }[] }).errors?.[0];
+  const detail = [first?.code, first?.message].filter(Boolean).join(': ');
+  return detail ? `${e.name} (${detail})` : e.name;
 }
 
 // Sesión del usuario de prueba que guarda el global setup y reutilizan los specs
