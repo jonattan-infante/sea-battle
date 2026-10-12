@@ -6,9 +6,7 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ## [Unreleased]
 
-## [1.0.0] - fecha por fijar
-
-<!-- Al cortar: la fecha del tag v1.0.0, en formato AAAA-MM-DD (AC-139). -->
+## [1.0.0] - 2026-10-12
 
 Primera versión numerada de Sea Battle, un juego naval multijugador de navegador inspirado en Seafight. Navegas con un clic, marcas un barco, das la orden de atacar y tu barco dispara andanadas solo hasta hundirlo. Con el botín compras en el puerto mejores cañones, casco, velas y barcos. Se juega en escritorio y en móvil, en https://seabattle.jonattan.dev.
 
