@@ -128,4 +128,5 @@ Las variables de `test:remote` van en `.env.remote.local` (lo ignora `.env*` en 
 
 - Persistencia por `userId` (AC-97 y AC-129 a AC-133): Postgres en Railway (GDD Q2, §2.1). Falta validarla en staging tras un redeploy (AC-135).
 - El ping del HUD (solo si es > 200 ms) necesita medir la latencia sin enviar mensajes en reposo (AC-86); está pendiente de diseño.
-- Capitán pirata, munición especial y sonido: P2.
+- Capitán pirata y Cañonera (I2): fuera de la 1.0.0. La release lleva el modelo del Capitán (`264363e`) y el contador `world.killsSinceBoss`, pero ningún NPC de I2 entra en partida (AC-137). Lo vigila `server/__tests__/latent-i2.test.ts` dentro de `verify`: 10 min simulados con ≥ 10 piratas hundidos en combate y, contra listas de lo anterior a I2, las clases, los tipos y los eventos del mundo y de los frames, los avisos y la población de AC-51.
+- Munición especial y sonido: P2.
