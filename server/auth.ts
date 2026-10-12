@@ -1,5 +1,6 @@
 import { verifyToken } from '@clerk/backend';
 import { isAuthBypassAllowed } from '../src/lib/auth-bypass';
+import { publicOrigins } from './origins';
 
 export interface Identity {
   userId: string;
@@ -13,7 +14,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 // Identidad de quien abre el socket: JWT de Clerk o, solo con el modo invitado permitido, un id de invitado
-export async function authenticateHandshake(auth: unknown, env: Record<string, string | undefined> = process.env): Promise<Identity> {
+export async function authenticateHandshake(auth: unknown, env: Record<string, string | undefined> = process.env, verify = verifyToken): Promise<Identity> {
   const data = isPlainObject(auth) ? auth : {};
 
   if (isAuthBypassAllowed(env) && data.guest === true) {
@@ -26,6 +27,6 @@ export async function authenticateHandshake(auth: unknown, env: Record<string, s
   const secretKey = env.CLERK_SECRET_KEY;
   if (!secretKey) throw new Error('server misconfigured');
   if (typeof data.token !== 'string' || data.token.length === 0) throw new Error('unauthorized');
-  const session = await verifyToken(data.token, { secretKey });
+  const session = await verify(data.token, { secretKey, authorizedParties: publicOrigins(env) });
   return { userId: session.sub, guest: false };
 }

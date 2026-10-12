@@ -8,6 +8,8 @@ import { authConfigError, isAuthBypassAllowed } from '../src/lib/auth-bypass';
 import { authenticateHandshake } from './auth';
 import { createGameServer } from './game-server';
 import { healthPayload } from './health';
+import { canonicalRedirect, publicOrigins, socketServerOptions } from './origins';
+import { requestHandler } from './request-handler';
 import { applyScenario, parseScenario } from './scenarios';
 
 const dev = process.env.NODE_ENV !== 'production';
@@ -20,6 +22,16 @@ if (configError) {
   process.exit(1);
 }
 
+let origins: string[];
+let redirect: ReturnType<typeof canonicalRedirect>;
+try {
+  origins = publicOrigins();
+  redirect = canonicalRedirect();
+} catch (e) {
+  console.error(`❌ ${(e as Error).message}`);
+  process.exit(1);
+}
+
 const hostname = 'localhost';
 const port = parseInt(process.env.PORT || '3000', 10);
 const app = next({ dev, hostname, port });
@@ -29,23 +41,15 @@ app.prepare().then(() => {
   const startedAt = Date.now();
   let onlinePlayers = () => 0;
 
-  const httpServer = createServer((req, res) => {
-    if (req.url === '/healthz') {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(healthPayload(onlinePlayers(), startedAt, Date.now())));
-      return;
-    }
-    handle(req, res, parse(req.url || '/', true));
-  });
+  const httpServer = createServer(
+    requestHandler({
+      health: () => healthPayload(onlinePlayers(), startedAt, Date.now()),
+      redirect,
+      next: (req, res) => handle(req, res, parse(req.url || '/', true))
+    })
+  );
 
-  const publicDomain = process.env.RAILWAY_PUBLIC_DOMAIN;
-  const io = new Server(httpServer, {
-    serveClient: false,
-    cors: {
-      origin: [`http://localhost:${port}`, ...(publicDomain ? [`https://${publicDomain}`] : [])],
-      methods: ['GET', 'POST']
-    }
-  });
+  const io = new Server(httpServer, socketServerOptions(origins)); // CORS: PUBLIC_ORIGINS, los mismos que authorizedParties
 
   const scenario = parseScenario(process.env.SEA_BATTLE_SCENARIO);
   const game = createGameServer(io, {

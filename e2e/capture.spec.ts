@@ -140,7 +140,8 @@ test.describe('Capturas @capture', () => {
           }, [gap, stack] as const);
           await page.waitForTimeout(400); // vuelta con el fundido de 150 ms
           await shot(page, vp, name);
-          // El par documenta los dos estados: oculta a 4 px y visible a ≥ 8 px (±1) de cualquier bloque del HUD
+          // El par documenta los dos estados (D52): oculta a 4 px y, con opacidad 1, a 16–32 px del bloque del HUD más
+          // cercano. 16 es el umbral de vuelta de la histéresis (§11.4) y 32 obliga a que esté junto al bloque
           const plate = await page.evaluate(() => {
             const root = document.querySelector<HTMLElement>('[data-plate][data-ship-id="g-pirate"]')!;
             const body = root.querySelector('.wo-plate__body')!;
@@ -153,7 +154,8 @@ test.describe('Capturas @capture', () => {
           console.log(`AD-32 captura ${vp.name}-${name}: opacidad ${plate.op.toFixed(2)} · separación mín. a un bloque del HUD ${plate.sep.toFixed(1)} px`);
           if (stack) {
             expect.soft(plate.op, `${vp.name}-${name}: placa visible`).toBeGreaterThan(0.99);
-            expect.soft(plate.sep, `${vp.name}-${name}: a ≥ 8 px ±1 de cualquier bloque`).toBeGreaterThanOrEqual(7);
+            expect.soft(plate.sep, `${vp.name}-${name}: a 16–32 px del bloque más cercano`).toBeGreaterThanOrEqual(16);
+            expect.soft(plate.sep, `${vp.name}-${name}: a 16–32 px del bloque más cercano`).toBeLessThanOrEqual(32);
           } else expect.soft(plate.op, `${vp.name}-${name}: placa oculta`).toBe(0);
         }
         await page.evaluate(() => window.__SEA_BATTLE__!.runtime().stopScene());

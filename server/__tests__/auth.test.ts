@@ -1,3 +1,5 @@
+import { verifyToken } from '@clerk/backend';
+import { generateKeyPairSync, sign } from 'crypto';
 import { isAuthBypassAllowed } from '../../src/lib/auth-bypass';
 import { authenticateHandshake } from '../auth';
 
@@ -55,4 +57,39 @@ describe('AC-09: arranque con AUTH_BYPASS en Railway', () => {
     expect(result.stderr).toContain('AUTH_BYPASS=1 no está permitido en Railway');
     expect(result.stdout).not.toContain('Servidor listo');
   }, 70_000);
+});
+
+describe('AC-134 (d): authorizedParties del JWT con PUBLIC_ORIGINS', () => {
+  // Token de sesión firmado con una clave local; el verifyToken de Clerk es el real y solo cambia de dónde sale la
+  // clave pública (jwtKey en vez de la JWKS de la instancia)
+  const { publicKey, privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048, publicKeyEncoding: { type: 'spki', format: 'pem' }, privateKeyEncoding: { type: 'pkcs8', format: 'pem' } });
+  const b64 = (v: object | Buffer) => (Buffer.isBuffer(v) ? v : Buffer.from(JSON.stringify(v))).toString('base64url');
+  const sessionToken = (azp?: string) => {
+    const now = Math.floor(Date.now() / 1000);
+    const data = `${b64({ alg: 'RS256', typ: 'JWT', kid: 'ins_test' })}.${b64({ sub: 'user_test', azp, iat: now - 5, nbf: now - 5, exp: now + 60 })}`;
+    return `${data}.${b64(sign('RSA-SHA256', Buffer.from(data), privateKey))}`;
+  };
+  const localVerify: typeof verifyToken = (token, options) => verifyToken(token, { ...options, jwtKey: publicKey });
+  const PROD = { CLERK_SECRET_KEY: 'sk_test_x', PUBLIC_ORIGINS: 'https://seabattle.jonattan.dev' };
+
+  test('un token con azp listado se acepta', async () => {
+    await expect(authenticateHandshake({ token: sessionToken('https://seabattle.jonattan.dev') }, PROD, localVerify)).resolves.toEqual({ userId: 'user_test', guest: false });
+  });
+
+  test.each([
+    ['https://evil.example', 'otro sitio'],
+    ['https://otro.jonattan.dev', 'otro subdominio de jonattan.dev, donde la sesión de Clerk también vale'],
+    ['https://sea-battle-production-5eba.up.railway.app', 'el dominio de Railway, que ya no está en la lista'],
+    ['http://localhost:3000', 'localhost'],
+    [undefined, 'sin azp']
+  ])('un token con azp %s (%s) se rechaza', async (azp, _why) => {
+    await expect(authenticateHandshake({ token: sessionToken(azp) }, PROD, localVerify)).rejects.toThrow(/Authorized party claim \(azp\)/);
+  });
+
+  test('sin PUBLIC_ORIGINS valen los de siempre y nada más', async () => {
+    const env = { CLERK_SECRET_KEY: 'sk_test_x', PORT: '3500', RAILWAY_PUBLIC_DOMAIN: 'sea-battle-staging.up.railway.app' };
+    await expect(authenticateHandshake({ token: sessionToken('https://sea-battle-staging.up.railway.app') }, env, localVerify)).resolves.toEqual({ userId: 'user_test', guest: false });
+    await expect(authenticateHandshake({ token: sessionToken('http://localhost:3500') }, env, localVerify)).resolves.toEqual({ userId: 'user_test', guest: false });
+    await expect(authenticateHandshake({ token: sessionToken('https://seabattle.jonattan.dev') }, env, localVerify)).rejects.toThrow(/Authorized party claim/);
+  });
 });
