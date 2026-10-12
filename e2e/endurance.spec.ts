@@ -200,7 +200,7 @@ test.describe('Corrida larga @soak', () => {
       // Calentamiento: la carga entra en régimen tras la primera reparación completa (la vida baja del 100 % a la banda)
       const warmStart = Date.now();
       while (repairsDone === 0) {
-        if (Date.now() - warmStart > WARMUP_TIMEOUT_MS) throw new Error(`AC-91: sin una reparación completa en ${WARMUP_TIMEOUT_MS / 1000} s de calentamiento`);
+        if (Date.now() - warmStart > WARMUP_TIMEOUT_MS) throw new Error(`AC-91 NO VERIFICADO (calentamiento sin una reparación completa en ${WARMUP_TIMEOUT_MS / 1000} s)`);
         await drive();
       }
       console.log(`AC-91: calentamiento de ${((Date.now() - warmStart) / 1000).toFixed(0)} s (${load.cycles} ciclos, ${repairs} reparación)`);
@@ -266,10 +266,18 @@ test.describe('Corrida larga @soak', () => {
       await test.info().attach('ac91-samples.json', { body: JSON.stringify(report, null, 2), contentType: 'application/json' });
       if (MINUTES !== 10) console.log(`AC-91: corrida corta de ${MINUTES} min para validar el harness; el veredicto del AC exige AC91_MINUTES=10`);
 
-      expect.soft(measured.cycles, `≥ ${CYCLES_REQUIRED} ciclos de hundimiento y reaparición en pantalla`).toBeGreaterThanOrEqual(CYCLES_REQUIRED);
-      expect.soft(measured.volleys, 'el barco propio ataca').toBeGreaterThan(0);
-      expect.soft(measured.damageTaken, 'el barco propio recibe daño').toBeGreaterThan(0);
-      expect.soft(measured.repairs, 'el barco propio repara').toBeGreaterThan(0);
+      // La carga es el "dado" de AC-91: sin ella no se puede hablar de deriva. Si falta, la corrida es NO VERIFICADO (en rojo
+      // para que nadie la lea como verde) y no se evalúan las métricas de deriva
+      const shortfall = [
+        measured.cycles < CYCLES_REQUIRED && `${measured.cycles} ciclos < ${CYCLES_REQUIRED}`,
+        measured.volleys === 0 && '0 andanadas propias',
+        measured.damageTaken === 0 && '0 de daño recibido',
+        measured.repairs === 0 && '0 reparaciones'
+      ].filter(Boolean);
+      if (shortfall.length > 0) {
+        console.log('AC-91: carga insuficiente; las métricas de deriva del resumen no se evalúan');
+        throw new Error(`AC-91 NO VERIFICADO (carga insuficiente: ${shortfall.join('; ')})`);
+      }
       expect.soft(report.memory.delta, 'memoria JS (heap + externa): final − base ≤ 15 MB').toBeLessThanOrEqual(15);
       expect.soft(memorySlope, 'memoria JS (heap + externa): pendiente ≤ 1 MB/min en los minutos 5–10').toBeLessThanOrEqual(1);
       expect.soft(last.nodes, 'nodos DOM: final ≤ base × 1,05').toBeLessThanOrEqual(report.nodes.limit);
