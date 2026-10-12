@@ -55,7 +55,7 @@ describe('Mínimo en px de la llama de daño (D35)', () => {
     }
   });
 
-  test('390×844 con N3: solo la Balandra baja; Bergantín, Fragata, Pirata y Mercante siguen en 10 px', () => {
+  test('390×844 con N3: solo la Balandra baja; Bergantín, Fragata, Pirata, Capitán y Mercante siguen en 10 px', () => {
     const changed = Object.entries(SHIP_RECIPES).filter(([, r]) => flamePxMin(r.L, ppm(390, 844, 3)) < 10).map(([id]) => id);
     expect(changed).toEqual(['sloop']);
   });

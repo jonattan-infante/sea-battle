@@ -1,6 +1,6 @@
 import { TICK_RATE } from '../constants';
 import { GameEvent, Ship, World } from '../types';
-import { addPlayer, createWorld, drainEvents, shipOfPlayer, spawnMerchant, spawnPirate, step } from '../world';
+import { addPlayer, createWorld, drainEvents, shipOfPlayer, spawnCaptain, spawnMerchant, spawnPirate, step } from '../world';
 
 export const DT = 1 / TICK_RATE;
 
@@ -44,6 +44,17 @@ export function placePirate(world: World, x: number, z: number, heading = 0): Sh
   ship.pos = { x, z };
   ship.heading = heading;
   ship.ai!.origin = { x, z };
+  ship.ai!.wait = 999;
+  ship.destination = null;
+  ship.path = [];
+  return ship;
+}
+
+// Capitán con su guarida en (x, z), en patrulla y sin moverse hasta que vea a alguien
+export function placeCaptain(world: World, x: number, z: number, heading = 0): Ship {
+  const ship = spawnCaptain(world, { x, z });
+  if (!ship) throw new Error('No se pudo colocar el capitán');
+  ship.heading = heading;
   ship.ai!.wait = 999;
   ship.destination = null;
   ship.path = [];

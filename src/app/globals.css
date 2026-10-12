@@ -126,6 +126,7 @@ body {
 
 .hud-target { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); width: 320px; height: 72px; display: flex; gap: 10px; align-items: center; padding: 5px 34px 5px 10px; }
 .hud-target__icon { flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; border: 2px solid currentColor; }
+.hud-icon-pair { display: flex; flex-direction: column; align-items: center; line-height: 0; } /* Capitán pirata: corona sobre la calavera */
 .hud-target__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; line-height: 1.15; }
 .hud-target__name { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hud-target__meta { font-size: 12px; color: var(--ui-text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -143,6 +144,12 @@ body {
 /* D39: mapa de 184 × 184 (con el borde del panel) y debajo el pie del sector de 24 px, con su línea de 1 px, en el mismo panel */
 .hud-minimap { position: absolute; right: 16px; top: 64px; width: 184px; height: 208px; padding: 0; overflow: hidden; display: flex; flex-direction: column; }
 .hud-minimap canvas { display: block; flex: none; width: 100%; height: auto; aspect-ratio: 1; }
+/* Halo del Capitán pirata en el minimapa (ART-DIRECTION §4.3, D43): anillo coral de 1,5 px, r 7 → 12 px y α 0,6 → 0 a 1 Hz. Lo
+   anima CSS: el canvas se redibuja a ≤ 2 Hz y solo mueve su posición (0 commits de React). El trazo no escala con el anillo */
+.hud-minimap__halo { position: absolute; left: 0; top: 0; width: 24px; height: 24px; margin: -12px 0 0 -12px; overflow: visible; pointer-events: none; display: none; }
+.hud-minimap__halo circle { fill: none; stroke: var(--rel-pirate); stroke-width: 1.5px; vector-effect: non-scaling-stroke; transform-origin: 12px 12px; animation: captain-halo 1s ease-out infinite; }
+@keyframes captain-halo { from { transform: scale(0.5833); opacity: 0.6; } to { transform: scale(1); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .hud-minimap__halo circle { animation: none; transform: scale(0.75); opacity: 0.4; } } /* fijo en r 9 px, α 0,4 */
 .hud-coords { flex: none; height: 24px; border-top: 1px solid var(--ui-line); font-size: 12px; line-height: 23px; color: var(--ui-text-dim); text-align: center; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; pointer-events: none; }
 
 .hud-toasts { position: absolute; top: 96px; left: 50%; transform: translateX(-50%); width: 360px; display: flex; flex-direction: column; gap: 8px; z-index: 30; pointer-events: none; }
@@ -211,6 +218,8 @@ body {
   .hud-gold strong { font-size: 14px; }
   .hud-target { left: 16px; top: calc(env(safe-area-inset-top, 0px) + 60px); transform: none; width: 262px; height: 48px; padding: 4px 8px; }
   .hud-target__icon { width: 28px; height: 28px; }
+  .hud-icon-pair svg:first-child { width: 9px; height: 9px; }
+  .hud-icon-pair svg:last-child { width: 13px; height: 13px; }
   .hud-target__meta { display: none; }
   .hud-target .bar--sm { height: 8px; }
   .hud-minimap { right: 16px; top: calc(env(safe-area-inset-top, 0px) + 60px); width: 88px; height: 88px; }
