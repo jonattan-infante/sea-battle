@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+# Por defecto solo lectura; el job de prod pide contents: write para el tag y la release
+permissions:
+  contents: read
+
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -29,8 +33,8 @@ jobs:
       NEXT_TELEMETRY_DISABLED: '1'
       TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v4.4.0
+      - uses: actions/setup-node@v4.4.0
         with:
           # La misma versión mayor que Railway (DT-14): .nvmrc y engines.node de package.json
           node-version-file: .nvmrc
@@ -40,5 +44,78 @@ jobs:
         run: npm run typecheck
       - name: Tests (simulación, protocolo y servidor)
         run: npm test -- --ci
+      - name: Tests de los scripts de despliegue y release (Python)
+        run: npm run test:scripts
       - name: Build (Next + servidor)
         run: npm run build
+
+  # DT-16: cada PR hacia main desde una rama de este repo (nunca un fork: el secreto no debe llegar a código ajeno) se
+  # despliega en staging tras verify. Un despliegue a medias no se cancela; si llegan varios, espera el último
+  deploy-staging:
+    needs: verify
+    if: github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: staging
+      url: https://sea-battle-staging.up.railway.app
+    concurrency:
+      group: staging
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4.4.0
+      - name: Desplegar la cabeza del PR en staging
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 -B scripts/railway/deploy.py --env staging --sha "$SHA" --url https://sea-battle-staging.up.railway.app
+      - name: Configuración de despliegue (check_deploy)
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: python3 -B scripts/railway/check_deploy.py --env staging
+
+  # DT-16: cada push a main se despliega en prod tras verify y tras el visto bueno del revisor del entorno production
+  # (jonattan-infante). Después, si el tag v<versión de package.json> no existe, se crea anotado sobre ese commit junto
+  # con la release de GitHub, con la sección de esa versión del CHANGELOG. Si ya existe, no se toca nada
+  deploy-production:
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: production
+      url: https://seabattle.jonattan.dev
+    concurrency:
+      group: production
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4.4.0
+      - name: Desplegar el commit en prod
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          SHA: ${{ github.sha }}
+        run: python3 -B scripts/railway/deploy.py --env production --sha "$SHA" --url https://seabattle.jonattan.dev
+      - name: Configuración de despliegue (check_deploy)
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: python3 -B scripts/railway/check_deploy.py --env production
+      - name: Tag y release de GitHub
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+        run: |
+          version="$(python3 -B scripts/release/release.py version)"
+          tag="v${version}"
+          status="$(git ls-remote --tags origin | python3 -B scripts/release/release.py tag-status "$version")"
+          if [ "$status" = exists ]; then
+            echo "El tag ${tag} ya existe: no se crea ni el tag ni la release"
+            exit 0
+          fi
+          python3 -B scripts/release/release.py notes "$version" > "$RUNNER_TEMP/notes.md"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag -a "$tag" -m "Sea Battle ${tag}" "$SHA"
+          git push origin "refs/tags/${tag}"
+          gh release create "$tag" --verify-tag --title "Sea Battle ${tag}" --notes-file "$RUNNER_TEMP/notes.md"
