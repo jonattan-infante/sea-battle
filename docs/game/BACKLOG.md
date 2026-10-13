@@ -738,7 +738,7 @@ Si A tumba el proceso o pierde progreso, el fallo es P0, y con la 1.0 ya en prod
     - **Con la carga incompleta, el AC nunca es APROBADO:**
       - si todas las cotas se cumplen, queda NO VERIFICADO (carga insuficiente);
       - si alguna falla, es RECHAZADO, porque menos carga solo puede esconder un fallo.
-  - **Qué se mide:** los bots registran cada orden y cada frame. El servidor mide su propio proceso y lo registra cada 60 s con su hora, como los logs del apagado (`c4733ad`). Cómo se activa lo decide game-developer. Sin jugadores no registra nada.
+  - **Qué se mide:** los bots registran cada orden y cada frame. El servidor mide su propio proceso y lo registra cada 60 s con su hora (`📈 Métricas`), como los logs del apagado (`c4733ad`). **La medida está activa por defecto, también en prod, y `SEA_BATTLE_METRICS=0` la apaga.** Sin jugadores no registra nada. Condición para dejarla activa: el p99 del tick con la medida encendida no pasa en más de 0,2 ms (el 5 % de los 4 ms de GDD §16) del p99 con la medida apagada, con el método de AC-03 (el menor de 3 p99). Lo mide dev-npc.
 
   | Métrica (fuente) | Cota |
   |---|---|
@@ -746,11 +746,11 @@ Si A tumba el proceso o pierde progreso, el fallo es P0, y con la 1.0 ya en prod
   | **Órdenes perdidas** (orden medida sin frame que la refleje en ≤ 1 s) | 0. Las que el servidor rechaza por una regla (objetivo protegido o en la zona segura) responden con un aviso: cuentan como respondidas y se registran aparte |
   | **Desconexiones** (un `disconnect` que el bot no pidió, un `kicked` o un «Servidor lleno» en uno de los 20) | 0 |
   | **Ticks perdidos** (segundos de reloj × 20 − ticks ejecutados; el bucle descarta el tiempo que pasa de 5 ticks de retraso, `server/game-server.ts:442`) | 0 |
-  | **Retraso del event loop** (`monitorEventLoopDelay` de `node:perf_hooks`, por minuto) | p99 ≤ 20 ms y máximo ≤ 100 ms. 20 ms es el jitter con el que AC-92 prueba que el interpolador no da saltos. Un retraso de más de 100 ms, un intervalo de snapshot entero, retrasa un frame completo a todos los jugadores |
+  | **Retraso del event loop** (`monitorEventLoopDelay` de `node:perf_hooks` con `resolution` de 10 ms, por minuto). Cada muestra incluye la resolución («every sample includes the `resolution`», nodejs.org/api/perf_hooks.html, consultada el 2026-10-12), así que **el retraso es la muestra − 10 ms**. En reposo da ≈ 1 ms (dato de dev-npc, Node 24.21.0) | p99 ≤ 20 ms y máximo ≤ 100 ms. 20 ms es el jitter con el que AC-92 prueba que el interpolador no da saltos. Un retraso de más de 100 ms, un intervalo de snapshot entero, retrasa un frame completo a todos los jugadores |
   | **Tick de la simulación** (`step` en tiempo real) | p99 ≤ 4 ms, el presupuesto de GDD §16 (AC-03), ahora con sockets y PvP |
   | **Utilización del event loop** (`performance.eventLoopUtilization`, por minuto) | ≤ 0,5 en cada minuto, es decir, la mitad del hilo libre. El valor alimenta Q26 |
   | **Red por cliente** (el mismo método que AC-88) | El peor bot, de media en los 10 min: ≤ 10 mensajes/s y ≤ 12 KB/s (GDD §13). Se registra su peor minuto. La PvP no puede subir los mensajes, que salen como mucho uno por intervalo, pero sí los KB/s |
-  | **Memoria del proceso** (una muestra por segundo; por minuto, el mínimo del heap usado, que se acerca a lo vivo tras cada GC) | Heap: final − minuto 1 ≤ 20 MB, y pendiente ≤ 1 MB/min en los minutos 5–10, por mínimos cuadrados (como AC-91). RSS: pendiente ≤ 2 MB/min en los minutos 5–10 |
+  | **Memoria del proceso** (una muestra por segundo; por minuto, el mínimo del heap usado y el mínimo del RSS, que se acercan a lo vivo tras cada GC) | Heap: final − minuto 1 ≤ 20 MB, y pendiente ≤ 1 MB/min en los minutos 5–10, por mínimos cuadrados (como AC-91). RSS: pendiente ≤ 2 MB/min en los minutos 5–10 |
   | **CPU del proceso** (`process.cpuUsage`, por minuto) | Media de los minutos 9–10 ≤ media de los minutos 1–2 × 1,2: sin deriva |
   | **Errores** | 0 líneas `❌` en el log del servidor, y 0 frames con `unsaved`: el guardado nunca entra en modo degradado (AC-132) |
   | **Progreso guardado** (5 s después de parar los bots) | La fila de cada bot en la BD tiene el oro, las mejoras y los barcos de su último frame (AC-130 b): 20 de 20 |
@@ -765,13 +765,13 @@ Si A tumba el proceso o pierde progreso, el fallo es P0, y con la 1.0 ya en prod
 
     Los `moveTo` en marcha no tienen observable: cuentan como carga, no como medida. Cada bot tiene como mucho una orden medida en vuelo, y no envía otra que pueda deshacer su observable antes de verlo.
   - **Ruido de la máquina.** Es la misma lógica que AC-03 y O-18: la carga ajena solo puede empeorar las cifras.
-    - Antes de los bots, **60 s de control con el servidor sin jugadores** (con NPC): el retraso del event loop tiene que dar p99 ≤ 5 ms. Si no, la máquina tiene ruido y no se empieza.
+    - Antes de los bots, **60 s de control con un solo bot quieto en el puerto** (con NPC). Va con un bot porque sin jugadores el servidor no registra métricas. El retraso del event loop, ya restada la resolución, tiene que dar p99 ≤ 5 ms. Si no, la máquina tiene ruido y no se empieza.
     - La carga media de 1 min (`uptime`) tiene que ser ≤ 6 antes de arrancar el servidor y los bots, y ≤ 10 en cada minuto medido: por debajo de los 12 núcleos del M4 Pro, siempre queda uno libre para el servidor. Si se pasa, la corrida no cuenta y se repite (NO VERIFICADO, nunca RECHAZADO). Un rojo con la carga dentro de esos límites es RECHAZADO.
     - En el log van el SHA, `node -v`, la carga de cada minuto y la CPU del proceso de los bots.
 
   Verificación: arnés de estrés de dev-tests, fuera de `verify` por su duración (como `test:soak`), con una línea por minuto de cada métrica en el log. Lo corre game-qa.
 - **AC-143** — Dado AC-142 APROBADO y el mismo build desplegado en staging (`/healthz` da el commit), con 19 bots con usuarios de prueba de Clerk de desarrollo y un navegador real con el usuario QA (`sea-battle-qa`), cuando juegan 10 min con la carga de AC-142, entonces:
-  (a) **en el servidor** se cumplen las cotas del proceso de AC-142 (ticks perdidos, event loop, tick, utilización, memoria, CPU y errores). Se leen de las líneas que el proceso registra cada 60 s en el log de Railway, así que no dependen de la máquina que lanza los bots;
+  (a) **en el servidor** se cumplen las cotas del proceso de AC-142 (ticks perdidos, event loop, tick, utilización, memoria, CPU y errores). Se leen de las líneas `📈 Métricas` que el proceso registra cada 60 s en el log de Railway, así que no dependen de la máquina que lanza los bots;
   (b) **en los bots**: 0 desconexiones, 0 órdenes perdidas (sin reflejo en ≤ 1 s más el RTT mediano de la corrida) y la red por cliente de AC-142. El tiempo de respuesta se registra junto al RTT (la mediana de `/healthz` cada 5 s), pero no es cota, porque incluye la red de casa;
   (c) **en el navegador**, que es el lado del jugador: 30 clics en el agua durante la carga, con el método de AC-136 y la espera de 60 s de O-18. Del clic al movimiento, p95 ≤ 500 ms (GDD §13), y el marcador, p95 ≤ 50 ms. Nunca sale «Sin conexión»;
   (d) **el progreso**: 5 s después de parar, las 20 filas de la BD de staging coinciden con el último frame de cada jugador.
@@ -779,7 +779,7 @@ Si A tumba el proceso o pierde progreso, el fallo es P0, y con la 1.0 ya en prod
   **Preparación:**
   - Crear 19 usuarios de prueba en Clerk dev, sin correo y con una contraseña aleatoria que no se guarda, como `sea-battle-login-e2e`. Necesita la autorización de Jonattan. Clerk dev admite 100 usuarios («Development instances are capped at 100 users», clerk.com/docs/guides/development/managing-environments, consultada el 2026-10-12), así que antes hay que contar los que ya existen.
   - Las entradas se escalonan, en tandas de ≤ 5 cada 10 s, antes del minuto 0. El Frontend API de Clerk limita la creación de inicios de sesión a «5 requests per 10 seconds» por IP, y el Backend API de desarrollo, a «100 requests per 10 seconds» (clerk.com/docs/guides/how-clerk-works/system-limits, consultada el 2026-10-12).
-  - Sin deploys durante la corrida (no hay disparadores, AC-139). Si la medida del servidor se activa con una variable, va en el mismo deploy que se prueba: en Railway, cambiar una variable obliga a desplegar.
+  - Sin deploys durante la corrida (no hay disparadores, AC-139). La medida del servidor está activa por defecto: se comprueba que staging no tenga `SEA_BATTLE_METRICS=0`.
   - Se anotan la CPU y la memoria del servicio de staging, frente a las de prod (8 vCPU y 8 GB, dato del lead).
   - Solo en staging. En prod no se corre (ver «Reglas de las pruebas remotas»).
 
