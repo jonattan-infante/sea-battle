@@ -44,5 +44,14 @@ game-product (GDD + criterios AC-xx) ──► game-ux (arte + specs) ──► 
 4. **Cero tráfico en reposo**: el cliente no envía nada si el jugador no actúa.
 5. Los assets siguen `docs/game/ASSET-SPEC.md` (ejes, escala, pivote, presupuesto de polígonos) para poder cambiar modelos procedurales por GLB sin tocar código.
 
+## Deploys a producción
+
+**Solo Jonattan aprueba un deploy a prod**, con el botón «Review deployments» del environment `production` en GitHub. Ningún agente, incluido el *lead*:
+- aprueba, rechaza ni cancela un deploy pendiente (`pending_deployments`);
+- cambia los revisores, las ramas permitidas o el salto de administradores del environment `production`, ni el ruleset de `main`;
+- despliega en prod por fuera de GitHub (CLI o GraphQL de Railway, `scripts/railway/deploy.py --env production`) sin una orden explícita de Jonattan para ese deploy.
+
+El environment no deja que los administradores se salten la revisión (`can_admins_bypass: false`), y `.claude/settings.json` deniega esas llamadas. Son una red de seguridad, no la garantía: la garantía es esta regla.
+
 ## Evidencia
 Toda afirmación lleva su evidencia (comando + salida, ruta:línea, captura). Las hipótesis se declaran como tales. Al terminar una prueba en navegador, **cerrar la pestaña de Playwright** (WebGL por software consume ~6 núcleos).
