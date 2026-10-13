@@ -81,10 +81,11 @@ function guard(child: ChildProcess) {
 }
 
 // env: variables extra del servidor (p. ej. { SEA_BATTLE_NPCS: '0' }); AUTH_BYPASS=1 siempre, como el harness.
+// onOutput: recibe todo lo que el servidor escribe por stdout y stderr (el arnés de estrés lo guarda en su log).
 // Igual que reuseExistingServer: false, nunca se usa un servidor ajeno: si el puerto está ocupado, falla al momento, y
 // el servidor solo cuenta como listo cuando lo anuncia el proceso que se acaba de lanzar (no basta con que /healthz
 // responda, porque podría contestar otro proceso).
-export async function startOwnServer(env: Record<string, string> = {}): Promise<OwnServer> {
+export async function startOwnServer(env: Record<string, string> = {}, onOutput?: (text: string) => void): Promise<OwnServer> {
   const port = await freePort();
   const url = `http://localhost:${port}`;
   let proc: ChildProcess | null = null;
@@ -99,7 +100,10 @@ export async function startOwnServer(env: Record<string, string> = {}): Promise<
     proc = child;
     guard(child);
     let stderr = '';
-    child.stderr!.on('data', (d: Buffer) => (stderr = (stderr + d.toString()).slice(-2000)));
+    child.stderr!.on('data', (d: Buffer) => {
+      stderr = (stderr + d.toString()).slice(-2000);
+      onOutput?.(d.toString());
+    });
     await new Promise<void>((resolve, reject) => {
       let stdout = '';
       let ready = false;
@@ -113,6 +117,7 @@ export async function startOwnServer(env: Record<string, string> = {}): Promise<
       };
       child.once('exit', onExit);
       child.stdout!.on('data', (d: Buffer) => {
+        onOutput?.(d.toString());
         if (ready) return; // se sigue leyendo para que la tubería no se llene
         stdout += d.toString();
         if (!stdout.includes(`Servidor listo en ${url}`)) return;
