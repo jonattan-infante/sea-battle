@@ -1,7 +1,7 @@
 import { auth } from '@clerk/nextjs/server';
 import { headers } from 'next/headers';
 import GameApp from '../../components/GameApp';
-import ReloadAsDocument from '../../components/ReloadAsDocument';
+import ReloadAsDocument, { ClearReloadMark } from '../../components/ReloadAsDocument';
 import { shouldReloadAsDocument } from '../../lib/auth-gate';
 import { isAuthBypassAllowed } from '../../lib/auth-bypass';
 
@@ -25,5 +25,10 @@ export default async function GamePage() {
       return redirectToSignIn();
     }
   }
-  return <GameApp guest={guest} />;
+  return (
+    <>
+      {!guest && <ClearReloadMark />}
+      <GameApp guest={guest} />
+    </>
+  );
 }

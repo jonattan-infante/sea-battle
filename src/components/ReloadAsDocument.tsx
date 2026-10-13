@@ -13,3 +13,14 @@ export default function ReloadAsDocument() {
   }, []);
   return null;
 }
+
+// O-21: con /game servido con sesión, la marca sobra. Si siguiera sus 30 s, un segundo desacuerdo en ese rato iría a
+// /sign-in y volvería el bucle viejo (QA-15 §2). Se borra aquí porque un Server Component no puede escribir cookies, y
+// la marca la escribe el cliente (no es HttpOnly)
+export function ClearReloadMark() {
+  useEffect(() => {
+    const secure = window.location.protocol === 'https:' ? '; Secure' : '';
+    document.cookie = `${RELOAD_COOKIE}=; Max-Age=0; Path=/; SameSite=Lax${secure}`;
+  }, []);
+  return null;
+}

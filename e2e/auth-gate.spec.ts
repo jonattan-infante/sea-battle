@@ -5,7 +5,7 @@
 // token con una firma de relleno
 import { createClerkClient } from '@clerk/backend';
 import { clerk, clerkSetup } from '@clerk/testing/playwright';
-import { expect, Page, test } from '@playwright/test';
+import { BrowserContext, expect, Page, test } from '@playwright/test';
 import fs from 'fs';
 import { parseEnv } from 'util';
 import { PORTS } from '../playwright.config';
@@ -108,30 +108,46 @@ async function zarpar(page: Page, before?: () => Promise<void>): Promise<{ hops:
   return { hops, inGame };
 }
 
+// Entra con el usuario de prueba de la instancia de desarrollo; sin CLERK_SECRET_KEY de desarrollo, NO VERIFICADO
+async function signInQa(page: Page, where: string): Promise<boolean> {
+  const key = secretKey();
+  if (!key) {
+    console.log(`${where}: NO VERIFICADO: falta CLERK_SECRET_KEY (de la instancia de desarrollo) para entrar con el usuario de prueba`);
+    return false;
+  }
+  if (!key.startsWith('sk_test_')) throw new Error('CLERK_SECRET_KEY no es de una instancia de desarrollo (sk_test_): el spec no la usa');
+  await page.goto(`${BASE}/`);
+  const instance = await page
+    .waitForFunction(() => (window.Clerk?.loaded ? { publishableKey: window.Clerk.publishableKey, frontendApi: window.Clerk.frontendApi } : null), null, { timeout: 30_000 })
+    .then((h) => h.jsonValue());
+  if (!instance) throw new Error('la portada no carga Clerk');
+  await clerkSetup({ publishableKey: instance.publishableKey, frontendApiUrl: instance.frontendApi, secretKey: key, dotenv: false });
+  const backend = createClerkClient({ secretKey: key });
+  const users = await backend.users.getUserList({ externalId: [process.env.E2E_CLERK_EXTERNAL_ID ?? 'sea-battle-qa'] });
+  expect(users.data, 'un usuario de prueba en la instancia de desarrollo').toHaveLength(1);
+  const { token } = await backend.signInTokens.createSignInToken({ userId: users.data[0].id, expiresInSeconds: 120 });
+  await clerk.signIn({ page, signInParams: { strategy: 'ticket', ticket: token } });
+  await page.waitForFunction(() => !!window.Clerk.user, null, { timeout: 15_000 });
+  return true;
+}
+
+// Adelanta __client_uat 5 min, como la reproducción del lead en prod: el __session queda más viejo que la marca
+const staleUat = (context: BrowserContext) => async () => {
+  const future = String(Math.floor(Date.now() / 1000) + 300);
+  const uat = (await context.cookies(BASE)).filter((c) => c.name.startsWith('__client_uat'));
+  expect(uat.length, 'el navegador tiene __client_uat').toBeGreaterThan(0);
+  await context.addCookies(uat.map((c) => ({ ...c, value: future })));
+};
+
+const hasReloadMark = async (context: BrowserContext) => (await context.cookies(BASE)).some((c) => c.name === RELOAD_COOKIE);
+
 const summary = (hops: Hop[]) => hops.map((h) => `${h.redirected ? '↪' : ''}${h.kind} ${h.path}${h.reason ? ` (${h.reason})` : ''}`).join(' → ');
 const documentLoads = (hops: Hop[]) => hops.filter((h) => h.kind === 'DOC' && !h.redirected);
 
 test.describe('P0 en el navegador: «Zarpar» con la sesión iniciada', () => {
   test('con __session más viejo que __client_uat entra con una sola recarga; con cookies sanas, sin ninguna', async ({ page, context }) => {
     test.setTimeout(120_000);
-    const key = secretKey();
-    if (!key) {
-      console.log('P0 navegador: NO VERIFICADO: falta CLERK_SECRET_KEY (de la instancia de desarrollo) para entrar con el usuario de prueba');
-      return;
-    }
-    if (!key.startsWith('sk_test_')) throw new Error('CLERK_SECRET_KEY no es de una instancia de desarrollo (sk_test_): el spec no la usa');
-    await page.goto(`${BASE}/`);
-    const instance = await page
-      .waitForFunction(() => (window.Clerk?.loaded ? { publishableKey: window.Clerk.publishableKey, frontendApi: window.Clerk.frontendApi } : null), null, { timeout: 30_000 })
-      .then((h) => h.jsonValue());
-    if (!instance) throw new Error('la portada no carga Clerk');
-    await clerkSetup({ publishableKey: instance.publishableKey, frontendApiUrl: instance.frontendApi, secretKey: key, dotenv: false });
-    const backend = createClerkClient({ secretKey: key });
-    const users = await backend.users.getUserList({ externalId: [process.env.E2E_CLERK_EXTERNAL_ID ?? 'sea-battle-qa'] });
-    expect(users.data, 'un usuario de prueba en la instancia de desarrollo').toHaveLength(1);
-    const { token } = await backend.signInTokens.createSignInToken({ userId: users.data[0].id, expiresInSeconds: 120 });
-    await clerk.signIn({ page, signInParams: { strategy: 'ticket', ticket: token } });
-    await page.waitForFunction(() => !!window.Clerk.user, null, { timeout: 15_000 });
+    if (!(await signInQa(page, 'P0 navegador'))) return;
 
     // Sin desacuerdo nada cambia: una navegación del cliente a /game y ninguna recarga
     const healthy = await zarpar(page);
@@ -141,12 +157,7 @@ test.describe('P0 en el navegador: «Zarpar» con la sesión iniciada', () => {
     expect(healthy.hops.filter((h) => h.path === '/sign-in'), 'con cookies sanas, nunca pasa por /sign-in').toHaveLength(0);
     await context.clearCookies({ name: RELOAD_COOKIE });
 
-    const stale = await zarpar(page, async () => {
-      const future = String(Math.floor(Date.now() / 1000) + 300);
-      const uat = (await context.cookies(BASE)).filter((c) => c.name.startsWith('__client_uat'));
-      expect(uat.length, 'el navegador tiene __client_uat').toBeGreaterThan(0);
-      await context.addCookies(uat.map((c) => ({ ...c, value: future })));
-    });
+    const stale = await zarpar(page, staleUat(context));
     console.log(`P0 __client_uat adelantado: ${summary(stale.hops)} · en el juego: ${stale.inGame}`);
     expect(stale.hops[0]?.reason, 'el desacuerdo llega al servidor (si no, el test no prueba nada)').toBe('session-token-iat-before-client-uat');
     // Ni una visita a /sign-in, ni RSC ni documento (también un 307 dentro de la recarga): el código viejo a veces se cura
@@ -154,5 +165,30 @@ test.describe('P0 en el navegador: «Zarpar» con la sesión iniciada', () => {
     expect(stale.hops.filter((h) => h.path === '/sign-in'), '0 visitas a /sign-in').toHaveLength(0);
     expect(documentLoads(stale.hops), 'una sola recarga de documento (la del handshake)').toHaveLength(1);
     expect(stale.inGame, 'termina en el juego').toBe(true);
+  });
+
+  // O-21 (QA-15 §2, sonda uat2): la marca de la recarga se borra al entrar al juego, así que un segundo desacuerdo
+  // antes de sus 30 s también se recupera con una recarga en vez de volver al bucle viejo (44 rebotes en local, 8 en
+  // staging, ~67 s en prod)
+  test('dos desacuerdos en menos de 30 s: el segundo también entra con una recarga y sin pasar por /sign-in', async ({ page, context }) => {
+    test.setTimeout(120_000);
+    if (!(await signInQa(page, 'O-21 navegador'))) return;
+    const t0 = Date.now();
+    const first = await zarpar(page, staleUat(context));
+    console.log(`O-21 primer desacuerdo: ${summary(first.hops)} · en el juego: ${first.inGame}`);
+    expect(first.inGame, 'el primero entra al juego').toBe(true);
+    expect(documentLoads(first.hops), 'el primero, con una recarga').toHaveLength(1);
+    const markAfterGame = await hasReloadMark(context);
+    console.log(`O-21 marca ${RELOAD_COOKIE} tras entrar al juego: ${markAfterGame ? 'sigue' : 'borrada'}`);
+    expect.soft(markAfterGame, 'con /game servido con sesión, la marca se borra').toBe(false);
+
+    const second = await zarpar(page, staleUat(context));
+    const gap = (Date.now() - t0) / 1000;
+    console.log(`O-21 segundo desacuerdo a ${gap.toFixed(1)} s del primero: ${summary(second.hops)} · en el juego: ${second.inGame}`);
+    expect(gap, 'el segundo cae dentro de los 30 s de la marca (si no, el test no prueba nada)').toBeLessThan(30);
+    expect(second.hops[0]?.reason, 'el segundo desacuerdo llega al servidor').toBe('session-token-iat-before-client-uat');
+    expect(second.hops.filter((h) => h.path === '/sign-in'), 'el segundo: 0 visitas a /sign-in').toHaveLength(0);
+    expect(documentLoads(second.hops), 'el segundo, con una sola recarga').toHaveLength(1);
+    expect(second.inGame, 'el segundo termina en el juego').toBe(true);
   });
 });
