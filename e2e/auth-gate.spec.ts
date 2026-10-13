@@ -92,12 +92,13 @@ function track(page: Page): Hop[] {
   return hops;
 }
 
-async function zarpar(page: Page, before?: () => Promise<void>): Promise<{ hops: Hop[]; inGame: boolean }> {
+async function zarpar(page: Page, before?: () => Promise<void>): Promise<{ hops: Hop[]; inGame: boolean; clickedAt: number }> {
   await page.goto(`${BASE}/`);
   await expect(page.getByTestId('cta-play')).toBeVisible();
   await page.waitForTimeout(1500);
   if (before) await before();
   const hops = track(page);
+  const clickedAt = Date.now();
   await page.getByTestId('cta-play').click();
   const inGame = await page
     .waitForFunction(() => window.__SEA_BATTLE__?.ready() === true, null, { timeout: 20_000 })
@@ -105,7 +106,7 @@ async function zarpar(page: Page, before?: () => Promise<void>): Promise<{ hops:
     .catch(() => false);
   await page.waitForTimeout(2000); // por si sigue navegando después de entrar
   page.removeAllListeners('response');
-  return { hops, inGame };
+  return { hops, inGame, clickedAt };
 }
 
 // Entra con el usuario de prueba de la instancia de desarrollo; sin CLERK_SECRET_KEY de desarrollo, NO VERIFICADO
@@ -173,7 +174,6 @@ test.describe('P0 en el navegador: «Zarpar» con la sesión iniciada', () => {
   test('dos desacuerdos en menos de 30 s: el segundo también entra con una recarga y sin pasar por /sign-in', async ({ page, context }) => {
     test.setTimeout(120_000);
     if (!(await signInQa(page, 'O-21 navegador'))) return;
-    const t0 = Date.now();
     const first = await zarpar(page, staleUat(context));
     console.log(`O-21 primer desacuerdo: ${summary(first.hops)} · en el juego: ${first.inGame}`);
     expect(first.inGame, 'el primero entra al juego').toBe(true);
@@ -183,7 +183,9 @@ test.describe('P0 en el navegador: «Zarpar» con la sesión iniciada', () => {
     expect.soft(markAfterGame, 'con /game servido con sesión, la marca se borra').toBe(false);
 
     const second = await zarpar(page, staleUat(context));
-    const gap = (Date.now() - t0) / 1000;
+    // O-23 (QA-17): de clic a clic. La marca nace con la recarga, después del primer clic, así que este hueco es una cota
+    // por arriba de su edad en el segundo; antes contaba también la carga de la portada y la espera previa al primero
+    const gap = (second.clickedAt - first.clickedAt) / 1000;
     console.log(`O-21 segundo desacuerdo a ${gap.toFixed(1)} s del primero: ${summary(second.hops)} · en el juego: ${second.inGame}`);
     expect(gap, 'el segundo cae dentro de los 30 s de la marca (si no, el test no prueba nada)').toBeLessThan(30);
     expect(second.hops[0]?.reason, 'el segundo desacuerdo llega al servidor').toBe('session-token-iat-before-client-uat');
