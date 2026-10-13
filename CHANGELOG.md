@@ -6,6 +6,12 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-10-12
+
+### Corregido
+
+- **Bucle al entrar después de crear una cuenta.** Tras registrarse, la página podía rebotar entre el juego y el inicio de sesión durante cerca de un minuto. Pasaba cuando el servidor todavía no reconocía la sesión que el navegador ya tenía: en prod, Clerk actualiza por su cuenta una cookie de sesión y, en una navegación interna de la página, el servidor no puede renovar el token. Ahora, en ese caso, la página del juego se recarga una sola vez, Clerk renueva la sesión y se entra al juego. Sin sesión, `/game` sigue llevando al inicio de sesión como antes.
+
 ## [1.0.0] - 2026-10-12
 
 Primera versión numerada de Sea Battle, un juego naval multijugador de navegador inspirado en Seafight. Navegas con un clic, marcas un barco, das la orden de atacar y tu barco dispara andanadas solo hasta hundirlo. Con el botín compras en el puerto mejores cañones, casco, velas y barcos. Se juega en escritorio y en móvil, en https://seabattle.jonattan.dev.
@@ -122,5 +128,6 @@ Detalle y criterios en `docs/game/BACKLOG.md`, «Conocidos de la 1.0.0».
 - **clerk-js fijada en 5.128.0** (`src/lib/clerk-js.ts`). El navegador carga esa versión y no la última 5.x, así que Clerk no puede cambiar textos ni comportamiento en prod sin un deploy nuestro. Mantenimiento: cada subida de `@clerk/nextjs` o de clerk-js cambia la versión fijada a propósito, en un commit propio, y vuelve a pasar las pruebas de los textos en español del inicio de sesión y el registro (AC-140 c y AD-35 d). Así ningún texto nuevo de Clerk en inglés llega a prod sin que nadie lo vea.
 - **Node 24 en todo**: local, CI y Railway usan la misma versión mayor. La fijan `engines.node` (`24.x`) en `package.json`, `.nvmrc` y la CI, que lee `.nvmrc`. Si `verify` corre con otra versión mayor, falla `server/__tests__/node-runtime.test.ts`.
 
-[Unreleased]: https://github.com/jonattan-infante/sea-battle/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/jonattan-infante/sea-battle/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/jonattan-infante/sea-battle/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/jonattan-infante/sea-battle/releases/tag/v1.0.0
