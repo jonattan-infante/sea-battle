@@ -14,6 +14,13 @@ import { canonicalRedirect, publicOrigins, socketServerOptions } from './origins
 import { requestHandler } from './request-handler';
 import { installShutdown } from './shutdown';
 
+// DT-16, prueba del camino de fallo (rama desechable, nunca se fusiona): en Railway el proceso sale al arrancar, así que
+// el healthcheck nunca pasa y Railway debe dejar activo el despliegue anterior
+if (process.env.RAILWAY_ENVIRONMENT_NAME) {
+  console.error('DT-16: salida provocada para probar el camino de fallo del despliegue');
+  process.exit(1);
+}
+
 const dev = process.env.NODE_ENV !== 'production';
 loadEnvConfig(process.cwd(), dev);
 
