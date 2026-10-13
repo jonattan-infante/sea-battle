@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+    # labeled: poner la etiqueta «staging» despliega el PR en staging (deploy-staging)
+    types: [opened, synchronize, reopened, labeled]
 
 # Por defecto solo lectura; el job de prod pide contents: write para el tag y la release
 permissions:
@@ -11,6 +13,8 @@ permissions:
 
 jobs:
   verify:
+    # Al etiquetar un PR solo hace falta verify si la etiqueta es «staging» (deploy-staging lo necesita)
+    if: github.event.action != 'labeled' || github.event.label.name == 'staging'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     # Postgres real para los tests de persistencia (AC-97, AC-129 a AC-133)
@@ -49,11 +53,18 @@ jobs:
       - name: Build (Next + servidor)
         run: npm run build
 
-  # DT-16: cada PR hacia main desde una rama de este repo (nunca un fork: el secreto no debe llegar a código ajeno) se
-  # despliega en staging tras verify. Un despliegue a medias no se cancela; si llegan varios, espera el último
+  # DT-16: un PR hacia main desde una rama de este repo (nunca un fork: el secreto no debe llegar a código ajeno) se
+  # despliega en staging tras verify solo si tiene la etiqueta «staging»: al ponerla y en cada push posterior. Sin ella,
+  # solo verify, para que varios PR abiertos no se pisen staging. Un despliegue a medias no se cancela; si llegan varios,
+  # espera el último
   deploy-staging:
     needs: verify
-    if: github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository
+    if: >-
+      github.event_name == 'pull_request'
+      && github.event.pull_request.base.ref == 'main'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && contains(github.event.pull_request.labels.*.name, 'staging')
+      && ((github.event.action == 'labeled' && github.event.label.name == 'staging') || github.event.action == 'synchronize')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment:
@@ -64,6 +75,10 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4.4.0
+      - name: Probar el token de staging (solo lectura)
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: python3 -B scripts/railway/token_check.py --env staging
       - name: Desplegar la cabeza del PR en staging
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
@@ -92,6 +107,10 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4.4.0
+      - name: Probar el token de prod (solo lectura)
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: python3 -B scripts/railway/token_check.py --env production
       - name: Desplegar el commit en prod
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}

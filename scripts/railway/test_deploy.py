@@ -4,6 +4,7 @@ import os, sys, unittest
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from deploy import SHA, classify, health_commit
+from token_check import require_project_token
 
 
 class Classify(unittest.TestCase):
@@ -40,6 +41,14 @@ class Sha(unittest.TestCase):
         for bad in ('7e7299f', 'main', '7E7299FB562ED77A16CB57A15F95A9BA5F54062C', '7e7299fb562ed77a16cb57a15f95a9ba5f54062c\n'):
             with self.subTest(sha=bad):
                 self.assertIsNone(SHA.match(bad))
+
+
+class TokenCheck(unittest.TestCase):
+    # El primer paso de los jobs de despliegue para si no hay token de proyecto: con uno de cuenta o con el de la CLI no
+    def test_exige_un_token_de_proyecto(self):
+        require_project_token({'RAILWAY_TOKEN': 't-proj'})
+        with self.assertRaisesRegex(SystemExit, 'Falta RAILWAY_TOKEN'):
+            require_project_token({'RAILWAY_API_TOKEN': 't-cuenta'})
 
 
 if __name__ == '__main__':
