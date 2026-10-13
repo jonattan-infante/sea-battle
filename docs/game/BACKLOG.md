@@ -37,7 +37,7 @@
 
 | Entra en 1.0.0 | Pasa a 1.1.0 |
 |---|---|
-| Lo aprobado por QA (QA-8: 109 A, con O-4, H-20 y H-22 cerrados) y lo implementado en `434b160` que QA apruebe en la pasada siguiente (QA-9 cerró H-21, O-7 / O-8, DT-06, DT-07, DT-08, DT-09 en lo funcional y O-10, y aprobó AD-27, AC-137 y `/healthz`; quedan O-11, con fecha límite, y O-13, P3 del arnés, que no bloquea). QA-10 aprobó la persistencia de las fases (a) y (b) (AC-97, AC-130, AC-131 y AC-132), cerró DT-12 y D52, y abrió H-24 (P3). Lo que QA rechace se arregla o se saca | **I2 completo:** H-305 Capitán, H-306 Cañonera, E13 vista libre + AC-124, y AC-115. El trabajo sigue en `feat/seafight-vertical-slice`, no en la rama de release |
+| Lo aprobado por QA (QA-8: 109 A, con O-4, H-20 y H-22 cerrados) y lo implementado en `434b160` que QA apruebe en la pasada siguiente (QA-9 cerró H-21, O-7 / O-8, DT-06, DT-07, DT-08, DT-09 en lo funcional y O-10, y aprobó AD-27, AC-137 y `/healthz`; quedan O-11, con fecha límite, y O-13, P3 del arnés, que no bloquea). QA-10 aprobó la persistencia de las fases (a) y (b) (AC-97, AC-130, AC-131 y AC-132), cerró DT-12 y D52, y abrió H-24 (P3). Lo que QA rechace se arregla o se saca | **I2 completo:** H-305 Capitán, H-306 Cañonera, E13 vista libre + AC-124, y AC-115. El trabajo sigue en `feat/seafight-vertical-slice`, no en la rama de release. También la prueba de estrés del servidor lleno con PvP (H-904: AC-142 y AC-143; encargo de Jonattan del 2026-10-12) |
 | Persistencia en Postgres (AC-97, AC-129 a AC-133), Clerk de producción (AC-134) con sus páginas de inicio de sesión y registro (AC-140), el icono propio (AC-141), staging (AC-135), latencia en Railway (AC-136) y dependencias sin vulnerabilidades críticas ni altas (DT-11) | El arte del Capitán (`264363e`) va en el código, pero **latente**: no aparece en partida (AC-137) |
 | La población anterior a I2: 12 piratas y 8 mercantes (AC-51) | La población de I2 (8 piratas + 4 cañoneras), que entra con H-306 |
 
@@ -701,6 +701,89 @@ Reportes (el último manda):
 
   Verificación: perf de **larga duración** (`npm run test:soak`, `e2e/endurance.spec.ts`), fuera de `npm run verify` porque dura ~13 min. Lo escribe dev-tests y game-qa lo ejecuta antes de cada aceptación, con las 10 muestras en el log. Solo vale la corrida de 10 min. El modo corto (`AC91_MINUTES=2`, ventanas de 12 s) sirve para validar el harness, y en él el cociente de commits solo se registra: el ruido de una ventana de 12 s (±25 %) es mayor que el 20 % que se mide.
 - **AC-92** — Dado otro jugador navegando en línea recta sin pérdida de paquetes, cuando se muestrea su posición renderizada a 60 fps, entonces ningún salto entre frames consecutivos supera 1 m. Verificación: **unitario** sobre el interpolador de `src/client/game-client.ts`, con frames sintéticos a 10 Hz (llegada con *jitter* de ±20 ms) y muestreo cada 16,7 ms. *Justificación (plan de AC-108):* el salto por frame depende del interpolador y del ritmo de snapshots, no de la GPU. Con WebGL por software, un e2e mide la máquina (17,6 fps), no el código. Un e2e con GPU queda como comprobación opcional de QA.
+
+### H-904 El servidor lleno aguanta en tiempo real, con PvP (§13, §16) · P1 (1.1)
+Encargo de Jonattan (2026-10-12): una prueba de estrés con 20 jugadores a la vez, con combate entre jugadores además de NPC. Va en dos fases: A en local y, solo si A pasa, B en staging.
+
+**Qué falta hoy:**
+- AC-88 llena el servidor, pero sus bots solo atacan NPC (`server/__tests__/game-server.test.ts:328`), eligen el objetivo leyendo el mundo del propio servidor y corren con un reloj virtual dentro de Jest.
+- AC-03 mide solo el coste del tick, sin sockets.
+- La PvP solo se ha probado con 2 jugadores (AC-93).
+- Nada se ha medido en tiempo real ni en Railway.
+
+**Va a la 1.1 y no bloquea la 1.0** (decisión de game-product, 2026-10-12):
+- lo que crece con los jugadores ya tiene margen medido: el tick, p99 de 0,27–0,57 ms frente a 4 ms (AC-03, dato del lead), y la red, 10,04 de 12 KB/s (AC-88);
+- los mensajes por segundo no pueden pasar de 10, porque los eventos viajan dentro del frame (`server/game-server.ts:362-388`);
+- un servidor saturado da tirones, pero no pierde progreso (AC-130);
+- prod tiene hoy 1 jugador (dato del lead).
+
+Si A tumba el proceso o pierde progreso, el fallo es P0, y con la 1.0 ya en prod se arregla como hotfix. Pasar de 20 jugadores no entra: es la pregunta Q26 del GDD.
+- **AC-142** — Dado el build de producción en local (`npm run build` y `node dist/server/index.js`, en Node 24, con Postgres local y `AUTH_BYPASS=1`) con **20 jugadores con usuario de prueba que guarda progreso** (`testUser`; nunca invitados, que no escriben en la BD) y la población de NPC del build (AC-51), cuando juegan **10 min en tiempo real** con la carga de abajo, entonces se cumplen todas las cotas de la tabla. Los jugadores son bots en un proceso aparte que solo usan el protocolo: eligen el objetivo con lo que reciben en los frames, nunca leyendo el mundo del servidor como AC-88. En esta fase no hay navegador: con WebGL por software ocuparía ~6 núcleos de la misma máquina y ensuciaría la medida del servidor.
+  - **Carga** (es el «dado», como en AC-91):
+    - **Roles:** 10 bots de PvP y 10 de PvE, que **intercambian el rol a los 5 min**, así que cada bot hace las dos cosas.
+      - El de PvP ataca al jugador atacable más cercano: los dos fuera de la zona segura y sin protección (GDD §7).
+      - El de PvE ataca al NPC vivo más cercano.
+      - Los dos navegan hacia su objetivo y lo atacan. Si el objetivo entra en la zona segura, el ataque se cancela (AC-93) y eligen otro.
+    - **Ritmo:** un `moveTo` cada 1 ± 0,5 s mientras navegan (aleatorio con semilla). Con los cambios de objetivo salen 1–2 órdenes por segundo por bot, por debajo de la cubeta de AC-06 (10/s, ráfaga de 20), así que no debería descartarse ninguna.
+    - **Reparación:**
+      - Los de PvE reparan por debajo del 40 % de vida y siguen hasta el 80 % (como AC-60).
+      - Los de PvP no reparan mientras luchan contra un jugador: si los dos reparasen a la vez, nadie se hundiría.
+    - **Hundimiento y compras:** hundidos, zarpan al acabar la cuenta atrás. Con ≥ 300 de oro vuelven al puerto y compran el artículo más barato que puedan pagar. Así entran en la carga las escrituras de compra (AC-130 a), además del oro cada 2 s.
+    - **Cliente 21:** a los 5 min, un cliente 21 intenta entrar y recibe «Servidor lleno» (AC-12), sin que los 20 noten nada.
+    - **Mínimos en los 10 min medidos** (el minuto de calentamiento previo no cuenta):
+      - ≥ 20 hundimientos de jugadores a manos de jugadores;
+      - ≥ 40 de NPC;
+      - ≥ 10 compras;
+      - cada bot dispara en al menos 8 de los 10 minutos.
+    - **Con la carga incompleta, el AC nunca es APROBADO:**
+      - si todas las cotas se cumplen, queda NO VERIFICADO (carga insuficiente);
+      - si alguna falla, es RECHAZADO, porque menos carga solo puede esconder un fallo.
+  - **Qué se mide:** los bots registran cada orden y cada frame. El servidor mide su propio proceso y lo registra cada 60 s con su hora, como los logs del apagado (`c4733ad`). Cómo se activa lo decide game-developer. Sin jugadores no registra nada.
+
+  | Métrica (fuente) | Cota |
+  |---|---|
+  | **Respuesta a una orden** (en el bot: del envío al primer frame que la refleja; ver «Observables») | p95 ≤ 150 ms y máximo ≤ 300 ms, sobre las órdenes medidas de los 20 bots. 150 ms es el máximo teórico en reposo: ≤ 1 tick + ≤ 1 intervalo de snapshot (AC-14 b; medido 7–103 ms en QA-2 y QA-3). Con el p95 dentro, la carga no se come el margen de AC-136 (p95 ≤ 500 ms en Railway) |
+  | **Órdenes perdidas** (orden medida sin frame que la refleje en ≤ 1 s) | 0. Las que el servidor rechaza por una regla (objetivo protegido o en la zona segura) responden con un aviso: cuentan como respondidas y se registran aparte |
+  | **Desconexiones** (un `disconnect` que el bot no pidió, un `kicked` o un «Servidor lleno» en uno de los 20) | 0 |
+  | **Ticks perdidos** (segundos de reloj × 20 − ticks ejecutados; el bucle descarta el tiempo que pasa de 5 ticks de retraso, `server/game-server.ts:442`) | 0 |
+  | **Retraso del event loop** (`monitorEventLoopDelay` de `node:perf_hooks`, por minuto) | p99 ≤ 20 ms y máximo ≤ 100 ms. 20 ms es el jitter con el que AC-92 prueba que el interpolador no da saltos. Un retraso de más de 100 ms, un intervalo de snapshot entero, retrasa un frame completo a todos los jugadores |
+  | **Tick de la simulación** (`step` en tiempo real) | p99 ≤ 4 ms, el presupuesto de GDD §16 (AC-03), ahora con sockets y PvP |
+  | **Utilización del event loop** (`performance.eventLoopUtilization`, por minuto) | ≤ 0,5 en cada minuto, es decir, la mitad del hilo libre. El valor alimenta Q26 |
+  | **Red por cliente** (el mismo método que AC-88) | El peor bot, de media en los 10 min: ≤ 10 mensajes/s y ≤ 12 KB/s (GDD §13). Se registra su peor minuto. La PvP no puede subir los mensajes, que salen como mucho uno por intervalo, pero sí los KB/s |
+  | **Memoria del proceso** (una muestra por segundo; por minuto, el mínimo del heap usado, que se acerca a lo vivo tras cada GC) | Heap: final − minuto 1 ≤ 20 MB, y pendiente ≤ 1 MB/min en los minutos 5–10, por mínimos cuadrados (como AC-91). RSS: pendiente ≤ 2 MB/min en los minutos 5–10 |
+  | **CPU del proceso** (`process.cpuUsage`, por minuto) | Media de los minutos 9–10 ≤ media de los minutos 1–2 × 1,2: sin deriva |
+  | **Errores** | 0 líneas `❌` en el log del servidor, y 0 frames con `unsaved`: el guardado nunca entra en modo degradado (AC-132) |
+  | **Progreso guardado** (5 s después de parar los bots) | La fila de cada bot en la BD tiene el oro, las mejoras y los barcos de su último frame (AC-130 b): 20 de 20 |
+
+  - **Observables de cada orden** (para la respuesta y las pérdidas):
+    - `attack`: el barco propio con `t` igual al objetivo, o un aviso;
+    - `cancelAttack`: `t` vacío;
+    - `repair`: cambia `r`, o un aviso;
+    - `respawn`: `me.death` vacío;
+    - `buy`: `me` con el artículo, o un aviso;
+    - `moveTo`: solo desde parado, como AC-14 (b): el primer frame con velocidad > 0. Para eso, cada bot hace una parada medida por minuto: `stop`, espera a velocidad 0 y `moveTo`.
+
+    Los `moveTo` en marcha no tienen observable: cuentan como carga, no como medida. Cada bot tiene como mucho una orden medida en vuelo, y no envía otra que pueda deshacer su observable antes de verlo.
+  - **Ruido de la máquina.** Es la misma lógica que AC-03 y O-18: la carga ajena solo puede empeorar las cifras.
+    - Antes de los bots, **60 s de control con el servidor sin jugadores** (con NPC): el retraso del event loop tiene que dar p99 ≤ 5 ms. Si no, la máquina tiene ruido y no se empieza.
+    - La carga media de 1 min (`uptime`) tiene que ser ≤ 6 antes de arrancar el servidor y los bots, y ≤ 10 en cada minuto medido: por debajo de los 12 núcleos del M4 Pro, siempre queda uno libre para el servidor. Si se pasa, la corrida no cuenta y se repite (NO VERIFICADO, nunca RECHAZADO). Un rojo con la carga dentro de esos límites es RECHAZADO.
+    - En el log van el SHA, `node -v`, la carga de cada minuto y la CPU del proceso de los bots.
+
+  Verificación: arnés de estrés de dev-tests, fuera de `verify` por su duración (como `test:soak`), con una línea por minuto de cada métrica en el log. Lo corre game-qa.
+- **AC-143** — Dado AC-142 APROBADO y el mismo build desplegado en staging (`/healthz` da el commit), con 19 bots con usuarios de prueba de Clerk de desarrollo y un navegador real con el usuario QA (`sea-battle-qa`), cuando juegan 10 min con la carga de AC-142, entonces:
+  (a) **en el servidor** se cumplen las cotas del proceso de AC-142 (ticks perdidos, event loop, tick, utilización, memoria, CPU y errores). Se leen de las líneas que el proceso registra cada 60 s en el log de Railway, así que no dependen de la máquina que lanza los bots;
+  (b) **en los bots**: 0 desconexiones, 0 órdenes perdidas (sin reflejo en ≤ 1 s más el RTT mediano de la corrida) y la red por cliente de AC-142. El tiempo de respuesta se registra junto al RTT (la mediana de `/healthz` cada 5 s), pero no es cota, porque incluye la red de casa;
+  (c) **en el navegador**, que es el lado del jugador: 30 clics en el agua durante la carga, con el método de AC-136 y la espera de 60 s de O-18. Del clic al movimiento, p95 ≤ 500 ms (GDD §13), y el marcador, p95 ≤ 50 ms. Nunca sale «Sin conexión»;
+  (d) **el progreso**: 5 s después de parar, las 20 filas de la BD de staging coinciden con el último frame de cada jugador.
+
+  **Preparación:**
+  - Crear 19 usuarios de prueba en Clerk dev, sin correo y con una contraseña aleatoria que no se guarda, como `sea-battle-login-e2e`. Necesita la autorización de Jonattan. Clerk dev admite 100 usuarios («Development instances are capped at 100 users», clerk.com/docs/guides/development/managing-environments, consultada el 2026-10-12), así que antes hay que contar los que ya existen.
+  - Las entradas se escalonan, en tandas de ≤ 5 cada 10 s, antes del minuto 0. El Frontend API de Clerk limita la creación de inicios de sesión a «5 requests per 10 seconds» por IP, y el Backend API de desarrollo, a «100 requests per 10 seconds» (clerk.com/docs/guides/how-clerk-works/system-limits, consultada el 2026-10-12).
+  - Sin deploys durante la corrida (no hay disparadores, AC-139). Si la medida del servidor se activa con una variable, va en el mismo deploy que se prueba: en Railway, cambiar una variable obliga a desplegar.
+  - Se anotan la CPU y la memoria del servicio de staging, frente a las de prod (8 vCPU y 8 GB, dato del lead).
+  - Solo en staging. En prod no se corre (ver «Reglas de las pruebas remotas»).
+
+  Verificación: el mismo arnés contra la URL de staging, con las líneas del servidor copiadas del log de Railway y el log del navegador.
 
 ## E13 — Vista libre (§5, §13) · P1 (I2)
 
