@@ -22,6 +22,12 @@ export interface GameStack {
   pool: Pool | null; // null: sin BD (solo fuera de Railway), todo en memoria
 }
 
+// Ventana de las métricas en ms (por defecto 60 s): el humo del arnés de estrés la acorta. Menos de 1 s se ignora
+function metricsInterval(raw: string | undefined): number | undefined {
+  const ms = Number(raw);
+  return Number.isInteger(ms) && ms >= 1000 ? ms : undefined;
+}
+
 // overrides: solo para el proceso de los tests (p. ej., sin guardado periódico); server/index.ts no lo usa
 export async function startGame(io: Server, env: Env = process.env, log: (msg: string) => void = () => {}, overrides: Partial<GameServerOptions> = {}): Promise<GameStack> {
   const configError = databaseConfigError(env);
@@ -45,6 +51,8 @@ export async function startGame(io: Server, env: Env = process.env, log: (msg: s
     // Escenarios de prueba: solo con el modo invitado permitido, que nunca se activa en Railway
     setup: isAuthBypassAllowed(env) && scenario ? (world) => applyScenario(world, scenario) : undefined,
     store: pool ? createPgStore(pool) : undefined,
+    metrics: env.SEA_BATTLE_METRICS !== '0', // AC-142 / AC-143: una línea por minuto con jugadores; 0 la apaga
+    metricsIntervalMs: metricsInterval(env.SEA_BATTLE_METRICS_MS),
     log,
     ...overrides
   });

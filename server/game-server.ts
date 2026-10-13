@@ -49,6 +49,7 @@ import {
   stop
 } from '../src/game/world';
 import type { Identity } from './auth';
+import { createServerMetrics } from './metrics';
 import { createPersistence, ProgressStore, StoredProgress } from './persistence';
 import { progressOf, SavedProgress } from './progress';
 
@@ -65,6 +66,8 @@ export interface GameServerOptions {
   store?: ProgressStore; // progreso guardado de los usuarios de Clerk (AC-97); sin él, todo vive en memoria
   saveIntervalMs?: number; // guardado periódico del oro (por defecto 2 s)
   probeIntervalMs?: number; // con la BD caída, cada cuánto se comprueba si volvió (por defecto 1 s)
+  metrics?: boolean; // AC-142: el proceso registra sus métricas cada minuto con jugadores (server/metrics.ts)
+  metricsIntervalMs?: number; // por defecto 60 s (los tests lo acortan)
 }
 
 export interface GameServer {
@@ -106,6 +109,7 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
   const purchasing = new Set<string>(); // usuarios con una compra o un cambio de barco esperando a la BD
   const departing = new Set<string>(); // desconectados que salen de la memoria al retirar su barco (AC-129)
   let stopped = false; // apagado (SIGTERM): no entra nadie más
+  const metrics = options.metrics ? createServerMetrics({ players: () => clients.size, tickRate, log, intervalMs: options.metricsIntervalMs }) : null;
 
   const persistence = options.store
     ? createPersistence({
@@ -424,7 +428,9 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
   }
 
   function tick() {
+    const stepStart = metrics ? performance.now() : 0;
     step(world, 1 / tickRate);
+    metrics?.step(performance.now() - stepStart);
     if (departing.size) releaseDeparted();
     pendingEvents.push(...drainEvents(world));
     ticks++;
@@ -439,12 +445,16 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
     let last = Date.now();
     interval = setInterval(() => {
       const t = Date.now();
-      accumulator = Math.min(accumulator + (t - last) / 1000, dt * 5);
+      const due = accumulator + (t - last) / 1000;
+      accumulator = Math.min(due, dt * 5);
       last = t;
+      let executed = 0;
       while (accumulator >= dt) {
         tick();
         accumulator -= dt;
+        executed++;
       }
+      metrics?.loop(executed, due - Math.min(due, dt * 5)); // lo que pasa del tope se pierde: ticks perdidos (AC-142)
     }, 1000 / tickRate);
   }
 
@@ -455,6 +465,7 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
     stop: () => {
       stopped = true;
       if (interval) clearInterval(interval);
+      metrics?.stop();
       persistence?.close();
     },
     flushProgress: () => persistence?.flush() ?? Promise.resolve(true)
