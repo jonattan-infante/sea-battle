@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(*pending_deployments*)",
+      "Bash(*environments/production*-X*)",
+      "Bash(*environments/production*--method*)",
+      "Bash(*environments/production*--input*)",
+      "Bash(*environments/production*-f *)",
+      "Bash(*environments/production*-F *)",
+      "Bash(*environments/production*--field*)",
+      "Bash(*environments/production*--raw-field*)",
+      "Bash(*rulesets*-X*)",
+      "Bash(*rulesets*--method*)",
+      "Bash(*rulesets*--input*)",
+      "Bash(*deploy.py*production*)",
+      "Bash(*serviceInstanceDeploy*)",
+      "Bash(*serviceInstanceRedeploy*)",
+      "Bash(*deploymentRedeploy*)",
+      "Bash(railway up*)",
+      "Bash(railway redeploy*)"
+    ]
+  }
+}
