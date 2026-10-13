@@ -13,8 +13,7 @@ permissions:
 
 jobs:
   verify:
-    # Al etiquetar un PR solo hace falta verify si la etiqueta es «staging» (deploy-staging lo necesita)
-    if: github.event.action != 'labeled' || github.event.label.name == 'staging'
+    # Sin if: un check obligatorio saltado cuenta como verde y dejaría fusionar un PR en rojo (H-29)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     # Postgres real para los tests de persistencia (AC-97, AC-129 a AC-133)

@@ -1,6 +1,7 @@
 // DT-16: reglas del despliegue automático en .github/workflows/ci.yml que actionlint no mira. Staging solo con la
 // etiqueta «staging» y nunca desde un fork (el secreto RAILWAY_TOKEN no debe llegar a código ajeno, y varios PR abiertos
-// no deben pisarse staging); permisos mínimos (solo el job de prod escribe, para el tag y la release); acciones fijadas
+// no deben pisarse staging); verify siempre corre (H-29); permisos mínimos (solo el job de prod escribe, para el tag y la
+// release); acciones fijadas
 import fs from 'fs';
 import path from 'path';
 
@@ -26,6 +27,13 @@ describe('despliegue automático (DT-16)', () => {
     expect(staging).toContain("((github.event.action == 'labeled' && github.event.label.name == 'staging') || github.event.action == 'synchronize')");
     expect(staging).toMatch(/needs: verify/);
     expect(staging).toMatch(/group: staging\n\s+cancel-in-progress: false/);
+  });
+
+  // H-29 (QA-19): verify corre en todos los eventos del PR, sin ningún if. GitHub cuenta un job saltado como «Success» y
+  // no bloquea la fusión aunque sea un check obligatorio (docs.github.com, «Using conditions to control job execution»):
+  // con un if, poner una etiqueta cualquiera en un PR con verify en rojo lo dejaría fusionable en main
+  test('verify no tiene ninguna línea if: (un check obligatorio saltado cuenta como verde)', () => {
+    expect(job('verify').split('\n').filter((l) => /^\s*(-\s+)?if:/.test(l))).toEqual([]);
   });
 
   test('deploy-production: solo push a main, tras verify, en el entorno production', () => {
