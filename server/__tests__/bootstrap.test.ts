@@ -1,7 +1,10 @@
 // Arranque con la BD del progreso (server/bootstrap.ts): en Railway es obligatoria; fuera, sin DATABASE_URL todo vive en
 // memoria (e2e, dev:guest) y con ella se migra antes de abrir el puerto
-import { createServer } from 'http';
+import { createServer, Server as HttpServer } from 'http';
+import { AddressInfo } from 'net';
 import { Server } from 'socket.io';
+import { io as ioClient } from 'socket.io-client';
+import { C2S, S2C } from '../../src/game/protocol';
 import { databaseConfigError, startGame } from '../bootstrap';
 import { createTestDb } from './pg/test-db';
 
@@ -64,5 +67,44 @@ describe('startGame', () => {
     } finally {
       server.close();
     }
+  });
+});
+
+// AC-142 / AC-143: las métricas del proceso van activas por defecto (una línea por minuto con jugadores);
+// SEA_BATTLE_METRICS=0 las apaga y SEA_BATTLE_METRICS_MS acorta la ventana (el humo del arnés de estrés)
+describe('métricas del proceso', () => {
+  async function playFor(env: Record<string, string>, ms: number): Promise<string[]> {
+    const logs: string[] = [];
+    const http: HttpServer = createServer();
+    const server = new Server(http);
+    const { game } = await startGame(server, { SEA_BATTLE_NPCS: '0', AUTH_BYPASS: '1', ...env }, (m) => logs.push(m));
+    await new Promise<void>((resolve) => http.listen(0, resolve));
+    const client = ioClient(`http://localhost:${(http.address() as AddressInfo).port}`, { transports: ['websocket'], reconnection: false, auth: { guest: true } });
+    try {
+      await new Promise<void>((resolve) => {
+        client.on(S2C.welcome, () => resolve());
+        client.emit(C2S.join, {});
+      });
+      await new Promise((r) => setTimeout(r, ms));
+    } finally {
+      client.disconnect();
+      game.stop();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+    return logs.filter((l) => l.startsWith('📈 Métricas'));
+  }
+
+  test('activas por defecto, con la ventana de SEA_BATTLE_METRICS_MS', async () => {
+    const lines = await playFor({ SEA_BATTLE_METRICS_MS: '1000' }, 1600);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/ jugadores=1 /);
+  });
+
+  test('SEA_BATTLE_METRICS=0 las apaga', async () => {
+    expect(await playFor({ SEA_BATTLE_METRICS: '0', SEA_BATTLE_METRICS_MS: '1000' }, 1600)).toEqual([]);
+  });
+
+  test('una ventana no válida se ignora y queda la de 60 s', async () => {
+    expect(await playFor({ SEA_BATTLE_METRICS_MS: '50' }, 1200)).toEqual([]);
   });
 });
