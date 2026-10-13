@@ -6,6 +6,12 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-10-12
+
+### Corregido
+
+- **Un segundo rebote al entrar.** Con la 1.0.1, si la sesión volvía a desincronizarse en menos de 30 s después de la primera recarga, la página podía volver a rebotar entre el juego y el inicio de sesión. Ahora, al entrar al juego se borra la marca de esa recarga, así que cada desacuerdo se resuelve con una sola recarga. Una sesión que ni la recarga arregla sigue yendo al inicio de sesión sin recargar en bucle.
+
 ## [1.0.1] - 2026-10-12
 
 ### Corregido
@@ -128,6 +134,7 @@ Detalle y criterios en `docs/game/BACKLOG.md`, «Conocidos de la 1.0.0».
 - **clerk-js fijada en 5.128.0** (`src/lib/clerk-js.ts`). El navegador carga esa versión y no la última 5.x, así que Clerk no puede cambiar textos ni comportamiento en prod sin un deploy nuestro. Mantenimiento: cada subida de `@clerk/nextjs` o de clerk-js cambia la versión fijada a propósito, en un commit propio, y vuelve a pasar las pruebas de los textos en español del inicio de sesión y el registro (AC-140 c y AD-35 d). Así ningún texto nuevo de Clerk en inglés llega a prod sin que nadie lo vea.
 - **Node 24 en todo**: local, CI y Railway usan la misma versión mayor. La fijan `engines.node` (`24.x`) en `package.json`, `.nvmrc` y la CI, que lee `.nvmrc`. Si `verify` corre con otra versión mayor, falla `server/__tests__/node-runtime.test.ts`.
 
-[Unreleased]: https://github.com/jonattan-infante/sea-battle/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/jonattan-infante/sea-battle/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/jonattan-infante/sea-battle/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/jonattan-infante/sea-battle/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/jonattan-infante/sea-battle/releases/tag/v1.0.0
