@@ -21,7 +21,8 @@
     "qa:hero": "npm run build:e2e && node scripts/qa-hero.mjs",
     "icons": "node scripts/icons/generate.mjs",
     "test:remote": "playwright test -c playwright.remote.config.ts",
-    "verify": "npm run typecheck && npm test && npm run build"
+    "test:scripts": "python3 -B -m unittest discover -s scripts/railway -p 'test_*.py' && python3 -B -m unittest discover -s scripts/release -p 'test_*.py'",
+    "verify": "npm run typecheck && npm test && npm run test:scripts && npm run build"
   },
   "dependencies": {
     "@clerk/backend": "^3.23.2",

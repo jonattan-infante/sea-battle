@@ -13,7 +13,8 @@
 # nombre, que exista DATABASE_URL (sin ella el servidor no arranca en Railway) y que las redirecciones de Clerk usen los
 # nombres nuevos y no los obsoletos (DT-11, punto 5).
 # Uso: python3 scripts/railway/check_deploy.py [--env staging|production] [--deployment <prefijo del id>]
-# Sale con 1 si algo no coincide. Token: el de `railway login` o RAILWAY_API_TOKEN (railway_api.py).
+# Sale con 1 si algo no coincide. Token: RAILWAY_TOKEN (de proyecto, el de GitHub Actions), RAILWAY_API_TOKEN o el de
+# `railway login` (railway_api.py).
 import argparse, json, os, re, sys
 from datetime import datetime
 
@@ -38,6 +39,16 @@ def clerk_redirects(variables):
         return True, 'los dos FALLBACK_REDIRECT_URL, sin los AFTER_* obsoletos'
     problems = ([f"faltan {', '.join(missing)}"] if missing else []) + ([f"sobran {', '.join(stale)} (obsoletas)"] if stale else [])
     return False, ' · '.join(problems)
+
+
+def start_check(setting, manifest_start, banner):
+    """Arranque: el ajuste y el manifest dicen START y, si el build trae el banner de Railpack, su plan también. H-27
+    (QA-13 §5): hay builds sin banner en sus logs (el de prod de la 1.0.0); entonces el plan no se puede comprobar y no
+    cuenta como FALLA, pero un banner con otro plan (p. ej. npm start) sí."""
+    plan = re.findall(r'Deploy\s+─+\s+\$ ([^\n]+)', banner) if banner else None
+    ok = setting == START and manifest_start == START and (plan is None or plan == [START])
+    shown = 'no comprobable (el build no trae el banner en sus logs)' if plan is None else plan
+    return ok, f'ajuste {setting!r} · manifest {manifest_start!r} · plan de Railpack {shown}'
 
 
 def flush_seconds():
@@ -96,7 +107,6 @@ def main():
     ev = gql('query($id:String!){ deploymentEvents(id:$id, first:50){ edges { node { step createdAt completedAt } } } }', {'id': dep['id']})
     steps = {e['node']['step']: e['node'] for e in ev['deploymentEvents']['edges']}
     banner = next((re.sub(r'\x1b\[[0-9;]*m', '', l['message']) for l in logs(dep['id'], 'buildLogs') if 'Railpack' in l['message']), '')
-    railpack_start = re.findall(r'Deploy\s+─+\s+\$ ([^\n]+)', banner)
 
     print(f"Railway · {args.project}/{args.service} · entorno {args.env}")
     print(f"  ajustes: {json.dumps(si)}")
@@ -106,8 +116,7 @@ def main():
 
     replicas = sum((r or {}).get('numReplicas') or 0 for r in (manifest.get('multiRegionConfig') or {}).values()) or manifest.get('numReplicas')
     flush = flush_seconds()
-    check('arranque', si['startCommand'] == START and manifest.get('startCommand') == START and railpack_start == [START],
-          f"ajuste {si['startCommand']!r} · manifest {manifest.get('startCommand')!r} · plan de Railpack {railpack_start}")
+    check('arranque', *start_check(si['startCommand'], manifest.get('startCommand'), banner))
     check('healthcheck', si['healthcheckPath'] == HEALTH and manifest.get('healthcheckPath') == HEALTH and 'HEALTHCHECK' in steps,
           f"ajuste {si['healthcheckPath']!r} · manifest {manifest.get('healthcheckPath')!r} · paso HEALTHCHECK {'sí' if 'HEALTHCHECK' in steps else 'no'}")
     check('réplicas', replicas == 1, f'{replicas} (manifest)')
