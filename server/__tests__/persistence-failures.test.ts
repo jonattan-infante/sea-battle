@@ -374,8 +374,43 @@ describe('AC-132: con la BD caída en partida se sigue jugando, con aviso y sin 
     expect(world().players.get('u-gil')?.gold).toBe(777); // sin escribir: sigue en memoria
     proxy.restore();
     await waitFor(async () => (await stateOf('u-gil'))?.gold === 777, 5000, 'el oro escrito al volver la BD');
+    // La fila ya se ve en la BD, pero el servidor solo suelta al jugador cuando le llega la confirmación de esa escritura,
+    // que en un runner lento puede llegar después de esta lectura (CI, run 38334139904): se avanza tick a tick hasta entonces
+    await waitFor(() => {
+      game!.tick();
+      return !world().players.has('u-gil');
+    }, 2000, 'que el servidor suelte al jugador al confirmarse la escritura');
+    const again = await join('u-gil');
+    expect(again.me().gold).toBe(777);
+  });
+
+  test('AC-129: con la confirmación de la escritura lenta, el jugador sigue en memoria hasta que llega', async () => {
+    await seed('u-gil', { v: 1, ...SLOOP_ONLY });
+    // La confirmación de cada escritura llega 300 ms después de que la fila ya está en la BD (un runner lento)
+    const inner = createPgStore(pool);
+    const slow: ProgressStore = {
+      ...inner,
+      save: async (...args: Parameters<ProgressStore['save']>) => {
+        const revision = await inner.save(...args);
+        await sleep(300);
+        return revision;
+      }
+    };
+    await startServer({ autoStart: false, saveIntervalMs: 200, probeIntervalMs: 200, store: slow });
+    const gil = await join('u-gil');
+    world().players.get('u-gil')!.gold = 777;
+    proxy.cut();
+    gil.c.disconnect();
+    await sleep(500);
+    for (let i = 0; i < Math.round((DISCONNECT_GRACE + 0.5) * TICK_RATE); i++) game!.tick();
+    proxy.restore();
+    await waitFor(async () => (await stateOf('u-gil'))?.gold === 777, 5000, 'el oro escrito al volver la BD');
     game!.tick();
-    expect(world().players.has('u-gil')).toBe(false);
+    expect(world().players.get('u-gil')?.gold).toBe(777); // escrito, pero sin confirmar: no se suelta todavía
+    await waitFor(() => {
+      game!.tick();
+      return !world().players.has('u-gil');
+    }, 2000, 'que el servidor suelte al jugador al confirmarse la escritura');
     const again = await join('u-gil');
     expect(again.me().gold).toBe(777);
   });
