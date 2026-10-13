@@ -17,6 +17,7 @@
     "test:e2e": "npm run build:e2e && playwright test --grep-invert \"@perf|@capture|@soak\"",
     "test:perf": "npm run build:e2e && playwright test --grep @perf",
     "test:soak": "npm run build:e2e && playwright test --grep @soak",
+    "test:stress": "npm run build:e2e && tsx e2e/stress/run.ts",
     "qa:capture": "npm run build:e2e && playwright test --grep @capture",
     "qa:hero": "npm run build:e2e && node scripts/qa-hero.mjs",
     "icons": "node scripts/icons/generate.mjs",
