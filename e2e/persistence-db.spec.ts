@@ -174,3 +174,33 @@ test('AC-132: con la BD caída en partida, el aviso es el primero de la columna,
   await expect(port).toHaveAttribute('aria-disabled', 'false');
   await waitFor(() => page.evaluate(() => (window.__SEA_BATTLE__!.hud() as { saveWarning: boolean }).saveWarning), (u) => u === false, 1000);
 });
+
+test('AC-157: una fila v: 2 de la 1.1 (XP, Goleta y Navío como activo) entra con la Fragata; ni la tienda ni el HUD muestran lo nuevo, nada de ello viaja, y una compra lo conserva en la fila', async ({ page }) => {
+  test.setTimeout(90_000);
+  const v2 = { v: 2, gold: 4321, upgrades: { cannons: 3, hull: 2, sails: 1 }, ownedShips: ['sloop', 'brig', 'schooner', 'frigate', 'line'], activeShip: 'line', xp: 1234 };
+  await seed('test-navio', v2);
+  const socket = trackSocket(page);
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto(`${server.url}/game?testUser=navio`);
+  await page.waitForFunction(() => window.__SEA_BATTLE__?.ready() === true, null, { timeout: 30_000 });
+  await expect(page.getByTestId('connection-overlay')).toHaveCount(0);
+  expect(await progress(page)).toEqual({ gold: 4321, upgrades: v2.upgrades, ownedShips: ['sloop', 'brig', 'frigate'], activeShip: 'frigate' });
+
+  await page.keyboard.press('KeyP');
+  const shop = page.getByTestId('shop');
+  await expect(shop).toBeVisible();
+  await page.getByTestId('tab-ships').click();
+  await expect(shop.locator('[data-testid^="ship-"]')).toHaveCount(3);
+  await expect(shop.getByTestId('ship-frigate')).toContainText('En uso');
+  await expect(shop).not.toContainText(/Goleta|Navío/);
+  await page.screenshot({ path: path.join(SHOTS, 'ac157-v2-shop.png') });
+  expect(await page.locator('body').innerText()).not.toMatch(/\bXP\b|Goleta|Navío/);
+  expect(socket.received.join('\n')).not.toMatch(/"(schooner|line|xp)"/);
+
+  await page.getByRole('tab', { name: 'Mejoras' }).click();
+  await page.getByTestId('buy-hull-3').click();
+  await expect.poll(async () => (await sql('SELECT state FROM player_progress WHERE user_id = $1', ['test-navio']))[0].state, { timeout: 10_000 })
+    .toEqual({ ...v2, gold: 4321 - 1200, upgrades: { cannons: 3, hull: 3, sails: 1 }, activeShip: 'frigate' });
+  expect(errors).toEqual([]);
+});

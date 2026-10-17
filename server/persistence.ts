@@ -5,19 +5,20 @@
 // la persistencia pasa a «degradada» (AC-132): la tienda se cierra y los jugadores ven el aviso. Mientras dura el corte
 // no se reintenta ninguna escritura: solo un SELECT 1 por segundo, y cuando responde se escribe todo lo pendiente
 import { Pool } from 'pg';
-import { parseProgress, progressKey, SavedProgress, serializeProgress } from './progress';
+import { NEW_ROW, parseProgress, progressKey, RowCarry, SavedProgress, serializeProgress } from './progress';
 
 export interface StoredProgress {
   progress: SavedProgress;
+  carry: RowCarry; // lo que la fila trae y no se juega (AC-157): se vuelve a escribir tal cual
   revision: number;
 }
 
 export interface ProgressStore {
   // null: el usuario aún no tiene fila. Lanza si la BD falla o si el registro no pasa la validación (AC-131)
   load(userId: string): Promise<StoredProgress | null>;
-  // Escribe solo si la fila sigue en `revision` (0: aún no existe). Devuelve la revisión nueva, o null si otro proceso
-  // escribió antes (y entonces la fila no se toca)
-  save(userId: string, progress: SavedProgress, revision: number): Promise<number | null>;
+  // Escribe solo si la fila sigue en `revision` (0: aún no existe), con la versión y lo que conserva de la fila que se
+  // leyó (`carry`). Devuelve la revisión nueva, o null si otro proceso escribió antes (y entonces la fila no se toca)
+  save(userId: string, progress: SavedProgress, revision: number, carry: RowCarry): Promise<number | null>;
   ping(): Promise<void>; // ¿responde la BD? (solo mientras está degradada, para saber si volvió)
 }
 
@@ -28,12 +29,12 @@ export function createPgStore(pool: Pool): ProgressStore {
     async load(userId) {
       const { rows } = await pool.query('SELECT state, revision FROM player_progress WHERE user_id = $1', [userId]);
       if (rows.length === 0) return null;
-      const progress = parseProgress(rows[0].state);
-      if (!progress) throw new InvalidProgressError(`Registro de progreso no válido (${userId})`);
-      return { progress, revision: Number(rows[0].revision) };
+      const parsed = parseProgress(rows[0].state);
+      if (!parsed) throw new InvalidProgressError(`Registro de progreso no válido (${userId})`);
+      return { ...parsed, revision: Number(rows[0].revision) };
     },
-    async save(userId, progress, revision) {
-      const state = serializeProgress(progress);
+    async save(userId, progress, revision, carry) {
+      const state = serializeProgress(progress, carry);
       const { rows } =
         revision === 0
           ? await pool.query('INSERT INTO player_progress (user_id, state) VALUES ($1, $2) ON CONFLICT (user_id) DO NOTHING RETURNING revision', [userId, state])
@@ -79,6 +80,7 @@ export interface Persistence {
 
 interface Tracked {
   revision: number;
+  carry: RowCarry; // de la fila leída; un usuario nuevo, NEW_ROW
   savedKey: string | null; // huella de lo último escrito; null: aún no hay fila
   queue: Promise<void>;
   pending: number;
@@ -103,7 +105,7 @@ export function createPersistence(options: PersistenceOptions): Persistence {
 
   async function write(userId: string, t: Tracked, progress: SavedProgress): Promise<boolean> {
     if (t.lost) return false;
-    const revision = await store.save(userId, progress, t.revision);
+    const revision = await store.save(userId, progress, t.revision, t.carry);
     if (revision === null) {
       t.lost = true;
       log(`⚠️  El progreso de ${userId} cambió en otro proceso: no se sobrescribe`);
@@ -185,7 +187,7 @@ export function createPersistence(options: PersistenceOptions): Persistence {
       return stored;
     },
     track: (userId, stored) => {
-      users.set(userId, { revision: stored?.revision ?? 0, savedKey: stored ? progressKey(stored.progress) : null, queue: Promise.resolve(), pending: 0, lost: false });
+      users.set(userId, { revision: stored?.revision ?? 0, carry: stored?.carry ?? NEW_ROW, savedKey: stored ? progressKey(stored.progress) : null, queue: Promise.resolve(), pending: 0, lost: false });
     },
     isTracked: (userId) => users.has(userId),
     forget: (userId) => {

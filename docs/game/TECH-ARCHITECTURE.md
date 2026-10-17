@@ -54,9 +54,9 @@ Postgres de Railway (`DATABASE_URL`, GDD Q2) con `pg`, sin ORM. Se guarda el oro
 | Pieza | Qué hace |
 |---|---|
 | `player_progress` | `user_id` (el `sub` del JWT verificado, AC-08), `state` jsonb, `revision` (+1 en cada escritura) y `updated_at` |
-| `server/progress.ts` | Parser estricto del `state` (oro entero entre 0 y el tope, niveles 1–3, barco activo entre los que posee). Lo que no pasa no se usa ni se sobrescribe (AC-131) |
+| `server/progress.ts` | Parser estricto del `state` (oro entero entre 0 y el tope, niveles 1–3, barco activo entre los que posee). Lo que no pasa no se usa ni se sobrescribe (AC-131). **Desde la 1.0.3** acepta exactamente `v: 1` y la `v: 2` de la 1.1 (GDD §13, «Formato de la fila»; AC-157) y rechaza lo demás como AC-156. De una `v: 2` se juega con lo de la 1.0 (si el barco activo es nuevo, con el mejor de la 1.0 que posea), y lo que no se juega (la `v`, la XP y los barcos `schooner` y `line`) va en `carry`, fuera del mundo: no llega a `Player` ni a `PlayerView`, así que no viaja al cliente. Al escribir, `serializeProgress(progress, carry)` deja la misma `v` que leyó, con la XP y los barcos nuevos tal cual y como activo el barco de la partida; un usuario nuevo se escribe en `v: 1`. La 1.0.2 congelada está en `server/__tests__/fixtures/progress-1.0.2.ts`, para probar que lee lo que escribe la 1.0.3 |
 | `server/db/migrate.ts` | Migraciones al arrancar, antes de abrir el puerto, con `pg_advisory_lock`. Si fallan, el proceso termina y Railway mantiene el despliegue anterior |
-| `server/persistence.ts` | Carga al entrar y cola de escrituras por usuario. Cada escritura lleva la revisión leída: si otro proceso escribió algo más nuevo, no se pisa y el jugador se recarga desde la BD |
+| `server/persistence.ts` | Carga al entrar y cola de escrituras por usuario. Cada escritura lleva la revisión leída: si otro proceso escribió algo más nuevo, no se pisa y el jugador se recarga desde la BD. Guarda por usuario el `carry` de la fila leída y lo pasa a cada escritura (`ProgressStore.save`) |
 | `server/bootstrap.ts` | Arranque compartido por `index.ts` y el proceso de los tests. En Railway sin `DATABASE_URL` el servidor no arranca; fuera de Railway, sin ella, todo vive en memoria (con aviso) |
 
 Cuándo se escribe:
