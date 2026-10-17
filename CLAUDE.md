@@ -20,7 +20,8 @@ game-product (GDD + criterios AC-xx) ──► game-ux (arte + specs) ──► 
         └──────────── game-qa (reporte con evidencia, veredicto por AC) ◄──────┘
 ```
 
-- Un ítem del backlog está **hecho** solo cuando `game-qa` lo marca APROBADO con evidencia y Jonattan lo acepta.
+- Un ítem del backlog está **hecho** solo cuando `game-qa` lo marca APROBADO con evidencia y `game-product` lo acepta.
+- **Qué entra y qué sale lo deciden `game-product` (alcance y mecánicas) y `game-ux` (arte)**, sin esperar la aprobación de Jonattan (delegación de Jonattan del 2026-10-17). Lo único que sigue siendo suyo es el deploy a prod (ver «Deploys a producción»).
 - Cada hallazgo de QA vuelve al backlog con severidad (P0–P3) y criterio de aceptación.
 
 ## Harnesses (comandos)
@@ -52,6 +53,12 @@ game-product (GDD + criterios AC-xx) ──► game-ux (arte + specs) ──► 
 - despliega en prod por fuera de GitHub (CLI o GraphQL de Railway, `scripts/railway/deploy.py --env production`) sin una orden explícita de Jonattan para ese deploy.
 
 El environment no deja que los administradores se salten la revisión (`can_admins_bypass: false`), y `.claude/settings.json` deniega esas llamadas. Son una red de seguridad, no la garantía: la garantía es esta regla.
+
+## Cuenta de GitHub
+
+Proyecto **personal**: solo la cuenta `jonattan-infante`, **nunca** la de Habi (`jonattanvargas-habi`), ni para leer.
+- La cuenta activa global de `gh` en esta máquina es la de Habi, y no se cambia (otras sesiones la usan). Por eso cada comando `gh` lleva su token: `GH_TOKEN=$(gh auth token --user jonattan-infante) gh …`. Antes de la primera escritura de la sesión (PR, merge, comentario), `gh api user --jq .login` debe dar `jonattan-infante`.
+- Git va por el alias SSH `github-personal` (`git@github-personal:jonattan-infante/sea-battle.git`), nunca por `git@github.com:`.
 
 ## Evidencia
 Toda afirmación lleva su evidencia (comando + salida, ruta:línea, captura). Las hipótesis se declaran como tales. Al terminar una prueba en navegador, **cerrar la pestaña de Playwright** (WebGL por software consume ~6 núcleos).
