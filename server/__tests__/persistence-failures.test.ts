@@ -227,9 +227,9 @@ function countingStore(inner: ProgressStore) {
   const pings: number[] = [];
   const store: ProgressStore = {
     load: (userId) => inner.load(userId),
-    save: (userId, progress, revision) => {
+    save: (userId, progress, revision, carry) => {
       saves.push(Date.now());
-      return inner.save(userId, progress, revision);
+      return inner.save(userId, progress, revision, carry);
     },
     ping: () => {
       pings.push(Date.now());
@@ -435,7 +435,7 @@ describe('AC-132: con la BD caída no se insiste con escrituras', () => {
     };
     let gold = 100;
     const p = createPersistence({ store, read: () => ({ ...SLOOP_ONLY, gold }), onConflict: () => {}, saveIntervalMs: 20, probeIntervalMs: 100 });
-    p.track('u', { progress: SLOOP_ONLY, revision: 1 });
+    p.track('u', { progress: SLOOP_ONLY, carry: { v: 1 }, revision: 1 });
     gold = 150;
     await waitFor(() => p.isDegraded(), 1000, 'el estado degradado');
     const t0 = Date.now();

@@ -112,7 +112,7 @@ function spyStore(inner: ProgressStore) {
       calls.load++;
       return inner.load(userId);
     },
-    save: async (userId, progress, revision) => {
+    save: async (userId, progress, revision, carry) => {
       calls.save++;
       if (gate) {
         waiting++;
@@ -120,7 +120,7 @@ function spyStore(inner: ProgressStore) {
         waiting--;
       }
       if (failing) throw new Error('BD caída (test)');
-      return inner.save(userId, progress, revision);
+      return inner.save(userId, progress, revision, carry);
     },
     ping: () => (failing ? Promise.reject(new Error('BD caída (test)')) : inner.ping())
   };

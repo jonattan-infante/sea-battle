@@ -300,7 +300,7 @@ async function compareProgress(url: string, lastMe: Map<string, PlayerView | nul
   await db.connect();
   try {
     const { rows } = await db.query('SELECT user_id, state FROM player_progress WHERE user_id = ANY($1)', [[...lastMe.keys()]]);
-    const byUser = new Map(rows.map((r) => [r.user_id as string, parseProgress(r.state)]));
+    const byUser = new Map(rows.map((r) => [r.user_id as string, parseProgress(r.state)?.progress]));
     const mismatches: string[] = [];
     let matched = 0;
     for (const [userId, me] of lastMe) {
