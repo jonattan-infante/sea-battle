@@ -1,10 +1,10 @@
 # Seafight — referencia de mecánicas
 
-> Autor: `game-product` · Investigación: 2026-10-10 · Consumidores: `GDD.md`, `game-ux`, `game-qa`
+> Autor: `game-product` · Investigación: 2026-10-10; ampliada el 2026-10-17 para la 1.1.0 (§16–§19) · Consumidores: `GDD.md`, `game-ux`, `game-qa`
 
 ## 0. Conclusión
 
-Seafight es un MMO naval en tiempo real de navegador (Bigpoint, desde 2006). Su bucle es: **clic en el mar para navegar → marcar un objetivo → una tecla de ataque que sigue disparando hasta que se cancela → hundir NPC por oro → mejorar cañones, velas y casco**. Tomamos ese bucle completo. Descartamos la capa de moneda premium (perlas), los monstruos con arpones, el abordaje y los 50 niveles.
+Seafight es un MMO naval en tiempo real de navegador (Bigpoint, desde 2006). Su bucle es: **clic en el mar para navegar → marcar un objetivo → una tecla de ataque que sigue disparando hasta que se cancela → hundir NPC por oro → mejorar cañones, velas y casco**. Tomamos ese bucle completo. Descartamos la capa de moneda premium (perlas), los monstruos con arpones y el abordaje. De los 50 niveles, la 1.1 adopta una versión reducida: 20 niveles con una sola experiencia (§16 y §19).
 
 | # | Rasgo de Seafight que adoptamos | Evidencia |
 |---|---|---|
@@ -153,7 +153,7 @@ La munición "élite" va de 50 a 250 de daño y tiene efectos: daño en el tiemp
 
 | Afirmación | Cita | Fuente | Evidencia |
 |---|---|---|---|
-| Cada nivel del jugador desbloquea una zona nueva del mapa | "Each level unlocks a new zone in the map." | S21 | V-Fuente |
+| Cada nivel del jugador desbloquea una zona nueva del mapa | "Each Level u gonna unlock a new zone in the map, likely your mission is going to be kill npc's and walk in that new zone." (cita literal, revisada el 2026-10-17; antes figuraba como «Each level unlocks a new zone in the map.», que era una paráfrasis) | S21 | V-Fuente |
 | 7 regiones por rangos de mapas (Normal 1–5, Tropical 6–10, Hielo 11–15…) | "Found in maps 1 - 5" … | S17 | V-Fuente |
 | Hay mapas PvE y PvP, y el aviso de la carta indica cuál es | "This box informs you as to what kind of a Map you are on" | S15 | V-Fuente |
 | Zona segura (Safe Haven) de la que se sale con un botón | "Click this bar when you want to leave the Safe Haven" | S15 | V-Fuente |
@@ -205,10 +205,87 @@ La munición "élite" va de 50 a 250 de daño y tiene efectos: daño en el tiemp
 | 5+ tipos de munición | **Adaptar**: 1 tipo infinito (P0); 1 tipo especial en P2 | Calidad sobre cantidad |
 | Reparar bajo fuego rinde menos | **Adoptar** | Decisión táctica |
 | Hundido → refugio + protección que se pierde al atacar | **Adoptar** (15 s) | Antiabuso al reaparecer |
-| NPC pasivos frente a almirantes agresivos | **Adaptar**: mercante pasivo + pirata hostil; capitán pirata tras 10 hundimientos (P2) | Dos arquetipos claros |
+| NPC pasivos frente a almirantes agresivos | **Adaptar**: mercante pasivo + pirata hostil; capitán pirata tras 10 hundimientos (I2, en la 1.1.0) | Dos arquetipos claros |
 | Oro / perlas | **Solo oro** | No hay monetización en el MVP |
-| Monstruos y arpones, abordaje, tripulación, gemas, castillos, 50 niveles, gremios | **Descartar** | Fuera del 20 % que produce el 80 % de la experiencia |
+| Monstruos y arpones, abordaje, tripulación, gemas, castillos, gremios | **Descartar** | Fuera del 20 % que produce el 80 % de la experiencia |
+| 50 niveles con EP, tests y misiones, más un rango PvP aparte (BP) | **Adaptar en la 1.1**: 20 niveles con una sola XP y 5 insignias (§16, §19) | Era «Descartar» en el slice; Jonattan lo pidió para la 1.1.0 |
 | Minimapa por colores | **Adaptar**: color + forma | Accesibilidad para daltónicos |
+
+---
+
+## 16. Experiencia, niveles y rangos (investigación para la 1.1.0)
+
+**Conclusión:** Seafight separa dos progresiones. La **experiencia (EP)** viene del PvE (NPC, mapas de bonificación y misiones) y sube de **nivel**, y el nivel abre mapas. El PvP da otra moneda, los **Battle Points (BP)**, que sube un **rango PvP con insignias**. La curva de EP es muy empinada y cada nivel exige además misiones y un test.
+
+| Afirmación | Cita textual | Fuente | Evidencia |
+|---|---|---|---|
+| La EP es la experiencia, y sale de hundir NPC, de los mapas de bonificación y de las misiones | "EP is short for Experience Points." / "EP is gained from completing various tasks in Seafight;" / "Destroying NPCs, completing Bonus Maps, and completing Quests to name a few." | S15 | V-Fuente |
+| Un NPC hostil da mucha más EP por punto de vida que un mercante: unas 10 veces | Merchant Cutter: "Hitpoints: 200,000." / "~4 Experience Points." · Ruthless Frigate: "Hitpoints: 300,000." / "~60 Experience Points." | S12 | V-Fuente |
+| El almirante (jefe) da la misma EP por punto de vida que una fragata: no lleva prima de experiencia | Drakir Klert (Admiral): "Hitpoints: 1,000,000." / "~200 Experience Points." | S12 | V-Fuente (cálculo propio: 200 / 1 000 000 = 60 / 300 000) |
+| El nivel abre mapas: el número del mapa es el nivel que pide | "The first number of the map is the level requirement of the map," / "for example to go into map 2 you need to be level 2." | S35 | V-Fuente |
+| Subir de nivel exige EP, las misiones del nivel y un test | "87,500,000 Experience Points" / "You need to complete all Quests: Level 22 - 23 before you can attempt this Test." | S30 | V-Fuente |
+| La EP de las misiones de un nivel no siempre basta para el siguiente | "Yes, that is possible. That's why some of the Daily Quests are for EP," (Bawdyn, «Commander of the Forum», jugador) | S29 | V-Fuente |
+| Ayudar a otros jugadores en combate también da EP | "find some1 whos doing big event ships and heal players around it that will also give you nice amount of EXP" (KRUCHY, jugador) | S31 | V-Fuente |
+| El PvP no da EP, sino Battle Points | "Battle Points are gained from sinking your fellow players." | S15 | V-Fuente. Que el PvP no dé EP es **HIPÓTESIS**: ninguna respuesta de S31 lo cita como fuente de EP |
+| Los BP suben un rango PvP con recompensas e insignias | "The more you gain the higher your BP Rank, gaining rewards and new badges as you increase the ranks." | S15 | V-Fuente |
+| Hay 70 rangos PvP con nombre propio, de 0 a 3 427 500 BP | Tabla: "1 Cannon Fodder 0", "2 Spineless Minnow 1"… "70 Emperor of the Oceans 3427500" | S25 | V-Fuente |
+| Los BP dependen de la diferencia de rango: una víctima de rango más alto da más | "The income of battle points depends on the difference between you and your opponents Battle Point Rank." / "the amount of bps received will be higher." (Rymar, Board Administrator, Team Seafight) | S27 | V-Staff |
+| Hay un límite por diferencia de rango hacia abajo | "As long as they have a Battle Point rank that is at the minimum 10 Ranks lower than your own, you will receive Battle Points (1-10 Battle Points)." | S25 | V-Fuente. Cómo se aplica es **HIPÓTESIS**: la frase admite dos lecturas |
+| Hundir varias veces a la misma víctima rinde menos hasta un reinicio diario | "Battle point reset (when you get again full Battle points for a player) will be each day at 12 noon (local server time)" | S25 | V-Fuente. Cuánto baja no se publica: **HIPÓTESIS** |
+| Hundirse no resta BP | Propuesta de un jugador para añadirlo: "When you are sunk, you lose 3 Battlepoints. (No more than that, ever)." / "do not care about being sunk, it honestly does not impact them in the slightest unless they are sunk out of a Raid or alike." | S28 | V-Fuente (indirecta: es una propuesta, no una regla vigente) |
+| El rango se lleva **en el barco**, a la izquierda, y a la derecha una insignia que elige el jugador | "Your Pirate Rank sits on the left side of your boat." / "The right side however, a selectable badge which can be changed to show off your biggest achievement" | S26 | V-Fuente |
+| La insignia de rango PvP se sustituye al subir | "Each time you progress to the next Battle Point Rank, your old Badge will be replaced" | S26 | V-Fuente |
+| Hay protección de novato por nivel y NPC agresivos solo con niveles bajos | Ya citado en §10 (S18) y §8 (S13) | S18, S13 | V-Fuente, V-Staff |
+
+## 17. Variedad de barcos: los «designs» (investigación para la 1.1.0)
+
+**Conclusión:** en Seafight un «diseño» es un tipo de barco con su aspecto y sus estadísticas, y los hay por tramos de nivel. Eso respalda leer «más diseños de barcos» (Jonattan) como **barcos nuevos que se juegan distinto**, no como aspectos. Así queda en GDD Q28 (decidida por producto el 2026-10-17, por delegación de Jonattan).
+
+| Afirmación | Cita textual | Fuente | Evidencia |
+|---|---|---|---|
+| Hay muchos diseños de barco y el jugador elige | "there are lots of ship designs in the game, choose the one you like the best and use it" (Corsair_Bill, jugador) | S23 | V-Fuente |
+| Los diseños se consiguen en el mercado, en eventos, como recompensa o pagando | "Ship Designs can be acquired from the Market, Events, Rewards and Payment." | S32 | V-Fuente |
+| Un diseño cambia las estadísticas (gemas incluidas) | "These are gems which can improve the stats of your ship." | S32 | V-Fuente |
+| Los diseños van por tramos de nivel | Tabla de diseños élite: "Level 1", "Level 5", "Level 13"… "Level 33" | S32 | V-Fuente |
+| Los barcos intercambian potencia de fuego por velocidad | Ya citado en §14: Warship "105 cannons but is slow", Little Buccaneer "quicker but only has 80 cannons" | S23 | V-Fuente |
+| Hay NPC de evento, más duros y con más botín | Ya citado en §8 (jefes y almirantes de S12) | S12 | V-Fuente |
+| Un «galeón del tesoro» con escolta | — | — | **HIPÓTESIS**: no se encontró en Seafight. Es adaptación propia (GDD §9) |
+
+## 18. Islas, puertos y refugio seguro (investigación para la 1.1.0)
+
+**Conclusión:** el refugio de Seafight (Safe Haven) es un mapa aparte, sin daño, donde se equipa el barco y están los que dan misiones. Las islas grandes (de gremio) son lugares «donde atracar». Las regiones tienen tema visual propio (Normal, Tropical, Hielo, Lava). No se encontró texto sobre muelles ni sobre si las islas bloquean el paso o los disparos.
+
+| Afirmación | Cita textual | Fuente | Evidencia |
+|---|---|---|---|
+| El refugio es un lugar de calma entre los naufragios | "The Safe Haven is a place of peace and clarity amongst the the destruction and shipwrecks." | S33 | V-Fuente |
+| En el refugio no se recibe daño | "This map is a PvE map, meaning that you can not take damage while situated there." | S33 | V-Fuente |
+| Allí se equipa el barco y están los que dan misiones | "Containing various features and quest givers, the Safe Haven is a perfect spot to take some time" / "and equip your boat to the best it can be!" | S33 | V-Fuente |
+| Se entra con una cuenta atrás de 15 s y no en pleno combate | "A 15 second countdown will begin, after which you will be transferred to the Safe Haven." / "You will not be allowed access to the Safe Haven if you are currently involved in battle." | S33 | V-Fuente |
+| En el mapa del mundo, el refugio va en azul claro con «SH» | "Safe Havens are labelled as SH on the World Map and are highlighted with a light blue colour." | S35 | V-Fuente |
+| Las islas de gremio son más grandes, se fortifican y sirven para atracar | "Guild Islands are larger than the average island, easily able to fortified and provide a safer spot" / "for your guild members to dock their ships." | S34 | V-Fuente |
+| Los tipos de isla cambian de aspecto y de tamaño según la región | "These four types of island differ in visual appearance and size." / "Guild Island (located in the Normal, Tropical, Ice and Lava Regions)" | S34 | V-Fuente |
+| Las islas de gremio se conquistan destruyendo sus torres | "Conquering a Guild Island is simple, destroy all the Towers so it is defenceless," | S34 | V-Fuente |
+| El refugio tiene muelles o amarres visibles | — | — | **HIPÓTESIS**: ninguna fuente de texto lo describe |
+| Las islas bloquean los disparos o la vista | — | — | **HIPÓTESIS**: no se encontró |
+
+## 19. Qué aplica a la 1.1.0 y qué no (razonado desde primeros principios)
+
+| Seafight | Sea Battle 1.1.0 | Por qué (no por autoridad) |
+|---|---|---|
+| EP del PvE y BP del PvP, dos barras | **Una sola XP**; hundir a un jugador da más que cualquier NPC común (GDD §10b) | Lo pidió Jonattan. Una barra se lee de un vistazo (pilar P2). Con 20 jugadores por sala, un rango PvP aparte quedaría vacío para quien no hace PvP (HIPÓTESIS) |
+| EP de un hostil ≈ ×10 la de un mercante por punto de vida | **×2** (hostil `vida/15`, pasivo `vida/30`) | El riesgo se paga, pero el mercante tiene que seguir valiendo para el novato, que con N1 no puede con la Cañonera (GDD §9) |
+| El almirante no lleva prima de EP | El Capitán y el Galeón llevan **×2** | Son raros, se reparten por daño en grupo y sin prima darían lo mismo por segundo que un pirata (GDD §10b) |
+| BP según la diferencia de rango; más por una víctima superior | **Factor por diferencia de nivel**: hasta ×1,5 hacia arriba y 0 a 4 niveles por debajo | Quita el premio de cazar novatos sin prohibir el PvP, que es libre fuera de la zona segura (GDD Q1) |
+| BP completos por víctima una vez al día | **Por pareja**: 100 %, 50 % y 0 % en 30 min | La progresión completa dura 45–70 min (GDD §10): un día no frena el intercambio de hundimientos entre dos amigos dentro de una misma sesión |
+| Hundirse no resta BP (indirecto) | **No se pierde XP** al hundirse | Morir ya cuesta el 10 % del oro y ~11 s (GDD §10, §12). Restar XP desanimaría a arriesgar y permitiría pasar XP de una cuenta a otra |
+| 50 niveles con misiones y tests, curva exponencial (87,5 M de EP en el 22–23) | **20 niveles** sin misiones ni tests, ~6–7 h hasta el máximo contra NPC | Pareto: el bucle es combatir → botín. Las misiones y los tests son otro sistema |
+| El nivel abre mapas | Un solo mapa: el nivel **no** abre zonas; abre los dos barcos nuevos (GDD Q27, decidida por producto) | 20 jugadores en 1 000 × 1 000 m: dividir el mapa por nivel vaciaría cada zona |
+| Rango en el barco + insignia elegida | **Insignia del tramo en la placa** del jugador y en su panel | La placa es lo que se lee en combate. Elegir la insignia queda fuera (P3) |
+| «Designs» por tramos de nivel, con estadísticas | **2 clases nuevas del jugador** (Goleta y Navío de línea) y **1 NPC nuevo** (Galeón del tesoro, P2), además del Capitán y la Cañonera de I2 | Variedad de decisiones (velocidad frente a potencia) y de presas, no solo de aspecto |
+| Refugio en otro mapa, con cuenta atrás de 15 s | **Puerto en el centro del mismo mapa**, sin cuenta atrás, con amarres donde se aparece | Un solo mapa. La cuenta atrás de Seafight evita entrar huyendo del combate; aquí no hace falta, porque desde la zona segura no se ataca a jugadores (`src/game/world.ts:151`) y los piratas no entran a < 130 m (GDD §9) |
+| Regiones con tema visual (Normal, Tropical, Hielo, Lava) | **5 arquetipos de isla** que dicen dónde estás y cuánto riesgo hay (GDD §4) | Orientación sin leer texto (pilar P2) |
+| Islas de gremio con torres | **Fuera** | Los gremios son P3 (GDD §3) |
+| Islas que bloquean disparos (HIPÓTESIS) | **No**: las islas solo cortan el paso | Con la cámara cenital oblicua, una línea de tiro tapada se lee mal, y cambiaría la IA y el balance de duelos (GDD §9) |
 
 ## Fuentes
 
@@ -239,3 +316,16 @@ La munición "élite" va de 50 a 250 de daño y tiene efectos: daño en el tiemp
 | S22 | https://board-en.seafight.com/threads/ship-speed.169771/ |
 | S23 | https://board-en.seafight.com/threads/ships.169962/ |
 | S24 | https://www.jeux-mmorpg.com/seafight.html (reseña con 6 capturas; análisis visual de `game-ux`, 2026-10-10) |
+| S25 | https://board-en.seafight.com/threads/battle-points.5/ (consultada el 2026-10-17) |
+| S26 | https://board-en.seafight.com/threads/badges.173164/ (2026-10-17) |
+| S27 | https://board-en.seafight.com/threads/i-find-this-very-hard-to-believe.182612/ (2026-10-17) |
+| S28 | https://board-en.seafight.com/threads/minus-battle-points.179619/ (2026-10-17) |
+| S29 | https://board-en.seafight.com/threads/experience-points.175570/ (2026-10-17) |
+| S30 | https://board-en.seafight.com/threads/test-22-23.164549/ (2026-10-17) |
+| S31 | https://board-en.seafight.com/threads/how-to-farm-experience-ep.175949/ (2026-10-17) |
+| S32 | https://board-en.seafight.com/threads/designs.171633/ (2026-10-17; leída la primera parte, 100 000 de 287 333 caracteres) |
+| S33 | https://board-en.seafight.com/threads/safe-haven.171667/ (2026-10-17) |
+| S34 | https://board-en.seafight.com/threads/guild-islands.172089/ (2026-10-17) |
+| S35 | https://board-en.seafight.com/threads/world-map.171887/ (2026-10-17) |
+
+**No legibles el 2026-10-17:** el wiki de Fandom (`seafight.fandom.com`, HTTP 402) y GameFAQs (HTTP 403). Lo que solo aparecía en ellas no se cita.
