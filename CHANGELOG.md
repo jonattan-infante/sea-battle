@@ -6,6 +6,13 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-10-17
+
+### Cambiado
+
+- **Preparada para la 1.1.** La 1.1 guardará también la experiencia y dos barcos nuevos, la Goleta y el Navío de línea. Si después de publicarla hubiera que volver a la versión anterior, la 1.0.2 no podría leer esas partidas y quien hubiera jugado a la 1.1 vería «No podemos cargar tu progreso ahora mismo». La 1.0.3 sí las lee: juegas con tu oro, tus mejoras y tus barcos de siempre, y la experiencia y los barcos nuevos se quedan guardados tal como estaban, aunque esta versión no los muestra. Si tu barco activo era uno nuevo, entras con el mejor de los de siempre que tengas; al volver a la 1.1, el barco nuevo se elige otra vez en el puerto, sin coste. Nada cambia en lo que ves ni en cómo se juega.
+- **Interno: las pruebas de navegador solo recogen los `.spec.ts`.** Los tests de Jest del arnés de estrés (`e2e/stress/__tests__/`), añadidos después de la 1.0.2, hacían que `npm run test:e2e`, `test:perf`, `test:soak` y `qa:capture` terminaran con error y 0 tests; ahora vuelven a correr los suyos (H-30). No cambia nada del juego.
+
 ## [1.0.2] - 2026-10-12
 
 ### Corregido
@@ -134,7 +141,8 @@ Detalle y criterios en `docs/game/BACKLOG.md`, «Conocidos de la 1.0.0».
 - **clerk-js fijada en 5.128.0** (`src/lib/clerk-js.ts`). El navegador carga esa versión y no la última 5.x, así que Clerk no puede cambiar textos ni comportamiento en prod sin un deploy nuestro. Mantenimiento: cada subida de `@clerk/nextjs` o de clerk-js cambia la versión fijada a propósito, en un commit propio, y vuelve a pasar las pruebas de los textos en español del inicio de sesión y el registro (AC-140 c y AD-35 d). Así ningún texto nuevo de Clerk en inglés llega a prod sin que nadie lo vea.
 - **Node 24 en todo**: local, CI y Railway usan la misma versión mayor. La fijan `engines.node` (`24.x`) en `package.json`, `.nvmrc` y la CI, que lee `.nvmrc`. Si `verify` corre con otra versión mayor, falla `server/__tests__/node-runtime.test.ts`.
 
-[Unreleased]: https://github.com/jonattan-infante/sea-battle/compare/v1.0.2...HEAD
+[Unreleased]: https://github.com/jonattan-infante/sea-battle/compare/v1.0.3...HEAD
+[1.0.3]: https://github.com/jonattan-infante/sea-battle/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/jonattan-infante/sea-battle/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/jonattan-infante/sea-battle/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/jonattan-infante/sea-battle/releases/tag/v1.0.0
