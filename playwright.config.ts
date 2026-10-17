@@ -27,6 +27,7 @@ export const chrome = {
 
 export default defineConfig({
   testDir: './e2e',
+  testMatch: '**/*.spec.ts', // los .test.ts de __tests__/ son de Jest (H-30: rompían la carga con 0 tests)
   testIgnore: 'remote/**', // contra un despliegue real: playwright.remote.config.ts
   globalSetup: './e2e/global-setup.ts',
   fullyParallel: false,
