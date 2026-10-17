@@ -1,6 +1,6 @@
 # Sea Battle — Especificación de efectos (VFX)
 
-> Autor: `game-ux` · v1.0 · 2026-10-10 · Consumidores: `game-developer`, `game-qa`
+> Autor: `game-ux` · v1.0 · 2026-10-10 · **v1.1 · 2026-10-17**: experiencia ganada, ascenso de rango (D70; §9 y §16) y balas que no se recortan contra las islas (§3, VFX-26); fase 2 ajustada a GDD §14 y AC-151, AC-152 y AC-159 · Consumidores: `game-developer`, `game-qa`
 > Reglas de juego: [`GDD.md`](./GDD.md) (§7 combate, §8 reparación, §10 restos, §12 muerte). Estética y paleta: [`ART-DIRECTION.md`](./ART-DIRECTION.md). Sockets: [`ASSET-SPEC.md`](./ASSET-SPEC.md) §3.
 > Las reglas verificables llevan id `VFX-NN` (§15). Los tamaños van en metros del mundo y tienen un **mínimo en px de pantalla**: tamaño final = `max(m, px_min / ppm)`, para que se lean también en móvil (2,29 ppm).
 
@@ -16,13 +16,13 @@
 ### 0.2 Pools (7 draw calls en total)
 | Pool | Geometría | Mezcla | Instancias (escritorio / móvil) | Draw calls | CPU por frame | Usado por |
 |---|---|---|---|---|---|---|
-| `P_ADD` | Quad *billboard* | Aditiva, `depthWrite: false` | 384 / 192 | 1 | Solo al emitir | Fogonazo, chispas, núcleo del fuego, brasas, destellos |
+| `P_ADD` | Quad *billboard* | Aditiva, `depthWrite: false` | 384 / 192 | 1 | Solo al emitir | Fogonazo, chispas, núcleo del fuego, brasas, destellos, chispas de ascenso (§16) |
 | `P_ALPHA` | Quad *billboard* | Normal, `depthWrite: false` | 1 280 / 640 (D21: entran los cuerpos de llama) | 1 | Solo al emitir | Humo, cuerpo de las llamas, rocío, astillas, vapor, cruces de reparación |
 | `P_WATER` | Quad horizontal en y = 0,03 | Normal, `depthWrite: false` | 768 / 384 | 1 | Solo al emitir | Estela, ondas, espuma, restos del naufragio |
 | `P_BALL` | Quad *billboard* | Normal | 96 / 64 | 1 | Escribe ≤ 96 posiciones | Balas de cañón |
 | `P_BALL_SHADOW` | Quad horizontal | Normal | 96 / 64 | 1 | Escribe ≤ 96 posiciones | Sombras de las balas en el agua |
 | `P_CONTACT` | Quad horizontal | Normal | 64 | 1 | Escribe ≤ 41 matrices | Espuma de contacto bajo cada casco |
-| `RINGS` | Quad horizontal en y = 0,05 + shader de anillo | Normal, `depthTest: false` | 64 | 1 | Escribe los anillos activos (≤ 30) | Selección, hover, propio, alcance, marcador de clic, protección, restos |
+| `RINGS` | Quad horizontal en y = 0,05 + shader de anillo | Normal, `depthTest: false` | 64 | 1 | Escribe los anillos activos (≤ 30) | Selección, hover, propio, alcance, marcador de clic, protección, restos, ascenso (§16) |
 | **Total** | | | | **7** (tope de ASSET-SPEC §5: 11) | | |
 
 **Orden de render** (`renderOrder`): océano 0 → `P_WATER` 1 → `P_CONTACT` 2 → islas 3 → `RINGS` 4 → barcos 5 → `P_BALL_SHADOW` 6 → `P_BALL` 7 → `P_ALPHA` 8 → `P_ADD` 9. Los anillos se pintan sobre las islas y los barcos los tapan.
@@ -94,6 +94,7 @@ En calidad "baja" (media del frame > 20 ms durante 3 s, o en móvil): tasas × 0
 | Punto de impacto | **Acierto**: punto aleatorio dentro de la elipse del casco del objetivo (0,6·L/2 × 0,6·B/2) a y = 0,6·F. **Fallo**: en el agua, a una distancia del centro ∈ [0,5·`sb_radius` + 2, `sb_radius` + 4] m y un ángulo de ±60° alrededor de la dirección al tirador (cae del lado visible del duelo) |
 | Forma | Bala: disco de **tamaño constante en pantalla**, 7 px (escritorio) o 6 px (móvil): núcleo `#2E2E30` (r < 0,35) + aro `#FFE2B0` (0,35–0,5), que se ve sobre agua oscura y sobre arena. Sombra: elipse `#000000` en el agua bajo la bala, de 6 px × (1 − 0,5·y/h), con α = 0,35·(1 − y/8). La sombra es lo que hace legible el arco con la cámara ortográfica |
 | Estela de humo | Solo en las balas del jugador o dirigidas a él, solo en escritorio y calidad alta: 1 disco cada 60 ms, de 0,6 a 1,6 m (mínimo 3 px), vida 0,4 s, `#D8D3CA` α0,45 → α0 (≤ 7 vivos por bala) |
+| Sobre las islas (1.1; VFX-26) | `P_BALL` y `P_BALL_SHADOW` llevan `depthTest: false`: la bala y su sombra se dibujan encima de cualquier isla, porque los disparos no chocan con nada (GDD §7) y una bala recortada contra el acantilado de I4 (9 m, más alto que el arco de ≤ 5 m) parecería parada por la isla (ART-DIRECTION §8.3). Su `renderOrder` (7 y 6) ya va después de las islas (3), así que no hace falta nada más. Con los barcos sí cambia algo: una bala que pasa por detrás de una vela también se ve. Se acepta: es un disco de 6–7 px y ayuda a seguir la andanada |
 | Partículas | 1 `P_BALL` + 1 `P_BALL_SHADOW` por bala (+ ≤ 7 `P_ALPHA` de estela) |
 | Al llegar (s = 1) | Acierto → §5. Fallo → §4 |
 
@@ -180,6 +181,7 @@ En calidad "baja" (media del frame > 20 ms durante 3 s, o en móvil): tasas × 0
 | Fallo | `Fallo` | `#C9D4DB` | 14 px / 600 cursiva |
 | Reparación propia | `+32` | `#3DDC97` | 15 px / 600 |
 | Oro | `+120 ◉` | `#F2C14E` | 18 px / 700; dura 1 200 ms y sube 48 px |
+| Experiencia (1.1; D70) | `+30 XP` | `#B79CFF` (`--ui-xp`; 8,3:1 con el contorno) | 16 px / 700. Sale con el oro de la misma recompensa, 18 px más arriba (la regla de los 250 ms), y solo para quien recibe la XP. Dura 1 200 ms y sube 48 px. Lleva siempre el texto «XP»: el color no basta con daltonismo (ART-DIRECTION §4.5) |
 
 ## 10. Marcador de clic de destino
 
@@ -269,3 +271,22 @@ Escena de combate estándar = AC-89 (20 barcos + 20 NPC + islas) con ≥ 6 duelo
 | VFX-21 | Humo de andanada visible | Captura 300 ms después del fogonazo | Hay humo junto a cada boca, ≥ 8 px de diámetro y L\* ≥ 70 | — |
 | VFX-22 | Alfa del framebuffer (§0.2; D20) | Escena estándar con todos los pools activos: `gl.readPixels` del canvas completo | 0 px con α < 255 | — |
 | VFX-23 | Sesgo del humo y de las llamas sobre barcos ajenos (§0.3; D22, D24) | 8 frames congelados de la escena estándar con zoom 1,0× y 1,5×. Se comparan con `uFxBias` = 7 m y = 0, y cada píxel cambiado se atribuye por id al emisor o a otro barco. Entre muestras, la pausa detiene también el reloj de VFX, igual que en VFX-09b | ≤ 15 % de los píxeles cambiados caen sobre otro barco. Medido con D22 y la pausa arreglada: 9,5 %. El 10,5 % de D20/D21 tenía el sesgo de la pausa, que dejaba menos humo en las muestras 2.ª a 4.ª | — |
+| VFX-24 | **Ascenso de rango** (1.1; D70; §16; AC-159) | e2e con 2 contextos en la escena sintética, en 1440×900 y 390×844 con N3 a 1,0×: A cambia de rango (XP preparada) con su barco en el área de interés de B; otra corrida en la que A sube de nivel sin cambiar de rango; otra en la que A cambia de rango fuera del área de B y luego entra; contador de instancias de VFX-03; *profiler* de AD-20; cajas y `visibility` de las placas por ref; y una corrida con `prefers-reduced-motion: reduce` | En A y en B, empieza en el frame del evento (±1) y dura 1,6 s ±1 frame; ≤ 32 instancias de `P_ADD` y 2 de `RINGS` por barco; el anillo llega a 2,0·`sb_radius` con un trazo ≥ 1,5 px; **0 nodos DOM nuevos** y las placas de todos los barcos conservan su caja (±1 px) y su `visibility` durante el efecto (no las tapa: todo va en el canvas, debajo de la capa de placas); 0 commits de React. Sin cambio de rango: 0 instancias nuevas en los 2 contextos. **Entrada con otra insignia** (AC-159 c): B ve a A, A sale de su área, cambia de rango fuera y vuelve a entrar; en B, 0 instancias nuevas y 0 líneas en el feed, y la placa ya muestra la insignia nueva. Con *reduced motion*, 0 chispas | AC-159 |
+| VFX-25 | **Experiencia ganada legible** (1.1; D70; §9; AC-152) | Captura y DOM al hundir un pirata con la XP acreditada, en 1440×900 y 390×844 | El «+30 XP» flotante aparece ≤ 50 ms tras la acreditación, 18 px por encima del oro de la misma recompensa, solo en el cliente que la recibe; el texto contiene «XP»; contraste con el contorno ≥ 4,5:1 (8,3:1 calculado) | AC-152 |
+| VFX-26 | **Las balas no se recortan contra las islas** (1.1; §3; GDD §7) | Test unitario sobre los materiales de los pools; y captura de evidencia con 2 barcos que se disparan a 80 m por encima del acantilado de I4 | `P_BALL` y `P_BALL_SHADOW` con `depthTest: false`; en la captura, cada bala en vuelo sobre la isla se ve entera (su disco de 6–7 px con el aro `#FFE2B0`) | — |
+
+---
+
+## 16. Ascenso de rango (1.1; D70)
+Celebra el cambio de insignia en el barco, para que lo vean todos los que están cerca (GDD §14, AC-159), sin tapar el combate ni las placas. **Solo al cambiar de rango** (Grumete → Marinero → Contramaestre → Teniente → Almirante: 4 veces en toda la progresión). Una subida de nivel sin cambio de rango no tiene efecto en el mundo: la celebra el aviso del HUD del propio jugador (ART-DIRECTION §12.9). El aviso, la barra de XP y la línea del feed están en ART-DIRECTION §12.9; la insignia, en §11.5.
+
+| Campo | Valor |
+|---|---|
+| Disparador | **Solo el evento de ascenso** de GDD §13, «Piezas de red de la 1.1»: `{ type: 'rankUp'; shipId: string; rank: 2 \| 3 \| 4 \| 5 }`, un `GameEvent` más de la lista `e` del frame (`src/game/types.ts:98-105` y `:165`). `rank` es la insignia nueva en el orden de §11.5 de ART-DIRECTION (2 Marinero, 3 Contramaestre, 4 Teniente, 5 Almirante; nunca 1) y la que pone la placa. No trae posición: el efecto sale de la del barco `shipId` en ese frame. Llega en el frame del tick en que el jugador cambia de insignia, al propio y a cada cliente que tiene ese barco en su área de interés (también por la vista libre), con la regla de visibilidad de los barcos: centro a ≤ 300 m (`INTEREST_RADIUS`, `server/game-server.ts:312`), y no los 300 + 60 m de los demás eventos; a 299, 301 y 359 m llegan 1, 0 y 0 eventos (AC-159 a). Como mucho 1 por jugador y tick: un hundimiento que cruza 2 insignias da 1 evento y 1 efecto, con la final (AC-159 d). **El cliente nunca deduce un ascenso de un cambio de nivel o de insignia**: un barco que entra en el área de interés con otra insignia que la última vista solo cambia su placa, con 0 efectos y 0 líneas en el feed (AC-159 c); una subida de nivel sin cambio de insignia no trae evento (AC-159 b); y un frame completo no lleva eventos (`server/game-server.ts:372`), así que un ascenso que coincide con uno solo cambia la placa, igual que el caso c |
+| Duración | 1,6 s |
+| Anillos (`RINGS`) | 2 anillos `#FFD166` con contorno de 1 px `#07121B` α0,6: el radio pasa de 0,6·`sb_radius` a 2,0·`sb_radius` en 900 ms (`ease-out`), el trazo de 4 a 1,5 px y la α de 1 a 0 en los últimos 300 ms. El 2.º sale 200 ms después. Continuos y sin giro, para no confundirse con el anillo de objetivo (§11), que es discontinuo y gira |
+| Chispas (`P_ADD`) | 32 en 600 ms desde la cubierta (elipse de 0,3·L × 0,3·B a `yd + 0.5`). Velocidad hacia arriba de 6–9 m/s con ±1,5 m/s laterales, arrastre 1,5 s⁻¹ y g = −2 (frenan arriba). Vida 1,0–1,4 s, tamaño 0,5 → 0,2 m (mínimo 3 px), `#FFE9A8` → `#F2C14E` y α 1 → 0. Forma 4 (estela de chispa) con estiramiento 1,5 |
+| Placas | **No hay nada en DOM**: la insignia que subía en la fase 1 tapaba placas y se quita. Anillos y chispas van en el canvas, que está debajo de la capa de placas (z 10, ART-DIRECTION §12.6), así que no pueden taparlas. La insignia de la placa cambia en el frame en que empieza el efecto |
+| Con `prefers-reduced-motion: reduce` | Sin chispas: los anillos aparecen ya en su radio final y se desvanecen en 600 ms |
+| Coste | ≤ 32 instancias de `P_ADD` (de 384 / 192) y 2 de `RINGS` (de 64) por barco; 0 draw calls nuevos (§0.2) y 0 commits de React. Los ascensos son raros: con 3 a la vez, 96 chispas y 6 anillos |
+| Tamaño en pantalla | El anillo final de una Balandra (`sb_radius` 9,0 m) mide 18 m de radio: con N3, 41 px en 390×844 y 91 px en 1440×900. El de un Navío (22 m), 44 m: 101 y 222 px |
