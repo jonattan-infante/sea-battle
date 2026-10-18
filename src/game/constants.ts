@@ -229,3 +229,28 @@ export const SPAWN_PROTECTION = 15;
 
 // ---- Validación de entradas ----
 export const MAX_NAME_LENGTH = 16;
+
+// ---- Experiencia, niveles e insignias (§10b, 1.1) ----
+// XP de cada NPC por id de clase: vida / 15 si es hostil y vida / 30 si es pasivo, ×2 si es de evento (Capitán, Galeón).
+// Toda clase NPC de SHIP_CLASSES necesita su fila (lo exige xp.test.ts)
+export const NPC_XP: Record<string, number> = { merchant: 10, pirate: 30, gunboat: 60, captain: 240, galleon: 160 };
+export const PVP_XP = 100; // por hundir a un jugador, repartida por daño como la de un NPC
+// Factor de nivel en % (Δ = nivel de la víctima − nivel del atacante): +10 por nivel de más hasta +5 niveles (×1,5);
+// −25 por nivel de menos, con suelo 0 (a −4 o menos no da nada)
+export const XP_LEVEL_FACTOR = { upPercentPerLevel: 10, upMaxLevels: 5, downPercentPerLevel: 25 };
+// Factor de repetición por pareja atacante → víctima: en los 30 min que siguen al primer hundimiento con XP, el 1.º al
+// 100 %, el 2.º al 50 % y los siguientes a 0; pasada la ventana, la pareja vuelve a empezar
+export const XP_REPEAT_WINDOW = 30 * 60; // s
+export const XP_REPEAT_PERCENT = [100, 50];
+export const XP_CAP = 9_999_999;
+// XP total para llegar a cada nivel: LEVEL_XP[n − 1] es la del nivel n (1 a 20)
+export const LEVEL_XP = [0, 60, 150, 300, 500, 800, 1200, 1700, 2400, 3300, 4500, 6000, 8000, 10500, 13500, 17000, 21000, 25500, 30500, 36000];
+export const MAX_LEVEL = LEVEL_XP.length;
+// Insignias en orden (rango 1 a 5) con el primer nivel de cada una
+export const RANKS = [
+  { label: 'Grumete', fromLevel: 1 },
+  { label: 'Marinero', fromLevel: 5 },
+  { label: 'Contramaestre', fromLevel: 9 },
+  { label: 'Teniente', fromLevel: 13 },
+  { label: 'Almirante', fromLevel: 17 }
+] as const;

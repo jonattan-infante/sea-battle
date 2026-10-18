@@ -73,6 +73,19 @@ export interface Player {
   kills: number;
   deaths: number;
   death: DeathInfo | null;
+  xp: number; // experiencia total (§10b); el nivel se calcula de ella y no se guarda aparte
+}
+
+// Pareja atacante → víctima con hundimientos con XP en su ventana: desde cuándo y cuántos lleva (1 o 2)
+export interface XpPair {
+  since: number;
+  kills: number;
+}
+
+// Un hundimiento entre jugadores, sin nombres ni ids: el nivel de la víctima y el de cada atacante con la XP que cobró
+export interface PvpSinkRecord {
+  victimLevel: number;
+  attackers: { level: number; xp: number }[];
 }
 
 export interface Projectile {
@@ -100,6 +113,7 @@ export type GameEvent =
   | { type: 'impact'; shipId: string; byShipId: string; damage: number; hits: number; misses: number; pos: Vec2 }
   | { type: 'sunk'; shipId: string; byShipId: string | null; pos: Vec2 }
   | { type: 'loot'; playerId: string; gold: number; pos: Vec2; source: 'kill' | 'wreck' | 'pvp' }
+  | { type: 'xp'; playerId: string; xp: number; pos: Vec2; source: 'kill' | 'pvp' } // solo al dueño, en el tick del oro
   | { type: 'respawn'; shipId: string }
   | { type: 'wreck'; wreckId: string; pos: Vec2; gold: number; expiresAt: number }
   | { type: 'wreckGone'; wreckId: string }
@@ -120,6 +134,8 @@ export interface World {
   nextId: number;
   killsSinceBoss: number;
   i2: boolean; // I2 encendido (AC-187): sin él no aparece el Capitán pirata. Lo decide el servidor (SEA_BATTLE_I2)
+  xpPairs: Map<string, Map<string, XpPair>>; // atacante → víctima (ids de jugador): ventana de repetición (§10b)
+  pvpLog: PvpSinkRecord[]; // hundimientos entre jugadores para el log del servidor (AC-148); lo vacía el servidor
   startingGold?: number; // solo escenarios de prueba (server/scenarios.ts); por defecto STARTING_GOLD
   startingHull?: number; // solo escenarios de prueba: fracción de la vida máxima con la que entra un jugador; por defecto 1
 }
@@ -142,6 +158,7 @@ export interface ShipSnapshot {
   t: string | null; // objetivo de ataque
   r: boolean; // reparando
   pu: number; // fin de la protección en tiempo de servidor (0 = sin protección); no cambia con el reloj
+  lv?: number; // nivel del jugador (§10b), solo en barcos de jugador: cambia al subir de nivel
 }
 
 // Al entrar en el área de interés se envía el barco completo; después, solo los campos que cambiaron
@@ -183,6 +200,7 @@ export interface PlayerView {
   kills: number;
   deaths: number;
   death: { by: string | null; goldLost: number; respawnAt: number } | null; // respawnAt en tiempo de servidor
+  xp: number; // el nivel y la insignia se calculan con levelOf y rankOf (src/game/xp.ts)
   unsaved?: boolean; // AC-132: la BD no guarda (solo jugadores con cuenta); al volver a false, la escritura está confirmada
 }
 
