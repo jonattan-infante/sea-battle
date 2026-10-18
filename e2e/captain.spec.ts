@@ -159,7 +159,8 @@ test.describe('Capitán pirata (AC-111)', () => {
         const gone = await waitFor(() => minimapMarker(page, captain), (m) => !m.haloVisible && m.coral === 0, 1500, 50);
         console.log(`AC-111 ${label}: feed «${line}»; marcador fuera del minimapa a los ${Date.now() - t0} ms del feed (${JSON.stringify(gone)})`);
       }
-      await expect(a.getByTestId('feed').getByText('Hundiste a Capitán pirata +600 oro', { exact: true })).toBeVisible();
+      // 1.1 (AC-152): la línea del botín lleva la XP de A, que lo hundió en solitario (240, GDD §10b)
+      await expect(a.getByTestId('feed').getByText('Hundiste a Capitán pirata +600 oro · +240 XP', { exact: true })).toBeVisible();
     } finally {
       for (const ctx of contexts) await ctx.close();
       await server.kill();

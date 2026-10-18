@@ -2,6 +2,7 @@
 // el servidor vuelve a validar cada intención (GDD §13).
 import {
   CANNON_LEVELS,
+  LEVEL_XP,
   LOW_HP_WARNING,
   MAP_HALF_SIZE,
   PirateSectorId,
@@ -13,6 +14,7 @@ import {
 } from '../game/constants';
 import { PlayerView } from '../game/types';
 import { Vec2 } from '../game/vec';
+import { levelOf, Rank, rankLabel, rankOf } from '../game/xp';
 import type { GameClient, RenderShip } from './game-client';
 import type { MeHud, Relation } from './hud-store';
 
@@ -56,6 +58,112 @@ export function captainDownText(names: string[], more: number): string {
   const list = more > 0 ? [...names, `${more} más`] : names;
   const text = list.length === 1 ? list[0] : `${list.slice(0, -1).join(', ')} y ${list[list.length - 1]}`;
   return `El Capitán pirata ha caído: ${text}`;
+}
+
+// ---------- Experiencia (1.1; GDD §10b y §14, ART-DIRECTION §12.9) ----------
+// El nivel sale siempre de la XP (xp.ts): el cliente no guarda un nivel aparte
+
+const fmt = (n: number) => n.toLocaleString('es-ES'); // el formato de la vida y el oro del HUD
+
+// XP dentro del nivel y XP del nivel; span null en el nivel máximo
+export interface XpProgress {
+  level: number;
+  rank: Rank;
+  into: number;
+  span: number | null;
+}
+
+export function xpProgress(xp: number): XpProgress {
+  const level = levelOf(xp);
+  const next = LEVEL_XP[level] as number | undefined;
+  return { level, rank: rankOf(level), into: xp - LEVEL_XP[level - 1], span: next === undefined ? null : next - LEVEL_XP[level - 1] };
+}
+
+export function xpFill(p: XpProgress): number {
+  return p.span === null ? 1 : p.into / p.span;
+}
+
+// «1240 / 2000 XP» a la derecha de la línea de estado; en el 20, «Nivel máximo» (GDD §14)
+export function xpNumbers(p: XpProgress): string {
+  return p.span === null ? 'Nivel máximo' : `${fmt(p.into)} / ${fmt(p.span)} XP`;
+}
+
+// En móvil, «Nivel 12» junto a la vida, y «Nivel máximo» en su lugar en el 20
+export function mobileLevelText(p: XpProgress): string {
+  return p.span === null ? 'Nivel máximo' : `Nivel ${p.level}`;
+}
+
+// Subida de nivel del propio jugador entre dos estados del servidor (AC-151). Un hundimiento que da varios niveles (el
+// Capitán) da un solo aviso, con el nivel final y su insignia si cambió. prevXp undefined: el primer estado al entrar
+export interface LevelUp {
+  level: number;
+  rank: Rank;
+  rankChanged: boolean;
+}
+
+export function levelUpOf(prevXp: number | undefined, xp: number): LevelUp | null {
+  if (prevXp === undefined) return null;
+  const from = levelOf(prevXp);
+  const level = levelOf(xp);
+  if (level <= from) return null;
+  const rank = rankOf(level);
+  return { level, rank, rankChanged: rank !== rankOf(from) };
+}
+
+export function levelUpText(up: LevelUp): string {
+  return up.rankChanged ? `¡Nivel ${up.level}! Ahora eres ${rankLabel(up.rank)}` : `¡Nivel ${up.level}!`;
+}
+
+// Línea de tipo del panel del objetivo cuando es un jugador (AC-153)
+export function targetTypeLine(level: number): string {
+  return `Jugador · Nivel ${level} · ${rankLabel(rankOf(level))}`;
+}
+
+// Línea de recompensa del feed (AC-152): «Hundiste a Pirata +105 oro · +30 XP». El nombre va aparte porque es lo único que
+// se trunca (ART-DIRECTION §12.9). Con 0 XP no lleva tramo de XP, y con 0 de oro, tampoco de oro (GDD §14)
+export interface Reward {
+  lead: string;
+  name: string | null;
+  gold: number;
+  xp: number;
+}
+
+export type RewardSource = 'kill' | 'wreck' | 'pvp';
+
+// Recompensas de una pasada de eventos, con el punto y la fuente para juntar el oro y la XP del mismo hundimiento
+export interface RewardDraft extends Reward {
+  source: RewardSource;
+  x: number;
+  z: number;
+}
+
+const REWARD_LEAD: Record<RewardSource, string> = { kill: 'Botín', wreck: 'Restos', pvp: 'Botín de combate' };
+
+function rewardDraft(source: RewardSource, pos: Vec2, killName: string | null): RewardDraft {
+  const name = source === 'kill' ? killName : null;
+  return { source, x: pos.x, z: pos.z, lead: name ? 'Hundiste a' : REWARD_LEAD[source], name, gold: 0, xp: 0 };
+}
+
+// killName: el barco que acabas de hundir tú en esta pasada, si lo hay
+export function pushGoldReward(batch: RewardDraft[], source: RewardSource, gold: number, pos: Vec2, killName: string | null): void {
+  batch.push({ ...rewardDraft(source, pos, killName), gold });
+}
+
+// La XP llega en el mismo tick que el oro de su hundimiento, justo después (world.ts, sinkShip): se suma a esa línea, la
+// del mismo punto y la misma fuente. Si no la hay (en PvP, quien solo ayudó o una víctima sin oro), sale una propia
+export function pushXpReward(batch: RewardDraft[], source: 'kill' | 'pvp', xp: number, pos: Vec2, killName: string | null): void {
+  const same = batch.find((d) => d.source === source && d.x === pos.x && d.z === pos.z && d.xp === 0);
+  if (same) same.xp += xp;
+  else batch.push({ ...rewardDraft(source, pos, killName), xp });
+}
+
+export function rewardParts(r: Reward): { gold: string; xp: string } {
+  return { gold: r.gold > 0 ? `+${r.gold} oro` : '', xp: r.xp > 0 ? `+${r.xp} XP` : '' };
+}
+
+export function rewardText(r: Reward): string {
+  const { gold, xp } = rewardParts(r);
+  return [r.lead, r.name, [gold, xp].filter(Boolean).join(' · ')].filter(Boolean).join(' ');
 }
 
 // Vida baja (< 30 %, AC-41): el panel propio avisa y el botón Reparar pulsa

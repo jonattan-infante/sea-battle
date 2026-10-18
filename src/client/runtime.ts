@@ -238,6 +238,13 @@ export class VfxDirector {
         if (e.playerId === myPlayer) rt.floating?.spawn('gold', `+${e.gold} ◉`, e.pos.x, 4, e.pos.z, `gold:${e.pos.x}:${e.pos.z}`, now);
         break;
       }
+      // «+30 XP» (VFX-SPEC §9, D70): sale con el oro de la misma recompensa, en la misma pasada y con su misma clave, así que
+      // empieza 18 px más arriba (la regla de los 250 ms). Solo llega a quien la recibe y nunca con 0 (xp.ts)
+      case 'xp': {
+        const myPlayer = rt.src.player?.id ?? rt.src.welcome?.playerId;
+        if (e.playerId === myPlayer) rt.floating?.spawn('xp', `+${e.xp} XP`, e.pos.x, 4, e.pos.z, `gold:${e.pos.x}:${e.pos.z}`, now);
+        break;
+      }
       default:
         break;
     }
