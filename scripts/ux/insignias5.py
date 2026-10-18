@@ -3,8 +3,11 @@
 # sobre --ui-plate compuesta en océano y en arena) y la métrica de AD-40 (px CSS con |dL*| >= 20, dL* medio).
 # Busca la combinación con el peor par más separado, cuenta las marcas (b2) y compara con los iconos de relación
 # y de estado (NCC en grises, +-1 px, y px con |dL*| >= 20).
-# Uso: python3 -I scripts/ux/insignias5.py <hoja.png>   (pal.py va en la misma carpeta)
-import sys, os, itertools, math
+# Fase 3 (D74): cada insignia es un SVG (viewBox 0 0 12 12) con <rect>, <circle> y <polygon>, y se rasteriza con la
+# semántica de SVG: el trazo va centrado en el borde. El marcado de las 5 elegidas está en
+# calibracion/insignias-1-1.json, que es el que copia el código y el que compara su unitario (AD-40 c).
+# Uso: python3 -I scripts/ux/insignias5.py <hoja.png> [--escribir-json]   (pal.py va en la misma carpeta)
+import sys, os, itertools, math, json
 sys.dont_write_bytecode = True  # sin __pycache__ en el repo
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import numpy as np
@@ -18,25 +21,45 @@ SS = 16
 def rgb(h): return tuple(int(h.lstrip('#')[i:i + 2], 16) for i in (0, 2, 4))
 def parse(code):  # 'Bh-h1' = bronce, hueca, galones horizontales, 1 · 'Ol-rosa' = oro, llena, rosa de 4 puntas
     mp, mk = code.split('-'); return mp[0], mp[1], mk[0] if mk != 'rosa' else 'rosa', (int(mk[1]) if mk != 'rosa' else 0)
-def badge(code, dpr, bg):
-    m, p, kind, n = parse(code); k = dpr * SS; W = int(round(12 * k))
-    im = Image.new('RGB', (W, W), tuple(int(round(c * 255)) for c in bg)); d = ImageDraw.Draw(im)
-    met, dark = rgb(METAL[m]), rgb(DARK); box = [0.5 * k, 0.5 * k, 11.5 * k, 11.5 * k]
-    if p == 'h':
-        d.rounded_rectangle(box, radius=2.5 * k, fill=dark, outline=met, width=int(round(1 * k))); fg = met
-    else:
-        d.rounded_rectangle(box, radius=2.5 * k, fill=met, outline=dark, width=int(round(0.5 * k))); fg = dark
+def r3(v): return round(v + 0.0, 3)
+def elements(code):  # el SVG de la insignia: lista de (etiqueta, atributos) en el orden en que se pintan
+    m, p, kind, n = parse(code); met = METAL[m]
+    fg = met if p == 'h' else DARK
+    if p == 'h': els = [('rect', dict(x=0.5, y=0.5, width=11, height=11, rx=2.5, fill=DARK, stroke=met, **{'stroke-width': 1}))]
+    else: els = [('rect', dict(x=0.5, y=0.5, width=11, height=11, rx=2.5, fill=met, stroke=DARK, **{'stroke-width': 0.5}))]
     if kind == 'rosa':
-        c = 6 * k; R = 4.6 * k; r = 1.3 * k
-        d.polygon([(c + (R if i % 2 == 0 else r) * np.cos(np.pi / 4 * i - np.pi / 2), c + (R if i % 2 == 0 else r) * np.sin(np.pi / 4 * i - np.pi / 2)) for i in range(8)], fill=fg)
+        pts = [(6 + (4.6 if i % 2 == 0 else 1.3) * math.cos(math.pi / 4 * i - math.pi / 2), 6 + (4.6 if i % 2 == 0 else 1.3) * math.sin(math.pi / 4 * i - math.pi / 2)) for i in range(8)]
+        els.append(('polygon', dict(points=' '.join(f'{r3(x):g},{r3(y):g}' for x, y in pts), fill=fg)))
     elif kind == 'h':
-        for y in BARS[n]: d.rectangle([3 * k, y * k, 9 * k - 1, (y + 2) * k - 1], fill=fg)
+        els += [('rect', dict(x=3, y=y, width=6, height=2, fill=fg)) for y in BARS[n]]
     elif kind == 'v':
-        for x in BARS[n]: d.rectangle([x * k, 3 * k, (x + 2) * k - 1, 9 * k - 1], fill=fg)
+        els += [('rect', dict(x=x, y=3, width=2, height=6, fill=fg)) for x in BARS[n]]
     else:
-        for x, y in DOTS[n]: d.ellipse([x * k, y * k, (x + 2.8) * k, (y + 2.8) * k], fill=fg)
+        els += [('circle', dict(cx=r3(x + 1.4), cy=r3(y + 1.4), r=1.4, fill=fg)) for x, y in DOTS[n]]
+    return els
+def svg(code):
+    def a(d): return ' '.join(f'{k}="{v:g}"' if isinstance(v, (int, float)) else f'{k}="{v}"' for k, v in d.items())
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12">' + ''.join(f'<{t} {a(d)}/>' for t, d in elements(code)) + '</svg>'
+def raster(els, dpr, bg):  # semántica de SVG 1.1 para estos 3 elementos, colores opacos, supermuestreo SS
+    k = dpr * SS; W = int(round(12 * k))
+    im = Image.new('RGB', (W, W), tuple(int(round(c * 255)) for c in bg)); d = ImageDraw.Draw(im)
+    def rr(x0, y0, x1, y1, r, col):  # caja semiabierta [x0, x1) en px CSS
+        box = [x0 * k, y0 * k, x1 * k - 1, y1 * k - 1]
+        d.rounded_rectangle(box, radius=r * k, fill=rgb(col)) if r > 0 else d.rectangle(box, fill=rgb(col))
+    for t, a in els:
+        if t == 'rect':
+            x, y, w, h, r = a['x'], a['y'], a['width'], a['height'], a.get('rx', 0); sw = a.get('stroke-width', 0)
+            if sw:  # trazo centrado: anillo entre el borde desplazado ±sw/2 (en un arco, radio r ± sw/2)
+                rr(x - sw / 2, y - sw / 2, x + w + sw / 2, y + h + sw / 2, r + sw / 2, a['stroke'])
+                rr(x + sw / 2, y + sw / 2, x + w - sw / 2, y + h - sw / 2, max(r - sw / 2, 0), a['fill'])
+            else: rr(x, y, x + w, y + h, r, a['fill'])
+        elif t == 'circle':
+            cx, cy, r = a['cx'], a['cy'], a['r']; d.ellipse([(cx - r) * k, (cy - r) * k, (cx + r) * k - 1, (cy + r) * k - 1], fill=rgb(a['fill']))
+        elif t == 'polygon':
+            d.polygon([(float(x) * k, float(y) * k) for x, y in (q.split(',') for q in a['points'].split())], fill=rgb(a['fill']))
     a = lin(np.asarray(im, dtype=np.float64) / 255.0); h = W // SS
     return enc(a[:h * SS, :h * SS].reshape(h, SS, h, SS, 3).mean(axis=(1, 3)))
+def badge(code, dpr, bg): return raster(elements(code), dpr, bg)
 def Lstar(img):
     Y = lin(img) @ np.array([0.2126, 0.7152, 0.0722])
     f = np.where(Y > (6 / 29) ** 3, np.cbrt(Y), Y / (3 * (6 / 29) ** 2) + 4 / 29); return 116 * f - 16
@@ -78,6 +101,18 @@ print('mejores 5 con marcas no decrecientes de Grumete a Teniente:')
 for (px, dm, wh), codes in mono[:5]: print(f'  {" · ".join(codes)}: {px:.1f} px · {dm:.1f} · {wh}')
 CHOSEN = os.environ.get('CHOSEN', ' · '.join(mono[0][1])).split(' · ')
 print('elegida:', CHOSEN, '→', worst(CHOSEN))
+NAMES = dict(zip(CHOSEN, ['Grumete', 'Marinero', 'Contramaestre', 'Teniente', 'Almirante']))
+print('pares de la elegida (peor caso de los 3 DPR, los 2 fondos y las 4 visiones; px CSS con |dL*|>=20):')
+print('  ' + ' · '.join(f'{NAMES[x]}–{NAMES[y]} {worst([x, y])[0]:.0f}' for x, y in itertools.combinations(CHOSEN, 2)))
+# --- marcado de las 5 elegidas frente a calibracion/insignias-1-1.json (el que copia el código)
+RANKS = ['grumete', 'marinero', 'contramaestre', 'teniente', 'almirante']
+JS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'calibracion', 'insignias-1-1.json')
+mk = {'viewBox': '0 0 12 12', 'nota': 'D74 (ART-DIRECTION §11.5): rank 1..5 = GDD §10b; elementos en orden de pintado; semántica de SVG 1.1; lo genera y lo comprueba scripts/ux/insignias5.py',
+      'insignias': {r: {'rank': i + 1, 'codigo': c, 'elementos': [dict(etiqueta=t, **a) for t, a in elements(c)], 'svg': svg(c)} for i, (r, c) in enumerate(zip(RANKS, CHOSEN))}}
+if '--escribir-json' in sys.argv:
+    with open(JS, 'w') as f: json.dump(mk, f, ensure_ascii=False, indent=1); f.write('\n')
+with open(JS) as f: same = json.load(f) == json.loads(json.dumps(mk))
+print('marcado igual a calibracion/insignias-1-1.json:', 'sí' if same else 'NO')
 # --- (b2) cuenta de marcas como componentes separadas (8 vecinos), sin el marco
 def components(mask):
     h, w = mask.shape; seen = np.zeros_like(mask, bool); n = 0
@@ -209,3 +244,4 @@ for dpr in (1, 1.5, 2):
 sheet = Image.new('RGB', (max(r.width for r in rows), sum(r.height for r in rows)), (40, 40, 40)); y = 0
 for r in rows: sheet.paste(r, (0, y)); y += r.height
 sheet.save(sys.argv[1]); print('hoja:', sys.argv[1])
+if not same: sys.exit(1)
