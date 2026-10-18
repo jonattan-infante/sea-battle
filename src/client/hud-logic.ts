@@ -83,13 +83,14 @@ export function xpFill(p: XpProgress): number {
   return p.span === null ? 1 : p.into / p.span;
 }
 
-// «1240 / 2000 XP» a la derecha de la línea de estado; en el 20, «Nivel máximo» (GDD §14)
+// «1240 / 2000 XP»: el title y el nombre accesible de la barra (D76); en el 20, «Nivel máximo» (GDD §14)
 export function xpNumbers(p: XpProgress): string {
   return p.span === null ? 'Nivel máximo' : `${fmt(p.into)} / ${fmt(p.span)} XP`;
 }
 
-// En móvil, «Nivel 12» junto a la vida, y «Nivel máximo» en su lugar en el 20
-export function mobileLevelText(p: XpProgress): string {
+// «Nivel 12», y «Nivel máximo» en su lugar en el 20: en escritorio a la derecha de la línea de estado (D76), en 390×844
+// junto a la vida y en 844×390 en la fila del nombre
+export function levelText(p: XpProgress): string {
   return p.span === null ? 'Nivel máximo' : `Nivel ${p.level}`;
 }
 

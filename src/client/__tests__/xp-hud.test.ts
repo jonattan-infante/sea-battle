@@ -4,7 +4,7 @@ import {
   RewardDraft,
   levelUpOf,
   levelUpText,
-  mobileLevelText,
+  levelText,
   pushGoldReward,
   pushKillReward,
   pushXpReward,
@@ -18,18 +18,18 @@ import {
 } from '../hud-logic';
 
 describe('Panel del jugador: nivel, insignia y barra de XP (AC-152, §12.9)', () => {
-  // El ejemplo de §12.9, «Balandra · Nivel 12» con «1 240 / 2 000 XP»: 7 240 de XP, 1 240 dentro del 12 y 2 000 hasta el 13
+  // El ejemplo de §12.9, «Nivel 12» con «1240 / 2000 XP» (en la barra, D76): 7 240 de XP, 1 240 dentro del 12 y 2 000 hasta el 13
   test('la barra cuenta la XP dentro del nivel sobre la que falta hasta el siguiente: 7 240 de XP, nivel 12, «1240 / 2000 XP»', () => {
     expect(xpProgress(7240)).toEqual({ level: 12, rank: 3, into: 1240, span: 2000 });
     expect(xpNumbers(xpProgress(7240))).toBe('1240 / 2000 XP');
     expect(xpFill(xpProgress(7240))).toBeCloseTo(0.62, 6);
-    expect(mobileLevelText(xpProgress(7240))).toBe('Nivel 12');
+    expect(levelText(xpProgress(7240))).toBe('Nivel 12');
   });
 
   test('al entrar, con 0 de XP, nivel 1 de Grumete y la barra vacía', () => {
     expect(xpProgress(0)).toEqual({ level: 1, rank: 1, into: 0, span: 60 });
     expect(xpFill(xpProgress(0))).toBe(0);
-    expect(mobileLevelText(xpProgress(0))).toBe('Nivel 1');
+    expect(levelText(xpProgress(0))).toBe('Nivel 1');
   });
 
   test('en los umbrales el nivel nuevo empieza con la barra vacía, y un punto antes casi llena', () => {
@@ -43,13 +43,13 @@ describe('Panel del jugador: nivel, insignia y barra de XP (AC-152, §12.9)', ()
     expect(xpNumbers(xpProgress(35_999))).toBe('5499 / 5500 XP');
   });
 
-  test('en el nivel 20, la barra llena y «Nivel máximo» en lugar de los números y de «Nivel 20» en móvil', () => {
+  test('en el nivel 20, la barra llena y «Nivel máximo» en lugar de los números y de «Nivel 20»', () => {
     for (const xp of [36_000, 40_000, 9_999_999]) {
       const p = xpProgress(xp);
       expect(p).toEqual({ level: 20, rank: 5, into: xp - 36_000, span: null });
       expect(xpFill(p)).toBe(1);
       expect(xpNumbers(p)).toBe('Nivel máximo');
-      expect(mobileLevelText(p)).toBe('Nivel máximo');
+      expect(levelText(p)).toBe('Nivel máximo');
     }
   });
 });
