@@ -230,7 +230,7 @@ Límites aceptados. El (c) sale de la decisión de inicio de sesión (GDD Q13); 
 
 ## Release 1.1.0
 
-> **Definida el 2026-10-17** por game-product con el lead y game-ux, en la rama `docs/release-1-1-scope`, sobre QA-19, QA-20, la aprobación de QA de AC-142 y la respuesta a Q26, que ya están en `main` por los PR #8 y #9 (dato del lead; el lead la rebasa sobre `main` al commitear). Esta sección es el alcance, el orden y la puerta de publicación. Los AC nuevos están en **E14** (experiencia), **E15** (barcos), **E16** (mapa y puerto) y **R7** (publicación), de AC-144 a AC-182. Después se añadieron AC-183 a AC-186 (**R8**, arneses y CI), AC-187 (H-307, el I2 en `main`) y AC-188 (H-306, la órbita). Las reglas y los números, en GDD §4, §6, §9, §10b, §11–§14 y §16.
+> **Definida el 2026-10-17** por game-product con el lead y game-ux, en la rama `docs/release-1-1-scope`, sobre QA-19, QA-20, la aprobación de QA de AC-142 y la respuesta a Q26, que ya están en `main` por los PR #8 y #9 (dato del lead; el lead la rebasa sobre `main` al commitear). Esta sección es el alcance, el orden y la puerta de publicación. Los AC nuevos están en **E14** (experiencia), **E15** (barcos), **E16** (mapa y puerto) y **R7** (publicación), de AC-144 a AC-182. Después se añadieron AC-183 a AC-186 (**R8**, arneses y CI), AC-187 (H-307, el I2 en `main`), AC-188 (H-306, la órbita) y AC-189 (H-306, la marca de peligro). Las reglas y los números, en GDD §4, §6, §9, §10b, §11–§14 y §16.
 
 **Lo que pidió Jonattan** (2026-10-17, cita textual):
 > 1. Habilitar un sistema de experiencia en el cual cada vez que hundez a un NPC te da un valor, si hundes a otro jugador te da mas, esto te permite tener insignias de nivel.
@@ -251,7 +251,7 @@ Límites aceptados. El (c) sale de la decisión de inicio de sesión (GDD Q13); 
 |---|---|---|---|---|
 | I2 · Integración en `main`, apagado (H-307) | Los 2 commits de código del I2 sobre `main`, con el I2 apagado por defecto | P0 | dev-render, rama `feat/i2-port-onto-main` (2026-10-17). En staging no se enciende hasta que Jonattan diga que sí | AC-187, AC-137 |
 | I2 · Capitán pirata (H-305) | IA, aviso y marcador del minimapa | P0 | IA en `1d551c1` y arte en `264363e` / `5c71de8` (rama I2, `feat/seafight-vertical-slice`); se traen a `main` con AC-187, pendientes de QA de la 1.1 | AC-54, AC-55, AC-111, AC-112 |
-| I2 · Cañonera pirata (H-306) | IA y población de I2, con la corrección de la órbita compartida («órbita real = nominal») | P0 | Modelo en `85ab00b` (se trae con AC-187); **la IA y la corrección de la órbita son código nuevo** (puesto 4) | AC-51, AC-113, AC-114, AC-188 |
+| I2 · Cañonera pirata (H-306) | IA y población de I2, con la corrección de la órbita compartida («órbita real = nominal») | P0 | Modelo en `85ab00b` (se trae con AC-187); **la IA y la corrección de la órbita son código nuevo** (puesto 4). La marca de peligro del panel (AC-189) es de game-ux y dev-render | AC-51, AC-113, AC-114, AC-188, AC-189 |
 | I2 · Vista libre (E13) y atacante fuera de pantalla | Mover la vista sin romper «clic = navegar» | P0 | **Sin implementar: código nuevo** (puesto 4) | AC-116 a AC-124 |
 | I2 · Legibilidad de los NPC | Con los evaluadores-agente de AC-72 | P0 | Espera al arte de la Cañonera | AC-115 |
 | Objetivo 1 · Experiencia, niveles e insignias (E14) | XP por NPC y por jugadores, reglas contra el abuso, 20 niveles, 5 insignias, HUD, persistencia y lectura de las filas de la 1.0 (sin migración SQL) | P0 (curva P1; extras P2) | Nuevo | AC-144 a AC-160 |
@@ -761,7 +761,29 @@ Reportes (el último manda):
   - **si es menos,** el HUD no basta, y se abre un ítem para game-ux. Tiene que comunicar, al seleccionar un NPC, que su alcance supera al tuyo (qué debe comunicar: «este barco te dispara desde donde tú no llegas»). Es P1 para encender el I2, porque la cañonera solo existe con el I2.
   - En los dos casos, la cláusula del bot de AC-60 se queda: modela el camino previsto.
 
+  **Medido (dev-npc, `eda179f`, Jest suelto, sin QA):** la cañonera está a ≤ 60 m el **99,2 %** del combate. Es la mediana de las 3 semillas con combate de la sonda de AC-60 (99,1, 99,2 y 99,4 %). En el duelo de AC-114 sale el 100 %, en un combate mediano de 40,4 s, y lo mismo con la distancia redondeada como en el HUD. «✕ Fuera de alcance» sale el ~1 % del tiempo, así que **el HUD de alcance no lo comunica**, y se abre el ítem: **AC-189**. El motivo: la Balandra va a 14 m/s y la cañonera a 8, así que, perseguida, no llega a asentarse en su órbita de 62 m y pasa casi todo el combate huyendo por debajo de 55 m. **Y no pierde por el alcance:** con la cañonera a tiro casi todo el tiempo, la Balandra N1 tarda 900 / 21 ≈ 43 s en hundirla, y en ese tiempo recibe 13,2 × 43 ≈ 566 de daño, el 71 % de sus 800 (aritmética de dev-npc, comprobada por producto con GDD §7 y §9). Por eso AC-189 no comunica «te dispara desde donde tú no llegas», que no es lo que pasa, sino **lo que cuesta hundirla**.
+
   Verificación: unitario, más el unitario de la función del HUD que da el alcance, con el cañón N1 y una cañonera a 62 m («✕ Fuera de alcance») y a 58 m («✓ En alcance»). Hoy el alcance se calcula en línea (`inRange: distance <= cannon.range`, `src/components/GameApp.tsx:218`). dev-render lo extrae a `src/client/hud-logic.ts` en su rama del HUD. *Referencia (Monte Carlo de game-product): 18,0 s / 17 %; 68 %. Con H-306 (dev-npc, Jest suelto): 17,80 s / 17,1 %; 67,5 %.*
+- **AC-189** (P0 del I2: sin él no se enciende la cañonera) — Dado un NPC seleccionado, cuando se muestra el panel del objetivo, entonces **si hundirlo en solitario le costaría al jugador más de la mitad de su vida máxima, el panel lo marca como peligroso**. Qué debe comunicar: «este barco es demasiado fuerte para ti ahora». La forma es de game-ux y también tiene que leerse en 390×844.
+  - **Coste** = DPS del NPC × (vida máxima del NPC / DPS propio) / vida máxima propia. Las tablas son las de GDD §6, §7, §9 y §11, con el barco activo y las mejoras propias. Se recalcula al cambiar de barco o de mejora, no con la vida actual, para que no parpadee en combate. Supone un intercambio de andanadas sin reparar: no cuenta el *kiting* ni la reparación.
+  - **Casos de referencia** (cálculo de producto con esas tablas; entre paréntesis, lo medido en duelos):
+
+  | Jugador | NPC | Coste | Marca | Medido |
+  |---|---|---|---|---|
+  | Balandra N1 | Cañonera | 71 % | Peligroso | AC-114: 55–80 %; H-306: 67,5 % |
+  | Balandra N1 | Pirata | 31 % | No | AC-53: 25–40 % |
+  | Balandra N1 | Mercante | 0 % | No | No dispara |
+  | Balandra N1 | Capitán | 293 % | Peligroso | AC-55: pierde ≥ 95 % |
+  | Balandra con Cañones N2 | Cañonera | 46 % | No | — |
+  | Bergantín con cañones N1 | Cañonera | 27 % | No | — |
+  | Bergantín con cañones N2 | Cañonera | 17 % | No | AC-114: 10–25 %; H-306: 17,1 % |
+  | Bergantín con cañones y casco N2 | Capitán | 60 % | Peligroso | AC-55 pide 2 Bergantines |
+  | Fragata con todo a N3 | Capitán | 16 % | No | AC-55: 10–25 % |
+
+  - **Por qué el 50 %:** separa los 9 casos como dicen sus AC, y la marca de la Balandra se apaga justo al comprar Cañones N2, como la cláusula del bot de AC-60.
+  - **Los jugadores no se marcan:** el cliente no conoce las mejoras de los demás.
+  - **Con el bot de AC-60:** su cláusula es por alcance, así que con el Bergantín y cañones N1 no ataca a la cañonera aunque no esté marcada (27 %). Es más prudente que la marca en ese tramo corto, y se deja así porque ya está medida.
+  - **Verificación:** unitario de una función pura con los 9 casos; e2e de que la marca sale con una Balandra N1 y una cañonera, y desaparece al comprar Cañones N2; captura en los 3 tamaños. Responsables: game-ux (la forma) → dev-render (el HUD).
 - **AC-188** — Dado el controlador de órbita compartido por los NPC, cuando un pirata (45 m), un capitán (50 m) o una cañonera (62 m) orbitan 20 s un objetivo quieto, entonces la mediana real de su distancia queda dentro del **±5 % de su radio nominal**: 42,75–47,25 m, 47,5–52,5 m y 58,9–65,1 m (GDD §9, «Órbita real = nominal»). Se corrige el controlador, no las constantes: AC-04 sigue comparando 45, 50 y 62 con GDD §9. Con la corrección se vuelven a medir AC-48, AC-53, AC-60 y AC-112, porque también cambia el pirata con el I2 apagado. Si AC-53 o AC-60 salen de su rango, producto decide la palanca; no se toca la órbita. Verificación: unitario por clase, con varias semillas, más un mutante con el controlador de la 1.0 (el que apunta a `headingTo(target.pos, ship.pos) + 0.45` sin compensar), que tiene que dar rojo por aserción al menos en el pirata (~40,7 m) y en el capitán (45,2–45,4 m). *Decidido por producto el 2026-10-17:* va como AC propio y no dentro de AC-187, porque es código nuevo de IA que no estaba en el port. Lo hace dev-npc en el puesto 4, con la Cañonera, que lo necesita para AC-113, después de la XP del puesto 1b.
 
   **Estado: implementado, pendiente de QA.** Está en `fix/ac-188-gunboat-orbit` (`430483f` y `8bf4fa3`, sobre `158134b`), según el Jest suelto de dev-npc (dato del lead): pirata 45,11 m, capitán 50,12 m y cañonera 62,12–62,15 m. Antes caían a ≈ 0,90 R, porque el controlador perseguía un punto adelantado sobre el círculo nominal. AC-53 casi no cambia (pirata: 20,35 s y 30,3 % de vida perdida). AC-60 sigue en rango con menos margen (ver AC-60).
@@ -796,7 +818,7 @@ Reportes (el último manda):
 
   **Con H-306** (`feat/h-306-gunboat-ai`, sin commit, Jest suelto de dev-npc; datos del lead, 2026-10-17), el riesgo se cumplió. Con el I2 encendido y la población de I2, el hito de los 500 de oro sale en **4,06 min** (243,4 s > 240), con 4,38 · 6,60 · 4,06 · 2,67 · 3,85 por semilla. Las medianas son 4,06 / 16,75 / 50,98.
   - **La recompensa de la cañonera no lo mueve:** de 220 a 270, el hito sale en 4,06 en todas.
-  - **Por qué:** antes de los 500, el bot pasa 100 s y 57 s atacando una cañonera (semillas 2 y 3). Todas las muertes de ese tramo son por piratas. Con la Balandra entera, hasta el Bergantín, el tiempo atacando cañoneras es del 22, 21, 11, 0 y 1 % por semilla. En la semilla 1, 2 de sus 5 muertes son por cañoneras (datos de dev-npc, `952206f`).
+  - **Por qué:** antes de los 500, el bot pasa 100 s y 57 s atacando una cañonera (semillas 2 y 3), y la hunde y cobra sus 210. Llega a los 500 con ese mismo hundimiento cualquiera que sea la recompensa: en la semilla 3 tenía 330 antes de hundirla. Lo que cuesta es el tiempo de la persecución, no lo que paga. Todas las muertes de ese tramo son por piratas. Con la Balandra entera, hasta el Bergantín, el tiempo atacando cañoneras es del 22, 21, 11, 0 y 1 % por semilla. En la semilla 1, 2 de sus 5 muertes son por cañoneras (datos de dev-npc, `952206f`).
   - **Diagnóstico:** sin atacar cañoneras, las medianas pasan a 2,67 / 14,15 / 50,32.
 
   **Decidido por producto (2026-10-17): el bot no ataca una cañonera con un cañón de menos alcance que el suyo.** Es la cláusula nueva de arriba. Por qué:
@@ -804,7 +826,12 @@ Reportes (el último manda):
   - **El bot modela el camino previsto**, no al novato que se equivoca. *Corregido el 2026-10-17, con un dato del lead:* aquí decía que el panel avisa con «✕ Fuera de alcance» mientras la cañonera dispara. Solo es cierto en su órbita de 62 m. Entre 55 y 60 m, el N1 la alcanza y el panel dice «✓ En alcance». Si el HUD lo comunica o no, y qué se hace si no, lo decide la medida de AC-114.
   - **Los otros caminos se descartan:** subir el umbral a 4,1 min es mover el umbral después de ver el resultado, y tocar el pirata, el mercante o los precios lo prohíbe GDD §10.
 
-  **Falta medir:** dev-npc corre AC-60 con esta cláusula exacta (no ataca cañoneras hasta Cañones N2, y después sí), con las 5 semillas y los dos modos. Los 3 hitos tienen que quedar dentro. El diagnóstico de arriba no vale, porque no atacaba cañoneras en ningún momento. **HIPÓTESIS que queda abierta:** un jugador real con N1 que ataca una cañonera de todos modos vive algo más cercano a 4,06 que a 2,67. Se acepta si el juego se lo comunica: lo decide la medida de AC-114, y si no basta, se abre el ítem de game-ux de ese AC.
+  **Medido con la cláusula** (dev-npc, `eda179f` en `feat/h-306-gunboat-ai`, Jest suelto con `--maxWorkers=2`, sin QA; `cannonOf(bot).range < cannonOf(cañonera).range`). Las cifras son 500 de oro / Bergantín / todo comprado:
+  - **I2 encendido:** mediana **2,7 / 14,2 / 47,7 min**. Por semilla, 4,4 / 14,5 / 48,1 · 5,2 / 19,5 / 53,2 · 2,6 / 14,2 / 45,2 · 2,7 / 13,7 / 47,7 · 2,1 / 12,0 / 43,6, con 3, 3, 2, 0 y 0 muertes.
+  - **I2 apagado:** 3,7 / 17,7 / 51,6, sin cambios.
+  - **Pasa.** El margen más justo es el de «todo comprado» con el I2 encendido: 2,7 min sobre 45. Las semillas 3 y 5 bajan de 45, pero AC-60 se juzga por la mediana.
+
+  **Ya no es HIPÓTESIS:** el panel de alcance no le dice al jugador que la cañonera no es para N1 (99,2 % del combate a tiro; AC-114). Lo dirá la marca de peligro de **AC-189**, sin la que la cañonera no se enciende. Un jugador real con N1 que la ataca pese a la marca vive algo más cercano a 4,06 que a 2,7 min. Se acepta, porque es su elección y el juego se lo ha dicho.
 
 ## E5 — Muerte y reaparición (§12) · P0
 
