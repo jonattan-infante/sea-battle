@@ -60,7 +60,7 @@ function toFloat(geometry: THREE.BufferGeometry, name: string): void {
   geometry.setAttribute(name, new THREE.BufferAttribute(out, a.itemSize));
 }
 
-function lodOf(root: THREE.Object3D, id: string, lod: 0 | 1, warn: string[]): { geometry: THREE.BufferGeometry; map: THREE.Texture | null } {
+function lodOf(root: THREE.Object3D, id: string, lod: 0 | 1): { geometry: THREE.BufferGeometry; map: THREE.Texture | null } {
   const name = `${id}_lod${lod}`;
   const mesh = root.children.find((c) => c.name === name) as THREE.Mesh | undefined;
   if (!mesh) throw new ShipGlbError(`falta la malla ${name}, hija de la raíz (§3)`);
@@ -83,12 +83,14 @@ function lodOf(root: THREE.Object3D, id: string, lod: 0 | 1, warn: string[]): { 
     geometry = geometry.index ? geometry.toNonIndexed() : geometry;
     creaseNormals(geometry, CREASE);
   }
-  // El material del barco usa vertexColors: sin COLOR_0, blanco (el color va en la textura, §13 paso 3)
+  // El material del barco usa vertexColors y COLOR_0 multiplica la textura (§13 paso 3: blanco en lo texturizado, el
+  // color de la pieza en la jarcia y los cañones). Sin COLOR_0, blanco
   if (!geometry.getAttribute('color')) {
     const count = geometry.getAttribute('position').count;
     geometry.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(count * 3).fill(1), 3));
   }
-  if (!geometry.getAttribute('_rim_mask')) warn.push(`${name} sin _RIM_MASK: sin borde de protección (§6)`);
+  // Sin la máscara no hay borde de protección: el procedural sí lo tiene, así que el GLB no vale (ux, 2026-10-18)
+  if (!geometry.getAttribute('_rim_mask')) throw new ShipGlbError(`${name} sin _RIM_MASK: sin borde de protección (§6, AS-V09)`);
   return { geometry, map: material.map ?? null };
 }
 
@@ -120,12 +122,12 @@ function socketsOf(root: THREE.Object3D, cannons: number): ShipSockets {
 
 // El modelo de la clase con los LOD, los sockets, los extras y la textura del GLB. La receta (los números de la clase,
 // §8.4) es la del procedural: el juego no cambia (AC-193 a). Lanza ShipGlbError si el GLB incumple el contrato
-export function shipModelFromGlb(scene: THREE.Object3D, classId: string, warn: string[] = []): ShipModel {
+export function shipModelFromGlb(scene: THREE.Object3D, classId: string): ShipModel {
   const base = getShipModel(classId);
   const root = rootOf(scene);
   const extras = extrasOf(root, base);
-  const lod0 = lodOf(root, extras.sb_id, 0, warn);
-  const lod1 = lodOf(root, extras.sb_id, 1, warn);
+  const lod0 = lodOf(root, extras.sb_id, 0);
+  const lod1 = lodOf(root, extras.sb_id, 1);
   if (lod1.map && lod0.map?.source !== lod1.map.source) throw new ShipGlbError('los LOD usan texturas distintas; el contrato pide 1 atlas (§6)');
   const tris = (g: THREE.BufferGeometry) => (g.index ? g.index.count : g.getAttribute('position').count) / 3;
   return {
@@ -230,16 +232,14 @@ export class ShipGlbStore {
     this.loader
       .load(url)
       .then((scene) => {
-        const warn: string[] = [];
         let model: ShipModel;
         try {
-          model = shipModelFromGlb(scene, classId, warn);
+          model = shipModelFromGlb(scene, classId);
         } catch (e) {
           disposeScene(scene);
           throw e;
         }
         disposeScene(scene, model.map ?? null);
-        for (const w of warn) console.warn(`[ship-glb] ${classId}: ${w}`);
         if (this.disposed || this.manifest[classId] !== url) this.release(model);
         else this.ready.set(classId, model);
       })
