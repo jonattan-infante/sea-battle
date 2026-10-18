@@ -9,7 +9,7 @@
 
 | Aspecto | Contrato |
 |---|---|
-| Formato | glTF 2.0 binario (`.glb`); en el MVP, `THREE.Object3D` procedural con la misma jerarquía |
+| Formato | glTF 2.0 binario (`.glb`); en el MVP, `THREE.Object3D` procedural con la misma jerarquía. Los barcos de la receta llevan además su KTX2 en un `.ktx2` aparte, junto al GLB, que este enlaza por `uri` (§13, paso 4c): ese GLB no es autocontenido |
 | Ejes | Dextrógiro, **+Y arriba, +Z = proa, −X = estribor, +X = babor** |
 | Unidades | **1 u = 1 m**. Escala de la raíz = 1 |
 | Pivote | Origen en la **línea de flotación** (y = 0), en el centro de la eslora del casco y de la manga |
