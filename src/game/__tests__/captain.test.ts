@@ -294,6 +294,30 @@ describe('H-305 — Correa del capitán (AC-112)', () => {
   });
 });
 
+describe('H-305 — Feed del capitán (AC-111)', () => {
+  // AC-111 (4): los nombres del feed son exactamente los jugadores que cobran del reparto (GDD §10). Ni D, cuya parte
+  // redondea a 0 (600 · 1 / ~2 000 < 1), ni E, que ya no está en el mundo, cobran ni salen en el feed
+  test('AC-111: al hundirse, el feed nombra exactamente a quienes cobran, por daño, y "y N más" solo cuenta a esos', () => {
+    const world = i2World(12);
+    for (const [id, x] of [['A', -200], ['B', -220], ['C', -240], ['D', -260], ['F', -280]] as const) placePlayer(world, id, x, 200);
+    const cap = placeCaptain(world, 300, -300);
+    const now = world.time;
+    const entry = (playerId: string, amount: number, firstAt: number) => ({ playerId, shipId: shipOfPlayer(world, playerId)?.id ?? `ship-${playerId}`, amount, at: now, firstAt });
+    cap.damage = [entry('B', 900, now - 30), entry('C', 500, now - 20), entry('F', 300, now - 15), entry('D', 1, now - 10), entry('E', 200, now - 5)];
+    const tick = sinkByPlayer(world, cap, 'A');
+    const paid = tick.flatMap((e) => (e.type === 'loot' && e.source === 'kill' ? [e.playerId] : []));
+    const down = tick.find((e): e is Extract<GameEvent, { type: 'captainDown' }> => e.type === 'captainDown')!;
+    expect([...paid].sort()).toEqual(['A', 'B', 'C', 'F']);
+    // Los que cobran, por daño (empate: quien dañó antes), con su nombre: los 3 primeros y el resto en "y N más"
+    const byDamage = cap.damage
+      .filter((d) => paid.includes(d.playerId))
+      .sort((a, b) => b.amount - a.amount || a.firstAt - b.firstAt)
+      .map((d) => world.players.get(d.playerId)!.name);
+    console.log(`AC-111 (feed): cobran ${paid.join(', ')}; feed ${down.names.join(', ')} y ${down.more} más`);
+    expect({ names: down.names, more: down.more }).toEqual({ names: byDamage.slice(0, 3), more: byDamage.length - 3 });
+  });
+});
+
 describe('H-305 — Balance del capitán (AC-55, 1 000 duelos con semilla)', () => {
   interface Side {
     classId: PlayerShipClass;
