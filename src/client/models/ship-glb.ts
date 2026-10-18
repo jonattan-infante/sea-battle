@@ -1,5 +1,6 @@
 // Barcos en GLB (ASSET-SPEC §13, paso 6; D80; AC-193): el .glb de una clase sustituye al procedural cuando termina de
-// cargar. Mientras tanto, y si falla, se pinta el procedural, así que entrar al juego nunca espera a un modelo (AC-193 c).
+// cargar. Mientras tanto, y si falla, se pinta el procedural. La entrada solo espera al GLB del barco propio, con un tope
+// de 0,5 s sobre la de hoy (AC-193 c, opción B): si no llega a tiempo, se entra con el procedural y cambia al llegar.
 // El GLB cumple el mismo contrato que el procedural (§0–§4): raíz con extras, mallas <id>_lod0 y <id>_lod1 y sockets con
 // nombre. Del material del GLB solo se usa la textura: el color, el destello, el daño y el borde de protección son los del
 // material del barco, clonado por instancia (§6). La geometría y la textura se comparten entre los barcos de la clase
@@ -14,6 +15,8 @@ export const SHIP_GLB: Partial<Record<string, string>> = {};
 // Transcodificador de KTX2 (basis_transcoder.js y .wasm, copiados de three/examples/jsm/libs/basis a public/basis)
 export const BASIS_PATH = '/basis/';
 const CREASE = (40 * Math.PI) / 180; // D23: normales con pliegue de 40° si el GLB no trae NORMAL
+// AC-193 c, opción B: lo más que la entrada espera al GLB del barco propio, sobre la de hoy (el primer frame)
+export const OWN_GLB_WAIT_MS = 500;
 
 export class ShipGlbError extends Error {}
 
@@ -158,43 +161,65 @@ function disposeScene(scene: THREE.Object3D, keep: THREE.Texture | null = null):
 }
 
 export interface GlbLoader {
-  load(url: string): Promise<THREE.Object3D>;
+  parse(bytes: ArrayBuffer, url: string, renderer: THREE.WebGLRenderer): Promise<THREE.Object3D>;
   dispose(): void;
 }
 
-// GLTFLoader con MeshoptDecoder y KTX2Loader (§1). Se importan al pedir el primer GLB: sin GLB, el bundle del juego no
-// los lleva. KTX2Loader necesita el renderer para elegir el formato de GPU al que transcodifica
-export function createGlbLoader(renderer: THREE.WebGLRenderer): GlbLoader {
+// GLTFLoader con MeshoptDecoder y KTX2Loader (§1). Se importan al crear el cargador, que es al haber un GLB que bajar: sin
+// GLB, el bundle del juego no los lleva. Al crearlo también empieza a bajar el transcodificador de KTX2 (basis_transcoder
+// .js y .wasm, ≈ 585 KB), que está en el camino de la entrada (AC-193 c, opción B). init() no necesita el renderer: los
+// workers se crean al transcodificar, y para entonces detectSupport ya eligió el formato de GPU con el del primer parse
+export function createGlbLoader(): GlbLoader {
   let ktx2: { dispose(): void } | null = null;
+  let detected = false;
   const loader = Promise.all([
     import('three/examples/jsm/loaders/GLTFLoader.js'),
     import('three/examples/jsm/loaders/KTX2Loader.js'),
     import('three/examples/jsm/libs/meshopt_decoder.module.js')
   ]).then(([{ GLTFLoader }, { KTX2Loader }, { MeshoptDecoder }]) => {
-    const k = new KTX2Loader().setTranscoderPath(BASIS_PATH).detectSupport(renderer);
+    const k = new KTX2Loader().setTranscoderPath(BASIS_PATH);
+    k.init().catch(() => undefined); // si falla, falla el parse del GLB que lo necesite, con su aviso
     ktx2 = k;
-    return new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).setKTX2Loader(k);
+    return { gltf: new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).setKTX2Loader(k), ktx2: k };
   });
   return {
-    load: (url) => loader.then((l) => l.loadAsync(url)).then((gltf: GLTF) => gltf.scene),
+    parse: (bytes, url, renderer) =>
+      loader
+        .then((l) => {
+          if (!detected) l.ktx2.detectSupport(renderer);
+          detected = true;
+          return l.gltf.parseAsync(bytes, THREE.LoaderUtils.extractUrlBase(url));
+        })
+        .then((gltf: GLTF) => gltf.scene),
     dispose: () => ktx2?.dispose()
   };
 }
 
+// La descarga de un GLB, aparte del parse: así la del barco propio empieza antes de que haya renderer
+export function fetchGlb(url: string): Promise<ArrayBuffer> {
+  return fetch(url).then((r) => {
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.arrayBuffer();
+  });
+}
+
 // Los GLB de las clases: se cargan de uno en uno, el del barco propio primero y, detrás, todos los del manifiesto en
-// segundo plano (AC-193 c). model() devuelve el GLB si ya está y, si no, el procedural
+// segundo plano (AC-193 c). model() devuelve el GLB si ya está y, si no, el procedural. La descarga del propio y el
+// cargador arrancan antes que la cola, sin renderer, porque la entrada los espera (opción B)
 export class ShipGlbStore {
   private readonly manifest: Partial<Record<string, string>>;
   private readonly ready = new Map<string, ShipModel>();
   private readonly failed = new Set<string>();
   private readonly queue: string[] = [];
+  private readonly early = new Map<string, Promise<ArrayBuffer>>(); // descargas del propio que el pump aún no tomó
   private loading: string | null = null;
   private loader: GlbLoader | null = null;
   private disposed = false;
 
   constructor(
     manifest: Partial<Record<string, string>> = SHIP_GLB,
-    private readonly makeLoader: (renderer: THREE.WebGLRenderer) => GlbLoader = createGlbLoader
+    private readonly makeLoader: () => GlbLoader = createGlbLoader,
+    private readonly fetchBytes: (url: string) => Promise<ArrayBuffer> = fetchGlb
   ) {
     this.manifest = { ...manifest };
   }
@@ -203,9 +228,35 @@ export class ShipGlbStore {
     return this.ready.get(classId) ?? getShipModel(classId);
   }
 
-  // Sin GLB en el manifiesto, ya cargado, en carga o fallido: no hace nada. `first` lo pone el primero de la cola
+  loaded(classId: string): boolean {
+    return this.ready.has(classId);
+  }
+
+  // Si la entrada tiene que esperar al GLB del barco propio (AC-193 c, opción B): con manifiesto, mientras no se conozca
+  // su clase (null) o su GLB no haya llegado ni fallado. Sin manifiesto, nunca: se entra como hoy
+  waiting(classId: string | null): boolean {
+    if (!Object.values(this.manifest).some(Boolean)) return false;
+    if (classId === null) return true;
+    return !!this.manifest[classId] && !this.ready.has(classId) && !this.failed.has(classId);
+  }
+
+  // Con manifiesto, crea ya el cargador: sus módulos y el transcodificador de KTX2 empiezan a bajar (lo llama el runtime
+  // al crearse, antes de conectar)
+  warm(): void {
+    if (!this.disposed && !this.loader && Object.values(this.manifest).some(Boolean)) this.loader = this.makeLoader();
+  }
+
+  // Sin GLB en el manifiesto, ya cargado, en carga o fallido: no hace nada. `first` (el barco propio) lo pone el primero
+  // de la cola y empieza ya su descarga y el cargador, aunque aún no haya renderer
   request(classId: string, first = false): void {
-    if (!this.manifest[classId] || this.ready.has(classId) || this.failed.has(classId) || this.loading === classId) return;
+    const url = this.manifest[classId];
+    if (!url || this.ready.has(classId) || this.failed.has(classId) || this.loading === classId) return;
+    if (first && !this.early.has(classId) && !this.disposed) {
+      const bytes = this.fetchBytes(url);
+      bytes.catch(() => undefined); // el fallo lo recoge el pump, con su aviso
+      this.early.set(classId, bytes);
+      this.warm();
+    }
     const at = this.queue.indexOf(classId);
     if (at === 0 || (at > 0 && !first)) return;
     if (at > 0) this.queue.splice(at, 1);
@@ -223,6 +274,7 @@ export class ShipGlbStore {
   setUrl(classId: string, url: string): void {
     this.manifest[classId] = url;
     this.failed.delete(classId);
+    this.early.delete(classId);
     const old = this.ready.get(classId);
     if (old) this.release(old);
     this.ready.delete(classId);
@@ -231,12 +283,14 @@ export class ShipGlbStore {
   // Lanza la siguiente carga si no hay otra en curso. Se llama en cada frame, que es cuando ya hay renderer
   pump(renderer: THREE.WebGLRenderer): void {
     if (this.disposed || this.loading || this.queue.length === 0) return;
-    this.loader ??= this.makeLoader(renderer);
+    const loader = (this.loader ??= this.makeLoader());
     const classId = this.queue.shift()!;
     const url = this.manifest[classId]!;
+    const bytes = this.early.get(classId) ?? this.fetchBytes(url);
+    this.early.delete(classId);
     this.loading = classId;
-    this.loader
-      .load(url)
+    bytes
+      .then((b) => loader.parse(b, url, renderer))
       .then((scene) => {
         let model: ShipModel;
         try {
@@ -268,7 +322,35 @@ export class ShipGlbStore {
     for (const m of this.ready.values()) this.release(m);
     this.ready.clear();
     this.queue.length = 0;
+    this.early.clear();
     this.loader?.dispose();
+  }
+}
+
+// La entrada al juego (AC-193 c, opción B). Hoy el juego se muestra en el primer frame; si la entrada espera al GLB del
+// barco propio, se muestra en el primer frame en que llega o falla, o en el primero que pasa del tope. update() va en cada
+// frame hasta abrirse y devuelve true solo en ese frame. lastWaitAt (el último frame que esperó) deja comprobar en el e2e
+// que se abrió en el primer frame posible
+export class EntryGate {
+  waitMs = OWN_GLB_WAIT_MS; // el tope; el e2e lo alarga cuando prueba la espera, porque un frame de SwiftShader pasa de 0,5 s
+  firstFrameAt = 0;
+  lastWaitAt = 0;
+  shownAt = 0;
+  withGlb = false; // el barco propio entró ya con su GLB
+  capped = false; // se abrió por el tope, con el procedural
+
+  update(now: number, waiting: boolean, loaded: boolean): boolean {
+    if (this.shownAt) return false;
+    if (!this.firstFrameAt) this.firstFrameAt = now;
+    const capped = now - this.firstFrameAt >= this.waitMs;
+    if (waiting && !capped) {
+      this.lastWaitAt = now;
+      return false;
+    }
+    this.shownAt = now;
+    this.withGlb = loaded;
+    this.capped = waiting;
+    return true;
   }
 }
 

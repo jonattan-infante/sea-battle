@@ -13,7 +13,7 @@ import { buildBuoyGeometry, buildIslands, buildLootGeometry, buildPalmGeometry, 
 import { createOceanGeometry, createOceanMaterial } from './models/ocean-material';
 import { measureSailVisibility, measureShipValues, SailVisibility, ShipValues } from './models/sail-visibility';
 import { createShipMaterial, LOD_PX, ShipMaterial, ShipModel } from './models/ship-geometry';
-import { setShipMap, ShipGlbStore } from './models/ship-glb';
+import { EntryGate, setShipMap, ShipGlbStore } from './models/ship-glb';
 import { FloatingTextLayer, LabelLayer, LabelTarget, OverlayHost, ReloadState, ScreenPoint } from './overlays';
 import { DAMAGE_FX, Effects, RENDER_ORDER, rgba } from './vfx/effects';
 import { makeRing, RING_MODE, RingSpec } from './vfx/rings';
@@ -658,6 +658,10 @@ export class GameRuntime implements OverlayHost {
   readonly views = new Map<string, ShipView>();
   // GLB de las clases (ASSET-SPEC §13): el procedural se pinta mientras carga y si falla
   readonly shipGlb = new ShipGlbStore();
+  // AC-193 c, opción B: la entrada espera al GLB del barco propio, con tope. Hasta que se abre, la portada «Izando velas…»
+  // (la crea GameApp) tapa el juego
+  readonly entry = new EntryGate();
+  private entryCover: HTMLElement | null = null;
   hoverId: string | null = null;
   clickMarker: ClickMarker | null = null;
   labels: LabelLayer | null = null;
@@ -758,6 +762,7 @@ export class GameRuntime implements OverlayHost {
 
     this.director = new VfxDirector(this);
     this.subscribe(client);
+    this.shipGlb.warm(); // con manifiesto, el cargador y el transcodificador bajan mientras se conecta
   }
 
   private subscribe(src: RenderSource): void {
@@ -1018,6 +1023,12 @@ export class GameRuntime implements OverlayHost {
     return PVP_ENABLED && !safe(target) && !safe(me) && target.protectedUntil <= now && me.protectedUntil <= now;
   }
 
+  // La portada de la entrada: la oculta el frame en que se abre la entrada (o al conectarla, si ya se abrió)
+  attachEntryCover(el: HTMLElement | null): void {
+    this.entryCover = el;
+    if (el && this.entry.shownAt) el.hidden = true;
+  }
+
   attachOverlays(labels: HTMLElement, floating: HTMLElement): void {
     this.detachOverlays();
     this.labels = new LabelLayer(labels, this);
@@ -1168,6 +1179,7 @@ export class GameRuntime implements OverlayHost {
     const now = performance.now();
     this.gl = state.gl;
     this.rootScene = state.scene;
+    this.updateEntry(now);
     if (this.paused) {
       this.labels?.frame(now);
       return;
@@ -1189,6 +1201,15 @@ export class GameRuntime implements OverlayHost {
     this.labels?.frame(now);
     this.floating?.frame(now);
     this.adaptQuality(state, dt, now);
+  }
+
+  // Antes de updateShips: si el GLB propio acaba de llegar, el frame que abre la entrada ya lo pinta
+  private updateEntry(now: number): void {
+    if (this.entry.shownAt) return;
+    const mine = this.src.myShipId ? this.views.get(this.src.myShipId) : undefined;
+    const classId = mine ? mine.ship.classId : null;
+    const opened = this.entry.update(now, this.shipGlb.waiting(classId), classId !== null && this.shipGlb.loaded(classId));
+    if (opened && this.entryCover) this.entryCover.hidden = true;
   }
 
   private currentZoomFactor(now: number): number {

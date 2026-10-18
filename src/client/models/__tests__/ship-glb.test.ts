@@ -5,10 +5,10 @@ import fs from 'fs';
 import path from 'path';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import type { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js';
+import { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { buildShipAsset, getShipModel, LOD_PX, ShipModel } from '../ship-geometry';
-import { BASIS_PATH, GlbLoader, setShipMap, ShipGlbError, ShipGlbStore, shipModelFromGlb } from '../ship-glb';
+import { BASIS_PATH, createGlbLoader, EntryGate, GlbLoader, OWN_GLB_WAIT_MS, setShipMap, ShipGlbError, ShipGlbStore, shipModelFromGlb } from '../ship-glb';
 import { writeGlb, GlbOptions } from './glb-writer';
 
 type Json = Record<string, unknown>;
@@ -110,14 +110,33 @@ describe('ASSET-SPEC §13: GLB de un barco con el contrato de §1–§4', () => 
   });
 });
 
-// Un cargador falso: cada load() queda pendiente hasta que el test lo resuelve o lo rechaza
+// Una red y un cargador falsos: cada descarga queda pendiente hasta que el test la resuelve con la escena que dará el
+// parse, o la rechaza. `make` cuenta los cargadores creados y `renderers` guarda el renderer que recibe cada parse
 function fakeLoader() {
   const calls: { url: string; resolve: (o: THREE.Object3D) => void; reject: (e: Error) => void }[] = [];
+  const scenes = new Map<ArrayBuffer, THREE.Object3D>();
+  const renderers: THREE.WebGLRenderer[] = [];
+  const fetchGlb = (url: string) =>
+    new Promise<ArrayBuffer>((resolve, reject) =>
+      calls.push({
+        url,
+        resolve: (scene) => {
+          const bytes = new ArrayBuffer(0);
+          scenes.set(bytes, scene);
+          resolve(bytes);
+        },
+        reject
+      })
+    );
   const loader: GlbLoader = {
-    load: (url) => new Promise((resolve, reject) => calls.push({ url, resolve, reject })),
+    parse: (bytes, _url, renderer) => {
+      renderers.push(renderer);
+      return Promise.resolve(scenes.get(bytes)!);
+    },
     dispose: jest.fn()
   };
-  return { calls, loader };
+  const make = jest.fn(() => loader);
+  return { calls, loader, fetchGlb, make, renderers };
 }
 const settle = () => new Promise((r) => setTimeout(r, 0));
 const gl = {} as THREE.WebGLRenderer; // el cargador falso no lo usa
@@ -126,8 +145,8 @@ describe('AC-193 c: el procedural mientras carga, el propio primero y de uno en 
   const manifest = { sloop: '/models/ship_sloop.glb', brig: '/models/ship_brig.glb', frigate: '/models/ship_frigate.glb' };
 
   test('model() da el procedural hasta que llega el GLB, y después el del GLB', async () => {
-    const { calls, loader } = fakeLoader();
-    const store = new ShipGlbStore(manifest, () => loader);
+    const { calls, loader, fetchGlb } = fakeLoader();
+    const store = new ShipGlbStore(manifest, () => loader, fetchGlb);
     store.request('sloop');
     expect(store.model('sloop')).toBe(getShipModel('sloop'));
     store.pump(gl);
@@ -140,8 +159,8 @@ describe('AC-193 c: el procedural mientras carga, el propio primero y de uno en 
   });
 
   test('carga de una en una, con el barco propio delante de los que ya esperaban', async () => {
-    const { calls, loader } = fakeLoader();
-    const store = new ShipGlbStore(manifest, () => loader);
+    const { calls, loader, fetchGlb } = fakeLoader();
+    const store = new ShipGlbStore(manifest, () => loader, fetchGlb);
     store.request('brig');
     store.request('frigate');
     store.request('sloop', true);
@@ -161,8 +180,8 @@ describe('AC-193 c: el procedural mientras carga, el propio primero y de uno en 
   // AC-193 c (producto, 2026-10-18): los modelos que no son el propio se descargan en segundo plano nada más entrar, no al
   // entrar un barco en el área de interés, para que las 10 combinaciones queden en caché en ≤ 10 s
   test('al entrar se encolan todas las clases del manifiesto una vez, detrás del barco propio', async () => {
-    const { calls, loader } = fakeLoader();
-    const store = new ShipGlbStore(manifest, () => loader);
+    const { calls, loader, fetchGlb } = fakeLoader();
+    const store = new ShipGlbStore(manifest, () => loader, fetchGlb);
     store.request('brig', true);
     store.prefetchAll();
     store.prefetchAll(); // repetido: no duplica
@@ -178,8 +197,8 @@ describe('AC-193 c: el procedural mientras carga, el propio primero y de uno en 
   });
 
   test('una clase sin GLB en el manifiesto no descarga nada', () => {
-    const { calls, loader } = fakeLoader();
-    const store = new ShipGlbStore(manifest, () => loader);
+    const { calls, loader, fetchGlb } = fakeLoader();
+    const store = new ShipGlbStore(manifest, () => loader, fetchGlb);
     store.request('pirate');
     store.pump(gl);
     expect(calls).toEqual([]);
@@ -188,8 +207,8 @@ describe('AC-193 c: el procedural mientras carga, el propio primero y de uno en 
 
   test('si falla la descarga o el contrato, se queda el procedural y no se reintenta', async () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
-    const { calls, loader } = fakeLoader();
-    const store = new ShipGlbStore(manifest, () => loader);
+    const { calls, loader, fetchGlb } = fakeLoader();
+    const store = new ShipGlbStore(manifest, () => loader, fetchGlb);
     store.request('sloop');
     store.request('brig');
     store.pump(gl);
@@ -211,8 +230,8 @@ describe('AC-193 c: el procedural mientras carga, el propio primero y de uno en 
   });
 
   test('setUrl vuelve a cargar la clase y libera el GLB anterior; dispose libera lo cargado y lo que llega tarde', async () => {
-    const { calls, loader } = fakeLoader();
-    const store = new ShipGlbStore(manifest, () => loader);
+    const { calls, loader, fetchGlb } = fakeLoader();
+    const store = new ShipGlbStore(manifest, () => loader, fetchGlb);
     store.request('sloop');
     store.pump(gl);
     calls[0].resolve(await glb('sloop'));
@@ -234,6 +253,143 @@ describe('AC-193 c: el procedural mientras carga, el propio primero y de uno en 
     await settle();
     expect(lateDispose).toHaveBeenCalled();
     expect(store.model('sloop')).toBe(getShipModel('sloop'));
+  });
+});
+
+// AC-193 c, opción B (producto, 2026-10-18): la entrada espera al GLB propio con un tope. Para que la espera sea corta, su
+// descarga empieza en cuanto se conoce la clase, sin esperar al renderer, y el cargador (sus módulos y el transcodificador
+// de KTX2) en cuanto hay manifiesto
+describe('AC-193 c, opción B: el GLB propio se empieza a bajar antes del primer frame', () => {
+  const manifest = { sloop: '/models/ship_sloop.glb', brig: '/models/ship_brig.glb' };
+
+  test('al pedir el propio arrancan su descarga y el cargador; el pump usa esa descarga y le pasa el renderer', async () => {
+    const { calls, fetchGlb, make, renderers } = fakeLoader();
+    const store = new ShipGlbStore(manifest, make, fetchGlb);
+    store.request('brig');
+    expect([calls.length, make.mock.calls.length]).toEqual([0, 0]); // los demás esperan a la cola
+    store.request('sloop', true);
+    expect(calls.map((c) => c.url)).toEqual(['/models/ship_sloop.glb']);
+    expect(make).toHaveBeenCalledTimes(1);
+    calls[0].resolve(await glb('sloop')); // llega antes de que haya renderer
+    await settle();
+    expect(store.model('sloop')).toBe(getShipModel('sloop'));
+    store.pump(gl);
+    await settle();
+    expect(calls).toHaveLength(1);
+    expect(renderers).toEqual([gl]);
+    expect(store.model('sloop')).not.toBe(getShipModel('sloop'));
+    store.pump(gl);
+    expect(calls.map((c) => c.url)).toEqual(['/models/ship_sloop.glb', '/models/ship_brig.glb']);
+    expect(make).toHaveBeenCalledTimes(1);
+  });
+
+  test('warm() crea el cargador antes de conocer la clase si hay manifiesto, una vez y sin bajar ningún GLB', () => {
+    const none = fakeLoader();
+    new ShipGlbStore({}, none.make, none.fetchGlb).warm();
+    expect(none.make).not.toHaveBeenCalled();
+    const { calls, fetchGlb, make } = fakeLoader();
+    const store = new ShipGlbStore(manifest, make, fetchGlb);
+    store.warm();
+    store.warm();
+    expect(make).toHaveBeenCalledTimes(1);
+    expect(calls).toEqual([]);
+  });
+
+  test('si la descarga anticipada falla, la clase queda fallida en el siguiente pump, con un aviso y sin reintentos', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const { calls, fetchGlb, make } = fakeLoader();
+    const store = new ShipGlbStore(manifest, make, fetchGlb);
+    store.request('sloop', true);
+    calls[0].reject(new Error('Failed to fetch'));
+    await settle();
+    store.pump(gl);
+    await settle();
+    store.request('sloop', true);
+    store.pump(gl);
+    expect(calls).toHaveLength(1);
+    expect(store.waiting('sloop')).toBe(false);
+    expect(store.model('sloop')).toBe(getShipModel('sloop'));
+    expect(warn.mock.calls.map((c) => c[0])).toEqual(['[ship-glb] sloop (/models/ship_sloop.glb): Failed to fetch; se queda el procedural']);
+    warn.mockRestore();
+  });
+
+  test('waiting(): sin manifiesto, nunca; con él, mientras la clase propia no se conoce o su GLB no ha llegado ni fallado', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const empty = fakeLoader();
+    const none = new ShipGlbStore({}, empty.make, empty.fetchGlb);
+    expect([none.waiting(null), none.waiting('sloop')]).toEqual([false, false]);
+    const { calls, fetchGlb, make } = fakeLoader();
+    const store = new ShipGlbStore(manifest, make, fetchGlb);
+    expect(store.waiting(null)).toBe(true);
+    expect(store.waiting('pirate')).toBe(false); // su clase no tiene GLB
+    store.request('sloop', true);
+    expect([store.waiting('sloop'), store.loaded('sloop')]).toEqual([true, false]);
+    store.pump(gl);
+    calls[0].resolve(await glb('sloop'));
+    await settle();
+    expect([store.waiting('sloop'), store.loaded('sloop')]).toEqual([false, true]);
+    store.request('brig', true);
+    store.pump(gl);
+    calls[1].reject(new Error('404'));
+    await settle();
+    expect([store.waiting('brig'), store.loaded('brig')]).toEqual([false, false]);
+    warn.mockRestore();
+  });
+});
+
+// Hoy el juego se muestra en el primer frame. Con el GLB propio pendiente, en el primer frame en que llega o falla, o en el
+// primero que pasa del tope; update() devuelve true solo en el frame en que se abre
+describe('AC-193 c, opción B: la entrada espera al GLB propio con un tope de 0,5 s sobre la de hoy', () => {
+  test('sin nada que esperar se muestra en el primer frame, como hoy', () => {
+    const gate = new EntryGate();
+    expect([gate.update(1000, false, false), gate.update(1016, false, false)]).toEqual([true, false]);
+    expect(gate).toMatchObject({ firstFrameAt: 1000, shownAt: 1000, lastWaitAt: 0, withGlb: false, capped: false });
+  });
+
+  test('con el GLB propio pendiente espera a que llegue y entra con él', () => {
+    const gate = new EntryGate();
+    expect([gate.update(1000, true, false), gate.update(1200, true, false), gate.update(1450, false, true)]).toEqual([false, false, true]);
+    expect(gate).toMatchObject({ firstFrameAt: 1000, shownAt: 1450, lastWaitAt: 1200, withGlb: true, capped: false });
+  });
+
+  test('si no llega, se muestra en el primer frame que pasa del tope, con el modelo de hoy', () => {
+    const gate = new EntryGate();
+    expect([1000, 1300, 1499, 1516, 1600].map((t) => gate.update(t, true, false))).toEqual([false, false, false, true, false]);
+    expect(gate).toMatchObject({ shownAt: 1516, lastWaitAt: 1499, withGlb: false, capped: true });
+    expect(OWN_GLB_WAIT_MS).toBe(500);
+    const longer = new EntryGate();
+    longer.waitMs = 2000;
+    expect([1000, 1600, 2999, 3000].map((t) => longer.update(t, true, false))).toEqual([false, false, false, true]);
+  });
+
+  test('si el GLB falla, entra en ese frame con el modelo de hoy', () => {
+    const gate = new EntryGate();
+    gate.update(1000, true, false);
+    expect(gate.update(1100, false, false)).toBe(true);
+    expect(gate).toMatchObject({ shownAt: 1100, withGlb: false, capped: false });
+  });
+});
+
+describe('§1: el cargador empieza a bajar el transcodificador al crearse, sin renderer', () => {
+  // KTX2Loader.init() baja basis_transcoder.js y .wasm (≈ 585 KB) y solo crea los workers al transcodificar; el renderer
+  // hace falta para elegir el formato de GPU (detectSupport), antes del primer parse
+  test('init() del KTX2Loader al crearlo y detectSupport con el renderer del primer parse, una sola vez', async () => {
+    const init = jest.spyOn(KTX2Loader.prototype, 'init').mockResolvedValue(undefined);
+    const detect = jest.spyOn(KTX2Loader.prototype, 'detectSupport').mockImplementation(function (this: KTX2Loader) {
+      return this;
+    });
+    const loader = createGlbLoader();
+    await settle();
+    expect([init.mock.calls.length, detect.mock.calls.length]).toEqual([1, 0]);
+    const bytes = writeGlb(buildShipAsset('sloop'));
+    const buffer = () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+    const scene = await loader.parse(buffer(), '/models/ship_sloop.glb', gl);
+    await loader.parse(buffer(), '/models/ship_sloop.glb', gl);
+    expect(detect.mock.calls).toEqual([[gl]]);
+    expect(shipModelFromGlb(scene, 'sloop').triangles).toEqual(getShipModel('sloop').triangles);
+    loader.dispose();
+    init.mockRestore();
+    detect.mockRestore();
   });
 });
 

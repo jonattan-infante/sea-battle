@@ -94,6 +94,7 @@ export default function GameApp({ guest }: { guest: boolean }) {
   const [welcome, setWelcome] = useState<Welcome | null>(null);
   const labelsRef = useRef<HTMLDivElement>(null);
   const floatingRef = useRef<HTMLDivElement>(null);
+  const coverRef = useRef<HTMLDivElement>(null);
   const getTokenRef = useRef(getToken);
   // Sincroniza el HUD en el acto tras una intención del jugador (AC-125: refleja la pulsación en ≤ 50 ms)
   const syncRef = useRef<() => void>(() => {});
@@ -258,10 +259,15 @@ export default function GameApp({ guest }: { guest: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [guest, identityReady]);
 
-  // Capas DOM de placas y números de daño (dueño: runtime)
+  // Capas DOM de placas y números de daño, y la portada de la entrada (dueño: runtime)
   useEffect(() => {
-    if (!runtime || !welcome || !labelsRef.current || !floatingRef.current) return;
-    return attachOverlays(runtime, labelsRef.current, floatingRef.current);
+    if (!runtime || !welcome || !labelsRef.current || !floatingRef.current || !coverRef.current) return;
+    const detach = attachOverlays(runtime, labelsRef.current, floatingRef.current);
+    runtime.attachEntryCover(coverRef.current);
+    return () => {
+      detach();
+      runtime.attachEntryCover(null);
+    };
   }, [runtime, welcome]);
 
   // ---- Acciones compartidas por teclado, HUD y botones táctiles ----
@@ -431,7 +437,7 @@ export default function GameApp({ guest }: { guest: boolean }) {
         screen: runtime.project(s.x, s.z)
       };
     window.__SEA_BATTLE__ = {
-      ready: () => client.state === 'connected' && !!client.welcome && runtime.renderInfo.calls > 0,
+      ready: () => client.state === 'connected' && !!client.welcome && runtime.renderInfo.calls > 0 && runtime.entry.shownAt > 0,
       serverTime: () => client.serverTime(),
       me: () => view(client.getShip(client.myShipId)) ?? null,
       ships: () => [...client.getShips()].map((s) => view(s)),
@@ -461,6 +467,8 @@ export default function GameApp({ guest }: { guest: boolean }) {
           <div ref={labelsRef} className="layer-labels" aria-hidden />
           <div ref={floatingRef} className="layer-floating" aria-hidden />
           <Hud client={runtime.client} actions={actions} islands={welcome.islands} viewRect={() => runtime.viewRect()} />
+          {/* AC-193 c: tapa el juego hasta que la entrada se abre (el GLB propio llegó, falló o pasó el tope); la oculta el runtime */}
+          <Connecting ref={coverRef} />
         </>
       ) : (
         !loadFailed && <Connecting />
