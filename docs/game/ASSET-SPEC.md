@@ -679,3 +679,51 @@ Se ejecuta con un script de desarrollo (`npm run assets:validate`, dependencia d
 | `game-qa` | Ejecutar AS-V01…V16 en cada cambio de asset y adjuntar la salida |
 | `game-product` (1.1) | Nada pendiente: las cifras de §8.4, §9.4 y §9.5 son las del GDD del 2026-10-17 (U9–U13 resueltas) |
 | `game-developer` (1.1) | Islas como datos de un círculo por forma que comparten la simulación y el render (`sb_collider`, las 16 formas de GDD §4); las recetas de §9.4 y el puerto de §9.5; las clases de §8.4 con la 2.ª franja de portas en el *loft*; `_livery_slot` para la franja de oro del Galeón; los tests AS-V24 y AS-V25; y el ⚓ y el ▣ del minimapa (ART-DIRECTION §4.3) |
+
+---
+
+## 13. Cadena de arte con GLB: el barco piloto (1.1; E17; AC-193; D80)
+**Recomendación: GLB generado por un script de Blender, con un atlas de textura de 1024² con la oclusión horneada, comprimido con meshopt y KTX2** (la cadena B de abajo, que es también la recomendación del lead). El modelo procedural de hoy queda como **sustituto mientras carga** y como respaldo: así la entrada al juego nunca espera a un modelo (AC-193 c).
+
+**Diagnóstico.** Jonattan, tras la lámina de barcos (`docs/game/art/D64-barcos.png`): «me parecen muy simples y quiero más detalle». Las causas, de mayor a menor peso:
+
+| Causa | Hoy | Lo que falta para «madera trabajada» (GDD §6) |
+|---|---|---|
+| Superficie | Color por vértice, plano en cada pieza: el detalle son franjas de geometría (tablas, paños), y cada una cuesta triángulos (§6) | Tablazón fina, vetas, tapas de porta, herrajes, dorados y ventanas: un detalle de 1 a 3 px a 6,2 px/m que solo cabe en una textura |
+| Volumen | Solo un oscurecimiento ×0,85 en el trancanil (D62) | Oclusión horneada en la textura: bajo los castillos, entre las tablas y al pie de los palos |
+| Silueta | Castillos como cajas, popa plana, sin galerías, mascarón ni jarcia | Castillos escalonados con regala, popa con galería y espejo, obenques: unos cientos de triángulos |
+
+**Opciones.**
+
+| Opción | Detalle | Reproducible | Descarga por combinación | Veredicto |
+|---|---|---|---|---|
+| A. El procedural de hoy, con más piezas | Limitado por los triángulos y sin textura | Sí | 0 | No llega: cada detalle es una pieza de geometría |
+| **B. GLB por script de Blender, con atlas de textura** | Textura de 1024² con oclusión horneada | **Sí**: el script vive en el repo y Blender corre sin interfaz | ≤ 400 KB (§5) | **Recomendada** |
+| C. Modelado a mano | El mejor | No: no hay artista en el equipo | Igual que B | Descartada |
+| D. Modelo generado por IA | Variable | No | Variable | Descartada: topología, ejes, sockets y licencia inciertos |
+| E. Sprites prerenderizados, como Seafight | El máximo | Sí | Alta: N rumbos × 10 combinaciones | Descartada: rompe la cámara 3D, el hundimiento, los sockets de VFX y la luz |
+
+**La cadena B, paso a paso.**
+
+| Paso | Qué | Quién |
+|---|---|---|
+| 1. Receta | Script de Python de Blender por clase y familia (`--class line --family es\|gb`), con los números de §8.4 (eslora, manga, palos y sockets) y la capa de familia (ART-DIRECTION, familias). Determinista: sin azar sin semilla fija | `game-ux` |
+| 2. Textura | Materiales procedurales (tablas, portas, dorados, lona) horneados con Cycles en **un atlas de 1024²**: color × oclusión. 1 material, 1 textura y `OPAQUE` (§1, §6). La jarcia, si va, es geometría fina: la transparencia está prohibida (§6) | `game-ux` |
+| 3. Exportación | glTF 2.0 binario con el exportador de Blender: +Y arriba, proa hacia +Z y pivote en la flotación (§2); nodos `<id>_lod0` y `<id>_lod1` (§7); sockets como *empties* con su nombre (§3); `extras` (§4); atributos `COLOR_0` (blanco: el color va en la textura), `_RIM_MASK` y `TEXCOORD_0` | `game-ux` |
+| 4. Compresión | `@gltf-transform/cli`: geometría con `EXT_meshopt_compression` y textura KTX2 ETC1S (`KHR_texture_basisu`), como pide §1 | `game-ux`, con las herramientas del paso de abajo |
+| 5. Validación | AS-V01…V13 (§11). Para el GLB con textura, AS-V09 admite además `TEXCOORD_0` y AS-V10 exige la textura KTX2 | `game-developer` (el arnés) y `game-qa` |
+| 6. Integración | `GLTFLoader` con `MeshoptDecoder` y `KTX2Loader`; el procedural mientras carga; el mismo cambio de LOD (§7); `uHit` y `uDamage` sobre el material cargado (§6, clonado por instancia) | `game-developer` (dev-render) |
+| 7. Láminas | Render del mismo GLB con la cámara del juego, en el formato de la lámina de barcos (AC-192 g) | `game-ux` |
+
+**Herramientas** (pedirlas a Jonattan es del lead): **Blender 5.2.2** ya está instalado (`blender --version`, 2026-10-18). Faltan **`@gltf-transform/cli`** (npm, dependencia de desarrollo) y **KTX-Software** (`toktx`, para KTX2): `which toktx gltf-transform` no encuentra ninguno.
+
+**Presupuesto del piloto** (HIPÓTESIS hasta medirlo en el juego; si pasa, sustituye a la fila del Navío de §5 para las familias):
+
+| Asset | LOD0 | LOD1 | Materiales | Textura | GLB |
+|---|---|---|---|---|---|
+| Navío de línea, por familia (`ship_line_es`, `ship_line_gb`) | ≤ 5 000 tris | ≤ 1 200 | 1 | 1024² KTX2 ETC1S | ≤ 400 KB |
+
+- **Escena del peor caso** (AC-193 b; desglose de §5 con los 20 jugadores en Navío a 5 000): barcos 149 300 tris, y en total ≈ 176 300 más los restos, el 71 % de 250 000. Las draw calls no cambian (1 por barco, 56 de 100), porque cada GLB lleva 1 malla y 1 material por LOD.
+- **Descarga** (AC-193 c): primero el barco propio y después los demás, a medida que entran en el área de interés, con el procedural en su lugar mientras tanto. URL con hash, cacheable. Las 10 combinaciones, ≤ 10 × 400 KB; la cifra real la miden ux y dev-render en el piloto.
+
+**Spike** (2026-10-18; en el scratchpad de ux; no es el piloto): Blender 5.2.2 sin interfaz exporta en menos de 0,3 s el Navío de la lámina D64 (3 152 tris, 2 074 vértices, UV automáticas) con una textura de prueba de 1024² hecha de ruido, que es el peor caso para comprimir. Pesa 1 355 KB con PNG, 464 KB con JPEG y 442 KB con WebP; con Draco, 274 KB con JPEG y 252 KB con WebP. Por partes (leído del GLB): la textura JPEG pesa 232 KB, y la geometría, 230 KB sin comprimir y 41 KB con Draco. Las UV automáticas parten muchas aristas y dejan 6 608 vértices exportados, así que en el piloto las UV se cortan a mano en el script, por piezas. **Con la geometría comprimida, lo que pesa es la textura.** Lo que pese con KTX2 y meshopt no está medido, porque faltan las herramientas.
