@@ -71,6 +71,7 @@ export interface GameServerOptions {
   metrics?: boolean; // AC-142: el proceso registra sus métricas cada minuto con jugadores (server/metrics.ts)
   metricsIntervalMs?: number; // por defecto 60 s (los tests lo acortan)
   i2?: boolean; // AC-187: I2 encendido (SEA_BATTLE_I2=1, server/features.ts); apagado por defecto
+  newShips?: boolean; // AC-201: la Goleta y el Navío se venden (SEA_BATTLE_NEW_SHIPS=1); apagado por defecto
 }
 
 export interface GameServer {
@@ -106,7 +107,7 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
   const snapshotEvery = Math.max(1, Math.round(tickRate / (options.snapshotRate ?? SNAPSHOT_RATE)));
   const log = options.log ?? (() => {});
   const now = options.now ?? Date.now;
-  const world = createWorld({ seed: options.seed, spawnNpcs: options.spawnNpcs, i2: options.i2 });
+  const world = createWorld({ seed: options.seed, spawnNpcs: options.spawnNpcs, i2: options.i2, newShips: options.newShips });
   options.setup?.(world);
   const clients = new Map<string, ClientState>(); // por userId: una sola pestaña por usuario
   let ticks = 0;
@@ -221,7 +222,8 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
         islands: world.islands,
         tickRate,
         snapshotRate: tickRate / snapshotEvery,
-        interestRadius: INTEREST_RADIUS
+        interestRadius: INTEREST_RADIUS,
+        newShips: world.newShips
       };
       socket.emit(S2C.welcome, welcome);
       sendFrame(client, []); // snapshot completo inmediato

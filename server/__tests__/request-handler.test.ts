@@ -7,7 +7,7 @@ import { requestHandler } from '../request-handler';
 async function serve(env: Record<string, string | undefined>): Promise<HttpServer> {
   const server = createServer(
     requestHandler({
-      health: () => ({ ok: true, players: 0, uptimeSeconds: 1, commit: null, i2: false }),
+      health: () => ({ ok: true, players: 0, uptimeSeconds: 1, commit: null, i2: false, newShips: false }),
       redirect: canonicalRedirect(env),
       next: (_req, res) => res.writeHead(200, { 'Content-Type': 'text/plain' }).end('next')
     })

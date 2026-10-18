@@ -215,4 +215,5 @@ export interface Welcome {
   tickRate: number;
   snapshotRate: number;
   interestRadius: number;
+  newShips: boolean; // AC-201: la Goleta y el Navío se venden; sin él, el astillero es el de la 1.0.3
 }
