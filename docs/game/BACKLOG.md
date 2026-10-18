@@ -796,7 +796,7 @@ Reportes (el último manda):
 
   **Con H-306** (`feat/h-306-gunboat-ai`, sin commit, Jest suelto de dev-npc; datos del lead, 2026-10-17), el riesgo se cumplió. Con el I2 encendido y la población de I2, el hito de los 500 de oro sale en **4,06 min** (243,4 s > 240), con 4,38 · 6,60 · 4,06 · 2,67 · 3,85 por semilla. Las medianas son 4,06 / 16,75 / 50,98.
   - **La recompensa de la cañonera no lo mueve:** de 220 a 270, el hito sale en 4,06 en todas.
-  - **Por qué:** antes de los 500, el bot pasa 100 s y 57 s atacando una cañonera (semillas 2 y 3). Todas las muertes de ese tramo son por piratas.
+  - **Por qué:** antes de los 500, el bot pasa 100 s y 57 s atacando una cañonera (semillas 2 y 3). Todas las muertes de ese tramo son por piratas. Con la Balandra entera, hasta el Bergantín, el tiempo atacando cañoneras es del 22, 21, 11, 0 y 1 % por semilla. En la semilla 1, 2 de sus 5 muertes son por cañoneras (datos de dev-npc, `952206f`).
   - **Diagnóstico:** sin atacar cañoneras, las medianas pasan a 2,67 / 14,15 / 50,32.
 
   **Decidido por producto (2026-10-17): el bot no ataca una cañonera con un cañón de menos alcance que el suyo.** Es la cláusula nueva de arriba. Por qué:
