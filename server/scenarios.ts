@@ -1,8 +1,8 @@
 // Escenarios deterministas para capturas de QA y UX (ART-DIRECTION §18). Solo se aplican con el modo
 // invitado permitido (nunca en Railway); en producción el mundo es siempre el del GDD.
-import { CANNON_LEVELS, CAPTAIN_KILLS_TO_SPAWN, SHIP_CLASSES, WRECK_LIFETIME } from '../src/game/constants';
-import { World } from '../src/game/types';
-import { spawnCaptain, spawnMerchant, spawnPirate } from '../src/game/world';
+import { CANNON_LEVELS, CAPTAIN_CLASS, CAPTAIN_KILLS_TO_SPAWN, GUNBOAT_CLASS, SHIP_CLASSES, WRECK_LIFETIME } from '../src/game/constants';
+import { Ship, World } from '../src/game/types';
+import { spawnCaptain, spawnGunboat, spawnMerchant, spawnPirate } from '../src/game/world';
 
 // Punto de captura en mar abierto, fuera de la zona segura (r 110) y a ≥ 60 m de cualquier isla
 export const SHOWCASE_POINT = { x: 0, z: 200 };
@@ -48,6 +48,24 @@ export const LEGIBILITY = {
   merchant: { x: -40, z: 160 }
 } as const;
 
+// Legibilidad del I2 (AC-115, ART-DIRECTION §18.2): los 4 NPC de la prueba de los evaluadores-agente (pirata, cañonera,
+// Capitán y mercante), quietos alrededor del punto de captura con los 4 rumbos de AD-28 repartidos, y los puestos de los
+// dos jugadores. Es solo para la captura (e2e/capture.spec.ts), así que van sin IA: la cañonera detecta a 80 m y el
+// Capitán a 90 m, y tenerlos a esa distancia de los dos jugadores, también en su camino desde el puerto, los sacaría del
+// encuadre de 390×844 a 1,0× (~138 m de ancho). Sin IA no entran en combate ni se mueven, y lo que se mide (modelo, placa
+// y marcador del minimapa) sale de su clase. El pirata va igual, para que los puestos no dependan de su radio de agresión.
+// Exige el I2 encendido: sin él no hay cañonera ni Capitán (AC-187)
+export const LEGIBILITY_I2 = {
+  self: SHOWCASE_POINT,
+  other: { x: -30, z: 230 },
+  ships: [
+    { classId: 'pirate', x: 45, z: 255, headingDeg: 45 },
+    { classId: GUNBOAT_CLASS, x: 40, z: 158, headingDeg: 135 },
+    { classId: CAPTAIN_CLASS, x: 48, z: 212, headingDeg: 225 },
+    { classId: 'merchant', x: -40, z: 160, headingDeg: 315 }
+  ]
+} as const;
+
 // Reparar y atacar cruzados (AC-128, e2e/input-toggle.spec.ts): el abanico de "targets" y el jugador entra con el casco
 // al 10 %. Sin nadie que dispare, reparar cura 32 de vida/s (GDD §8): con 80 de vida quedan ~20 s de reparación antes
 // de pasar del 90 % que pide el criterio
@@ -60,10 +78,10 @@ export const REPAIR_START_HULL = 0.1;
 export const CAPTAIN_BAIT_POINT = { x: 0, z: 150 };
 export const CAPTAIN_DOWN_POINT = { x: 0, z: -160 };
 
-export const SCENARIOS = ['showcase', 'shipyard', 'targets', 'endurance', 'repair', 'legibility', 'captain', 'captain-down'] as const;
+export const SCENARIOS = ['showcase', 'shipyard', 'targets', 'endurance', 'repair', 'legibility', 'captain', 'captain-down', 'legibility-i2'] as const;
 export type ScenarioName = (typeof SCENARIOS)[number];
-// Escenarios del Capitán: con el I2 apagado no podría aparecer (AC-187), así que exigen SEA_BATTLE_I2=1
-export const I2_SCENARIOS: readonly ScenarioName[] = ['captain', 'captain-down'];
+// Escenarios con NPC del I2: con el I2 apagado no existen (AC-187), así que exigen SEA_BATTLE_I2=1
+export const I2_SCENARIOS: readonly ScenarioName[] = ['captain', 'captain-down', 'legibility-i2'];
 
 export function parseScenario(value: string | undefined): ScenarioName | null {
   return (SCENARIOS as readonly string[]).includes(value ?? '') ? (value as ScenarioName) : null;
@@ -111,6 +129,20 @@ export function applyScenario(world: World, name: ScenarioName): void {
     merchant.destination = null;
     merchant.path = [];
     merchant.ai = null;
+    return;
+  }
+  if (name === 'legibility-i2') {
+    for (const p of LEGIBILITY_I2.ships) {
+      const at = { x: p.x, z: p.z };
+      const ship: Ship =
+        p.classId === CAPTAIN_CLASS ? spawnCaptain(world, at)! : p.classId === GUNBOAT_CLASS ? spawnGunboat(world, 0)! : p.classId === 'merchant' ? spawnMerchant(world) : spawnPirate(world, 0);
+      ship.pos = at;
+      ship.heading = (p.headingDeg * Math.PI) / 180;
+      ship.ai = null;
+      if (ship.kind === 'pirate') ship.holdPosition = true; // DT-04: los hostiles de los escenarios no patrullan
+      ship.destination = null;
+      ship.path = [];
+    }
     return;
   }
   if (name === 'captain') {

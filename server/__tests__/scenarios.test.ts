@@ -1,6 +1,7 @@
 import {
   CANNON_LEVELS,
   CAPTAIN_CLASS,
+  GUNBOAT_CLASS,
   INTEREST_RADIUS,
   ISLANDS,
   NAV_LIMIT,
@@ -28,6 +29,7 @@ import {
   ENDURANCE_POINT,
   I2_SCENARIOS,
   LEGIBILITY,
+  LEGIBILITY_I2,
   parseScenario,
   REPAIR_START_HULL,
   ScenarioName,
@@ -158,6 +160,57 @@ describe('escenario "legibility" (AC-72)', () => {
   });
 });
 
+// AC-115 (ART-DIRECTION §18.2): la escena de los evaluadores-agente del I2. Los puestos en pantalla (≥ 16 px CSS entre cajas
+// y fuera de los paneles, D57) los comprueba la captura de e2e/capture.spec.ts; aquí, lo que es del mundo
+describe('escenario "legibility-i2" (AC-115), con el I2 encendido', () => {
+  const world = createWorld({ seed: 1, spawnNpcs: false, i2: true });
+  applyScenario(world, 'legibility-i2');
+  const npcs = [...world.ships.values()];
+  const deg = (h: number) => Math.round((h * 180) / Math.PI);
+
+  test('un pirata, una cañonera, el Capitán y un mercante en sus puestos, sin IA, con los 4 rumbos de AD-28 repartidos (45°, 135°, 225° y 315°), y nada más', () => {
+    expect(npcs.map((s) => s.classId).sort()).toEqual([CAPTAIN_CLASS, GUNBOAT_CLASS, 'merchant', 'pirate']);
+    for (const p of LEGIBILITY_I2.ships) {
+      const s = npcs.find((n) => n.classId === p.classId)!;
+      expect({ classId: s.classId, pos: s.pos, deg: deg(s.heading), ai: s.ai }).toEqual({ classId: p.classId, pos: { x: p.x, z: p.z }, deg: p.headingDeg, ai: null });
+    }
+    expect(npcs.map((s) => deg(s.heading)).sort((a, b) => a - b)).toEqual([45, 135, 225, 315]);
+    expect(npcs.filter((s) => s.kind === 'pirate').map((s) => s.holdPosition)).toEqual([true, true, true]); // DT-04
+  });
+
+  test('los puestos de los jugadores quedan fuera de la zona segura, y los NPC fuera de las islas y de la exclusión del puerto', () => {
+    for (const p of [LEGIBILITY_I2.self, LEGIBILITY_I2.other]) expect(Math.hypot(p.x, p.z)).toBeGreaterThan(SAFE_ZONE_RADIUS);
+    for (const s of npcs) {
+      for (const isl of ISLANDS) expect(Math.hypot(s.pos.x - isl.x, s.pos.z - isl.z)).toBeGreaterThan(isl.radius + navClearance(s.classId));
+      expect(Math.hypot(s.pos.x, s.pos.z)).toBeGreaterThan(PIRATE_PORT_EXCLUSION);
+    }
+  });
+
+  test('con los dos jugadores en sus puestos y sin protección, nadie se mueve ni dispara en 30 s (la cañonera detecta a 80 m y el Capitán a 90 m)', () => {
+    const w = createWorld({ seed: 2, spawnNpcs: false, i2: true });
+    applyScenario(w, 'legibility-i2');
+    addPlayer(w, 'u1', 'Ana');
+    addPlayer(w, 'u2', 'Bea');
+    const players = [shipOfPlayer(w, 'u1')!, shipOfPlayer(w, 'u2')!];
+    const posts = [LEGIBILITY_I2.self, LEGIBILITY_I2.other];
+    const before = [...w.ships.values()].filter((s) => s.kind !== 'player').map((s) => ({ ...s.pos, h: s.heading }));
+    const volleys: string[] = [];
+    for (let i = 0; i < 30 * TICK_RATE; i++) {
+      players.forEach((s, k) => {
+        s.pos = { ...posts[k] };
+        s.speed = 0;
+        s.destination = null;
+        s.protectedUntil = 0;
+      });
+      step(w, 1 / TICK_RATE);
+      for (const e of drainEvents(w)) if (e.type === 'volley') volleys.push(e.shipId);
+    }
+    const after = [...w.ships.values()].filter((s) => s.kind !== 'player').map((s) => ({ ...s.pos, h: s.heading }));
+    expect(after).toEqual(before);
+    expect(volleys).toEqual([]);
+  });
+});
+
 describe('escenario "shipyard" (AC-70)', () => {
   test('cada jugador entra con el precio del Bergantín; sin escenario, con el oro inicial del GDD', () => {
     const rich = createWorld({ seed: 1, spawnNpcs: false });
@@ -175,6 +228,7 @@ describe('escenario "shipyard" (AC-70)', () => {
     expect(parseScenario('repair')).toBe('repair');
     expect(parseScenario('captain')).toBe('captain');
     expect(parseScenario('captain-down')).toBe('captain-down');
+    expect(parseScenario('legibility-i2')).toBe('legibility-i2');
     expect(parseScenario('rich')).toBeNull();
     expect(parseScenario(undefined)).toBeNull();
   });
