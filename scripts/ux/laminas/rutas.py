@@ -17,7 +17,7 @@ FONTS = os.path.join(os.environ.get('UX_FONTS', os.path.join(_SIB, 'sea-battle-d
 CAPTURAS = os.environ.get('UX_CAPTURAS', os.path.join(_SIB, 'sea-battle-dev-render', 'qa-artifacts'))
 OUT = os.environ.get('UX_OUT', os.path.join(tempfile.gettempdir(), 'sea-battle-laminas'))
 os.makedirs(OUT, exist_ok=True)
-FF = {500: 'b0bb26939bb40fdb-s.p.woff2', 600: '60c9b95e8d9e49be-s.p.woff2', 'pirata': '5027f589d2b9109f-s.p.woff2'}
+FF = {500: 'b0bb26939bb40fdb-s.p.woff2', 600: '60c9b95e8d9e49be-s.p.woff2', 700: '6ad0344ed98ac2e9-s.p.woff2', 'pirata': '5027f589d2b9109f-s.p.woff2'}
 
 
 def need(path, what):
