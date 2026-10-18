@@ -144,10 +144,12 @@ body {
 .hud-target__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; line-height: 1.15; }
 .hud-target__name { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hud-target__meta { font-size: 12px; color: var(--ui-text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* Otro jugador (AC-153): insignia de 16 px y 4 de separación delante de «Balandra · Nivel 13 · Teniente» */
-.hud-target__meta.is-player { display: flex; align-items: center; gap: 4px; }
-.hud-target__meta.is-player svg { flex: none; }
-.hud-target__meta.is-player span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* Otro jugador (AC-153): insignia de 16 px y 4 de separación delante de «Balandra · Nivel 13 · Teniente». NPC demasiado
+   fuerte (AC-189, §12.10): el triángulo de 12 px y 4 de separación delante de «Demasiado fuerte para tu barco», en 600 */
+.hud-target__meta.is-player, .hud-target__meta.is-danger { display: flex; align-items: center; gap: 4px; }
+.hud-target__meta.is-player svg, .hud-target__meta.is-danger svg { flex: none; }
+.hud-target__meta.is-player span, .hud-target__meta.is-danger span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.hud-target__meta.is-danger { color: var(--ui-danger); font-weight: 600; }
 .hud-target__row { display: flex; align-items: center; gap: 4px; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .in-range { color: var(--ui-ok); }
 .out-range { color: var(--ui-text-dim); }
@@ -250,10 +252,11 @@ body {
   .hud-icon-pair svg:first-child { width: 9px; height: 9px; }
   .hud-icon-pair svg:last-child { width: 13px; height: 13px; }
   .hud-target__meta { display: none; }
-  /* Objetivo jugador (§12.9, D75): el panel crece a 70 y la línea del rango, de 11 px con la insignia de 12, va la última,
-     bajo la distancia, porque el botón de cerrar tapa la derecha de las dos primeras filas */
-  .hud-target.is-player { height: 70px; }
-  .hud-target__meta.is-player { display: flex; order: 1; font-size: 11px; }
+  /* Objetivo jugador (§12.9, D75) o NPC marcado (§12.10, D77): el panel crece a 70 y la línea del rango o de la marca, de
+     11 px con la insignia o el triángulo de 12, va la última, bajo la distancia, porque el botón de cerrar tapa la derecha
+     de las dos primeras filas */
+  .hud-target.is-player, .hud-target.is-danger { height: 70px; }
+  .hud-target__meta.is-player, .hud-target__meta.is-danger { display: flex; order: 1; font-size: 11px; }
   .hud-target .bar--sm { height: 8px; }
   .hud-minimap { right: 16px; top: calc(env(safe-area-inset-top, 0px) + 60px); width: 88px; height: 88px; }
   .hud-toasts { left: 16px; top: calc(env(safe-area-inset-top, 0px) + 156px); transform: none; width: calc(100% - 32px); max-width: 358px; } /* D10: debajo del minimapa */
@@ -273,8 +276,8 @@ body {
   .hud-player .bar { width: 180px; height: 10px; }
   .hud-target { left: 12px; top: 64px; transform: none; width: 252px; height: 48px; padding: 4px 8px; }
   .hud-target__meta { display: none; }
-  .hud-target.is-player { height: 70px; }
-  .hud-target__meta.is-player { display: flex; order: 1; font-size: 11px; }
+  .hud-target.is-player, .hud-target.is-danger { height: 70px; }
+  .hud-target__meta.is-player, .hud-target__meta.is-danger { display: flex; order: 1; font-size: 11px; }
   .hud-target .bar--sm { height: 8px; }
   .hud-gold { right: 92px; top: 12px; width: auto; }
   .hud-minimap { right: 12px; top: 12px; width: 72px; height: 72px; }

@@ -6,7 +6,20 @@ import { CAPTAIN_CLASS, REPAIR_RATE, REPAIR_RATE_UNDER_FIRE } from '../../game/c
 import { rankLabel, rankOf } from '../../game/xp';
 import type { GameClient } from '../../client/game-client';
 import { HINTS } from '../../client/hints';
-import { addTicker, hudSignals, isLowHp, levelText, portBlock, rangeText, targetTypeLine, xpFill, XpProgress, xpNumbers, xpProgress } from '../../client/hud-logic';
+import {
+  addTicker,
+  DANGER_TEXT,
+  hudSignals,
+  isLowHp,
+  levelText,
+  portBlock,
+  rangeText,
+  targetTypeLine,
+  xpFill,
+  XpProgress,
+  xpNumbers,
+  xpProgress
+} from '../../client/hud-logic';
 import { MeHud, Relation, TargetHud, useHud } from '../../client/hud-store';
 import { HUD_BLOCKS_EVENT } from '../../client/overlays';
 import { RankBadge } from './badges';
@@ -214,9 +227,16 @@ function TargetPanel({ actions }: { actions: HudActions }) {
   // Otro jugador (1.1, AC-153; GDD §14, «Panel de objetivo»): su insignia delante de «Balandra · Nivel 13 · Teniente».
   // En móvil esa línea va la última, bajo la distancia, y el panel crece a 70 de alto (CSS, D75)
   const player = target.relation === 'player' && target.level !== null;
+  // NPC demasiado fuerte (AC-189, §12.10): la marca sustituye a «<clase> · hostil» y, en móvil, ocupa esa misma última línea
+  const danger = !player && target.danger;
   const range = rangeText(target);
   return (
-    <section className={`panel hud-target ${player ? 'is-player' : ''}`} data-testid="target-frame" data-target-id={target.id} data-hud-block="">
+    <section
+      className={`panel hud-target ${player ? 'is-player' : ''} ${danger ? 'is-danger' : ''}`}
+      data-testid="target-frame"
+      data-target-id={target.id}
+      data-hud-block=""
+    >
       <div className="hud-target__icon" style={{ color }}><RelationIcon relation={target.relation} classId={target.classId} /></div>
       <div className="hud-target__body">
         <div className="hud-target__name" style={{ color }} data-testid="target-name">{target.name}</div>
@@ -224,6 +244,11 @@ function TargetPanel({ actions }: { actions: HudActions }) {
           <div className="hud-target__meta is-player" data-testid="target-type">
             <RankBadge rank={rankOf(target.level!)} size={layout === 'desktop' ? 16 : 12} />
             <span>{targetTypeLine(target.classId, target.level!)}</span>
+          </div>
+        ) : danger ? (
+          <div className="hud-target__meta is-danger" data-testid="target-type">
+            <Alert size={12} />
+            <span>{DANGER_TEXT}</span>
           </div>
         ) : (
           <div className="hud-target__meta" data-testid="target-type">{target.classLabel} · {attitudeOf(target)}</div>

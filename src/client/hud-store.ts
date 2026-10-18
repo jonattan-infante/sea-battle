@@ -38,6 +38,7 @@ export interface TargetHud {
   inRange: boolean;
   attackable: boolean;
   level: number | null; // nivel de un jugador (1.1, AC-153); null en los NPC
+  danger: boolean; // marca de peligro de un NPC (AC-189): cambia con el barco, las mejoras o el objetivo, nunca con la vida
 }
 
 // achievement: el aviso de subida de nivel (ART-DIRECTION §12.9, «logro»), con la insignia del rango en lugar del icono

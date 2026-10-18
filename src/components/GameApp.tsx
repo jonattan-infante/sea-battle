@@ -27,6 +27,7 @@ import {
   RewardDraft,
   rewardLines,
   rewardText,
+  targetDanger,
   targetDistance
 } from '../client/hud-logic';
 import { MeHud, resetSaveWarning, sameShallow, syncUnsaved, TargetHud, useHud } from '../client/hud-store';
@@ -259,7 +260,8 @@ export default function GameApp({ guest }: { guest: boolean }) {
           distance: range.shown,
           inRange: range.inRange,
           attackable: canAttackClient(client, mine, sel),
-          level: sel.level
+          level: sel.level,
+          danger: targetDanger(sel, player)
         };
       }
 

@@ -5,7 +5,7 @@ import { Browser, expect, Page, test } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 import { PORTS } from '../playwright.config';
-import { LEGIBILITY, LEGIBILITY_I2 } from '../server/scenarios';
+import { DANGER, LEGIBILITY, LEGIBILITY_I2 } from '../server/scenarios';
 import { enterGame, me, ships, waitFor } from './helpers';
 import { startOwnServer } from './own-server';
 
@@ -370,6 +370,27 @@ test.describe('Capturas @capture', () => {
       } finally {
         await page.context().close();
         await other.context().close();
+        await server.kill();
+      }
+    });
+  }
+
+  // AC-189 (ART-DIRECTION §12.10, D77): la cañonera seleccionada con la Balandra N1 y la marca «Demasiado fuerte para tu
+  // barco» en el panel del objetivo, con el escenario "danger" en un servidor propio con el I2 encendido. El e2e de AC-189
+  // (e2e/danger-mark.spec.ts) mide los 3 tamaños; esto es la imagen para ux
+  for (const vp of VIEWPORTS) {
+    test(`marca de peligro en ${vp.name} (AC-189)`, async ({ browser }) => {
+      test.setTimeout(120_000);
+      const server = await startOwnServer({ SEA_BATTLE_NPCS: '0', SEA_BATTLE_I2: '1', SEA_BATTLE_SCENARIO: 'danger' });
+      const page = await newPage(browser, vp);
+      try {
+        await enterGame(page, server.url);
+        await sailTo(page, 0, 100); // dentro de la zona segura, a 54 m de la cañonera y del pirata
+        expect(await selectNear(page, vp, 'pirate', DANGER.gunboat.x, DANGER.gunboat.z), 'la cañonera está en pantalla').toBe(true);
+        await expect(page.getByTestId('target-type')).toHaveText('Demasiado fuerte para tu barco');
+        await shot(page, vp, 'danger-mark');
+      } finally {
+        await page.context().close();
         await server.kill();
       }
     });

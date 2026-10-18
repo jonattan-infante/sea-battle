@@ -10,8 +10,10 @@ import {
   PVP_ENABLED,
   SAFE_ZONE_RADIUS,
   SHIP_CLASSES,
+  ShipKind,
   TAB_TARGET_RADIUS
 } from '../game/constants';
+import { tooStrong } from '../game/stats';
 import { PlayerView } from '../game/types';
 import { Vec2 } from '../game/vec';
 import { levelOf, Rank, rankLabel, rankOf } from '../game/xp';
@@ -204,6 +206,14 @@ export function targetDistance(distance: number, cannonRange: number): { shown: 
 export function rangeText(target: Pick<TargetHud, 'relation' | 'attackable' | 'inRange'>): string {
   if (target.relation === 'player' && !target.attackable) return '✕ No atacable';
   return target.inRange ? '✓ En alcance' : '✕ Fuera de alcance';
+}
+
+// Marca de peligro (AC-189, D77): «este barco es demasiado fuerte para ti ahora», con el coste de hundirlo en solitario de
+// src/game/stats.ts. Solo los NPC: el cliente no conoce las mejoras de los demás jugadores. El mercante no dispara
+export const DANGER_TEXT = 'Demasiado fuerte para tu barco';
+
+export function targetDanger(target: { kind: ShipKind; classId: string }, player: PlayerView | null): boolean {
+  return target.kind !== 'player' && !!player && tooStrong(target.classId, player);
 }
 
 // Vida baja (< 30 %, AC-41): el panel propio avisa y el botón Reparar pulsa

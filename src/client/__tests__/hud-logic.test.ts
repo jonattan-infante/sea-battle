@@ -1,6 +1,7 @@
 // AC-41 (QA-5 H-15): umbral de vida baja del HUD. El e2e no lo fija, porque sus muestras de vida saltan de 31,25 % a 23 %
-import { CANNON_LEVELS, CAPTAIN_LAIR_RADIUS, PIRATE_SECTORS } from '../../game/constants';
-import { captainDownText, captainSpawnText, isLowHp, rangeText, sectorOf, targetDistance } from '../hud-logic';
+import { CANNON_LEVELS, CAPTAIN_CLASS, CAPTAIN_LAIR_RADIUS, PIRATE_SECTORS, PlayerShipClass, ShipKind } from '../../game/constants';
+import { PlayerView } from '../../game/types';
+import { captainDownText, captainSpawnText, DANGER_TEXT, isLowHp, rangeText, sectorOf, targetDanger, targetDistance } from '../hud-logic';
 import type { Relation } from '../hud-store';
 
 describe('Vida baja del HUD (AC-41)', () => {
@@ -73,5 +74,37 @@ describe('Alcance en el panel del objetivo (AC-31, 1.1)', () => {
     expect(row(30, 'player', false)).toBe('30 m · ✕ No atacable');
     expect(row(30, 'player', true)).toBe('30 m · ✓ En alcance');
     expect(row(30, 'merchant', false)).toBe('30 m · ✓ En alcance');
+  });
+});
+
+describe('Marca de peligro en el panel del objetivo (AC-189, D77)', () => {
+  const player = (activeShip: PlayerShipClass, cannons = 1) =>
+    ({ activeShip, upgrades: { cannons, hull: 1, sails: 1 } }) as PlayerView;
+  const npc = (classId: string, kind: ShipKind = 'pirate') => ({ kind, classId });
+
+  test('con la Balandra N1, la cañonera y el Capitán se marcan, y el pirata y el mercante no', () => {
+    const sloop = player('sloop');
+    expect([npc('gunboat'), npc(CAPTAIN_CLASS), npc('pirate'), npc('merchant', 'merchant')].map((t) => targetDanger(t, sloop))).toEqual([
+      true,
+      true,
+      false,
+      false
+    ]);
+  });
+
+  test('la marca de la cañonera se apaga al comprar Cañones N2', () => {
+    expect(targetDanger(npc('gunboat'), player('sloop', 2))).toBe(false);
+  });
+
+  test('un jugador no se marca nunca, aunque su clase disparase: el cliente no conoce sus mejoras', () => {
+    expect(targetDanger(npc(CAPTAIN_CLASS, 'player'), player('sloop'))).toBe(false);
+  });
+
+  test('sin los datos del jugador propio no hay marca', () => {
+    expect(targetDanger(npc('gunboat'), null)).toBe(false);
+  });
+
+  test('el texto es el de §12.10', () => {
+    expect(DANGER_TEXT).toBe('Demasiado fuerte para tu barco');
   });
 });
