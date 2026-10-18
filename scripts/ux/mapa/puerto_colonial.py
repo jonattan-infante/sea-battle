@@ -657,5 +657,15 @@ if __name__ == '__main__':
     res = check(P_all)
     g = gaps(); res['holgura_min'] = g[0]; res['pares_bajo_0_5'] = [x for x in g if x[0] < 0.5]
     res['tris'] = tris; res['tris_total'] = sum(tris.values()); res['tris_sin_palmeras'] = res['tris_total'] - tris['palmeras']
+    # costa de la playa (AC-199 a): dónde corta la arena la flotación, medido en la malla (los triángulos de la región
+    # `arena` del atlas): radio mínimo y máximo, y su distancia por dentro del círculo de 30 m
+    x0, y0, w, h, _, _ = AT.reg['arena']; A = np.array(P_all).reshape(-1, 3, 3); U = np.array(T_all).reshape(-1, 3, 2) * AT.size
+    sel = ((U[..., 0] >= x0 - 1) & (U[..., 0] <= x0 + w + 1)).all(1) & ((((U[..., 1] >= y0 - 1) & (U[..., 1] <= y0 + h + 1))) | (((AT.size - U[..., 1]) >= y0 - 1) & ((AT.size - U[..., 1]) <= y0 + h + 1))).all(1)
+    A = A[sel]; cut = []
+    for k in range(3):
+        pa, pb = A[:, k], A[:, (k + 1) % 3]; ya, yb = pa[:, 1], pb[:, 1]; mk = (ya > 0) != (yb > 0)
+        cut.append(pa[mk] + (pb[mk] - pa[mk]) * (ya[mk] / (ya[mk] - yb[mk]))[:, None])
+    rc = np.hypot(np.concatenate(cut)[:, 0], np.concatenate(cut)[:, 2])
+    res['costa_playa_r'] = [round(float(rc.min()), 2), round(float(rc.max()), 2)]; res['costa_playa_por_dentro'] = [round(30 - float(rc.max()), 2), round(30 - float(rc.min()), 2)]
     json.dump(res, open(os.path.join(OUT, 'puerto-medidas.json'), 'w'), indent=1, ensure_ascii=False)
     print(json.dumps(res, ensure_ascii=False))

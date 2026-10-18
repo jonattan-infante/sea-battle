@@ -466,7 +466,7 @@ Jonattan pidió cambios a §8.4 («El puerto debe tener más diseño, detalle, c
 |---|---|---|
 | Muelle y 12 pantalanes | «Esto es un puerto» y «aquí atraca un barco» | Losas de r 23,5 a 30 a +1,2 m y cara de piedra de −0,6 a +1,2, como §8.4. Pantalanes de 3,6 × 5,4 m (antes 4,0) de r 24,5 a 29,9, con 2 bolardos de madera a r 29,5 (+1,85 m) y carga en la raíz de 5 de ellos (r 24,7–26,4); la punta queda libre |
 | Escollera | Un borde natural, sin dique | De ψ 246° a 294°: la plataforma baja a r 27,2 y la cubren rocas de 5 lados entre r 27,2 y 29,8, con césped detrás |
-| Playa | El Caribe | De ψ 299° a 337°: arena de r 23,5 (+1,2 m) a r 29,4 (−0,25 m), con 2 botes varados |
+| Playa | El Caribe | De ψ 299° a 337°: arena de r 23,5 (+1,2 m) a r 29,4 (−0,25 m), que corta la flotación a r 28,8 (1,2 m por dentro del círculo), con 2 botes varados |
 | Murallas | «Plaza fuerte», hacia fuera | 3 baluartes en ψ 125°, 180° y 235° (gola a r 19,5, saliente a r 23,2) y cortinas entre ellos, con talud, cordón claro, adarve a +6,0 m, parapeto y almenas; cubos redondos en ψ 100° y 260°; césped en los terraplenes |
 | Garitas × 6 | La imagen del Viejo San Juan | Cuerpo de sillar de r 0,95 × 2,2 m, cornisa, cúpula y remate: en los 3 salientes, en los 2 cubos y una en la playa, sobre una peana de piedra en (ψ 336,5°, r 26,6), en primer plano para la cámara |
 | Faro | El hito del puerto | En (0, −18,2), franjas blancas y rojas (`#C0392B`), linterna y cúpula: el punto más alto, 15,2 m |
@@ -1079,6 +1079,8 @@ Si dos chips quedan a menos de 52 px por el borde, el más lejano se desliza por
 
 ### 12.9 Experiencia, nivel y rango en el HUD (1.1; D70)
 Seafight muestra la experiencia en una barra con números, junto a la vida (R16). Aquí va dentro del panel del jugador, sin bloques nuevos del HUD. Qué debe comunicar: GDD §14.
+
+**Lámina** (AC-192): `docs/game/art/D76-panel-xp.png`, con capturas reales del candidato `4a125e0` en los 3 tamaños: el panel del jugador (nivel 12 y «Nivel máximo»), los avisos «¡Nivel 12!» y «¡Nivel 9! Ahora eres Contramaestre», el «+30 XP» flotante y la línea del registro, el rango del objetivo con D81 en 844×390 antes y después, y lo ya construido del Capitán (su aviso, D49, y la ★ con halo del minimapa, D43). En 3 capturas la XP de partida se fijó con un escenario local sin commit (log de dev-render, `dev-render-turno-glb-d76.log`). **Fuente**: `scripts/ux/laminas/lamina_xp.py`, con las capturas en `UX_D76`.
 
 | Elemento | 1440×900 | 390×844 | 844×390 |
 |---|---|---|---|
