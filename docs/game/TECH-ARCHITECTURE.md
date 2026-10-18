@@ -124,6 +124,20 @@ La XP la decide la simulación (`src/game/xp.ts`, TypeScript puro); el cliente s
 
 Tests: `src/game/__tests__/xp.test.ts` (unitarios; AC-149 con dos bots en el mundo real durante 60 min simulados) y `server/__tests__/xp-server.test.ts` (socket.io real: el evento en el frame, `lv` en los deltas y la línea del log).
 
+### 2.3 HUD de la experiencia (GDD §14, ART-DIRECTION §11.5 y §12.9; AC-151 a AC-153)
+
+El cliente solo muestra lo que acredita el servidor, con las funciones de `src/game/xp.ts`. Nada de esto añade mensajes: lee `PlayerView.xp`, `lv` y el evento `xp`, que ya viajan solo al cambiar (§2.2).
+
+| Pieza | Qué hace |
+|---|---|
+| Panel del jugador | `PlayerPanel` (`Hud.tsx`) lee `PlayerView.xp` con un selector numérico: un commit solo cuando cambia la XP. `xpProgress` (`hud-logic.ts`) da el nivel, la insignia, la XP dentro del nivel y la que falta hasta el siguiente, y `null` en el 20 («Nivel máximo»). `useHudLayout` (escritorio, 390×844 o 844×390, con los mismos cortes que `globals.css`) decide el tamaño de la insignia (24 o 18 px) y dónde va el nivel; solo cambia al girar o redimensionar. La barra de XP avanza con una transición CSS de 400 ms y brilla 300 ms con la Web Animations API en el commit del cambio; con una subida de nivel, su relleno se monta de nuevo (`key`) y no retrocede animado |
+| Aviso de nivel (AC-151) | `levelUpOf(xpAnterior, xp)` en `client.onPlayer`: llega con el frame que trae la XP nueva y sale en el mismo commit que el panel. Es un toast `achievement` de 5 s (`ACHIEVEMENT_MS`) con la insignia de 24 px. Si un hundimiento da varios niveles, sale un solo aviso con el nivel final. El primer estado al entrar no cuenta como subida |
+| Feed y flotante (AC-152) | El `loot` y el `xp` de un hundimiento llegan en el mismo frame y se reproducen en la misma pasada de `update()`. `pushGoldReward` y `pushXpReward` los juntan por punto y fuente, y una microtarea publica una sola línea: «Hundiste a Pirata +105 oro · +30 XP». `FeedText` pinta el nombre en un tramo truncable y la recompensa en uno que no encoge. Sin XP no hay tramo de XP (GDD §14). El «+30 XP» flotante (`FloatingTextLayer`, tipo `xp`) usa la misma clave que el oro, así que sale 18 px por encima |
+| Insignias (D74) | Una sola tabla (`src/client/badges.ts`) para `RankBadge` (React) y `rankBadgeSvg` (las placas, sin React). `badges.test.ts` compara las dos con `scripts/ux/calibracion/insignias-1-1.json` (AD-40 c) |
+| Placas y objetivo (AC-153) | `RenderShip.level` sale de `lv` (null en los NPC). La placa escribe la insignia solo al cambiar de rango (10 Hz, por ref, sin React); compacta, sin insignia. El panel del objetivo jugador dice «Jugador · Nivel 13 · Teniente» (`targetTypeLine`) con la insignia de 16 px (12 en móvil) |
+
+Tests: `src/client/__tests__/xp-hud.test.ts` (progreso, subida de nivel, líneas del feed y línea del objetivo), `toasts.test.ts` (el aviso de 5 s en la pila de 3), `ship-level.test.ts` (`lv` → `RenderShip.level`), `src/components/hud/__tests__/feed-text.test.ts` (marcado de la línea de botín) y `badges.test.ts`.
+
 ## 3. Capitán pirata (H-305, GDD §9)
 
 | Pieza | Dónde | Regla |

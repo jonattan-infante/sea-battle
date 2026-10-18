@@ -28,6 +28,9 @@
   border-radius: 4px;
 }
 
+/* Placa de jugador (§11.5): la insignia de 12 px y 3 px delante de la barra suben el mínimo 15 px (91 / 79 px) */
+.wo-plate.has-badge .wo-plate__body { min-width: calc(var(--bar-w) + 27px); }
+
 /* Otro jugador te está atacando (P1) */
 .wo-plate.is-attacker .wo-plate__body { border-color: var(--ui-danger); }
 
@@ -54,6 +57,9 @@
   font: 600 12px/12px var(--font-label), "Barlow Semi Condensed", "Arial Narrow", sans-serif;
   white-space: nowrap;
 }
+/* Insignia de rango (§11.5): 12 × 12 bajo el icono de relación; los NPC no llevan (vacía) */
+.wo-plate__badge { display: inline-flex; flex: none; width: 12px; height: 12px; }
+.wo-plate__badge:empty { display: none; }
 .wo-plate__status { display: inline-flex; flex: none; align-items: center; gap: 2px; font-variant-numeric: tabular-nums; }
 .wo-plate__status:empty { display: none; }
 .wo-plate__status > span { display: inline-flex; align-items: center; gap: 1px; }
@@ -78,8 +84,9 @@
 /* Vida < 30 %: la barra pulsa a 1 Hz */
 .wo-plate.is-low .wo-plate__bar { animation: wo-pulse 1s ease-in-out infinite; }
 
-/* Declutter: solo la barra */
+/* Declutter: solo la barra, sin insignia */
 .wo-plate.is-compact .wo-plate__row,
+.wo-plate.is-compact .wo-plate__badge,
 .wo-plate.is-compact .wo-plate__status { display: none; }
 .wo-plate.is-compact .wo-plate__meter { height: auto; margin-top: 0; }
 .wo-plate.is-compact .wo-plate__body { min-width: 0; padding: 0; background: transparent; }
@@ -137,6 +144,7 @@
 .wo-float[data-kind="miss"] .wo-float__pop { color: #c9d4db; font-size: 14px; font-weight: 600; font-style: italic; }
 .wo-float[data-kind="repair"] .wo-float__pop { color: var(--ui-ok); font-size: 15px; font-weight: 600; }
 .wo-float[data-kind="gold"] .wo-float__pop { color: var(--ui-gold); font-size: 18px; font-weight: 700; }
+.wo-float[data-kind="xp"] .wo-float__pop { color: var(--ui-xp); font-size: 16px; font-weight: 700; } /* 1.1, D70: siempre con «XP» */
 
 /* ---- Cursor sobre el canvas (§12.7): mira coral de 32 px sobre un barco atacable ---- */
 .wo-cursor-attack {

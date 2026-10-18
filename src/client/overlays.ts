@@ -3,7 +3,9 @@
 // contenido y el declutter se recalculan a 10 Hz y solo se escribe en el DOM lo que cambia. Los estilos
 // estáticos (clases wo-*) viven en src/styles/world-overlays.css.
 import { CAPTAIN_CLASS } from '../game/constants';
+import { rankOf } from '../game/xp';
 import { DAMAGE_TEXT, DamageTextKind, LABEL, Relation, RELATIONS, relationOf } from './art';
+import { rankBadgeSvg } from './badges';
 import type { RenderShip } from './game-client';
 
 export { relationOf };
@@ -96,12 +98,14 @@ interface Plate {
   icon: HTMLSpanElement;
   name: HTMLSpanElement;
   status: HTMLSpanElement;
+  badge: HTMLSpanElement;
   bar: HTMLDivElement;
   trail: HTMLDivElement;
   fill: HTMLDivElement;
   reload: HTMLDivElement | null;
   // estado escrito (para no tocar el DOM si no cambia)
   relation: Relation | null;
+  rank: number; // insignia escrita: 1–5, 0 sin insignia (NPC) y −1 sin escribir
   iconKey: string;
   nameText: string;
   statusKey: string;
@@ -174,8 +178,10 @@ export class LabelLayer {
     const row = el('div', 'wo-plate__row', body);
     const icon = el('span', 'wo-plate__icon', row);
     const name = el('span', 'wo-plate__name', row);
-    // 2.ª fila: barra + iconos de estado a su derecha (§11.1): el estado nunca le quita espacio al nombre
+    // 2.ª fila: insignia de rango de los jugadores (§11.5, debajo del icono de relación) + barra + iconos de estado a su
+    // derecha (§11.1): el estado nunca le quita espacio al nombre
     const meter = el('div', 'wo-plate__meter', body);
+    const badge = el('span', 'wo-plate__badge', meter);
     const bar = el('div', 'wo-plate__bar', meter);
     const status = el('span', 'wo-plate__status', meter);
     const trail = el('div', 'wo-plate__trail', bar);
@@ -184,8 +190,8 @@ export class LabelLayer {
     // las 2 filas (16 + 1 + 12) + padding 2 × 2 + borde 2
     const w = barW + 2 * LABEL.padX + 2;
     return {
-      id: '', target: null, root, body, row, icon, name, status, bar, trail, fill, reload: null,
-      relation: null, iconKey: '', nameText: '', statusKey: '', fillPx: -1, low: false, attacker: false,
+      id: '', target: null, root, body, row, icon, name, status, badge, bar, trail, fill, reload: null,
+      relation: null, rank: -1, iconKey: '', nameText: '', statusKey: '', fillPx: -1, low: false, attacker: false,
       mode: 'full', display: false, dy: 0, sx: NaN, sy: NaN, opacity: 1, w, h: 35, sizeDirty: true,
       bx: -w / 2, bw: w, bh: 35, slot: -1, hud: false, entering: false, enterUntil: 0,
       priority: 4, dist: 0, onScreen: false, reloadP: -1, reloadVisible: false, reloadReady: false, reloadFlash: false
@@ -208,6 +214,7 @@ export class LabelLayer {
       free.target = t;
       free.root.dataset.shipId = t.ship.id;
       free.relation = null;
+      free.rank = -1;
       free.iconKey = '';
       free.nameText = '';
       free.statusKey = '';
@@ -266,6 +273,16 @@ export class LabelLayer {
         plate.icon.dataset.icons = String(icons.length);
         const maxW = (this.host.mobile ? LABEL.maxWMobile : LABEL.maxW) + (icons.length > 1 ? TWO_ICONS_EXTRA_W : 0);
         plate.root.style.setProperty('--plate-max', `${maxW}px`);
+        plate.sizeDirty = true;
+      }
+      // Insignia de rango (§11.5, D69): solo en los jugadores, propio y ajenos, y solo la insignia, sin número de nivel. Se
+      // escribe al cambiar de rango; la placa compacta la oculta (CSS)
+      const rank = ship.level === null ? 0 : rankOf(ship.level);
+      if (rank !== plate.rank) {
+        plate.rank = rank;
+        plate.badge.innerHTML = rank ? rankBadgeSvg(rank, LABEL.badgePx) : '';
+        plate.badge.dataset.rank = String(rank);
+        plate.root.classList.toggle('has-badge', rank > 0);
         plate.sizeDirty = true;
       }
       const name = truncateName(ship.name);
@@ -603,9 +620,9 @@ export class FloatingTextLayer {
     for (const a of item.anims) a.cancel();
     item.anims.length = 0;
     const opacity = DAMAGE_TEXT.opacity[kind];
-    const gold = kind === 'gold';
-    const duration = gold ? 1200 : DAMAGE_TEXT.durationMs;
-    const rise = gold ? 48 : DAMAGE_TEXT.risePx;
+    const reward = kind === 'gold' || kind === 'xp';
+    const duration = reward ? DAMAGE_TEXT.rewardDurationMs : DAMAGE_TEXT.durationMs;
+    const rise = reward ? DAMAGE_TEXT.rewardRisePx : DAMAGE_TEXT.risePx;
     const last = this.lastByKey.get(key);
     const chained = !!last && now - last.t < DAMAGE_TEXT.stackMs;
     const n = chained ? last.n + 1 : 0;
@@ -622,7 +639,7 @@ export class FloatingTextLayer {
     this.place(item);
     if (typeof item.rise.animate === 'function') {
       item.anims.push(item.rise.animate([{ transform: 'translateY(0)' }, { transform: `translateY(${-rise}px)` }], { duration, easing: 'cubic-bezier(.22,1,.36,1)', fill: 'forwards' }));
-      const fadeAt = gold ? 900 / 1200 : 600 / 900;
+      const fadeAt = reward ? 900 / 1200 : 600 / 900;
       const pop = kind === 'heavy'
         ? [{ transform: 'scale(1.4)', opacity, offset: 0 }, { transform: 'scale(1)', opacity, offset: 200 / duration }]
         : [{ transform: 'scale(0.8)', opacity, offset: 0 }, { transform: 'scale(1.15)', opacity, offset: 90 / duration }, { transform: 'scale(1)', opacity, offset: 200 / duration }];

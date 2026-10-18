@@ -7,7 +7,24 @@ import { PlayerShipClass } from '../game/constants';
 import { GameEvent, Welcome } from '../game/types';
 import { probeServerOnce } from '../client/exit-probe';
 import { GameClient } from '../client/game-client';
-import { canAttackClient, cannonFor, captainDownText, captainSpawnText, classLabel, cycleTarget, hudSignals, inSafeZone, portBlock, relationOf } from '../client/hud-logic';
+import {
+  canAttackClient,
+  cannonFor,
+  captainDownText,
+  captainSpawnText,
+  classLabel,
+  cycleTarget,
+  hudSignals,
+  inSafeZone,
+  levelUpOf,
+  levelUpText,
+  portBlock,
+  pushGoldReward,
+  pushXpReward,
+  relationOf,
+  RewardDraft,
+  rewardText
+} from '../client/hud-logic';
 import { MeHud, resetSaveWarning, sameShallow, syncUnsaved, TargetHud, useHud } from '../client/hud-store';
 import { attachOverlays, createRuntime, disposeRuntime, GameRuntime } from '../client/runtime';
 import GameCanvas from './game/GameCanvas';
@@ -117,6 +134,22 @@ export default function GameApp({ guest }: { guest: boolean }) {
     const rt = createRuntime(client);
     const hud = useHud.getState();
     let pendingKill: string | null = null;
+    // Recompensas de esta pasada de eventos (AC-152). El oro y la XP de un hundimiento llegan en el mismo frame y se
+    // reproducen en la misma llamada a update() (game-client.ts): se juntan aquí y salen como una sola línea del feed en
+    // una microtarea, al acabar la pasada. Ahí también caduca el nombre del barco hundido, que solo vale para su botín
+    let rewards: RewardDraft[] = [];
+    let flushQueued = false;
+    const flushRewards = () => {
+      flushQueued = false;
+      for (const { lead, name, gold, xp } of rewards) hud.pushFeed('gold', rewardText({ lead, name, gold, xp }), { lead, name, gold, xp });
+      rewards = [];
+      pendingKill = null;
+    };
+    const queueFlush = () => {
+      if (flushQueued) return;
+      flushQueued = true;
+      queueMicrotask(flushRewards);
+    };
     const hints = readHints();
     useHud.setState({ hint: hints < HINT_COUNT ? hints : null });
 
@@ -140,16 +173,22 @@ export default function GameApp({ guest }: { guest: boolean }) {
             hud.pushFeed('danger', killerName ? `${killerName} te hundió` : 'Tu barco se hundió');
           } else if (e.byShipId === myId) {
             pendingKill = victim?.name ?? 'un barco';
+            queueFlush();
           }
           break;
         }
         case 'loot': {
           if (e.playerId !== myPlayer) break;
           useHud.setState({ goldGain: { id: now, amount: e.gold } });
-          if (e.source === 'kill') hud.pushFeed('gold', pendingKill ? `Hundiste a ${pendingKill} +${e.gold} oro` : `Botín +${e.gold} oro`);
-          else if (e.source === 'wreck') hud.pushFeed('gold', `Restos +${e.gold} oro`);
-          else hud.pushFeed('gold', `Botín de combate +${e.gold} oro`);
-          pendingKill = null;
+          pushGoldReward(rewards, e.source, e.gold, e.pos, pendingKill);
+          queueFlush();
+          break;
+        }
+        // Solo llega al dueño y nunca con 0 (xp.ts): sin XP no sale nada de XP (GDD §14)
+        case 'xp': {
+          if (e.playerId !== myPlayer) break;
+          pushXpReward(rewards, e.source, e.xp, e.pos, pendingKill);
+          queueFlush();
           break;
         }
         case 'respawn':
@@ -216,7 +255,8 @@ export default function GameApp({ guest }: { guest: boolean }) {
           state: sel.state,
           distance,
           inRange: distance <= cannon.range,
-          attackable: canAttackClient(client, mine, sel)
+          attackable: canAttackClient(client, mine, sel),
+          level: sel.level
         };
       }
 
@@ -234,7 +274,11 @@ export default function GameApp({ guest }: { guest: boolean }) {
         if (connection === 'full') router.replace('/?full=1');
       }),
       client.onPlayer((player) => {
+        // AC-151: la subida de nivel sale en el mismo commit que el panel con el nivel nuevo, al llegar el frame que la
+        // trae. Un solo aviso con el nivel final aunque el hundimiento dé varios niveles
+        const up = levelUpOf(useHud.getState().player?.xp, player.xp);
         useHud.setState({ player });
+        if (up) hud.pushToast('achievement', levelUpText(up), up.rank);
         // AC-132: el aviso llega en el mismo commit que el estado del servidor. Lo decide el servidor (autoritativo): a un
         // invitado nunca le marca unsaved, porque no escribe en la BD; si lo hiciera por error, el e2e lo vería
         syncUnsaved(player.unsaved === true);
