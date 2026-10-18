@@ -310,11 +310,15 @@ describe('Servidor — red y conexión', () => {
     expect(events.some((e) => e.type === 'impact' && e.byShipId === ship.id)).toBe(true);
   });
 
-  test('AC-88: con 20 clientes, 20 NPC y el jefe en combate, cada cliente recibe ≤ 10 mensajes/s y ≤ 12 KB/s (30 s)', async () => {
+  // Servidor lleno (GDD §13: 20 + 20 + 1 jefe, que se envía a todos con el I2 encendido) en combate durante 30 s; con viewOf,
+  // cada cliente mira además otra zona en vista libre (E13). Devuelve el peor cliente y las andanadas vistas
+  async function fullServerRates(viewOf?: (i: number) => { x: number; z: number }) {
     await start({ spawnNpcs: true, i2: true });
-    expect(spawnCaptain(game.world)).not.toBeNull(); // GDD §13: 20 + 20 + 1 jefe, que se envía a todos (con el I2 encendido)
+    expect(spawnCaptain(game.world)).not.toBeNull();
     const bots: Joined[] = [];
     for (let i = 0; i < MAX_PLAYERS; i++) bots.push(await join(`bot${i}`, `Bot ${i}`));
+    if (viewOf) bots.forEach((b, i) => b.c.emit(C2S.viewAt, viewOf(i)));
+    await flush();
     const baseline = bots.map((b) => ({ frames: b.frames.length, bytes: b.bytes() }));
     await advance(30, (tick) => {
       if (tick % (2 * TICK_RATE) !== 0) return;
@@ -343,11 +347,75 @@ describe('Servidor — red y conexión', () => {
     }));
     const worst = { msgs: Math.max(...rates.map((r) => r.msgs)), kbps: Math.max(...rates.map((r) => r.kbps)) };
     const volleys = bots.reduce((n, b) => n + eventsOf(b.frames).filter((e) => e.type === 'volley').length, 0);
-    console.log(`AC-88: peor cliente ${worst.msgs.toFixed(2)} msg/s, ${worst.kbps.toFixed(2)} KB/s; media ${(rates.reduce((a, r) => a + r.kbps, 0) / rates.length).toFixed(2)} KB/s; andanadas vistas ${volleys}`);
+    const mean = rates.reduce((a, r) => a + r.kbps, 0) / rates.length;
+    return { worst, mean, volleys };
+  }
+
+  test('AC-88: con 20 clientes, 20 NPC y el jefe en combate, cada cliente recibe ≤ 10 mensajes/s y ≤ 12 KB/s (30 s)', async () => {
+    const { worst, mean, volleys } = await fullServerRates();
+    console.log(`AC-88: peor cliente ${worst.msgs.toFixed(2)} msg/s, ${worst.kbps.toFixed(2)} KB/s; media ${mean.toFixed(2)} KB/s; andanadas vistas ${volleys}`);
     expect(volleys).toBeGreaterThan(50); // hubo combate de verdad
     expect(worst.msgs).toBeLessThanOrEqual(10);
     expect(worst.kbps).toBeLessThanOrEqual(12);
   }, 60_000);
+
+  test('AC-123: lo mismo con cada cliente en vista libre sobre otra zona: ≤ 10 mensajes/s y ≤ 16 KB/s (30 s)', async () => {
+    const zones = [{ x: 300, z: 300 }, { x: -300, z: 300 }, { x: 300, z: -300 }, { x: -300, z: -300 }];
+    const { worst, mean, volleys } = await fullServerRates((i) => zones[i % zones.length]);
+    console.log(`AC-123: peor cliente ${worst.msgs.toFixed(2)} msg/s, ${worst.kbps.toFixed(2)} KB/s; media ${mean.toFixed(2)} KB/s; andanadas vistas ${volleys}`);
+    expect(volleys).toBeGreaterThan(50);
+    expect(worst.msgs).toBeLessThanOrEqual(10);
+    expect(worst.kbps).toBeLessThanOrEqual(16);
+  }, 60_000);
+});
+
+describe('Servidor — vista libre (E13): el centro de la vista suma su área de interés', () => {
+  beforeEach(() => start());
+
+  // Un pirata quieto lejos del jugador (el jugador aparece a 60–90 m del puerto, en el centro del mapa)
+  const farPirate = (x: number, z: number) => {
+    const p = spawnPirate(game.world, 0);
+    p.pos = { x, z };
+    p.ai!.origin = { x, z };
+    p.ai!.wait = 1e9;
+    return p;
+  };
+  const removedOf = (frames: ServerFrame[]) => frames.flatMap((f) => f.r ?? []);
+
+  test('AC-122: con viewAt entra lo que hay a ≤ 300 m del centro de la vista, y con viewAt(null) vuelve a ser solo el barco', async () => {
+    const a = await join('a');
+    const pirate = farPirate(400, 400);
+    await advance(0.2);
+    expect(distance(game.world.ships.get(a.welcome.shipId)!.pos, pirate.pos)).toBeGreaterThan(INTEREST_RADIUS);
+    expect(deltasOf(a.frames, pirate.id)).toEqual([]);
+
+    a.c.emit(C2S.viewAt, { x: 380, z: 360 });
+    await flush();
+    await advance(0.2);
+    expect(deltasOf(a.frames, pirate.id)[0]).toMatchObject({ id: pirate.id, k: 'pirate' }); // entra completo
+
+    const n = a.frames.length;
+    a.c.emit(C2S.viewAt, null);
+    await flush();
+    await advance(0.2);
+    expect(removedOf(a.frames.slice(n))).toContain(pirate.id);
+  });
+
+  test('manda el último viewAt: la vista que se va deja de sumar área', async () => {
+    const a = await join('a');
+    const east = farPirate(420, 0);
+    const west = farPirate(-420, 0);
+    a.c.emit(C2S.viewAt, { x: 420, z: 0 });
+    await flush();
+    await advance(0.2);
+    const n = a.frames.length;
+    a.c.emit(C2S.viewAt, { x: -420, z: 0 });
+    await flush();
+    await advance(0.2);
+    const fresh = a.frames.slice(n);
+    expect(removedOf(fresh)).toContain(east.id);
+    expect(deltasOf(fresh, west.id)[0]).toMatchObject({ id: west.id, k: 'pirate' }); // entra completo
+  });
 });
 
 describe('Servidor — Capitán pirata (AC-111), con el I2 encendido (AC-187)', () => {
