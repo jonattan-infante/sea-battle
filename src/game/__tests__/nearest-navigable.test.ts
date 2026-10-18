@@ -4,7 +4,7 @@ import { Vec2, createRng } from '../vec';
 
 // El punto navegable más cercano cuando los márgenes de varias islas se solapan (AC-21, AC-171, AC-172 a). Pasa con las 3
 // rocas del campo de escollos E1, a 31 m de borde a borde: con un margen > 15,5 m sus zonas infladas se tocan; y en las
-// islas hechas de varios círculos (AC-199). Las formas de la 1.1 son las del mapa provisional (constants.ts, MAP_1_1)
+// islas hechas de varios círculos (AC-199). Las formas de la 1.1 son las de D83 (constants.ts, MAP_1_1)
 const ISLANDS_1_1 = MAP_1_1.islands;
 const E1 = ISLANDS_1_1.filter((i) => i.id.startsWith('E1'));
 // Margen L/2 + 2 de las 9 clases de la 1.1 (GDD §4, «Receta de los escollos», fila «Paso»): Balandra 10, pirata 12,
