@@ -340,8 +340,8 @@ Ese mismo día sumó dos pendientes (cita que trajo el lead): «1. Rediseño de 
 
   | Pieza | Lámina (ux) | Visto bueno de Jonattan | Fecha | Cita |
   |---|---|---|---|---|
-  | Insignias (AC-191, 2–3 direcciones) | Borrador del 2026-10-18 (`ux-lamina-insignias-direcciones.png`, en el scratchpad de la sesión): la de hoy y 3 direcciones (A escudo, B galones, C medallas). **Según la propia lámina, A, B y C no pasan AD-40 a 12 px**; no se enseñan aún como elegibles (AC-191) | Pendiente | — | — |
-  | Goleta | Lista el 2026-10-18 (`ux-lamina-barcos.png`, en el scratchpad de la sesión; falta guardarla según (f)) | Pendiente | — | — |
+  | Insignias (AC-191, 2–3 direcciones) | Borrador del 2026-10-18 (`ux-lamina-insignias-direcciones.png`, en el scratchpad de la sesión): la de hoy y 3 direcciones (A escudo, B galones, C medallas). **Según la propia lámina, A, B y C no pasan AD-40 a 12 px**; no se enseñan aún como elegibles (AC-191). A Jonattan no se le ha enseñado ninguna dirección. El lead le preguntó qué no le gusta de las actuales, con ejemplos («que se parecen demasiado entre sí, que son pequeñas, el estilo o los colores»), así que su respuesta llega guiada y no en abierto (dato del lead) | Pendiente | — | — |
+  | Goleta | `ux-lamina-barcos.png`, 284 715 bytes, sha256 `8afa371b9894972fa9801c1b69d48326c2a640c4b001363ac3c74bb844447b51` (dato del lead; producto no lo ha recalculado). Enseñada a Jonattan hacia las 13:48Z del 2026-10-18, desde el scratchpad. ux la guarda sin cambios en `docs/game/art/`. Un visto bueno dado antes vale para este sha256 | Pendiente | — | — |
   | Navío de línea | La misma lámina que la Goleta | Pendiente | — | — |
   | Arquetipos de isla y escollos | Pendiente | Pendiente | — | — |
   | Puerto | Pendiente | Pendiente | — | — |
