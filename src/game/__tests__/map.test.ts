@@ -136,6 +136,7 @@ describe('E16 — Mapa de la 1.1 (datos provisionales)', () => {
     const world = createWorld({ seed: 2, spawnNpcs: false, map: mapOf('1.1-arranque', ISLAND_SHAPES_1_1, true) });
     const nav = navigatorOf(world);
     const prepared = nav.buildCount;
+    const graphsAtBoot = nav.graphMargins;
     const lair = { x: 311.1, z: -311.1 };
     const firstRoute = Object.keys(SHIP_CLASSES).map((classId) => {
       const m = navClearance(classId);
@@ -151,7 +152,10 @@ describe('E16 — Mapa de la 1.1 (datos provisionales)', () => {
     const t0 = performance.now();
     cold.findPath({ x: -40, z: -40 }, lair, navClearance('frigate'));
     console.log(`AC-171: ${prepared} grafos y conjuntos de cruces preparados al crear el mundo · primera ruta (ms): ${firstRoute.join(' · ')} · sin preparar (frigate): ${(performance.now() - t0).toFixed(3)}`);
+    // El grafo de cada margen de las clases del juego (hoy 7; 9 cuando entren la Goleta, el Galeón y el Navío), y además los
+    // cruces de cada margen y de cada radio de colisión: 7 + 7 + 5 = 19 construcciones hoy
     const classes = Object.values(SHIP_CLASSES);
+    expect(graphsAtBoot).toEqual([...new Set(Object.keys(SHIP_CLASSES).map(navClearance))].sort((a, b) => a - b));
     expect(prepared).toBe(2 * new Set(classes.map((c) => c.length)).size + new Set(classes.map((c) => c.radius)).size);
     expect(nav.buildCount).toBe(prepared);
   });
