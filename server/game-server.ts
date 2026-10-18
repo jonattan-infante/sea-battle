@@ -20,7 +20,8 @@ import {
   parseJoin,
   parseMoveTo,
   parseRepair,
-  parseSelectShip
+  parseSelectShip,
+  parseViewAt
 } from '../src/game/protocol';
 import { GameEvent, Notice, ServerFrame, ShipDelta, ShipSnapshot, Welcome, World } from '../src/game/types';
 import { distance } from '../src/game/vec';
@@ -93,6 +94,7 @@ interface ClientState {
   lastView: string;
   notices: Notice[];
   needsFull: boolean;
+  viewCenter: Point | null; // vista libre (E13): el centro de la vista, que suma su propia área de interés
 }
 
 type Point = { x: number; z: number };
@@ -211,7 +213,7 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
       const player = addPlayer(world, userId, name ?? existing?.name ?? defaultName(userId), stored?.progress);
       if (stored !== undefined) persistence?.track(userId, stored);
       departing.delete(userId);
-      client = { socket, userId, known: new Map(), lastView: '', notices: [], needsFull: true };
+      client = { socket, userId, known: new Map(), lastView: '', notices: [], needsFull: true, viewCenter: null };
       clients.set(userId, client);
       const welcome: Welcome = {
         playerId: userId,
@@ -301,6 +303,7 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
       return commit(c, { ...progressOf(player), activeShip: classId }, () => applySelectShip(world, userId, classId), null);
     });
     on(C2S.respawn, parseEmpty, () => respawn(world, userId));
+    on(C2S.viewAt, parseViewAt, ({ center }, c) => void (c.viewCenter = center)); // manda el último (≤ 2/s desde el cliente)
 
     socket.on('disconnect', () => {
       if (!client || clients.get(userId) !== client) return;
@@ -312,7 +315,7 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
     });
   });
 
-  // Área de interés de un cliente (§13): 300 m alrededor de cada uno de sus centros (hoy, su barco; con la vista libre de E13,
+  // Área de interés de un cliente (§13): 300 m alrededor de cada uno de sus centros (su barco y, en la vista libre de E13,
   // también el centro de la vista) y, además, lo que se envía siempre: su barco y el Capitán pirata vivo (AC-111)
   function inInterest(snap: ShipSnapshot, centers: Point[], ownShipId: string | null): boolean {
     if (snap.id === ownShipId || snap.c === CAPTAIN_CLASS) return true;
@@ -381,6 +384,7 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
   function sendFrame(client: ClientState, events: GameEvent[], current = snapshotAll()) {
     const own = shipOfPlayer(world, client.userId);
     const centers: Point[] = own ? [own.pos] : [];
+    if (client.viewCenter) centers.push(client.viewCenter);
     const full = client.needsFull;
     const { s, r } = diffShips(client, current, centers, own && own.state !== 'dead' ? own.id : null);
     client.needsFull = false;
