@@ -78,8 +78,10 @@ import { creditNpcXp, creditPvpXp, levelOf, npcXp } from './xp';
 
 export const navigator = new Navigator(MAP_1_0.islands);
 const navigators = new WeakMap<IslandDef[], Navigator>([[MAP_1_0.islands, navigator]]);
-// Márgenes de todas las clases: sus grafos se preparan al crear el mundo, no en el tick de la primera ruta (AC-171)
+// Márgenes y radios de colisión de todas las clases: sus grafos y cruces se preparan al crear el mundo, no en el tick de la
+// primera ruta o del primer contacto con la costa (AC-171)
 const NAV_CLEARANCES = [...new Set(Object.keys(SHIP_CLASSES).map(navClearance))];
+const COLLISION_RADII = [...new Set(Object.values(SHIP_CLASSES).map((c) => c.radius))];
 
 // El navegador del mapa del mundo: uno por lista de islas, así los mundos del mismo mapa comparten grafos y cruces
 export function navigatorOf(world: World): Navigator {
@@ -118,7 +120,7 @@ export function createWorld(options: CreateWorldOptions = {}): World {
     xpPairs: new Map(),
     pvpLog: []
   };
-  navigatorOf(world).prepare(NAV_CLEARANCES);
+  navigatorOf(world).prepare(NAV_CLEARANCES, COLLISION_RADII);
   if (options.spawnNpcs !== false) {
     // AC-51: con el I2 encendido, 1 cañonera por sector en lugar de 1 de sus piratas; apagado, la población de la 1.0
     const pirates = world.i2 ? PIRATES_PER_SECTOR_I2 : PIRATES_PER_SECTOR;

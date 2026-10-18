@@ -33,6 +33,7 @@ export function segmentPointDistance(a: Vec2, b: Vec2, c: Vec2): number {
 export class Navigator {
   private readonly graphs = new Map<number, Graph>();
   private readonly crossings = new Map<string, Vec2[]>();
+  private builds = 0;
 
   constructor(private readonly islands: IslandDef[]) {}
 
@@ -79,13 +80,19 @@ export class Navigator {
     return closest(p, this.edgePoints(p, radius, 0, false));
   }
 
-  // Prepara al arrancar los grafos y los cruces de cada margen, para que la primera ruta no los construya dentro de un
-  // tick (AC-171)
-  prepare(clearances: number[]): void {
+  // Prepara al arrancar los grafos y los cruces de cada margen de navegación, y los cruces de cada radio de colisión, para
+  // que ni la primera ruta ni el primer contacto con la costa los construyan dentro de un tick (AC-171)
+  prepare(clearances: number[], radii: number[] = []): void {
     for (const clearance of clearances) {
       this.graphFor(clearance);
       this.crossingsFor(clearance, PUSH_OUT, true);
     }
+    for (const radius of radii) this.crossingsFor(radius, 0, false);
+  }
+
+  // Grafos y conjuntos de cruces construidos hasta ahora: si la primera ruta no lo sube, ya estaban preparados (AC-171)
+  get buildCount(): number {
+    return this.builds;
   }
 
   // Candidatos a punto más cercano a q del borde de la unión de las islas infladas por `extra`, a `pad` por fuera: la
@@ -130,6 +137,7 @@ export class Navigator {
     }
     points = points.filter((c) => (bounded ? this.navigable(c, extra) : this.outside(c, extra)));
     this.crossings.set(key, points);
+    this.builds++;
     return points;
   }
 
@@ -159,6 +167,7 @@ export class Navigator {
     }
     graph = { nodes, edges };
     this.graphs.set(clearance, graph);
+    this.builds++;
     return graph;
   }
 
