@@ -1,0 +1,170 @@
+{
+ "viewBox": "0 0 12 12",
+ "nota": "D74 (ART-DIRECTION §11.5): rank 1..5 = GDD §10b; elementos en orden de pintado; semántica de SVG 1.1; lo genera y lo comprueba scripts/ux/insignias5.py",
+ "insignias": {
+  "grumete": {
+   "rank": 1,
+   "codigo": "Bh-h1",
+   "elementos": [
+    {
+     "etiqueta": "rect",
+     "x": 0.5,
+     "y": 0.5,
+     "width": 11,
+     "height": 11,
+     "rx": 2.5,
+     "fill": "#07121B",
+     "stroke": "#B4703A",
+     "stroke-width": 1
+    },
+    {
+     "etiqueta": "rect",
+     "x": 3,
+     "y": 5,
+     "width": 6,
+     "height": 2,
+     "fill": "#B4703A"
+    }
+   ],
+   "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 12 12\"><rect x=\"0.5\" y=\"0.5\" width=\"11\" height=\"11\" rx=\"2.5\" fill=\"#07121B\" stroke=\"#B4703A\" stroke-width=\"1\"/><rect x=\"3\" y=\"5\" width=\"6\" height=\"2\" fill=\"#B4703A\"/></svg>"
+  },
+  "marinero": {
+   "rank": 2,
+   "codigo": "Bl-h2",
+   "elementos": [
+    {
+     "etiqueta": "rect",
+     "x": 0.5,
+     "y": 0.5,
+     "width": 11,
+     "height": 11,
+     "rx": 2.5,
+     "fill": "#B4703A",
+     "stroke": "#07121B",
+     "stroke-width": 0.5
+    },
+    {
+     "etiqueta": "rect",
+     "x": 3,
+     "y": 3,
+     "width": 6,
+     "height": 2,
+     "fill": "#07121B"
+    },
+    {
+     "etiqueta": "rect",
+     "x": 3,
+     "y": 7,
+     "width": 6,
+     "height": 2,
+     "fill": "#07121B"
+    }
+   ],
+   "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 12 12\"><rect x=\"0.5\" y=\"0.5\" width=\"11\" height=\"11\" rx=\"2.5\" fill=\"#B4703A\" stroke=\"#07121B\" stroke-width=\"0.5\"/><rect x=\"3\" y=\"3\" width=\"6\" height=\"2\" fill=\"#07121B\"/><rect x=\"3\" y=\"7\" width=\"6\" height=\"2\" fill=\"#07121B\"/></svg>"
+  },
+  "contramaestre": {
+   "rank": 3,
+   "codigo": "Ph-h3",
+   "elementos": [
+    {
+     "etiqueta": "rect",
+     "x": 0.5,
+     "y": 0.5,
+     "width": 11,
+     "height": 11,
+     "rx": 2.5,
+     "fill": "#07121B",
+     "stroke": "#DCE2E8",
+     "stroke-width": 1
+    },
+    {
+     "etiqueta": "rect",
+     "x": 3,
+     "y": 2,
+     "width": 6,
+     "height": 2,
+     "fill": "#DCE2E8"
+    },
+    {
+     "etiqueta": "rect",
+     "x": 3,
+     "y": 5,
+     "width": 6,
+     "height": 2,
+     "fill": "#DCE2E8"
+    },
+    {
+     "etiqueta": "rect",
+     "x": 3,
+     "y": 8,
+     "width": 6,
+     "height": 2,
+     "fill": "#DCE2E8"
+    }
+   ],
+   "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 12 12\"><rect x=\"0.5\" y=\"0.5\" width=\"11\" height=\"11\" rx=\"2.5\" fill=\"#07121B\" stroke=\"#DCE2E8\" stroke-width=\"1\"/><rect x=\"3\" y=\"2\" width=\"6\" height=\"2\" fill=\"#DCE2E8\"/><rect x=\"3\" y=\"5\" width=\"6\" height=\"2\" fill=\"#DCE2E8\"/><rect x=\"3\" y=\"8\" width=\"6\" height=\"2\" fill=\"#DCE2E8\"/></svg>"
+  },
+  "teniente": {
+   "rank": 4,
+   "codigo": "Oh-d3",
+   "elementos": [
+    {
+     "etiqueta": "rect",
+     "x": 0.5,
+     "y": 0.5,
+     "width": 11,
+     "height": 11,
+     "rx": 2.5,
+     "fill": "#07121B",
+     "stroke": "#E3A82B",
+     "stroke-width": 1
+    },
+    {
+     "etiqueta": "circle",
+     "cx": 6.0,
+     "cy": 3.4,
+     "r": 1.4,
+     "fill": "#E3A82B"
+    },
+    {
+     "etiqueta": "circle",
+     "cx": 3.6,
+     "cy": 8.2,
+     "r": 1.4,
+     "fill": "#E3A82B"
+    },
+    {
+     "etiqueta": "circle",
+     "cx": 8.4,
+     "cy": 8.2,
+     "r": 1.4,
+     "fill": "#E3A82B"
+    }
+   ],
+   "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 12 12\"><rect x=\"0.5\" y=\"0.5\" width=\"11\" height=\"11\" rx=\"2.5\" fill=\"#07121B\" stroke=\"#E3A82B\" stroke-width=\"1\"/><circle cx=\"6\" cy=\"3.4\" r=\"1.4\" fill=\"#E3A82B\"/><circle cx=\"3.6\" cy=\"8.2\" r=\"1.4\" fill=\"#E3A82B\"/><circle cx=\"8.4\" cy=\"8.2\" r=\"1.4\" fill=\"#E3A82B\"/></svg>"
+  },
+  "almirante": {
+   "rank": 5,
+   "codigo": "Ol-rosa",
+   "elementos": [
+    {
+     "etiqueta": "rect",
+     "x": 0.5,
+     "y": 0.5,
+     "width": 11,
+     "height": 11,
+     "rx": 2.5,
+     "fill": "#E3A82B",
+     "stroke": "#07121B",
+     "stroke-width": 0.5
+    },
+    {
+     "etiqueta": "polygon",
+     "points": "6,1.4 6.919,5.081 10.6,6 6.919,6.919 6,10.6 5.081,6.919 1.4,6 5.081,5.081",
+     "fill": "#07121B"
+    }
+   ],
+   "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 12 12\"><rect x=\"0.5\" y=\"0.5\" width=\"11\" height=\"11\" rx=\"2.5\" fill=\"#E3A82B\" stroke=\"#07121B\" stroke-width=\"0.5\"/><polygon points=\"6,1.4 6.919,5.081 10.6,6 6.919,6.919 6,10.6 5.081,6.919 1.4,6 5.081,5.081\" fill=\"#07121B\"/></svg>"
+  }
+ }
+}
