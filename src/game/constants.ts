@@ -110,9 +110,20 @@ export const SHIP_CLASSES: Record<string, ShipClassStats> = {
     patrolSpeed: 12, maxSpeed: 12, accel: 3, brake: 5, turnRate: 70 * deg, cannonsPerSide: 6, price: 2000,
     cannon: null, reward: 0, wreck: 0, respawnTime: 0
   },
+  // 1.1 (E15): la Goleta y el Navío de línea, con nivel mínimo (SHIP_MIN_LEVEL) y latentes tras su interruptor (AC-201)
+  schooner: {
+    id: 'schooner', label: 'Goleta', kind: 'player', length: 22, radius: 6, maxHp: 1100,
+    patrolSpeed: 15, maxSpeed: 15, accel: 4.5, brake: 6, turnRate: 80 * deg, cannonsPerSide: 4, price: 3000,
+    cannon: null, reward: 0, wreck: 0, respawnTime: 0
+  },
   frigate: {
     id: 'frigate', label: 'Fragata', kind: 'player', length: 34, radius: 9, maxHp: 2200,
     patrolSpeed: 10, maxSpeed: 10, accel: 2.5, brake: 4, turnRate: 55 * deg, cannonsPerSide: 8, price: 6000,
+    cannon: null, reward: 0, wreck: 0, respawnTime: 0
+  },
+  line: {
+    id: 'line', label: 'Navío de línea', kind: 'player', length: 42, radius: 11, maxHp: 3200,
+    patrolSpeed: 8.5, maxSpeed: 8.5, accel: 2, brake: 3.5, turnRate: 45 * deg, cannonsPerSide: 10, price: 12000,
     cannon: null, reward: 0, wreck: 0, respawnTime: 0
   },
   pirate: {
@@ -148,9 +159,15 @@ export function navClearance(classId: string): number {
   return SHIP_CLASSES[classId].length / 2 + NAV_CLEARANCE_EXTRA;
 }
 
-export const PLAYER_SHIP_ORDER = ['sloop', 'brig', 'frigate'] as const;
+// El astillero, por precio. La Goleta y el Navío (LATENT_SHIPS) solo se venden y se juegan con su interruptor (AC-201)
+export const PLAYER_SHIP_ORDER = ['sloop', 'brig', 'schooner', 'frigate', 'line'] as const;
 export type PlayerShipClass = (typeof PLAYER_SHIP_ORDER)[number];
 export const STARTING_SHIP: PlayerShipClass = 'sloop';
+// Nivel mínimo para comprar (GDD §6, Q27; AC-162): solo los barcos de la 1.1
+export const SHIP_MIN_LEVEL: Partial<Record<PlayerShipClass, number>> = { schooner: 5, line: 9 };
+// Los barcos de la 1.1 tras su interruptor (AC-201). Apagado, nadie los compra, y una fila que los tiene los conserva sin
+// jugarlos (server/progress.ts), como la 1.0.3
+export const LATENT_SHIPS: readonly PlayerShipClass[] = ['schooner', 'line'];
 
 export const NPC_POPULATION = { pirate: 12, merchant: 8 } as const;
 export const PIRATES_PER_SECTOR = 3;

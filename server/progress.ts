@@ -3,11 +3,12 @@
 // protocol.ts: un registro que no pasa no se usa ni se sobrescribe (AC-131): oro entero entre 0 y el tope, niveles entre
 // 1 y 3, y el barco activo entre los que posee.
 // Formato de la fila (GDD §13): la 1.1 lee las filas v: 1 de la 1.0 con 0 de XP y las v: 2, y siempre escribe v: 2
-// (AC-156); la 1.0.3 lee lo que escribe (AC-157). Los barcos de la fila que la simulación todavía no juega (los de la 1.1
-// que aún no están en PLAYER_SHIP_ORDER) van aparte, se escriben tal cual y no entran en el mundo; si el activo es uno de
+// (AC-156); la 1.0.3 lee lo que escribe (AC-157). Los barcos de la fila que la simulación no juega (la Goleta y el Navío
+// con su interruptor apagado, AC-201 b) van aparte, se escriben tal cual y no entran en el mundo; si el activo es uno de
 // ellos, se juega con el mejor de los que sí juega, como en la 1.0.3
 import {
   GOLD_CAP,
+  LATENT_SHIPS,
   MAX_UPGRADE_LEVEL,
   PLAYER_SHIP_ORDER,
   PlayerShipClass,
@@ -59,7 +60,11 @@ function hasExactKeys(value: Record<string, unknown>, keys: string[]): boolean {
 }
 
 const isLevel = (n: unknown) => Number.isInteger(n) && (n as number) >= 1 && (n as number) <= MAX_UPGRADE_LEVEL;
-const isPlayerShip = (s: unknown): s is PlayerShipClass => typeof s === 'string' && (PLAYER_SHIP_ORDER as readonly string[]).includes(s);
+
+// Los barcos que la simulación juega, en el orden del astillero: la Goleta y el Navío, solo con su interruptor (AC-201)
+function playedShips(newShips: boolean): readonly PlayerShipClass[] {
+  return newShips ? PLAYER_SHIP_ORDER : PLAYER_SHIP_ORDER.filter((c) => !LATENT_SHIPS.includes(c));
+}
 
 // Copia del progreso de un jugador (Player o PlayerView)
 export function progressOf(p: SavedProgress): SavedProgress {
@@ -80,8 +85,9 @@ export function progressKey(p: SavedProgress): string {
   return JSON.stringify([p.gold, UPGRADE_IDS.map((id) => p.upgrades[id]), p.ownedShips, p.activeShip, p.xp]);
 }
 
-// Acepta exactamente las filas v: 1 de la 1.0 y las v: 2 de la 1.1, y rechaza las demás (AC-131, AC-156)
-export function parseProgress(raw: unknown): ParsedProgress | null {
+// Acepta exactamente las filas v: 1 de la 1.0 y las v: 2 de la 1.1, y rechaza las demás (AC-131, AC-156). newShips es el
+// interruptor de AC-201 (SEA_BATTLE_NEW_SHIPS): apagado, como por defecto, la Goleta y el Navío de la fila no se juegan
+export function parseProgress(raw: unknown, newShips = false): ParsedProgress | null {
   if (!isPlainObject(raw) || (raw.v !== 1 && raw.v !== 2)) return null;
   const v2 = raw.v === 2;
   if (!hasExactKeys(raw, v2 ? V2_KEYS : V1_KEYS)) return null;
@@ -96,16 +102,18 @@ export function parseProgress(raw: unknown): ParsedProgress | null {
   if (v2 && (!Number.isInteger(xp) || (xp as number) < 0 || (xp as number) > XP_CAP)) return null;
   // Se juega con los barcos que la simulación juega, en el orden del astillero. Si el activo no es uno de ellos, con el
   // mejor; la Balandra, si no posee ninguno (AC-157 b)
-  const owned: PlayerShipClass[] = PLAYER_SHIP_ORDER.filter((c) => ownedShips.includes(c));
+  const played = playedShips(newShips);
+  const isPlayed = (s: unknown): s is PlayerShipClass => typeof s === 'string' && (played as readonly string[]).includes(s);
+  const owned: PlayerShipClass[] = played.filter((c) => ownedShips.includes(c));
   if (owned.length === 0) owned.push(STARTING_SHIP);
   return {
     progress: {
       gold: gold as number,
       upgrades: Object.fromEntries(UPGRADE_IDS.map((id) => [id, upgrades[id]])) as Upgrades,
       ownedShips: owned,
-      activeShip: isPlayerShip(activeShip) ? activeShip : owned[owned.length - 1],
+      activeShip: isPlayed(activeShip) ? activeShip : owned[owned.length - 1],
       xp: v2 ? (xp as number) : 0
     },
-    carry: { newShips: ROW_SHIPS.filter((c) => !isPlayerShip(c) && ownedShips.includes(c)) }
+    carry: { newShips: ROW_SHIPS.filter((c) => !isPlayed(c) && ownedShips.includes(c)) }
   };
 }

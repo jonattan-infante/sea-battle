@@ -5,13 +5,12 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   CANNON_LEVELS,
   MAX_UPGRADE_LEVEL,
-  PLAYER_SHIP_ORDER,
   PlayerShipClass,
   SHIP_CLASSES,
   UPGRADE_LEVELS,
   UpgradeId
 } from '../../game/constants';
-import { SHOP_UNAVAILABLE } from '../../client/hud-logic';
+import { SHOP_UNAVAILABLE, shipyardShips } from '../../client/hud-logic';
 import { useHud } from '../../client/hud-store';
 import type { HudActions } from './Hud';
 import { Close, CloudOff, Coins, Crosshair, Sailboat, Shield } from './icons';
@@ -88,7 +87,7 @@ function ShipCard({ classId, owned, active, gold, hullLevel, locked, onBuy, onUs
       <div className="card__body">
         <div className="card__title"><span>{c.label}</span></div>
         <div className="card__stats">
-          Vida <b>{fmt(hp)}</b> · Velocidad <b>{c.maxSpeed} m/s</b> · Cañones <b>{c.cannonsPerSide} por banda</b> · Eslora {c.length} m
+          Vida <b>{fmt(hp)}</b> · Velocidad <b>{dec(c.maxSpeed)} m/s</b> · Cañones <b>{c.cannonsPerSide} por banda</b> · Eslora {c.length} m
         </div>
         <div className="card__foot">
           {active ? (
@@ -108,7 +107,7 @@ function ShipCard({ classId, owned, active, gold, hullLevel, locked, onBuy, onUs
   );
 }
 
-export default function Shop({ actions }: { actions: HudActions }) {
+export default function Shop({ actions, newShips }: { actions: HudActions; newShips: boolean }) {
   const player = useHud((s) => s.player);
   const inSafe = useHud((s) => !!s.me?.inSafeZone && s.me.state === 'alive');
   const setShopOpen = useHud((s) => s.setShopOpen);
@@ -162,7 +161,7 @@ export default function Shop({ actions }: { actions: HudActions }) {
                   onBuy={() => actions.buy(`${u}:${player.upgrades[u] + 1}`)}
                 />
               ))
-            : PLAYER_SHIP_ORDER.map((c) => (
+            : shipyardShips(newShips).map((c) => (
                 <ShipCard
                   key={c}
                   classId={c}

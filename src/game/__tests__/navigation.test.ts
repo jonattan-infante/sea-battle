@@ -71,7 +71,7 @@ describe('E1 — Navegación', () => {
     return ISLANDS.some((isl) => segmentPointDistance(bow, stern, { x: isl.x, z: isl.z }) < isl.radius - 1e-6);
   }
 
-  test.each(['sloop', 'brig', 'frigate', 'pirate', 'merchant'])(
+  test.each(['sloop', 'brig', 'schooner', 'frigate', 'line', 'pirate', 'merchant'])(
     'AC-20: %s — 1 000 rutas aleatorias: el casco nunca toca una isla y el 100 %% llega a ≤ 2 m',
     (classId) => {
       const rng = createRng(2026);
@@ -101,7 +101,7 @@ describe('E1 — Navegación', () => {
     120_000
   );
 
-  test.each(['sloop', 'brig', 'frigate', 'pirate', 'merchant'])('AC-21: %s — un clic dentro de una isla lleva a L/2 + 2 ±1 m del borde', (classId) => {
+  test.each(['sloop', 'brig', 'schooner', 'frigate', 'line', 'pirate', 'merchant'])('AC-21: %s — un clic dentro de una isla lleva a L/2 + 2 ±1 m del borde', (classId) => {
     const margin = SHIP_CLASSES[classId].length / 2 + 2;
     for (const isl of ISLANDS) {
       const p = navigator.nearestNavigable({ x: isl.x + 3, z: isl.z - 2 }, navClearance(classId));

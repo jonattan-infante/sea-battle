@@ -8,7 +8,8 @@ describe('/healthz', () => {
       players: 3,
       uptimeSeconds: 60,
       commit: '434b1605c1c6',
-      i2: false
+      i2: false,
+      newShips: false
     });
   });
 

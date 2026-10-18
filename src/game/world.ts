@@ -22,6 +22,7 @@ import {
   ORBIT_LEAD,
   HostileAiStats,
   ISLANDS,
+  LATENT_SHIPS,
   LOOT_DAMAGE_WINDOW,
   MAX_UPGRADE_LEVEL,
   MERCHANT_FLEE_TIME,
@@ -55,6 +56,7 @@ import {
   RESPAWN_RING,
   SAFE_ZONE_RADIUS,
   SHIP_CLASSES,
+  SHIP_MIN_LEVEL,
   SINKING_TIME,
   SPAWN_PROTECTION,
   STARTING_GOLD,
@@ -71,7 +73,7 @@ import { Navigator } from './nav';
 import { NpcAi, Player, PlayerView, Ship, ShipSnapshot, World } from './types';
 import { Vec2, angleDelta, createRng, distance, forward, headingTo, normalizeAngle } from './vec';
 import { maxHpFor } from './stats';
-import { creditNpcXp, creditPvpXp, levelOf, npcXp } from './xp';
+import { creditNpcXp, creditPvpXp, levelOf, npcXp, rankLabel, rankOf } from './xp';
 
 export const navigator = new Navigator(ISLANDS);
 const EPS = 1e-6;
@@ -80,6 +82,7 @@ export interface CreateWorldOptions {
   seed?: number;
   spawnNpcs?: boolean;
   i2?: boolean; // AC-187: apagado por defecto, como en staging y prod
+  newShips?: boolean; // AC-201: la Goleta y el Navío a la venta; apagado por defecto, aparte del I2
 }
 
 export function createWorld(options: CreateWorldOptions = {}): World {
@@ -96,6 +99,7 @@ export function createWorld(options: CreateWorldOptions = {}): World {
     nextId: 1,
     killsSinceBoss: 0,
     i2: options.i2 ?? false,
+    newShips: options.newShips ?? false,
     xpPairs: new Map(),
     pvpLog: []
   };
@@ -552,6 +556,11 @@ export function planBuy(world: World, playerId: string, item: ShopItem): BuyPlan
     if (item.level !== player.upgrades[item.upgrade] + 1 || item.level > MAX_UPGRADE_LEVEL) return fail('Primero necesitas el nivel anterior');
   } else if (player.ownedShips.includes(item.classId)) {
     return fail('Ya tienes ese barco');
+  } else {
+    // La Goleta y el Navío: solo con su interruptor (AC-201) y con el nivel que piden, que se dice antes que el oro (AC-162)
+    if (LATENT_SHIPS.includes(item.classId) && !world.newShips) return fail('Ese barco no está a la venta');
+    const minLevel = SHIP_MIN_LEVEL[item.classId];
+    if (minLevel !== undefined && levelOf(player.xp) < minLevel) return fail(`Requiere nivel ${minLevel} (${rankLabel(rankOf(minLevel))})`);
   }
   if (player.gold < price) return fail(`Necesitas ${price} de oro`);
   return { ok: true, price };

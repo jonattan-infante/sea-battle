@@ -517,7 +517,7 @@ export default function GameApp({ guest }: { guest: boolean }) {
           <GameCanvas runtime={runtime} onWaterClick={onWaterClick} onShipClick={onShipClick} onShipDoubleClick={onShipDoubleClick} />
           <div ref={labelsRef} className="layer-labels" aria-hidden />
           <div ref={floatingRef} className="layer-floating" aria-hidden />
-          <Hud client={runtime.client} actions={actions} islands={welcome.islands} viewRect={() => runtime.viewRect()} />
+          <Hud client={runtime.client} actions={actions} islands={welcome.islands} newShips={welcome.newShips} viewRect={() => runtime.viewRect()} />
         </>
       ) : (
         !loadFailed && <Connecting />

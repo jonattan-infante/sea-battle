@@ -92,7 +92,24 @@ describe('SEA_BATTLE_I2 (AC-187)', () => {
 });
 
 describe('arranque con SEA_BATTLE_I2 (server/bootstrap.ts)', () => {
-  const ioOnly = () => new Server(createServer());
+  // Lo que arranca cada test se para en afterEach, también si falla un expect o si arranca lo que debía fallar: con el
+  // bucle del juego vivo, Jest no termina (O-34)
+  const booted: GameServer[] = [];
+  const servers: Server[] = [];
+  afterEach(() => {
+    booted.splice(0).forEach((g) => g.stop());
+    servers.splice(0).forEach((s) => s.close());
+  });
+  const ioOnly = () => {
+    const server = new Server(createServer());
+    servers.push(server);
+    return server;
+  };
+  async function boot(server: Server, env: Record<string, string>, log?: (msg: string) => void): Promise<GameServer> {
+    const { game: g } = await startGame(server, env, log);
+    booted.push(g);
+    return g;
+  }
 
   test.each([
     [{}, false, /I2 apagado: sin Capitán pirata ni cañoneras/],
@@ -100,12 +117,9 @@ describe('arranque con SEA_BATTLE_I2 (server/bootstrap.ts)', () => {
     [{ SEA_BATTLE_I2: '1' }, true, /I2 encendido \(SEA_BATTLE_I2=1\): el Capitán pirata y las cañoneras entran en partida/]
   ])('con %j el mundo queda con i2 = %s y lo dice el log', async (env, on, line) => {
     const logs: string[] = [];
-    const server = ioOnly();
-    const { game: g } = await startGame(server, { SEA_BATTLE_NPCS: '0', ...env }, (m) => logs.push(m));
+    const g = await boot(ioOnly(), { SEA_BATTLE_NPCS: '0', ...env }, (m) => logs.push(m));
     expect(g.world.i2).toBe(on);
     expect(logs.join('\n')).toMatch(line);
-    g.stop();
-    server.close();
   });
 
   // AC-51 por la vía de un e2e (startOwnServer): el entorno decide la población con NPC. Apagado, la de la 1.0; encendido,
@@ -144,13 +158,11 @@ describe('arranque con SEA_BATTLE_I2 (server/bootstrap.ts)', () => {
 
   test.each(['captain', 'captain-down', 'legibility-i2', 'danger'])('el escenario "%s" no arranca con el I2 apagado, y con él encendido sí', async (scenario) => {
     const server = ioOnly();
-    await expect(startGame(server, { SEA_BATTLE_NPCS: '0', AUTH_BYPASS: '1', SEA_BATTLE_SCENARIO: scenario })).rejects.toThrow(/necesita el I2 encendido \(SEA_BATTLE_I2=1/);
-    const { game: g } = await startGame(server, { SEA_BATTLE_NPCS: '0', AUTH_BYPASS: '1', SEA_BATTLE_SCENARIO: scenario, SEA_BATTLE_I2: '1' });
+    await expect(boot(server, { SEA_BATTLE_NPCS: '0', AUTH_BYPASS: '1', SEA_BATTLE_SCENARIO: scenario })).rejects.toThrow(/necesita el I2 encendido \(SEA_BATTLE_I2=1/);
+    const g = await boot(server, { SEA_BATTLE_NPCS: '0', AUTH_BYPASS: '1', SEA_BATTLE_SCENARIO: scenario, SEA_BATTLE_I2: '1' });
     expect(g.world.i2).toBe(true);
     if (scenario === 'captain-down') expect([...g.world.ships.values()].map((s) => s.classId)).toEqual([CAPTAIN_CLASS]);
     if (scenario === 'legibility-i2') expect([...g.world.ships.values()].map((s) => s.classId).sort()).toEqual([CAPTAIN_CLASS, GUNBOAT_CLASS, 'merchant', 'pirate']);
     if (scenario === 'danger') expect([...g.world.ships.values()].map((s) => s.classId).sort()).toEqual([GUNBOAT_CLASS, 'pirate']);
-    g.stop();
-    server.close();
   });
 });

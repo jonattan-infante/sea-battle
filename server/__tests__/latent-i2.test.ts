@@ -15,7 +15,7 @@ import { joinGame, sleep } from './fixtures/game-socket';
 
 // Lo que existía antes de I2: cualquier otra clase, tipo de barco o evento cuenta como fuga (el Capitán de I2 es la
 // clase 'captain' con kind 'pirate', y su aparición y su hundimiento son los eventos 'captain' y 'captainDown')
-const PRE_I2_CLASSES = ['sloop', 'brig', 'frigate', 'pirate', 'merchant'];
+const PRE_I2_CLASSES = ['sloop', 'brig', 'schooner', 'frigate', 'line', 'pirate', 'merchant']; // 'schooner' y 'line' son de la 1.1 (E15), con su propio interruptor (AC-201), no de I2
 const PRE_I2_KINDS = ['player', 'pirate', 'merchant'];
 const PRE_I2_EVENTS = ['volley', 'impact', 'sunk', 'loot', 'xp', 'respawn', 'wreck', 'wreckGone']; // 'xp' es de la 1.1 (E14), no de I2
 const I2_TEXT = /capit[aá]n|cañonera/i;

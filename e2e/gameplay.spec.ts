@@ -555,6 +555,32 @@ test.describe('Puerto y barcos', () => {
     expect((await me(page))!.classId).toBe('brig');
     expect(dialogsOf(page)).toEqual([]);
   });
+
+  test('AC-201: con el servidor por defecto, la tienda es la de la 1.0.3 (Balandra, Bergantín y Fragata, sin Goleta ni Navío) y /healthz lo dice', async ({ page }) => {
+    const health = (await (await fetch(`http://localhost:${PORTS.empty}/healthz`)).json()) as { newShips: boolean };
+    expect(health.newShips).toBe(false);
+    await enterGame(page, `http://localhost:${PORTS.empty}`);
+    await page.keyboard.press('KeyP');
+    await page.getByTestId('tab-ships').click();
+    const cards = await page.getByTestId('shop').locator('[data-testid^="ship-"]').evaluateAll((els) => els.map((e) => e.getAttribute('data-testid')));
+    expect(cards).toEqual(['ship-sloop', 'ship-brig', 'ship-frigate']);
+    await expect(page.getByTestId('shop')).not.toContainText(/Goleta|Navío/);
+  });
+
+  test('AC-162 · Velocidad de la tienda con decimales: con la Goleta y el Navío encendidos, la tarjeta del Navío dice «Velocidad 8,5 m/s» y no «8.5»', async ({ page }) => {
+    const server = await startOwnServer({ SEA_BATTLE_NPCS: '0', SEA_BATTLE_SCENARIO: 'shipyard', SEA_BATTLE_NEW_SHIPS: '1' });
+    try {
+      await enterGame(page, server.url);
+      await page.keyboard.press('KeyP');
+      await page.getByTestId('tab-ships').click();
+      const line = page.getByTestId('ship-line');
+      await expect(line).toBeVisible();
+      await expect(line).toContainText('Velocidad 8,5 m/s');
+      await expect(line).not.toContainText('8.5');
+    } finally {
+      await server.kill();
+    }
+  });
 });
 
 // Textos flotantes de daño: cada spawn reescribe el texto de un elemento del pool de overlays.ts
