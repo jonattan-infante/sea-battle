@@ -306,6 +306,7 @@ test.describe('HUD de la experiencia (1.1)', () => {
       });
       return {
         frame: box(frame),
+        icon: box(frame.querySelector('.hud-target__icon')!),
         type: type.textContent,
         typeFits: type.scrollWidth <= type.clientWidth,
         rankFits: (() => {
@@ -358,13 +359,16 @@ test.describe('HUD de la experiencia (1.1)', () => {
     }
   });
 
-  test('AC-153: el caso más largo, «Bergantín · Nivel 12 · Contramaestre», cabe entero en 1440×900 y en 390×844; en móvil el panel crece a 262 × 70 sin salirse ni tocar la barra superior ni los avisos (D75)', async ({ browser }) => {
-    test.setTimeout(150_000);
+  // 844×390 por D81: con el icono del objetivo de 40 px quedaban 184 px de texto y la línea más ancha mide 186,5, así que se
+  // cortaba el rango; con el de 28, como en 390×844, quedan 196
+  test('AC-153: el caso más largo, «Bergantín · Nivel 12 · Contramaestre», cabe entero en 1440×900, 390×844 y 844×390; en móvil el icono mide 28 px y el panel crece a 262 × 70 (252 × 70 en horizontal) sin salirse ni tocar la barra superior ni los avisos (D75, D81)', async ({ browser }) => {
+    test.setTimeout(180_000);
     const server = await startOwnServer({ SEA_BATTLE_NPCS: '0', SEA_BATTLE_SCENARIO: 'xp-12' });
     const contexts: BrowserContext[] = [];
     try {
       const a = await open(browser, server, 'desktop', contexts);
       const c = await open(browser, server, 'portrait', contexts);
+      const l = await open(browser, server, 'landscape', contexts);
       const b = await open(browser, server, 'desktop', contexts);
       // B compra el Bergantín con el oro del escenario (como AC-70) y se pone junto a A
       await b.keyboard.press('KeyP');
@@ -375,15 +379,19 @@ test.describe('HUD de la experiencia (1.1)', () => {
       const meA = (await me(a))!;
       const meB = (await me(b))!;
       await arrive(b, meA.x + 35, meA.z);
+      // La de 844×390 sale en otro punto del anillo de entrada y ve poco en vertical: se pone a 25 m de B, que queda a la
+      // izquierda del centro, por debajo del panel del objetivo y lejos de los botones
+      await arrive(l, meA.x + 60, meA.z);
       await a.waitForTimeout(500);
 
-      for (const [label, page, touch] of [['1440×900', a, false], ['390×844', c, true]] as const) {
+      for (const [label, page, touch, frame] of [['1440×900', a, false, null], ['390×844', c, true, [262, 70]], ['844×390', l, true, [252, 70]]] as const) {
         await select(page, meB.id, touch);
         const t = await targetPanel(page);
         console.log(`AC-153 caso largo ${label}: ${JSON.stringify({ ...t, badge: !!t.badge })}`);
+        expect([label, t.icon.w, t.icon.h]).toEqual([label, touch ? 28 : 40, touch ? 28 : 40]);
         expect({ ...t, badge: markup(t.badge) }).toMatchObject({ type: 'Bergantín · Nivel 12 · Contramaestre', typeFits: true, rankFits: true, badge: rankBadgeSvg(3, touch ? 12 : 16) });
-        if (touch) {
-          expect([t.frame.w, t.frame.h]).toEqual([262, 70]);
+        if (frame) {
+          expect([t.frame.w, t.frame.h]).toEqual(frame);
           for (const child of t.children) expect(inside(child, t.frame)).toBe(true);
           for (const block of t.blocks) expect(cross(t.frame, block)).toBe(false);
         }
