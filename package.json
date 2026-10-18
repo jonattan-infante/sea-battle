@@ -83,8 +83,22 @@
             "skipLibCheck": true
           }
         }
+      ],
+      "^.+/node_modules/three/examples/jsm/.+\\.js$": [
+        "ts-jest",
+        {
+          "tsconfig": {
+            "allowJs": true,
+            "module": "commonjs",
+            "target": "ES2020",
+            "skipLibCheck": true
+          }
+        }
       ]
     },
+    "transformIgnorePatterns": [
+      "/node_modules/(?!three/examples/jsm/)"
+    ],
     "moduleFileExtensions": [
       "ts",
       "js",
