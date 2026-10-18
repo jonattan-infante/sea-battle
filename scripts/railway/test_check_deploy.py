@@ -4,7 +4,7 @@ import os, sys, unittest
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import railway_api
-from check_deploy import START, start_check
+from check_deploy import START, shutdown_timeline, start_check
 
 BANNER = 'Railpack 0.40.1\n  Steps\n  ──────────\n  ▸ build\n    $ npm run build\n  Deploy\n  ──────────\n    $ {cmd}\n'
 
@@ -70,6 +70,19 @@ class Auth(unittest.TestCase):
     def test_gql_rechaza_mutaciones_antes_de_tocar_la_red(self):
         with self.assertRaisesRegex(SystemExit, 'Solo lectura'):
             railway_api.gql(railway_api.DEPLOY)
+
+
+class ShutdownTimeline(unittest.TestCase):
+    # O-42 (a): el aviso del apagado lleva los ms reales y, detrás del (+N ms), cuántos jugadores quedaron sin guardar;
+    # la regex de shutdown_timeline lo sigue leyendo
+    def test_el_aviso_con_los_ms_reales_y_el_recuento_se_sigue_leyendo(self):
+        lines = [{'message': m} for m in (
+            '🛑 SIGTERM: guardando el progreso antes de cerrar 2026-10-18T21:17:08.772Z',
+            '⚠️  El progreso no se pudo guardar en 9520 ms 2026-10-18T21:17:18.292Z (+9520 ms) · 1 jugador sin guardar',
+            '🔌 Sockets cerrados 2026-10-18T21:17:18.294Z (+9522 ms)')]
+        detail = shutdown_timeline(lines, None)
+        self.assertIn('🛑 → aviso de escritura fallida 9520 ms', detail)
+        self.assertIn('🛑 → 🔌 9522 ms', detail)
 
 
 if __name__ == '__main__':
