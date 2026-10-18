@@ -1,0 +1,87 @@
+--- a/src/client/models/ship-geometry.ts
++++ b/src/client/models/ship-geometry.ts
+@@ -109,7 +109,7 @@
+ 
+ // D23: la tabla de perfiles se interpola con Catmull-Rom (Hermite con las tangentes por diferencias finitas sobre el
+ // paso no uniforme de u); las filas de la tabla se respetan. Antes era lineal entre filas
+-function sample(profile: readonly ProfileRow[], u: number): Station {
++export function sample(profile: readonly ProfileRow[], u: number): Station {
+   const n = profile.length;
+   const row = (p: ProfileRow): Station => ({ a: p[1], b: p[2], s: p[3], k: p[4] });
+   if (u <= profile[0][0]) return row(profile[0]);
+@@ -169,6 +169,9 @@
+   barrels: Vec3[];
+   cannonZ: number[];
+   cannonY: number;
++  bands?: { y: number; z: number[] }[]; // LÁMINA (no es código del juego): franjas de portas de ASSET-SPEC (Navío, S6)
++  bandH?: number;
++  portH?: number;
+   cannon: [number, number, number]; // radio superior (boca), inferior, largo
+   sailStyle: 'plain' | 'notched' | 'striped' | 'banded'; // banded: 4 filas con la inferior de franja (Capitán, I2)
+   sailStripe?: string; // franja propia de la receta (D46) cuando su facción no la tiene
+@@ -404,6 +407,15 @@
+   const xAt = (y: number) => hb * (b + ((a - b) * y) / yd);
+   // Franja de portas (D36): con portas en el costado, BAND m centrada en la línea de cañones en la maestra (s = 1) y
+   // siguiendo el arrufo; sin portas, entre 0,30·F y 0,55·F bajo el canto
++  if (r.bands) {
++    const bh = r.bandH ?? BAND;
++    const pts: Vec3[] = [[side * a * hb, yd + r.railH, z], [side * a * hb, yd, z]];
++    for (const band of [...r.bands].sort((p, q) => q.y - p.y)) {
++      for (const yy of [yd - (r.F - band.y - bh / 2), yd - (r.F - band.y + bh / 2)]) pts.push([side * xAt(yy), yy, z]);
++    }
++    pts.push([side * b * hb, 0, z], [0, -k * r.D, z]);
++    return pts;
++  }
+   const ports = r.cannonZ.length > 0 && r.battery !== 'deck';
+   const y1 = ports ? yd - (r.F - r.cannonY - BAND / 2) : yd - 0.3 * r.F;
+   const y2 = ports ? yd - (r.F - r.cannonY + BAND / 2) : yd - 0.55 * r.F;
+@@ -421,9 +433,12 @@
+   const cHull = lin(look.hull);
+   const cRail = lin(r.trimRail ? look.trim : look.rail);
+   // [de, a, color arriba, color abajo]: la cara V2–V3 lleva la oclusión en su borde inferior (la flotación, D23)
+-  const strips: [number, number, THREE.Color, THREE.Color][] = [
+-    [1, 0, cRail, cRail], [1, 2, cHull, cHull], [2, 3, lin(look.band), lin(look.band)], [3, 4, cHull, ao(cHull)], [4, 5, lin(look.bottom), lin(look.bottom)]
+-  ];
++  const nb = r.bands ? r.bands.length : 1;
++  const strips: [number, number, THREE.Color, THREE.Color][] = [[1, 0, cRail, cRail]];
++  for (let i = 0; i < nb; i++) {
++    strips.push([1 + 2 * i, 2 + 2 * i, cHull, cHull], [2 + 2 * i, 3 + 2 * i, lin(look.band), lin(look.band)]);
++  }
++  strips.push([1 + 2 * nb, 2 + 2 * nb, cHull, ao(cHull)], [2 + 2 * nb, 3 + 2 * nb, lin(look.bottom), lin(look.bottom)]);
+   // Cubierta (D23, D62): en LOD0, n = 2·ceil(B/2 / 0,5) tablas longitudinales de ≈ 0,5 m en los tonos de §8.2.2, con las
+   // tiras junto a la borda (el trancanil) oscurecidas; en LOD1, una sola cara en `deckLod1`, la media de las tablas (D40)
+   const n = planks ? 2 * Math.ceil(r.B / 2 / 0.5) : 1;
+@@ -457,7 +472,7 @@
+ }
+ 
+ function cap(g: GeoBuilder, sec: { port: Vec3[]; stbd: Vec3[] }, color: THREE.Color): void {
+-  const ring = [...sec.port, ...sec.stbd.slice(0, 5).reverse()];
++  const ring = [...sec.port, ...sec.stbd.slice(0, -1).reverse()];
+   const faces = THREE.ShapeUtils.triangulateShape(ring.map((p) => new THREE.Vector2(p[0], p[1])), []);
+   for (const [i, j, k] of faces) g.tri(ring[i], ring[j], ring[k], color);
+ }
+@@ -735,7 +750,8 @@
+   if (lod === 0) {
+     for (const p of r.barrels) g.add(new THREE.CylinderGeometry(0.45, 0.45, 1.0, 6), trs(...p), lin(look.barrel));
+     const [rTop, rBot, len] = r.cannon;
+-    for (const z of r.cannonZ) {
++    const guns: [number, number][] = r.bands ? r.bands.flatMap((bd) => bd.z.map((zz) => [zz, bd.y] as [number, number])) : r.cannonZ.map((zz) => [zz, r.cannonY] as [number, number]);
++    for (const [z, cy] of guns) {
+       const a = sample(PROFILES[r.profile], z / r.L).a;
+       if (r.battery === 'deck') {
+         // Batería sobre cubierta (Cañonera, §8.4): eje del cañón a yd + 0,45 con el centro a 1,0 m de la borda hacia
+@@ -752,11 +768,12 @@
+         const x = side * (a * r.B / 2 + 0.3);
+         // La boca (radio superior) mira hacia afuera de la banda. Sin la tapa interior, que queda dentro del casco (D36):
+         // CylinderGeometry no indexada, torso (12 triángulos), boca (6) y tapa interior (6)
+-        g.add(new THREE.CylinderGeometry(rTop, rBot, len, 6), trs(x - side * (len / 2), r.cannonY, z, 0, 0, -side * Math.PI / 2), lin(look.cannon), (t) => t >= 18);
++        g.add(new THREE.CylinderGeometry(rTop, rBot, len, 6), trs(x - side * (len / 2), cy, z, 0, 0, -side * Math.PI / 2), lin(look.cannon), (t) => t >= 18);
+         // Porta (D36): un quad de 0,8 × 0,8 m (antes una caja de 12 triángulos de la que solo se veía la cara exterior),
+         // hacia afuera en a(u)·B/2 + 0,05, dentro de la franja de portas y bajo el canto de cubierta (AS-V20)
+         const px = side * (a * r.B / 2 + 0.05);
+-        const [y0, y1, z0, z1] = [r.cannonY - 0.4, r.cannonY + 0.4, z - 0.4, z + 0.4];
++        const ph = (r.portH ?? 0.8) / 2;
++        const [y0, y1, z0, z1] = [cy - ph, cy + ph, z - 0.4, z + 0.4];
+         const [za, zb] = side > 0 ? [z1, z0] : [z0, z1];
+         g.quad([px, y0, za], [px, y0, zb], [px, y1, zb], [px, y1, za], lin(look.gunport));
+       }

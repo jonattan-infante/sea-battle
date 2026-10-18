@@ -733,7 +733,7 @@ Una familia es un **estilo de construcción** que cambia el casco, los castillos
 | Medida del piloto (2026-10-18, en el scratchpad de ux) | Británica | Española | Presupuesto (ASSET-SPEC §13) |
 |---|---|---|---|
 | Triángulos LOD0 / LOD1 | 3 463 / 580 | 3 813 / 590 | ≤ 5 000 / 1 200 |
-| GLB (textura WebP de 1024², sin meshopt ni KTX2; los sockets de cañón ya miran hacia fuera, AS-V07) | 292 KB | 317 KB | ≤ 400 KB |
+| GLB (textura WebP de 1024², sin meshopt ni KTX2; los sockets de cañón ya miran hacia fuera, AS-V07) | 292,5 KB | 317,3 KB | ≤ 400 KB |
 | GLB comprimido (meshopt y textura KTX2 ETC1S, ASSET-SPEC §13 paso 4) | 88,6 KB | 98,2 KB | ≤ 400 KB |
 
 - **La cruz de Borgoña no es lona**: en AD-10 queda fuera del L\* medio de las velas, como las franjas azules del Mercante (`sailStripe`). La lona sigue en los 3 tonos del jugador.
