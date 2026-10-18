@@ -280,8 +280,8 @@ Jonattan pidió cambios a la lámina del puerto (cita en BACKLOG AC-192): «Quie
 ### Escritorio
 | Acción | Entrada | Regla |
 |---|---|---|
-| Navegar | Clic izquierdo en el agua | Marcador inmediato en el punto. Un clic en una isla lleva al punto navegable más cercano (1.1: el más cercano que la clase pueda alcanzar, §6 punto 1b). Un clic nuevo reemplaza el destino. **No deselecciona ni cancela el ataque.** |
-| Seleccionar | Clic izquierdo sobre un barco | Se acierta dentro de la silueta proyectada + 12 px. Si hay varios, gana el más cercano al cursor. **No genera tráfico de red.** |
+| Navegar | Clic izquierdo en el agua | **Al soltar el botón**, si el puntero se movió ≤ 12 px; si se movió más, es un arrastre de la vista (abajo). Así funciona ya el toque (dato de dev). *Decidido por producto el 2026-10-18, a pregunta de dev para D89:* hasta la vista libre se navegaba al pulsar (`GameCanvas.tsx:85-89`, `pointerdown`, en `4a125e0`; dato de dev). Marcador inmediato en el punto. Un clic en una isla lleva al punto navegable más cercano (1.1: el más cercano que la clase pueda alcanzar, §6 punto 1b). Un clic nuevo reemplaza el destino. **No deselecciona ni cancela el ataque.** |
+| Seleccionar | Clic izquierdo sobre un barco | También al soltar, con el mismo umbral de 12 px. Se acierta dentro de la silueta proyectada + 12 px. Si hay varios, gana el más cercano al cursor. **No genera tráfico de red.** |
 | Ciclar objetivo | `Tab` / `Shift+Tab` | Recorre los barcos atacables a ≤150 m, del más cercano al más lejano |
 | Atacar / cancelar | `Espacio` o botón **Atacar** | Alterna (*toggle*) sobre el objetivo seleccionado (§7) |
 | Seleccionar + atacar (P1) | Doble clic sobre un barco atacable | Atajo |
@@ -326,8 +326,8 @@ Orientaciones soportadas: vertical (390×844) y horizontal (844×390). Mientras 
   - **Entrar:** arrastrar en el agua más de 12 px (botón izquierdo o un dedo); hacer clic o arrastrar en el minimapa (la vista se centra en ese punto); o usar las flechas (150 m/s).
   - **Soltar antes de 12 px es un clic normal:** navega o selecciona. Dos dedos son zoom, nunca desplazamiento.
   - En vista libre, un clic en el agua navega hacia ese punto (aunque esté lejos del barco) y un clic en un barco lo selecciona. Nada más cambia.
-  - El centro de la vista no sale del mapa (±500 m).
-  - **Volver al seguimiento** (transición de 300 ms): con `C` o el botón Centrar, cuando el barco propio recibe daño, al morir o al reaparecer.
+  - El centro de la vista no sale del mapa (±500 m, es decir, ±`MAP_HALF_SIZE`, `src/game/constants.ts:17`: si el mapa cambia de tamaño, el límite cambia con él).
+  - **Volver al seguimiento** (transición de 300 ms): con `C` o el botón Centrar, cuando el barco propio recibe daño, al morir o al reaparecer. «Recibe daño» es cualquier bajada de su vida sin cambio de clase, que en la práctica es un impacto. Cambiar de barco en la tienda no cuenta (decidido por producto el 2026-10-18, a pregunta de dev).
   - Si el barco propio no se ve, un indicador en el borde señala hacia él. «No se ve» quiere decir que está fuera de la pantalla o tapado por el HUD: fuera del marco útil (ART-DIRECTION §12.8, BACKLOG AC-121). Lo mismo vale para el atacante de §14.
   - **Lo que se ve está vivo:** los barcos que hay en la zona mirada se muestran; nunca se ve mar vacío donde hay NPC (§13).
 
