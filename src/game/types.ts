@@ -128,7 +128,8 @@ export interface World {
   players: Map<string, Player>;
   projectiles: Projectile[];
   wrecks: Wreck[];
-  islands: Island[];
+  islands: Island[]; // los círculos de las islas del mapa (cada isla, la unión de 1 a 5; AC-199)
+  moorings: boolean; // los jugadores aparecen en los amarres del puerto (AC-176): lo da el mapa
   events: GameEvent[];
   rng: () => number;
   nextId: number;

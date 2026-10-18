@@ -149,6 +149,22 @@ Tests: `src/game/__tests__/xp.test.ts` (unitarios; AC-149 con dos bots en el mun
 | Órbita (AC-188) | `updatePirate`, `ORBIT_LEAD` | El punto de órbita va `ORBIT_LEAD` (0,45 rad) por delante sobre un círculo de radio `orbitRadius / cos(ORBIT_LEAD)`. Sin la compensación, perseguir ese punto deja la órbita real en `orbitRadius · cos(ORBIT_LEAD)`, un 10 % por dentro. Vale para todos los hostiles, también para el pirata con el I2 apagado |
 
 Tests: `src/game/__tests__/gunboat.test.ts` (AC-51 encendido, AC-52, AC-113 y AC-114 con 1 000 duelos), `orbit.test.ts` (AC-188), `captain.test.ts` (AC-54 con cañoneras) y `npc.test.ts` (AC-51 apagado). El bot de AC-60 (`economy.test.ts`) no ataca una cañonera mientras su cañón tenga menos alcance que ella, es decir, hasta Cañones N2 (decisión de producto: no es presa para N1).
+
+### 3.2 Mapa de la 1.1: islas de varios círculos, destino inalcanzable y amarres (GDD §4 y §6; AC-170 a AC-177, AC-199)
+
+La disposición de MAP_1_1 es **provisional** hasta que Jonattan apruebe la lámina nueva de islas, y todavía no es el mapa del juego: `createWorld` usa `MAP_1_0` si no se le pasa `map`. Cambiar la disposición es tocar el bloque de datos de `constants.ts`. Pasar el juego al mapa nuevo es cambiar el `map` por defecto, y entonces se vuelven a medir AC-173 (10 min con el I2), AC-20 y AC-60.
+
+| Pieza | Dónde | Regla |
+|---|---|---|
+| Mapa | `MapDef`, `mapOf`, `MAP_1_0`, `ISLAND_SHAPES_1_1`, `MAP_1_1` (`constants.ts`); `CreateWorldOptions.map` (`world.ts`) | Cada isla (`IslandShape`) tiene un arquetipo y de 1 a 5 círculos (AC-199, opción B). La navegación y la colisión solo ven `islands`: la lista plana de los círculos de todas las formas, que también es la de `Welcome.islands`. `MAP_1_0` reutiliza el array `ISLANDS` |
+| Navegador por mapa | `navigatorOf(world)` (`world.ts`) | Hay un `Navigator` por lista de islas (WeakMap), así que los mundos del mismo mapa comparten grafos y cruces. `navigator` (el export de siempre) es el de `MAP_1_0` |
+| Grafos al arrancar (AC-171) | `Navigator.prepare` en `createWorld` | Prepara los grafos y los cruces de los márgenes de todas las clases de `SHIP_CLASSES`. Sin esto, la primera ruta de cada margen construiría su grafo dentro de un tick |
+| Punto navegable más cercano (AC-21, AC-171) | `nearestNavigable`, `edgePoints`, `crossingsFor` (`nav.ts`) | Busca el punto más cercano del borde de la unión de las islas infladas: la proyección sobre una isla o un cruce de dos que se solapan, a 0,05 m (`PUSH_OUT`) por fuera. Los cruces se guardan por margen. Supone que ninguna isla inflada pasa de `NAV_LIMIT` |
+| Destino inalcanzable (§6, punto 1b; AC-172) | `findPath` (`nav.ts`), `setDestination` (`world.ts`) | Si el A* no llega al destino, la ruta acaba en el punto alcanzable más cercano: el candidato del borde más cercano al destino que se vea desde el origen o desde un nodo alcanzado. Si no hay ninguno, acaba en el nodo alcanzado más cercano. `ship.destination` es siempre el último waypoint. Antes iba en línea recta contra la costa |
+| Colisión (AC-199) | `Navigator.pushOut`, `moveShip` | El casco sale por el punto más cercano del borde de la unión, inflada por el radio de colisión, también en el entrante entre dos círculos. Multiplica la velocidad por 0,6 una sola vez |
+| Amarres (AC-176) | `MOORINGS` (`constants.ts`); `mooringSpot`, `respawnPoint` (`world.ts`) | Solo con `map.moorings`. Hay 12 amarres de rumbo 15° + 30°·k. Un amarre está libre si ningún barco vivo tiene el centro a < 12 m de su eje (de r 30 a r 76), y se elige uno al azar con `world.rng` entre los libres. El barco aparece con el centro a `PORT_RADIUS + navClearance(clase)` y la proa hacia fuera. Con los 12 ocupados, o con un mapa sin amarres, aparece en el anillo de 60–90 m de la 1.0, con las mismas tiradas |
+
+Tests: `src/game/__tests__/map.test.ts` (AC-170, AC-171, AC-172, AC-176, AC-177 y uniones de AC-199) y `nearest-navigable.test.ts` (AC-21 y AC-171 en círculos y en uniones). Con `MAP_1_0`, el comportamiento no cambia: los AC-60 por semilla de `economy.test.ts` salen idénticos a los de eda179f.
 ## 4. Harnesses
 
 | Comando | Qué cubre |
