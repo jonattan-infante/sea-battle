@@ -6,7 +6,7 @@ import React, { useEffect, useRef } from 'react';
 import { CAPTAIN_CLASS, INTEREST_RADIUS, MAP_HALF_SIZE, PORT_POSITION, SAFE_ZONE_RADIUS } from '../../game/constants';
 import type { GameClient, RenderShip } from '../../client/game-client';
 import { sectorOf } from '../../client/hud-logic';
-import { drawShipMarker, MARKER_COLORS } from '../../client/minimap-markers';
+import { drawPortAnchor, drawShipMarker, MARKER_COLORS } from '../../client/minimap-markers';
 
 const REDRAW_MS = 500;
 const COLORS = {
@@ -36,7 +36,7 @@ function starPath(ctx: CanvasRenderingContext2D, x: number, y: number, outer: nu
   ctx.closePath();
 }
 
-export default function Minimap({ client, islands, viewRect }: { client: GameClient; islands: { x: number; z: number; radius: number }[]; viewRect?: () => ViewRect | null }) {
+export default function Minimap({ client, islands, viewRect }: { client: GameClient; islands: { id: string; x: number; z: number; radius: number }[]; viewRect?: () => ViewRect | null }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const coordsRef = useRef<HTMLDivElement>(null);
   const haloRef = useRef<SVGSVGElement>(null);
@@ -65,12 +65,15 @@ export default function Minimap({ client, islands, viewRect }: { client: GameCli
       ctx.clearRect(0, 0, size, size);
       ctx.fillStyle = COLORS.ocean;
       ctx.fillRect(0, 0, size, size);
+      // Islas y, en lugar del disco del puerto, su ⚓ (D73, D87): debajo de la zona segura y de todas las entidades
       for (const isl of islands) {
+        if (isl.id === 'PORT') continue;
         ctx.beginPath();
         ctx.arc(px(isl.x), py(isl.z), Math.max(1.5 * dpr, isl.radius * s), 0, Math.PI * 2);
         ctx.fillStyle = COLORS.sand;
         ctx.fill();
       }
+      drawPortAnchor(ctx, px(PORT_POSITION.x), py(PORT_POSITION.z), dpr, COLORS.sand);
       ctx.beginPath();
       ctx.setLineDash([3 * dpr, 3 * dpr]);
       ctx.arc(px(PORT_POSITION.x), py(PORT_POSITION.z), SAFE_ZONE_RADIUS * s, 0, Math.PI * 2);

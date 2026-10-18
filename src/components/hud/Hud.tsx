@@ -543,7 +543,7 @@ function Compass16() {
 
 // ---------- Raíz ----------
 
-export default function Hud({ client, actions, islands, viewRect }: { client: GameClient; actions: HudActions; islands: { x: number; z: number; radius: number }[]; viewRect?: () => ViewRect | null }) {
+export default function Hud({ client, actions, islands, viewRect }: { client: GameClient; actions: HudActions; islands: { id: string; x: number; z: number; radius: number }[]; viewRect?: () => ViewRect | null }) {
   const dead = useHud((s) => s.me?.state !== undefined && s.me.state !== 'alive');
   const shopOpen = useHud((s) => s.shopOpen);
   return (
