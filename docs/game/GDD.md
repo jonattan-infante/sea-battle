@@ -217,6 +217,8 @@ Jonattan pidió cambios a las láminas de islas y puerto (D67 y D68; cita en BAC
 - **A no llega a la referencia por construcción:** con 3 m de banda, la isla sigue siendo redonda.
 - **B cabe en el coste:** el grafo de rutas admite varios círculos por isla sin cambios. Con 41 círculos, AC-22 da 0,25 ms de p99, frente al límite de 2 ms, y preparar los 9 grafos al arrancar suma unos 0,1 s. dev-npc estima su trabajo en un 30–40 % más sobre el puesto 5 (ESTIMACIÓN).
 - **Lo que hay que arreglar, se elija lo que se elija:** el punto navegable más cercano (`nearestNavigable`) falla ya hoy en los escollos con los márgenes de la Fragata y el Navío. Se corrige en el puesto 5 (BACKLOG AC-171).
+- **El riesgo que queda sin medir es el agua.** Su sombreado admite 16 círculos (`src/client/models/ocean-material.ts:8`), y con B el mapa tiene de 41 a 60. El piloto lo mide con todos los círculos (BACKLOG AC-198 e). Si no cabe en AC-90, las salidas, en este orden, son: otra forma de pasarle las islas al agua; menos círculos; y la opción A.
+- **El cliente dibuja lo que simula el servidor:** las mismas formas, y el marcador de destino en el frame del clic, en el punto al que irá el barco (BACKLOG AC-199 e).
 
 **Reglas de las formas con B:**
 - **La tabla de círculos** (centro y radio de cada uno) la define `game-ux` como parte de su diseño. Producto la copia aquí, en la tabla de islas, cuando Jonattan apruebe la lámina, para que AC-04 siga comparando las constantes con este documento. El centro de cada isla de la tabla de arriba no se mueve.

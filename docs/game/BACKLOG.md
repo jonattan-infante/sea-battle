@@ -1384,7 +1384,15 @@ Si A tumba el proceso o pierde progreso, el fallo es P0, y con la 1.0 ya en prod
   - (a) las dos cumplen AC-199;
   - (b) con la vista peor extrapolada del piloto, se cumplen los presupuestos de AC-200;
   - (c) ux y dev-render miden la descarga del piloto y la extrapolan al mapa entero, y producto fija el presupuesto con esa cifra, junto con el de AC-193 (c);
-  - (d) Jonattan da su visto bueno a las láminas nuevas de islas y de puerto (AC-192).
+  - (d) Jonattan da su visto bueno a las láminas nuevas de islas y de puerto (AC-192);
+  - (e) **el sombreado del agua con todos los círculos del mapa, no solo con los del piloto.** Es el mayor riesgo técnico de B, y no está medido (detectado por dev-npc; dato del lead). Hoy admite 16 (`MAX_ISLANDS = 16`, `src/client/models/ocean-material.ts:8`), y con B el mapa tiene de 41 a 60. Su coste es por píxel de agua y recorre todos los círculos, estén o no en pantalla: por eso no basta con una isla. dev-render lo mide con la tabla de ux o, si aún no está, con las formas sintéticas de dev-npc (41 y 61 círculos), y AC-90 tiene que seguir en verde (AC-200 c).
+
+    **Si no cabe**, el orden de salidas está decidido antes de medir:
+    1. otra forma de pasar las islas al agua, por ejemplo una textura con la distancia a la costa en lugar de una lista de círculos, con AC-90 en verde. Elige dev-render;
+    2. si tampoco cabe, menos círculos: ux redibuja con menos lóbulos hasta el número que quepa;
+    3. si ni así cabe, la opción A, círculos con costa fina (GDD §4).
+
+    AC-90 no se afloja en ningún caso.
 
   **Qué pasa según el resultado** (decidido por producto el 2026-10-18, antes de tener ningún dato):
   - Si pasa, el arte nuevo entra en la 1.1 como P0, con AC-174, AC-175, AC-178, AC-199 y AC-200.
@@ -1396,7 +1404,10 @@ Si A tumba el proceso o pierde progreso, el fallo es P0, y con la 1.0 ya en prod
   - (a) **la tierra visible queda dentro de la colisión**, y cada punto de la costa visible está entre 0 y 3 m por dentro del borde de colisión. Ningún decorado con y > 0 sale más de 0,5 m del borde (AC-103 y AC-174). En los escollos sigue su regla, [0,94 r, r];
   - (b) **la disposición sigue las reglas de GDD §4**, y AC-170 se vuelve a correr con las formas nuevas: ≥ 46 m entre los bordes de islas distintas (con B, entre cualquier círculo de una isla y cualquiera de otra), salvo entre los escollos; nada toca la zona segura salvo el puerto; y se respetan el arco de la guarida y el anillo de la cañonera con sus márgenes;
   - (c) **la navegación sigue en verde**, con las formas nuevas: AC-171 (AC-20, AC-21, AC-22 con el p99 ≤ 2 ms y AC-03), AC-172, AC-173, AC-176 y AC-177;
-  - (d) **el puerto conserva su círculo de 30 m y sus 12 amarres**, y todo su contorno sigue siendo salida. Si ux necesita más radio, lo pide con datos (GDD §4).
+  - (d) **el puerto conserva su círculo de 30 m y sus 12 amarres**, y todo su contorno sigue siendo salida. Si ux necesita más radio, lo pide con datos (GDD §4);
+  - (e) **el cliente dibuja lo que simula el servidor** (añadido el 2026-10-18, por dos notas de dev-npc que tiene dev-render):
+    - las formas que pinta el cliente salen de los mismos datos que la colisión del servidor, no de una copia. Hoy el cliente pinta las islas con `ISLANDS` de la 1.0 (`src/client/runtime.ts:708`, `:743`, `:748` y `:899`), y `Welcome.islands` solo trae círculos sueltos. Cómo llegan, un id de mapa o las formas en la bienvenida, lo decide dev; lo que se comprueba es que el cliente y el servidor tienen los mismos círculos;
+    - **el marcador de destino aparece en el mismo frame del clic, en el punto al que el barco irá de verdad**: a ≤ 0,5 m del destino que fija el servidor (GDD §5, «Navegar»; GDD §6, punto 1b; AC-172). Preparar lo que haga falta, como el grafo de rutas, que cuesta de 4 a 18 ms una vez, no puede costar un frame durante el juego: se hace al cargar. Por eso producto prefiere que el cliente calcule la ruta con el mismo código que el servidor, y no que espere a que el servidor le mande el destino, que llegaría un viaje de red tarde. Lo cierran producto y dev-render cuando el mapa llegue al cliente.
 
   **Cómo se eligió la opción** (criterio fijado por producto el 2026-10-18 antes de los datos: la más barata que cumpla (a)–(d) y dé el aspecto de la lámina que apruebe Jonattan). **Elegida B, uniones de círculos, el mismo día**, con la medida de dev-npc sobre el `Navigator` real (`src/game/nav.ts` sin cambios, en `871b998`; log y script en `scratchpad/dev-npc-ac199/`):
 
@@ -1414,7 +1425,7 @@ Si A tumba el proceso o pierde progreso, el fallo es P0, y con la 1.0 ya en prod
   - **Las islas de la 1.0 que cambian de forma** (pregunta de dev-npc) siguen exentas en lo que ocupaba su círculo de la 1.0. Lo que crezca fuera cuenta como forma nueva en AC-170: el arco de la guarida con 17 m de margen y el anillo de la cañonera con 16 m. Un lóbulo de I3 o de I4 no crece más de 16 m hacia su punto de guarida, para que siga navegable para el Navío (GDD §4).
   - **El puerto no es una unión:** sigue siendo el círculo de 30 m, y AC-176 no cambia.
 
-  Verificación: unitario (el contorno visible frente al de colisión, como AS-V16 y AC-103) + AC-170 a AC-177 con las formas nuevas.
+  Verificación: unitario (el contorno visible frente al de colisión, como AS-V16 y AC-103) + AC-170 a AC-177 con las formas nuevas + Jest+socket para (e): los círculos que recibe el cliente son los del servidor + e2e para (e): con un clic dentro de una isla y otro dentro del recinto de E1 con el Navío, el marcador sale en el frame del clic y a ≤ 0,5 m del destino que fija el servidor.
 - **AC-200 — Presupuestos del escenario nuevo** — Dada la vista peor (la de más superficie de isla a 1,5× en 1440×900, con el puerto si cabe) y la escena estándar de AC-89 con el peor caso de los barcos de E17 (AC-197), cuando se lee `renderer.info` y se mide AC-90, entonces:
   - (a) el total sigue en ≤ 250 000 triángulos y ≤ 100 draw calls (AC-89), y AC-90 sigue en verde;
   - (b) el escenario (islas, puerto y vegetación) queda en ≤ 60 000 triángulos y ≤ 10 draw calls. Es un techo provisional, que producto fija con la medida del piloto (GDD §16);
