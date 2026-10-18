@@ -208,12 +208,13 @@ Un puerto de verdad, no una isla con un pueblo: **muelles, amarres donde se apar
 | Ciclar objetivo | `Tab` / `Shift+Tab` | Recorre los barcos atacables a ≤150 m, del más cercano al más lejano |
 | Atacar / cancelar | `Espacio` o botón **Atacar** | Alterna (*toggle*) sobre el objetivo seleccionado (§7) |
 | Seleccionar + atacar (P1) | Doble clic sobre un barco atacable | Atajo |
-| Cancelar / deseleccionar | `Esc` | La 1.ª pulsación cancela el ataque; la 2.ª deselecciona |
+| Cancelar / deseleccionar | `Esc` | La 1.ª pulsación cancela el ataque; la 2.ª deselecciona. Con la tienda o la pantalla de niveles abierta, la 1.ª la cierra |
 | Zarpar (hundido) | `Espacio` / `Enter` o botón **Zarpar** | Solo cuando la cuenta atrás ha terminado; antes no hacen nada |
 | Detener | `S` | Borra el destino; el barco frena |
 | Reparar | `R` o botón **Reparar** | Alterna (§8) |
 | Zoom | Rueda del ratón | 3 niveles de **extensión visible**: 0,7× (más cerca), 1,0× (por defecto) y 1,5× (más lejos) |
 | Puerto | `P` o botón **Puerto** | Solo dentro de la zona segura |
+| Niveles e insignias (1.1) | `N` o clic en el panel del jugador | Abre y cierra la pantalla de niveles (§14), en cualquier momento. No pausa el juego ni genera tráfico de red (BACKLOG AC-190) |
 | Mover la vista (I2) | Arrastrar en el agua (> 12 px), clic o arrastre en el minimapa, flechas | Entra en vista libre. Un clic sin arrastre sigue navegando |
 | Centrar en mi barco (I2) | `C` o botón **Centrar** | Vuelve al seguimiento |
 
@@ -227,6 +228,7 @@ Un puerto de verdad, no una isla con un pueblo: **muelles, amarres donde se apar
 | Reparar | Botón **Reparar** (≥48×48 px) | Alterna |
 | Zoom (P1) | Pellizco | Mismos 3 niveles |
 | Puerto | Botón **Puerto** | Solo en la zona segura |
+| Niveles e insignias (1.1) | Toque en el panel del jugador | Igual que en escritorio. Se cierra con el botón de cerrar (≥48×48 px) |
 | Mover la vista (I2) | Arrastrar **un** dedo en el agua (> 12 px CSS), o tocar o arrastrar en el minimapa | Un toque sin arrastre sigue navegando; con dos dedos es zoom, nunca desplazamiento |
 | Centrar (I2) | Botón **Centrar** | Vuelve al seguimiento |
 
@@ -484,7 +486,7 @@ El tesoro que cruza el mar de los mercantes: rico, lento, pasivo y defendido. Es
 
 ## 10b. Experiencia, niveles e insignias (1.1)
 
-**Una sola barra de experiencia (XP).** Hundir un NPC da XP según su vida y su peligro. Hundir a un jugador da 100, más que cualquier NPC común, con reglas que quitan el premio de cazar novatos y de intercambiar hundimientos. La XP nunca se pierde. Hay 20 niveles en 5 insignias: Marinero hacia el Bergantín (~17 min), Contramaestre hacia «todo comprado» (~45 min), Almirante hacia las 4 h y el nivel 20 hacia las 6–7 h, solo contra NPC (estimación; la mide BACKLOG AC-158). Se guarda con el resto del progreso (§13); el invitado no guarda nada. Seafight separa la experiencia del PvE y un rango PvP aparte: aquí se unen porque lo pidió Jonattan y porque una barra se lee de un vistazo (REFERENCE §16 y §19).
+**Una sola barra de experiencia (XP).** Hundir un NPC da XP según su vida y su peligro. Hundir a un jugador da 100, más que cualquier NPC común, con reglas que quitan el premio de cazar novatos y de intercambiar hundimientos. La XP nunca se pierde. Hay 20 niveles en 5 insignias: Marinero hacia el Bergantín (~17 min), Contramaestre hacia «todo comprado» (~45 min), Almirante hacia las 4 h y el nivel 20 hacia las 6–7 h, solo contra NPC (estimación; la mide BACKLOG AC-158). Se guarda con el resto del progreso (§13); el invitado no guarda nada. Los niveles, las insignias y lo que falta se consultan en la pantalla de niveles (§14). Seafight separa la experiencia del PvE y un rango PvP aparte: aquí se unen porque lo pidió Jonattan y porque una barra se lee de un vistazo (REFERENCE §16 y §19).
 
 ### Reglas
 | Regla | Valor |
@@ -685,6 +687,7 @@ El layout, la paleta y la forma los define `game-ux`. Aquí solo se fija qué de
 | Nivel, insignia y XP propios (1.1) | Insignia, nivel y cuánto falta para el siguiente (barra de XP); «Nivel máximo» en el 20 | Al cambiar |
 | XP ganada (1.1) | «+N XP» con la parte propia del reparto, junto al «+N oro». En el feed de escritorio, una línea por hundimiento; en móvil, en el aviso. **Cada tramo sale solo si es > 0**: con 0 XP no sale ni el «+N XP» flotante ni el tramo «· +0 XP». Las líneas (decidido por producto el 2026-10-17, a pregunta de dev-render): (a) NPC, quien lo hunde: «Hundiste a Pirata +105 oro · +30 XP». (b) NPC, quien ayudó: «Botín +5 oro · +3 XP», y en el mercante, «Botín +5 oro» (AC-145). (c) Jugador, quien da el último golpe, que se lleva el oro de la penalización y su parte de la XP: «Hundiste a Barbarroja +50 oro · +100 XP». Si la víctima no tenía oro, «Hundiste a Barbarroja +100 XP», y sin oro ni XP, «Hundiste a Barbarroja»: es la única línea sin tramos, porque hundir a un jugador siempre se cuenta. (d) Jugador, quien ayudó, que cobra XP sin oro (fila «Oro en PvP»): «Ayudaste en un hundimiento +40 XP», sin nombre, porque quien ayudó puede estar ya fuera del área y no conocer el barco. Con 0 XP no tiene línea. La (c) sustituye a «Botín de combate +50 oro» de la 1.0 (`src/components/GameApp.tsx:151` en `v1.0.2`): nombrar al hundido es lo más importante de un hundimiento PvP, y es la misma forma que con un NPC. Si una línea no cabe con un nombre de 16 caracteres, se recorta el nombre y nunca las cifras | Al cambiar |
 | Subida de nivel (1.1) | Aviso «¡Nivel N!» y, si cambia de insignia, «Ahora eres <insignia>». Con varios niveles de golpe (el Capitán), un solo aviso con el nivel final. No es un modal: no interrumpe el combate | Al cambiar |
+| Pantalla de niveles e insignias (1.1) | Pedida por Jonattan el 2026-10-18 (BACKLOG AC-190). Se abre desde el panel del jugador o con `N` (§5). Muestra la insignia, el nivel y la XP total propios, y lo que falta para el siguiente nivel y para la siguiente insignia («Faltan 460 XP para el nivel 8», «Faltan 1160 XP para Contramaestre (nivel 9)»); los 20 niveles con su XP total y su insignia, y lo que desbloquean el 5 y el 9; y las 5 insignias dibujadas, más grandes que en el panel, con su nombre y sus niveles. Comunica «dónde estoy, cuánto me falta y qué me espera». Las cifras salen de la tabla de §10b, no de una copia. No pausa el juego ni usa la red | Al abrirla y al cambiar la XP |
 | Panel de objetivo | Nombre, tipo (hostil / pasivo / jugador), vida, distancia, "En alcance" o "Fuera de alcance". **1.1, si es un jugador** (decidido por producto el 2026-10-17, a pregunta de dev-render): la línea de tipo dice clase, nivel e insignia, «Balandra · Nivel 13 · Teniente», con la insignia delante. La clase va en su forma corta: «Navío» para el Navío de línea. Sale la palabra «jugador», porque la insignia ya lo marca (los NPC no llevan), y sale «PvP». Si no se le puede atacar (protegido o en la zona segura), la fila de la distancia dice «✕ No atacable» en lugar de «En alcance» o «Fuera de alcance», que con él no significan nada. Así se conservan las dos cosas que daba la 1.0 («Balandra · jugador · PvP» o «… · no atacable»): la clase, que dice lo fuerte que es, y si se le puede atacar. **1.1, si es un NPC: marca de peligro** (I2; decidido por producto el 2026-10-17; BACKLOG AC-189). Sale cuando hundirlo en solitario costaría más de la mitad de la vida máxima propia, calculado con las tablas: DPS del NPC × (su vida / DPS propio) / vida máxima propia. Comunica «este barco es demasiado fuerte para ti ahora». Por ejemplo, con la Balandra N1 sale con la cañonera (71 %) y con el Capitán, y no con el pirata (31 %). Se apaga con Cañones N2 (46 %). La forma es de game-ux | ≤ 10 Hz |
 | Recarga | Progreso de la recarga **junto al barco propio** (como en Seafight, REFERENCE §3) | Fuera de React |
 | Estado de acción | Inactivo / Armado / Disparando / Reparando | Al cambiar |
@@ -715,6 +718,8 @@ El layout, la paleta y la forma los define `game-ux`. Aquí solo se fija qué de
                                   │
                                   ▼
             ┌──────────────► Juego ◄────────► Puerto (panel; solo en zona segura)
+            │                  │
+            │                  ├──► Niveles e insignias (panel, 1.1; en cualquier momento, sin pausar)
             │                  │
             │                  ├──► Hundido (overlay, 8 s) ──► Zarpar ──► Juego
             │                  │
