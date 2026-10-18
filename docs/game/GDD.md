@@ -392,7 +392,7 @@ Aceleración y frenado: Pirata 3 / 5 m/s², Mercante 2,5 / 4 m/s², Cañonera 2,
 
 ### IA de la cañonera pirata (I2)
 Comportamiento propio: **mantiene la distancia**. Su alcance (65 m) supera al cañón N1 del jugador (60 m), así que obliga a perseguirla o a mejorar los cañones.
-- **Patrulla, represalia, regreso, correa (200 m) y zona prohibida del puerto (130 m):** igual que el pirata.
+- **Patrulla, represalia, regreso, correa (200 m) y zona prohibida del puerto (130 m):** igual que el pirata. También **pierde al objetivo a > 110 m**, patrulla a ≤ 120 m de su origen con esperas de 2–5 s y da por llegado el regreso a ≤ 10 m, como el pirata y el Capitán (confirmado por producto el 2026-10-17, a pregunta de dev-npc). Con detección a ≤ 80 m, quedan 30 m de margen antes de soltar al objetivo. Lo que esta sección no fije para la cañonera es lo del pirata.
 - **Combate** (detecta a ≤ 80 m):
   - si la distancia al objetivo es > 64 m, se acerca a velocidad máxima;
   - entre 55 y 64 m, orbita a **62 m** a 6 m/s;
