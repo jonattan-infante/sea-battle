@@ -16,12 +16,13 @@ import {
   TAB_TARGET_RADIUS,
   TICK_RATE
 } from '../../src/game/constants';
-import { addPlayer, attack, createWorld, drainEvents, setRepair, shipOfPlayer, step } from '../../src/game/world';
+import { addPlayer, attack, buy, createWorld, drainEvents, setRepair, shipOfPlayer, step } from '../../src/game/world';
 import {
   AMBUSH_POINT,
   applyScenario,
   CAPTAIN_BAIT_POINT,
   CAPTAIN_DOWN_POINT,
+  DANGER,
   BLIND_GUNNER_POINT,
   ENDURANCE_MERCHANT_RADIUS,
   ENDURANCE_MERCHANTS,
@@ -211,6 +212,58 @@ describe('escenario "legibility-i2" (AC-115), con el I2 encendido', () => {
   });
 });
 
+// AC-189: el e2e de la marca de peligro. Con la Balandra N1 sale con la cañonera y no con el pirata; al comprar Cañones N2
+// en el puerto desaparece. La forma y su e2e son de game-ux y dev-render; aquí, lo que es del mundo
+describe('escenario "danger" (AC-189), con el I2 encendido', () => {
+  const world = createWorld({ seed: 1, spawnNpcs: false, i2: true });
+  applyScenario(world, 'danger');
+  const npcs = [...world.ships.values()];
+  const at = (p: { x: number; z: number }) => npcs.filter((s) => Math.hypot(s.pos.x - p.x, s.pos.z - p.z) < 0.01);
+
+  test('una cañonera y un pirata quietos y sin IA en sus puestos, y nada más', () => {
+    expect(npcs).toHaveLength(2);
+    expect(at(DANGER.gunboat).map((s) => [s.classId, s.ai, s.holdPosition])).toEqual([[GUNBOAT_CLASS, null, true]]);
+    expect(at(DANGER.pirate).map((s) => [s.classId, s.ai, s.holdPosition])).toEqual([['pirate', null, true]]);
+  });
+
+  test('los dos, fuera de la exclusión del puerto y a tiro del cañón N1 desde el borde de la zona segura', () => {
+    for (const p of [DANGER.gunboat, DANGER.pirate]) {
+      const r = Math.hypot(p.x, p.z);
+      expect(r).toBeGreaterThan(PIRATE_PORT_EXCLUSION);
+      expect(r - SAFE_ZONE_RADIUS).toBeLessThanOrEqual(CANNON_LEVELS[0].range);
+    }
+  });
+
+  test('cada jugador entra con el oro justo de los Cañones N2 y los compra en el puerto', () => {
+    const w = createWorld({ seed: 1, spawnNpcs: false, i2: true });
+    applyScenario(w, 'danger');
+    const p = addPlayer(w, 'u1', 'Ana');
+    expect([p.gold, p.activeShip, p.upgrades.cannons]).toEqual([CANNON_LEVELS[1].price, 'sloop', 1]);
+    shipOfPlayer(w, 'u1')!.pos = { x: 0, z: 60 };
+    expect(buy(w, 'u1', { kind: 'upgrade', upgrade: 'cannons', level: 2 }).ok).toBe(true);
+    expect([p.gold, p.upgrades.cannons]).toEqual([0, 2]);
+  });
+
+  test('con un jugador sin protección en el borde de la zona segura, frente a los dos, nadie se mueve ni dispara en 30 s', () => {
+    const w = createWorld({ seed: 2, spawnNpcs: false, i2: true });
+    applyScenario(w, 'danger');
+    addPlayer(w, 'u1', 'Ana');
+    const ship = shipOfPlayer(w, 'u1')!;
+    const before = [...w.ships.values()].filter((s) => s.kind !== 'player').map((s) => ({ ...s.pos, h: s.heading }));
+    const volleys: string[] = [];
+    for (let i = 0; i < 30 * TICK_RATE; i++) {
+      ship.pos = { x: 0, z: SAFE_ZONE_RADIUS + 5 };
+      ship.speed = 0;
+      ship.destination = null;
+      ship.protectedUntil = 0;
+      step(w, 1 / TICK_RATE);
+      for (const e of drainEvents(w)) if (e.type === 'volley') volleys.push(e.shipId);
+    }
+    expect([...w.ships.values()].filter((s) => s.kind !== 'player').map((s) => ({ ...s.pos, h: s.heading }))).toEqual(before);
+    expect(volleys).toEqual([]);
+  });
+});
+
 describe('escenario "shipyard" (AC-70)', () => {
   test('cada jugador entra con el precio del Bergantín; sin escenario, con el oro inicial del GDD', () => {
     const rich = createWorld({ seed: 1, spawnNpcs: false });
@@ -229,6 +282,7 @@ describe('escenario "shipyard" (AC-70)', () => {
     expect(parseScenario('captain')).toBe('captain');
     expect(parseScenario('captain-down')).toBe('captain-down');
     expect(parseScenario('legibility-i2')).toBe('legibility-i2');
+    expect(parseScenario('danger')).toBe('danger');
     expect(parseScenario('rich')).toBeNull();
     expect(parseScenario(undefined)).toBeNull();
   });

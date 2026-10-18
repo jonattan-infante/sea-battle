@@ -142,13 +142,14 @@ describe('arranque con SEA_BATTLE_I2 (server/bootstrap.ts)', () => {
     expect(seen && { c: seen.c, k: seen.k, n: seen.n }).toEqual({ c: GUNBOAT_CLASS, k: 'pirate', n: 'Cañonera pirata' });
   });
 
-  test.each(['captain', 'captain-down', 'legibility-i2'])('el escenario "%s" no arranca con el I2 apagado, y con él encendido sí', async (scenario) => {
+  test.each(['captain', 'captain-down', 'legibility-i2', 'danger'])('el escenario "%s" no arranca con el I2 apagado, y con él encendido sí', async (scenario) => {
     const server = ioOnly();
     await expect(startGame(server, { SEA_BATTLE_NPCS: '0', AUTH_BYPASS: '1', SEA_BATTLE_SCENARIO: scenario })).rejects.toThrow(/necesita el I2 encendido \(SEA_BATTLE_I2=1/);
     const { game: g } = await startGame(server, { SEA_BATTLE_NPCS: '0', AUTH_BYPASS: '1', SEA_BATTLE_SCENARIO: scenario, SEA_BATTLE_I2: '1' });
     expect(g.world.i2).toBe(true);
     if (scenario === 'captain-down') expect([...g.world.ships.values()].map((s) => s.classId)).toEqual([CAPTAIN_CLASS]);
     if (scenario === 'legibility-i2') expect([...g.world.ships.values()].map((s) => s.classId).sort()).toEqual([CAPTAIN_CLASS, GUNBOAT_CLASS, 'merchant', 'pirate']);
+    if (scenario === 'danger') expect([...g.world.ships.values()].map((s) => s.classId).sort()).toEqual([GUNBOAT_CLASS, 'pirate']);
     g.stop();
     server.close();
   });

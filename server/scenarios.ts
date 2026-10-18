@@ -66,6 +66,15 @@ export const LEGIBILITY_I2 = {
   ]
 } as const;
 
+// Marca de peligro (AC-189, D77): una cañonera y un pirata quietos y sin IA, a tiro del cañón N1 desde el borde de la zona
+// segura y en torno al cebo del Capitán, fuera de la exclusión del puerto. Cada jugador entra con el oro justo de los
+// Cañones N2: con la Balandra N1, la cañonera sale marcada y el pirata no; al comprarlos en el puerto, la marca se apaga.
+// Sin IA, para que el e2e no dependa de cuándo entran en combate. Exige el I2 encendido: sin él no hay cañonera (AC-187)
+export const DANGER = {
+  gunboat: { x: -30, z: 145 },
+  pirate: { x: 30, z: 145 }
+} as const;
+
 // Reparar y atacar cruzados (AC-128, e2e/input-toggle.spec.ts): el abanico de "targets" y el jugador entra con el casco
 // al 10 %. Sin nadie que dispare, reparar cura 32 de vida/s (GDD §8): con 80 de vida quedan ~20 s de reparación antes
 // de pasar del 90 % que pide el criterio
@@ -78,10 +87,10 @@ export const REPAIR_START_HULL = 0.1;
 export const CAPTAIN_BAIT_POINT = { x: 0, z: 150 };
 export const CAPTAIN_DOWN_POINT = { x: 0, z: -160 };
 
-export const SCENARIOS = ['showcase', 'shipyard', 'targets', 'endurance', 'repair', 'legibility', 'captain', 'captain-down', 'legibility-i2'] as const;
+export const SCENARIOS = ['showcase', 'shipyard', 'targets', 'endurance', 'repair', 'legibility', 'captain', 'captain-down', 'legibility-i2', 'danger'] as const;
 export type ScenarioName = (typeof SCENARIOS)[number];
 // Escenarios con NPC del I2: con el I2 apagado no existen (AC-187), así que exigen SEA_BATTLE_I2=1
-export const I2_SCENARIOS: readonly ScenarioName[] = ['captain', 'captain-down', 'legibility-i2'];
+export const I2_SCENARIOS: readonly ScenarioName[] = ['captain', 'captain-down', 'legibility-i2', 'danger'];
 
 export function parseScenario(value: string | undefined): ScenarioName | null {
   return (SCENARIOS as readonly string[]).includes(value ?? '') ? (value as ScenarioName) : null;
@@ -140,6 +149,18 @@ export function applyScenario(world: World, name: ScenarioName): void {
       ship.heading = (p.headingDeg * Math.PI) / 180;
       ship.ai = null;
       if (ship.kind === 'pirate') ship.holdPosition = true; // DT-04: los hostiles de los escenarios no patrullan
+      ship.destination = null;
+      ship.path = [];
+    }
+    return;
+  }
+  if (name === 'danger') {
+    world.startingGold = CANNON_LEVELS[1].price;
+    for (const [ship, at] of [[spawnGunboat(world, 2)!, DANGER.gunboat], [spawnPirate(world, 3), DANGER.pirate]] as const) {
+      ship.pos = { ...at };
+      ship.heading = Math.PI; // la proa hacia el puerto
+      ship.ai = null;
+      ship.holdPosition = true; // DT-04
       ship.destination = null;
       ship.path = [];
     }
