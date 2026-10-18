@@ -11,6 +11,7 @@ export interface GameChild {
   url: string;
   output: () => string;
   addGold: (userId: string, amount: number) => Promise<boolean>;
+  addXp: (userId: string, amount: number) => Promise<boolean>;
   kill: (signal: 'SIGKILL' | 'SIGTERM') => Promise<{ code: number | null; signal: string | null }>;
 }
 
@@ -58,20 +59,22 @@ export async function startGameChild(env: Record<string, string>): Promise<GameC
   });
 
   let nextId = 1;
+  const send = (type: 'addGold' | 'addXp', userId: string, amount: number) =>
+    new Promise<boolean>((resolve) => {
+      const id = nextId++;
+      const onMessage = (msg: { id: number; ok: boolean }) => {
+        if (msg.id !== id) return;
+        child.off('message', onMessage);
+        resolve(msg.ok);
+      };
+      child.on('message', onMessage);
+      child.send({ id, type, userId, amount });
+    });
   return {
     url: `http://127.0.0.1:${port}`,
     output: () => out,
-    addGold: (userId, amount) =>
-      new Promise((resolve) => {
-        const id = nextId++;
-        const onMessage = (msg: { id: number; ok: boolean }) => {
-          if (msg.id !== id) return;
-          child.off('message', onMessage);
-          resolve(msg.ok);
-        };
-        child.on('message', onMessage);
-        child.send({ id, type: 'addGold', userId, amount });
-      }),
+    addGold: (userId, amount) => send('addGold', userId, amount),
+    addXp: (userId, amount) => send('addXp', userId, amount),
     kill: async (signal) => {
       if (child.exitCode === null && child.signalCode === null) child.kill(signal);
       return exited;
