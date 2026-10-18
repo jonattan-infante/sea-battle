@@ -44,6 +44,20 @@ LAIR_PTS = [(sx * LAIR_R * math.cos(math.radians(t)), sz * LAIR_R * math.sin(mat
 LAIR_DIAG = {'NE': (311.13, -311.13), 'NO': (-311.13, -311.13)}
 
 
+def arc_blocked(old=False):
+    """Puntos del arco de la guarida que el Capitán no puede pisar: a menos de su margen (17 m) de la unión de alguna isla,
+    con su distancia al borde. Con old=True, sobre los círculos de la 1.0 (las islas nuevas no existían). Para AC-170."""
+    names = {(1, -1): 'NE', (-1, -1): 'NO', (-1, 1): 'SO', (1, 1): 'SE'}
+    out = []
+    for (sx, sz), sec in names.items():
+        for t in [7.5 + 2.5 * k for k in range(31)]:
+            p = (sx * LAIR_R * math.cos(math.radians(t)), sz * LAIR_R * math.sin(math.radians(t)))
+            circles = [(iid, v[3]) for iid, v in ISLAS.items() if v[3]] if old else [(iid, c) for iid, v in ISLAS.items() for c in v[4]]
+            g, iid = min((math.hypot(p[0] - c[0], p[1] - c[1]) - c[2], iid) for iid, c in circles)
+            if g < LAIR_M: out.append({'sector': sec, 'grados': t, 'punto': [round(p[0], 2), round(p[1], 2)], 'isla': iid, 'distancia': round(g, 2)})
+    return out
+
+
 def new_boundary(iid, c, n=720):
     """Puntos del borde del círculo c que quedan fuera del círculo de la 1.0 de su isla (lo que cuenta como forma nueva)."""
     old = ISLAS[iid][3]
@@ -96,6 +110,9 @@ def check():
         L = LAIR_DIAG[key]; g = min(math.hypot(c[0] - L[0], c[1] - L[1]) - c[2] for c in ISLAS[iid][4])
         out['minimos'][f'guarida_{iid}'] = round(g, 1)
         if g < today - 16: out['fallos'].append(f'guarida {iid}: {g:.1f} < {today - 16:.1f}')
+    # (5b) puntos del arco no navegables para el Capitán (AC-170: debe quedar solo NO 7,5°), con la 1.0 al lado
+    out['arco_no_navegable_capitan'] = arc_blocked()
+    out['arco_no_navegable_capitan_1_0'] = arc_blocked(old=True)
     # (6) dentro del mapa navegable (±490)
     for iid in ids:
         for c in ISLAS[iid][4]:
