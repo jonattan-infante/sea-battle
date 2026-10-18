@@ -188,6 +188,7 @@ describe('AC-193 c: el procedural mientras carga, el propio primero y de uno en 
     const classOf = (url: string) => Object.entries(manifest).find(([, u]) => u === url)![0];
     for (let i = 0; i < 3; i++) {
       store.pump(gl);
+      expect(calls).toHaveLength(i + 1); // una descarga más por pump: si falta, falla aquí y no al resolver
       calls[i].resolve(await glb(classOf(calls[i].url)));
       await settle();
     }
@@ -400,13 +401,15 @@ describe('§6: la textura del GLB en el material del barco', () => {
     const b = new THREE.Texture();
     const version = () => material.version;
     const v0 = version();
+    // Se compara la identidad del mapa, no la textura: el diff de Jest de una THREE.Texture falla en Node (VideoFrame)
+    const state = () => [material.map === a ? 'a' : material.map === b ? 'b' : material.map, version() - v0];
     setShipMap(material, a);
-    expect([material.map, version()]).toEqual([a, v0 + 1]);
+    expect(state()).toEqual(['a', 1]);
     setShipMap(material, b);
-    expect([material.map, version()]).toEqual([b, v0 + 1]);
+    expect(state()).toEqual(['b', 1]);
     setShipMap(material, b);
     setShipMap(material, null);
-    expect([material.map, version()]).toEqual([null, v0 + 2]);
+    expect(state()).toEqual([null, 2]);
   });
 
   test('el modelo del GLB lleva la textura de LOD0, la misma en los dos LOD', () => {
