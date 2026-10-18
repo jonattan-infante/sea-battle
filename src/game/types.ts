@@ -137,6 +137,7 @@ export interface World {
   xpPairs: Map<string, Map<string, XpPair>>; // atacante → víctima (ids de jugador): ventana de repetición (§10b)
   pvpLog: PvpSinkRecord[]; // hundimientos entre jugadores para el log del servidor (AC-148); lo vacía el servidor
   startingGold?: number; // solo escenarios de prueba (server/scenarios.ts); por defecto STARTING_GOLD
+  startingXp?: number; // solo escenarios de prueba (server/scenarios.ts); por defecto 0. La XP de la fila gana
   startingHull?: number; // solo escenarios de prueba: fracción de la vida máxima con la que entra un jugador; por defecto 1
 }
 
