@@ -21,8 +21,9 @@ game-product (GDD + criterios AC-xx) ──► game-ux (imágenes + specs) ─�
 ```
 
 - **Todo diseño de `game-ux` sale con al menos una imagen** (PNG en `docs/game/art/`, citada desde su spec): `game-developer` implementa contra la imagen y los números, y `game-qa` compara su captura con ella. Un diseño sin imagen no está listo para desarrollo (Jonattan, 2026-10-18).
+- **Jonattan aprueba siempre cada diseño antes de construirlo** («A partir de ahora siempre debe aprobar los diseños», 2026-10-18). Lo aprueba en la página «Diseños de Sea Battle» (https://claude.ai/artifact/Bq7w2iRU2AxB19NwwHqiuh), que guarda su decisión con la huella sha256 de la lámina; el lead la lee de allí y producto la anota en el registro de AC-192. Si la lámina cambia, vuelve a pedirse. Ni `game-product` ni `game-ux` aprueban una lámina en su lugar.
 - Un ítem del backlog está **hecho** solo cuando `game-qa` lo marca APROBADO con evidencia y `game-product` lo acepta.
-- **Qué entra y qué sale lo deciden `game-product` (alcance y mecánicas) y `game-ux` (arte)**, sin esperar la aprobación de Jonattan (delegación de Jonattan del 2026-10-17). Lo único que sigue siendo suyo es el deploy a prod (ver «Deploys a producción»).
+- **Qué entra y qué sale lo deciden `game-product` (alcance y mecánicas) y `game-ux` (arte)**, sin esperar la aprobación de Jonattan (delegación de Jonattan del 2026-10-17). Siguen siendo suyos el deploy a prod (ver «Deploys a producción») y, desde el 2026-10-18, el visto bueno a cada lámina de diseño (ver arriba).
 - Cada hallazgo de QA vuelve al backlog con severidad (P0–P3) y criterio de aceptación.
 
 ## Harnesses (comandos)
