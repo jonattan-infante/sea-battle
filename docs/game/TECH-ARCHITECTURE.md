@@ -34,7 +34,8 @@ Dueño: `game-developer`. Fuentes de verdad: `GDD.md` y `BACKLOG.md` (qué se co
 - **Un mensaje por envío**: `frame` (`ServerFrame` en `src/game/types.ts`) lleva los deltas de barcos (`s`), las salidas (`r`), los eventos visibles (`e`), la vista privada si cambió (`me`) y los avisos (`n`). Así se cumple ≤ 10 mensajes/s (AC-88).
 - **Deltas**: al entrar en el área de interés (300 m) un barco se envía completo; después, solo los campos que cambiaron. Si no cambia nada, no se envía nada (AC-87).
 - **Campos sin reloj**: la protección viaja como instante de fin (`pu`) y la muerte como `respawnAt`, ambos en tiempo de servidor. Así no hay deltas solo porque pasa el tiempo.
-- **Eventos**: se filtran por distancia (300 m + 60). El botín (`loot`) solo lo recibe su dueño, y los restos van a todos.
+- **Eventos**: se filtran por distancia (300 m + 60). El botín (`loot`) y la XP (`xp`, 1.1) solo los recibe su dueño, y los restos van a todos, igual que el aviso (`captain`) y el feed (`captainDown`) del Capitán pirata.
+- **Área de interés** (`inInterest` en `server/game-server.ts`): 300 m alrededor de cada centro de una lista (hoy, el barco propio; la vista libre de E13 añade el centro de la vista sin cambiar la regla) más lo que se envía siempre: el barco propio y el Capitán pirata vivo o hundiéndose, para su marcador del minimapa (GDD §13, AC-111). Solo hay un capitán, así que suma como mucho una entidad por cliente. Medido con él (AC-88): 10,00 msg/s y 9,88 KB/s en el peor cliente.
 - **Límite de intenciones**: cubeta de 20 fichas con recarga de 10/s por socket (AC-06). `join` no gasta fichas: solo se procesa una vez.
 - **Desconexión**: el barco queda 10 s en el mundo y se puede atacar. Si el jugador reconecta, recupera el mismo barco (AC-96).
 - **Servidor lleno**: cuentan los clientes conectados más los barcos en margen de reconexión. El jugador 21 recibe `serverFull` y vuelve a la landing con `?full=1` (AC-12).
@@ -49,12 +50,12 @@ Medido (Jest + socket real, `server/__tests__/game-server.test.ts`): con 20 clie
 
 ### 2.1 Progreso guardado (AC-97, AC-129 a AC-133)
 
-Postgres de Railway (`DATABASE_URL`, GDD Q2) con `pg`, sin ORM. Se guarda el oro, las mejoras, los barcos en propiedad y el barco activo de cada usuario de Clerk; la vida y la posición no (AC-129).
+Postgres de Railway (`DATABASE_URL`, GDD Q2) con `pg`, sin ORM. Se guarda el oro, las mejoras, los barcos en propiedad, el barco activo y, desde la 1.1, la XP de cada usuario de Clerk; la vida, la posición y el nivel no (AC-129, AC-150).
 
 | Pieza | Qué hace |
 |---|---|
 | `player_progress` | `user_id` (el `sub` del JWT verificado, AC-08), `state` jsonb, `revision` (+1 en cada escritura) y `updated_at` |
-| `server/progress.ts` | Parser estricto del `state` (oro entero entre 0 y el tope, niveles 1–3, barco activo entre los que posee). Lo que no pasa no se usa ni se sobrescribe (AC-131). **Desde la 1.0.3** acepta exactamente `v: 1` y la `v: 2` de la 1.1 (GDD §13, «Formato de la fila»; AC-157) y rechaza lo demás como AC-156. De una `v: 2` se juega con lo de la 1.0 (si el barco activo es nuevo, con el mejor de la 1.0 que posea), y lo que no se juega (la `v`, la XP y los barcos `schooner` y `line`) va en `carry`, fuera del mundo: no llega a `Player` ni a `PlayerView`, así que no viaja al cliente. Al escribir, `serializeProgress(progress, carry)` deja la misma `v` que leyó, con la XP y los barcos nuevos tal cual y como activo el barco de la partida; un usuario nuevo se escribe en `v: 1`. La 1.0.2 congelada está en `server/__tests__/fixtures/progress-1.0.2.ts`, para probar que lee lo que escribe la 1.0.3 |
+| `server/progress.ts` | Parser estricto del `state` (oro entero entre 0 y el tope, niveles 1–3, barco activo entre los que posee, XP entera de 0 a `XP_CAP`). Lo que no pasa no se usa ni se sobrescribe (AC-131). **En la 1.1** (GDD §13, «Formato de la fila»): lee `v: 1` con 0 de XP y `v: 2`, rechaza lo demás como AC-156 y **siempre escribe `v: 2`**; una fila de la 1.0 pasa a `v: 2` con la primera escritura de su jugador, sin migración en bloque. `SavedProgress.xp` es obligatoria (el compilador obliga a pasarla), entra en `progressKey` (la XP de un coatacante sin oro también se escribe) y llega a `addPlayer` con el resto. Los ids de una `v: 1` son los de la fila de la 1.0, no los de la simulación. Los barcos de la fila que la simulación aún no juega (`schooner` y `line`, hasta que estén en `PLAYER_SHIP_ORDER`) van en `carry`, fuera del mundo, y se escriben tal cual; si el activo es uno de ellos, se juega con el mejor que sí juega. Lo que escribe la 1.1 lo lee la 1.0.3 (AC-157): se prueba con su lector congelado, `server/__tests__/fixtures/progress-1.0.3.ts`, y las formas de la 1.0 con el de la 1.0.2 (`progress-1.0.2.ts`) |
 | `server/db/migrate.ts` | Migraciones al arrancar, antes de abrir el puerto, con `pg_advisory_lock`. Si fallan, el proceso termina y Railway mantiene el despliegue anterior |
 | `server/persistence.ts` | Carga al entrar y cola de escrituras por usuario. Cada escritura lleva la revisión leída: si otro proceso escribió algo más nuevo, no se pisa y el jugador se recarga desde la BD. Guarda por usuario el `carry` de la fila leída y lo pasa a cada escritura (`ProgressStore.save`) |
 | `server/bootstrap.ts` | Arranque compartido por `index.ts` y el proceso de los tests. En Railway sin `DATABASE_URL` el servidor no arranca; fuera de Railway, sin ella, todo vive en memoria (con aviso) |
@@ -107,7 +108,36 @@ Si la BD falla:
 - El cliente de estos estados es el de D50 (`ConnectionOverlay`, `syncUnsaved`; ver arriba). `e2e/persistence-db.spec.ts` lo prueba de punta a punta con la BD real detrás de un proxy TCP (`server/__tests__/fixtures/pg-proxy.ts`: `cut` = parada, `hang` = colgada), que también usan los tests de Jest.
 - Tests: Postgres real. El `globalSetup` de Jest usa `TEST_DATABASE_URL` (la CI la da con un service container `postgres:16`) o levanta un clúster temporal con `initdb` en un puerto libre, que un vigía para y borra aunque Jest muera. Cada archivo usa su propio schema (`search_path`). Los tests de `kill -9` y de `SIGTERM` lanzan el servidor en un proceso hijo (`server/__tests__/fixtures/game-process.ts`), con el mismo arranque y el mismo apagado que `index.ts`; el proxy de la BD puede retrasar lo que le llega (`delay`) para ver que se escribe antes de desconectar.
 
-## 3. Harnesses
+### 2.2 Experiencia y niveles (GDD §10b, 1.1; AC-144 a AC-150)
+
+La XP la decide la simulación (`src/game/xp.ts`, TypeScript puro); el cliente solo la muestra. Las constantes van al final de `src/game/constants.ts` («Experiencia, niveles e insignias»).
+
+| Pieza | Qué hace |
+|---|---|
+| XP de un NPC | `NPC_XP` por id de clase (`merchant` 10, `pirate` 30, `gunboat` 60, `captain` 240, `galleon` 160). `sinkShip` la reparte con `splitReward` y el mismo filtro de 60 s que el oro, y `creditNpcXp` la acredita en el tick del oro. Un test exige que toda clase NPC de `SHIP_CLASSES` tenga su fila del GDD y siga la regla por vida (vida / 15 si es hostil, / 30 si es pasiva, ×2 si es de evento) |
+| XP de un jugador | `PVP_XP` (100), repartida por daño igual que la de un NPC. `creditPvpXp` aplica a la parte de cada atacante su factor de nivel y el de repetición, con un solo `floor` en enteros (`pvpXp`; 100 × 1,1 × 0,5 da 55, sin restos de coma flotante). Los niveles son los de justo antes de acreditar, y el daño de los NPC no entra en el reparto, como en el oro (GDD §10b). La víctima no pierde nada, y el oro de la penalización sigue yendo al último golpe |
+| Parejas (repetición) | `world.xpPairs`: atacante → víctima, por id de jugador, con la hora del 1.º hundimiento con XP y cuántos lleva. La ventana es `[1.º, 1.º + 30 min)`. Solo un hundimiento que da más de 0 XP abre o avanza la ventana (GDD §10b, decidido por producto el 2026-10-17). Reconectar no las borra y un reinicio sí. Las vencidas se borran en cada hundimiento PvP. `openPairs(world, id)` las da para el panel del objetivo (AC-160) |
+| Nivel e insignia | `levelOf(xp)` y `rankOf(level)` (1 Grumete a 5 Almirante). El nivel no se guarda en ningún sitio: se calcula de la XP (AC-150). La XP tiene un tope de 9 999 999 (`XP_CAP`) |
+| Red | Evento `{ type: 'xp', playerId, xp, pos, source: 'kill' \| 'pvp' }`, solo para el dueño y nunca con 0. `PlayerView.xp` lleva el total y, como toda la vista privada, viaja solo al cambiar. Cada barco de jugador lleva su nivel en `ShipSnapshot.lv` (los NPC, no), que viaja al entrar en el área y después solo al subir de nivel: suma 7 bytes por barco de jugador en un snapshot completo (`,"lv":9`; 8 desde el nivel 10) |
+| Log (AC-148) | Cada hundimiento entre jugadores deja `⚔️  PvP {"at":"2026-10-17T21:30:00.000Z","victim":10,"attackers":[{"level":10,"xp":70},{"level":12,"xp":15}]}`: la hora del proceso (los sellos de Railway llegan en lote), los niveles y la XP, sin nombres ni userId. Se busca con `PvP \{`. `world.pvpLog` lo vacía el servidor en cada tick (`drainPvpLog`) |
+| Persistencia | `Player.xp` y `addPlayer(..., initial.xp)` (0 por defecto). La XP va en la fila `v: 2` con el resto del progreso, con las mismas reglas que el oro: en ≤ 5 s, al desconectarse, en el `SIGTERM` y, con la BD caída, cuando vuelve (`server/progress.ts`, §2.1; AC-155 a AC-157) |
+
+Tests: `src/game/__tests__/xp.test.ts` (unitarios; AC-149 con dos bots en el mundo real durante 60 min simulados) y `server/__tests__/xp-server.test.ts` (socket.io real: el evento en el frame, `lv` en los deltas y la línea del log).
+
+## 3. Capitán pirata (H-305, GDD §9)
+
+| Pieza | Dónde | Regla |
+|---|---|---|
+| Interruptor (AC-187) | `world.i2` (`createWorld({ i2 })`), `GameServerOptions.i2`, `server/features.ts` | El I2 llega latente: apagado por defecto en la simulación y en el servidor, y lo enciende solo `SEA_BATTLE_I2=1` (§5). Una sola compuerta: `spawnCaptain` devuelve `null` con el I2 apagado, también en los escenarios. Apagado, el servidor nunca manda el barco ni los eventos del Capitán, así que el cliente no pinta aviso, marcador ni placa. `killsSinceBoss` cuenta igual que en la 1.0. AC-137 (`latent-i2.test.ts`) vale con el I2 apagado; los tests del Capitán lo encienden a propósito (`i2World`, `start({ i2: true })`), y AC-60 corre en los dos modos |
+| Identidad | `SHIP_CLASSES.captain`, `CAPTAIN_CLASS` (`constants.ts`) | `kind: 'pirate'` (facción hostil: misma regla de ataque, exclusión de 130 m del puerto y relación coral) y `classId: 'captain'` para todo lo propio del jefe. El render elige el modelo por `classId`: `SHIP_RECIPES.captain` es la receta `npc_pirate_captain` (dev-render, `264363e`) |
+| IA | `HOSTILE_AI` (`constants.ts`), `updatePirate` (`world.ts`) | La misma máquina de estados del pirata con el perfil de su clase: detecta a 90 m, orbita a 50 m, correa de 150 m alrededor de su guarida. Objetivo perdido (110 m), velocidad de órbita (8 m/s) y patrulla (120 m) son "como el pirata" |
+| Aparición | `updateCaptain` → `spawnCaptain` (`world.ts`) | Al final de `step`: con `killsSinceBoss ≥ 10` y ningún capitán en el mundo. Guarida = sector con menos jugadores (empate con `world.rng`), punto del arco de 440 m más cercano a su centro que esté a ≥ 150 m de todos los jugadores y fuera del margen de las islas; si no hay, el siguiente sector; si ninguno, se reintenta en el siguiente tick |
+| Cuenta | `sinkShip` | Suman los `kind: 'pirate'` que no son el capitán (piratas y, con H-306, cañoneras). La muerte del capitán la pone a 0 y no suma |
+| Muerte | `sinkShip`, `updateLifecycle` | Reparto y restos como cualquier NPC (600 + 150). Evento `captainDown` con hasta 3 nombres por daño (ventana de 60 s del reparto) y `more`. Los nombres son exactamente los de quienes cobran del reparto (AC-111): no sale quien ya no está en el mundo ni quien tiene una parte que redondea a 0. Al terminar de hundirse sale del mundo: no reaparece por tiempo |
+| Cliente | `GameApp.tsx`, `hud-logic.ts`, `Minimap.tsx`, `overlays.ts` | Aviso (toast `warn`) y línea de feed con los textos de `captainSpawnText` / `captainDownText`. El aviso solo sale del evento `captain`, que no viaja en el snapshot completo: quien entra con el capitán ya vivo ve su marcador, no el aviso (AC-111). El aviso es el de D49, «¡Capitán pirata en el noroeste, sector B2!»: la región sale del cuadrante del evento `captain` (`sector`, tipado como `PirateSectorId`) y la celda, de su `pos` (la guarida) con `sectorOf`, la función del pie del minimapa, que vive en `hud-logic.ts` para que los dos textos no puedan divergir. Minimapa (D43): ★ de radio 5,5 / 2,2 px en el canvas (≤ 2 Hz), encima de piratas y mercantes y debajo del ▲ propio, que desaparece en el redibujado del hundimiento; el halo es un `<svg>` sobre el canvas con animación CSS de 1 s y trazo de 1,5 px que no escala. Placa: calavera + corona (2 iconos de 12 px) y ancho máximo +14 px para que «Capitán pirata» no se trunque; panel del objetivo: corona sobre la calavera |
+| Escenarios | `server/scenarios.ts` | `captain` (9 hundidos y un cebo con 1 de vida) y `captain-down` (capitán quieto con 1 de vida que no acierta), para `e2e/captain.spec.ts` |
+
+## 4. Harnesses
 
 | Comando | Qué cubre |
 |---|---|
@@ -129,19 +159,20 @@ Puente de depuración de solo lectura: `window.__SEA_BATTLE__` (`ready`, `server
 
 **Cuidado con la CPU**: Playwright usa el Chrome del sistema con Metal (`--use-angle=metal`). Con SwiftShader, el WebGL por software satura unos 6 núcleos. Cierra siempre el navegador al terminar.
 
-## 4. Variables de entorno
+## 5. Variables de entorno
 
 | Variable | Uso |
 |---|---|
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` | Clerk (la CI usa una clave ficticia con formato válido, solo para compilar) |
 | `AUTH_BYPASS=1` | Modo invitado, solo local o e2e. Prohibido con `RAILWAY_*` presentes |
 | `SEA_BATTLE_NPCS=0` | Servidor de prueba sin NPC (AC-83, AC-87) |
+| `SEA_BATTLE_I2=1` | AC-187: enciende el I2 (hoy, el Capitán pirata; §3). Solo el valor exacto `1` lo enciende (`server/features.ts`); sin la variable, o con cualquier otro valor, está apagado y el juego es el de la 1.0.3. Lo decide el servidor, nunca el cliente: ninguna intención lo lleva y los parsers rechazan los campos de más (AC-05). Al arrancar, el log dice «I2 apagado» o «I2 encendido», y `/healthz` lo devuelve como `i2`. Los escenarios `captain` y `captain-down` no arrancan sin él. **En staging y en prod no está puesta. Encenderlo allí es añadir la variable al servicio en Railway y redesplegar, y eso lo decide Jonattan: no se hace sin su sí** |
 | `SEA_BATTLE_METRICS=0`, `SEA_BATTLE_METRICS_MS` | AC-142 / AC-143 (`server/metrics.ts`). El proceso registra cada minuto con jugadores una línea `📈 Métricas <hora>` con: ticks ejecutados y perdidos, p99 de `step`, retraso del event loop (p99 y máximo, descontada la resolución de 10 ms del monitor), utilización del event loop, CPU, heap mínimo, RSS (mínimo y último), `heap_total_mb` (lo comprometido por V8) y `external_min_mb` (el mínimo de `process.memoryUsage().external` en cada muestra de 1 s, que incluye todos los Buffer: donde AC-142 pone la cota de memoria; el RSS entero salta +14 MB cuando V8 duplica su generación joven a los ~10 min y `rss − heapTotal` baja con una fuga externa, porque heapTotal es memoria comprometida). Sin jugadores no registra nada. Activas por defecto, también en prod (AC-142: su coste en el p99 del tick no pasa de 0,2 ms, con el menor de 3 p99, `server/__tests__/metrics.test.ts`); `SEA_BATTLE_METRICS=0` las apaga. La línea solo lleva números, nunca ids de usuario. `SEA_BATTLE_METRICS_MS` cambia la ventana (≥ 1000; solo para el humo del arnés) |
 | `PORT` | Puerto HTTP y de Socket.IO |
 | `PUBLIC_ORIGINS` | AC-134 (d): orígenes públicos separados por comas (en prod, `https://seabattle.jonattan.dev`), los únicos que reciben permiso de CORS en Socket.IO y cuyos JWT de Clerk se aceptan (`azp` contra `authorizedParties`; `server/origins.ts`). Sin la variable, `http://localhost:${PORT}` y `https://${RAILWAY_PUBLIC_DOMAIN}`, que Railway pone solo. Se normalizan como el `Origin` del navegador (minúsculas, sin barra final ni puerto por defecto), y un valor que no es un origen detiene el arranque. Con la variable, toda petición a un host que no está en la lista va con 301 al primer origen, con la misma ruta y query (AC-139, paso 3: el dominio de Railway de prod); `/healthz` nunca se redirige, porque Railway comprueba la salud con el host `healthcheck.railway.app` (`server/request-handler.ts`). Sin la variable no hay redirección. Para entrar con Clerk desde otra máquina de la red (p. ej., el móvil contra `npm run dev`), hay que listar los dos orígenes: `PUBLIC_ORIGINS=http://localhost:3000,http://192.168.1.10:3000` |
 | `DATABASE_URL` | Postgres del progreso (§2.1). Obligatoria en Railway (prod y staging, cada uno con su BD); fuera de Railway es opcional |
 | `TEST_DATABASE_URL`, `PG_BIN` | `npm test`: Postgres de los tests (la CI usa su service container). Sin ella, el clúster temporal busca `initdb` en `PG_BIN`, `pg_config` o Homebrew |
-| `RAILWAY_GIT_COMMIT_SHA` | Lo pone Railway en los despliegues desde Git; `/healthz` lo devuelve como `commit` (`null` si falta) |
+| `RAILWAY_GIT_COMMIT_SHA` | Lo pone Railway en los despliegues desde Git; `/healthz` lo devuelve como `commit` (`null` si falta), junto a `i2` (AC-187, `SEA_BATTLE_I2`). Los lectores de `/healthz` ignoran los campos que no usan: `deploy.py` solo lee `ok` y `commit` (`health_commit`), `check_deploy.py` solo usa la ruta y el arnés remoto, `commit`, `players` y `uptimeSeconds` |
 | `RAILWAY_DEPLOYMENT_OVERLAP_SECONDS`, `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | Variables del servicio en Railway que lee la plataforma, no el código: `0` y `15` en cada entorno (§2.1, «Despliegue») |
 | `RAILWAY_TOKEN` | `scripts/railway/`, DT-16: token de proyecto de Railway, atado a un entorno (cabecera `Project-Access-Token`). En GitHub es un secreto de los entornos `staging` y `production`; nunca se imprime |
 | `RAILWAY_API_TOKEN` | Opcional, `scripts/railway/`: token de cuenta de la API de Railway. Sin ella ni `RAILWAY_TOKEN`, usa el de `railway login` |
@@ -156,9 +187,9 @@ Puente de depuración de solo lectura: `window.__SEA_BATTLE__` (`ready`, `server
 
 Las variables de `test:remote` van en `.env.remote.local` (lo ignora `.env*` en `.gitignore`) o en el entorno, que manda sobre el archivo. Nunca se commitean ni se imprimen. La clave publicable y el Frontend API de Clerk se leen del propio despliegue, así no se mezcla otra instancia.
 
-## 5. Pendiente y decisiones abiertas
+## 6. Pendiente y decisiones abiertas
 
 - Persistencia por `userId` (AC-97 y AC-129 a AC-133): Postgres en Railway (GDD Q2, §2.1). Falta validarla en staging tras un redeploy (AC-135).
 - El ping del HUD (solo si es > 200 ms) necesita medir la latencia sin enviar mensajes en reposo (AC-86); está pendiente de diseño.
-- Capitán pirata y Cañonera (I2): fuera de la 1.0.0. La release lleva el modelo del Capitán (`264363e`) y el contador `world.killsSinceBoss`, pero ningún NPC de I2 entra en partida (AC-137). Lo vigila `server/__tests__/latent-i2.test.ts` dentro de `verify`: 10 min simulados con ≥ 10 piratas hundidos en combate y, contra listas de lo anterior a I2, las clases, los tipos y los eventos del mundo y de los frames, los avisos y la población de AC-51.
+- Cañonera (I2, H-306): falta su IA y la población de I2 (AC-51, AC-113 y AC-114). El modelo (`npc_pirate_gunboat`) existe, pero nada lo instancia.
 - Munición especial y sonido: P2.
