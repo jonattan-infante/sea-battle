@@ -864,10 +864,12 @@ function sinkShip(world: World, ship: Ship, killer: Ship | null): void {
   if (ship.kind !== 'player') {
     const stats = classOf(ship);
     const recent = ship.damage.filter((d) => world.time - d.at <= LOOT_DAMAGE_WINDOW);
+    const paid = new Set<string>();
     for (const [playerId, gold] of splitReward(recent, stats.reward)) {
       const p = world.players.get(playerId);
       if (!p || gold <= 0) continue;
       addGold(p, gold);
+      paid.add(playerId);
       world.events.push({ type: 'loot', playerId, gold, pos: { ...ship.pos }, source: 'kill' });
     }
     if (stats.wreck > 0) {
@@ -876,11 +878,13 @@ function sinkShip(world: World, ship: Ship, killer: Ship | null): void {
       world.events.push({ type: 'wreck', wreckId: wreck.id, pos: wreck.pos, gold: wreck.gold, expiresAt: wreck.expiresAt });
     }
     if (isCaptain(ship)) {
-      // Su muerte reinicia la cuenta y no suma (§9). Feed para todos: hasta 3 nombres por daño y "y N más" (AC-111)
+      // Su muerte reinicia la cuenta y no suma (§9). Feed para todos: hasta 3 nombres por daño y "y N más", y solo los de
+      // quienes cobran del reparto de arriba (AC-111)
       world.killsSinceBoss = 0;
-      const names = [...recent]
+      const names = recent
+        .filter((d) => paid.has(d.playerId))
         .sort((a, b) => b.amount - a.amount || a.firstAt - b.firstAt)
-        .flatMap((d) => world.players.get(d.playerId)?.name ?? []);
+        .map((d) => world.players.get(d.playerId)!.name);
       world.events.push({ type: 'captainDown', shipId: ship.id, names: names.slice(0, 3), more: Math.max(0, names.length - 3), pos: { ...ship.pos } });
     } else if (ship.kind === 'pirate') {
       world.killsSinceBoss += 1; // piratas y cañoneras; los mercantes no cuentan

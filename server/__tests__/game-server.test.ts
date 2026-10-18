@@ -452,6 +452,46 @@ describe('Servidor — Capitán pirata (AC-111), con el I2 encendido (AC-187)', 
     expect(deltasOf(b.frames, cap.id).length).toBeGreaterThan(1); // y lo sigue recibiendo mientras patrulla
   }, 30_000);
 
+  // AC-111 (4): el feed nombra exactamente a quienes cobran (GDD §10). Eva le hizo 1 de daño, así que su parte del reparto
+  // redondea a 0 (600 · 1 / ~1 900): no cobra y no sale; cada nombrado recibe su botín (el botín solo le llega a su dueño)
+  test('AC-111 (4): los nombres del feed son exactamente los de quienes reciben su botín del capitán', async () => {
+    await start({ i2: true });
+    const who = [['a', 'Ana'], ['b', 'Bea'], ['c', 'Caro'], ['d', 'Dani'], ['e', 'Eva']] as const;
+    const js: Joined[] = [];
+    for (const [id, name] of who) js.push(await join(id, name));
+    const ship = (j: Joined) => game.world.ships.get(j.welcome.shipId)!;
+    js.forEach((j, i) => {
+      ship(j).pos = { x: -200 - 20 * i, z: 200 };
+      ship(j).protectedUntil = 0;
+    });
+    await advance(0.2);
+    const cap = spawnCaptain(game.world, { x: -200, z: 260 })!;
+    cap.ai = null;
+    const now = game.world.time;
+    const [, b, c, d, e] = js;
+    cap.damage = [
+      { playerId: 'd', shipId: ship(d).id, amount: 1000, at: now, firstAt: now - 10 },
+      { playerId: 'b', shipId: ship(b).id, amount: 600, at: now, firstAt: now - 20 },
+      { playerId: 'c', shipId: ship(c).id, amount: 300, at: now, firstAt: now - 30 },
+      { playerId: 'e', shipId: ship(e).id, amount: 1, at: now, firstAt: now - 40 }
+    ];
+    cap.hp = 1;
+    game.world.rng = () => 0;
+    const before = js.map((j) => j.frames.length);
+    js[0].c.emit(C2S.attack, { targetId: cap.id });
+    await flush();
+    await advance(1);
+    game.world.rng = createRng(5);
+    const after = js.map((j, i) => j.frames.slice(before[i]));
+    const down = eventsOf(after[0]).find((x): x is Extract<GameEvent, { type: 'captainDown' }> => x.type === 'captainDown');
+    expect(down).toBeDefined();
+    const looted = who.filter((_, i) => eventsOf(after[i]).some((x) => x.type === 'loot' && x.source === 'kill' && x.playerId === who[i][0])).map(([, name]): string => name);
+    console.log(`AC-111 (4): cobran ${looted.join(', ')}; feed ${down!.names.join(', ')} y ${down!.more} más`);
+    expect(looted).toEqual(['Ana', 'Bea', 'Caro', 'Dani']);
+    expect({ names: down!.names, more: down!.more }).toEqual({ names: ['Dani', 'Bea', 'Caro'], more: 1 }); // y 1 más: Ana
+    expect(down!.names.every((n) => looted.includes(n)) && down!.names.length + down!.more === looted.length).toBe(true);
+  }, 30_000);
+
   // D49: el aviso que pinta el cliente sale del evento (cuadrante y punto de la guarida) con captainSpawnText. Un jugador
   // en la zona segura de cada uno de los otros 3 cuadrantes deja libre solo el del caso, y la guarida queda en su punto
   // de 45° del arco de 440 m (a ≥ 150 m de todos)
