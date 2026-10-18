@@ -191,6 +191,57 @@ describe('E14 — Reparto de la XP de un NPC (AC-145)', () => {
     expect(windowCase(true)).toEqual([[20], [10]]);
   });
 
+  // BACKLOG AC-145 (r11, e797ace): «Oro sin XP en el mercante, esperado […] B con 1 bala de 30 y A que lo hunde con 300
+  // dan oro B 5 / A 55 y XP B 0 / A 10. B ve «Botín +5 oro» y nada de XP»
+  test('AC-145: oro sin XP en el mercante, esperado: B con 1 bala de 30 y A que lo hunde con 300 → oro B 5 / A 55 y XP B 0 / A 10, sin evento xp para B', () => {
+    const world = emptyWorld();
+    const a = placePlayer(world, 'A', 300, 300);
+    const b = placePlayer(world, 'B', 330, 300);
+    const merchant = npcOf(world, 'merchant', 300, 340);
+    seedDamage(merchant, [[b, 30, 0.1], [a, 270, 0.2]]);
+    merchant.hp = 30;
+    scriptedRng(world, ONE_HIT); // A lo hunde: 300 / 30
+    attack(world, 'A', merchant.id);
+    const events = run(world, 2);
+    expect(merchant.state).not.toBe('alive');
+    expect(lootOf(events)).toEqual([['B', 5, 'kill'], ['A', 55, 'kill']]);
+    expect([xpOf(events, 'A'), xpOf(events, 'B')]).toEqual([[10], []]);
+    expect([xpOfPlayer(world, 'A'), xpOfPlayer(world, 'B')]).toEqual([10, 0]);
+  });
+
+  // BACKLOG AC-145 (r11): «XP sin oro, nunca: en todas las clases el oro es mayor o igual que la XP, y el resto va al mismo
+  // jugador en los dos repartos. En las demás clases, con daños reales (≥ 1 bala de 30 y un daño total ≤ vida + 384),
+  // todo el que cobra oro cobra ≥ 1 XP»
+  test('AC-145: XP sin oro, nunca; y fuera del mercante, con daños reales, todo el que cobra oro cobra ≥ 1 XP', () => {
+    const rng = createRng(1450);
+    for (const id of NPC_CLASSES) {
+      const gold = SHIP_CLASSES[id].reward;
+      const xp = C.NPC_XP[id];
+      expect({ id, goldAtLeastXp: gold >= xp }).toEqual({ id, goldAtLeastXp: true });
+      let xpWithoutGold = 0;
+      for (let k = 0; k < 20_000; k++) {
+        const n = 2 + Math.floor(rng() * 4);
+        const entries = Array.from({ length: n }, (_, i) => ({ playerId: `p${i}`, amount: 1 + Math.floor(rng() * 3 * SHIP_CLASSES[id].maxHp), firstAt: rng() }));
+        const g = splitReward(entries, gold);
+        for (const [pid, share] of splitReward(entries, xp)) if (share > 0 && !((g.get(pid) ?? 0) > 0)) xpWithoutGold++;
+      }
+      expect({ id, xpWithoutGold }).toEqual({ id, xpWithoutGold: 0 });
+      if (id === 'merchant') continue;
+      // Dos jugadores: B con 1 a 20 balas de 30, 38 o 48; el total, entre la vida y la vida + 384 (andanada final de una Fragata N3)
+      let goldWithoutXp = 0;
+      let cases = 0;
+      const hp = SHIP_CLASSES[id].maxHp;
+      for (const ball of [30, 38, 48]) for (let balls = 1; balls <= 20; balls++) for (let total = hp; total <= hp + 384; total++) {
+        const bDamage = balls * ball;
+        if (total - bDamage <= 0) continue;
+        cases++;
+        const entries = [{ playerId: 'A', amount: total - bDamage, firstAt: 1 }, { playerId: 'B', amount: bDamage, firstAt: 2 }];
+        if ((splitReward(entries, gold).get('B') ?? 0) > 0 && (splitReward(entries, xp).get('B') ?? 0) === 0) goldWithoutXp++;
+      }
+      expect({ id, goldWithoutXp, enough: cases > 10_000 }).toEqual({ id, goldWithoutXp: 0, enough: true });
+    }
+  });
+
   test('AC-145: la suma de lo repartido es siempre la XP del NPC (500 repartos al azar por clase)', () => {
     const rng = createRng(145);
     for (const id of NPC_CLASSES) {
