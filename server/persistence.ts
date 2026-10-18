@@ -24,12 +24,13 @@ export interface ProgressStore {
 
 export class InvalidProgressError extends Error {}
 
-export function createPgStore(pool: Pool): ProgressStore {
+// newShips: el interruptor de AC-201, para leer la fila con los barcos que se juegan (parseProgress)
+export function createPgStore(pool: Pool, newShips = false): ProgressStore {
   return {
     async load(userId) {
       const { rows } = await pool.query('SELECT state, revision FROM player_progress WHERE user_id = $1', [userId]);
       if (rows.length === 0) return null;
-      const parsed = parseProgress(rows[0].state);
+      const parsed = parseProgress(rows[0].state, newShips);
       if (!parsed) throw new InvalidProgressError(`Registro de progreso no válido (${userId})`);
       return { ...parsed, revision: Number(rows[0].revision) };
     },

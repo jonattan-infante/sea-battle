@@ -134,6 +134,7 @@ export interface World {
   nextId: number;
   killsSinceBoss: number;
   i2: boolean; // I2 encendido (AC-187): sin él no aparece el Capitán pirata. Lo decide el servidor (SEA_BATTLE_I2)
+  newShips: boolean; // la Goleta y el Navío se venden (AC-201): sin él nadie los compra. Lo decide el servidor (SEA_BATTLE_NEW_SHIPS)
   xpPairs: Map<string, Map<string, XpPair>>; // atacante → víctima (ids de jugador): ventana de repetición (§10b)
   pvpLog: PvpSinkRecord[]; // hundimientos entre jugadores para el log del servidor (AC-148); lo vacía el servidor
   startingGold?: number; // solo escenarios de prueba (server/scenarios.ts); por defecto STARTING_GOLD
