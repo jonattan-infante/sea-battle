@@ -30,6 +30,15 @@ def moored(gid, psi_deg, white_uv, r_quay=30.0):
     return P, np.tile(white_uv, (len(P), 1)), C, N
 
 
+def ship_at(gid, x, z, psi_deg, white_uv):
+    """Barco de hoy navegando en (x, z) con rumbo ψ (proa hacia (sin ψ, cos ψ); 180 = al norte, hacia arriba en pantalla)."""
+    g = json.load(open(RT.need(os.path.join(RT.OUT, 'barcos-geo.json'), 'barcos-geo.json')))[gid]
+    P = np.array(g['pos']).reshape(-1, 3); N = np.array(g['nor']).reshape(-1, 3); C = np.array(g['col']).reshape(-1, 3)
+    psi = math.radians(psi_deg); c, s = math.cos(psi), math.sin(psi)
+    Ry = np.array([[c, 0, s], [0, 1, 0], [-s, 0, c]])
+    return P @ Ry.T + np.array([x, 0, z]), np.tile(white_uv, (len(P), 1)), C, N @ Ry.T
+
+
 def view(asset, ships, ppm, W, H, ox, oy, th, circles, SS=3, x0=0.0, z0=0.0, extra=()):
     P, UV, C, atlas = asset
     P, UV, C, _ = RX.clip_below_water(P, UV, C)

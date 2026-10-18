@@ -192,13 +192,15 @@ def rock(m, x, z, r, h, rng, col, y0=-0.4):
         m.soltri(mid[k], mid[(k + 1) % n], topc, shade[k] * 1.08)
 
 
-def palm(m, x, z, y0, h, rng, trunk='#8A5A3B', leaf='#4E9A3E', leaf2='#3F7A35', lean=None, fronds=7):
-    """Palmera de ≤ 60 triángulos: tronco curvo de 4 tramos y hojas caídas de 2 triángulos (prop_palm, ≤ 100 tris)."""
+def palm(m, x, z, y0, h, rng, trunk='#8A5A3B', leaf='#4E9A3E', leaf2='#3F7A35', lean=None, fronds=7, cheap=False):
+    """Palmera de 46 triángulos (tronco curvo de 4 tramos de 4 caras y 7 hojas caídas de 2 triángulos), o de 26 con
+    `cheap` (tronco de 2 tramos de 3 caras, para la selva, donde las copas tapan el tronco). prop_palm: ≤ 100 tris."""
     ang = rng.uniform(0, 2 * math.pi) if lean is None else lean
     lx, lz = math.sin(ang), math.cos(ang); bend = rng.uniform(0.6, 1.4)
-    pts = [(x + lx * bend * (k / 4) ** 2 * h * 0.25, y0 + h * k / 4, z + lz * bend * (k / 4) ** 2 * h * 0.25) for k in range(5)]
-    for k in range(4):
-        prism(m, pts[k], pts[k + 1], 0.22 - 0.03 * k, 4, trunk)
+    ns, sides = (2, 3) if cheap else (4, 4)
+    pts = [(x + lx * bend * (k / ns) ** 2 * h * 0.25, y0 + h * k / ns, z + lz * bend * (k / ns) ** 2 * h * 0.25) for k in range(ns + 1)]
+    for k in range(ns):
+        prism(m, pts[k], pts[k + 1], 0.22 - 0.03 * k * 4 / ns, sides, trunk)
     top = np.array(pts[-1])
     a0 = rng.uniform(0, 2 * math.pi)
     for k in range(fronds):
@@ -217,6 +219,20 @@ def tree(m, x, z, y0, h, rng, trunk='#6B4426', leaves=('#3F7A35', '#4E8F3A', '#5
         a = 2 * math.pi * k / 3 + rng.uniform(0, 1); rr = h * rng.uniform(0.26, 0.34)
         cx, cy, cz = x + math.sin(a) * h * 0.18, y0 + h * rng.uniform(0.62, 0.78), z + math.cos(a) * h * 0.18
         blob(m, cx, cy, cz, rr, leaves[k % len(leaves)])
+
+
+def crown(m, cx, cy, cz, r, col, rng):
+    """Copa de árbol de hoja ancha: casquete de 7 lados en 2 anillos (21 triángulos), más redondo que el octaedro."""
+    c = hexlin(col) if isinstance(col, str) else np.asarray(col)
+    a0 = rng.uniform(0, 2 * math.pi); n = 7
+    ring0 = [(cx + r * math.cos(a0 + 2 * math.pi * k / n) * rng.uniform(0.9, 1.1), cy, cz + r * math.sin(a0 + 2 * math.pi * k / n) * rng.uniform(0.9, 1.1)) for k in range(n)]
+    ring1 = [(cx + 0.6 * (p[0] - cx), cy + 0.55 * r, cz + 0.6 * (p[2] - cz)) for p in ring0]
+    top = (cx, cy + 0.8 * r, cz); bot = (cx, cy - 0.35 * r, cz)
+    for k in range(n):
+        q = (k + 1) % n
+        m.solid(ring0[k], ring0[q], ring1[q], ring1[k], c * 0.95)
+        m.soltri(ring1[k], ring1[q], top, c * 1.1)
+        m.soltri(ring0[q], ring0[k], bot, c * 0.7)
 
 
 def blob(m, cx, cy, cz, r, col):

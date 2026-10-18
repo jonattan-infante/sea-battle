@@ -160,6 +160,7 @@ Vista superior del asset (desde +Y)           En pantalla (cámara de ART-DIRECT
 | **1.1** · Barco del jugador grande, L > 34 m (D64: el Navío de línea, `ship_line`) | ≤ 3 200 | ≤ 1 000 | 1 | 1 | ≤ 1024² | ≤ 400 KB |
 | **1.1** · Galeón del tesoro (`npc_merchant_galleon`, NPC de evento, P2) | ≤ 2 800 | ≤ 900 | 1 | 1 | ≤ 1024² | ≤ 400 KB |
 | **1.1** · Islas por forma (D67; ART-DIRECTION §8.3) | Tropical: I1 ≤ 900, I5 e I6 ≤ 700 · islote habitado (T1, T2) ≤ 900 · rocosa: peñón I2 ≤ 1 000, volcán I3 ≤ 1 500, acantilado I4 ≤ 1 200 · escollo ≤ 150 cada uno · cala pirata ≤ 900 cada una | — | 0 propias: fusionadas | Compartido | ≤ 512² | ≤ 150 KB |
+| **1.1** · Islas rediseñadas (D83; sustituyen a la fila de D67 si Jonattan aprueba su lámina) | Con la vegetación dentro: I1 ≤ 13 000, I3 ≤ 11 000, I4 ≤ 9 500, I2 ≤ 4 800, I5 ≤ 4 600, T1 y T2 ≤ 3 000, I6 ≤ 2 200, cala ≤ 1 400 cada una, escollo ≤ 600 cada uno (medido: 12 255, 10 462, 8 807, 4 377, 4 208, 2 779 y 2 246, 1 953, 1 183–1 265 y 516–524; total 53 611) | — | **1 por isla en pantalla** (§9.7); la vista peor, 6 islas y el puerto | 1, compartido | 512², KTX2 ETC1S | Las 15 en un GLB, medido: 599 040 B (el presupuesto lo fija producto tras el piloto, AC-198 c) |
 | **1.1** · Puerto (D68; sustituye a la fila de arriba) | ≤ 3 000: muelle, cantil, 12 pantalanes con norays, astillero, faro, almacenes, grúa, capitanía y casas. Sin barcos de decorado | — | Fusionado con las islas | Compartido | ≤ 512² | ≤ 250 KB |
 | **1.1** · Puerto rediseñado (D82; sustituye a la fila de D68 si Jonattan aprueba su lámina) | ≤ 8 000 sin las palmeras (medido: 6 687; con las 17 palmeras, 7 501) | — | **1 propio**: malla con textura (§9.6) | 1 | 1024², KTX2 ETC1S | ≤ 250 KB (medido: 181 684 B comprimido) |
 | **1.1** · Geometría estática total (las 16 formas) | ≤ 16 000 (GDD §16). Con los presupuestos por forma de arriba, ≤ 14 850. Hoy, 3 090 (medido) | — | **1** | Compartido | — | — |
@@ -629,6 +630,59 @@ Coordenadas locales con el origen en el centro del puerto (GDD §4: (0, 0)), +X 
 - **7 501 triángulos** (6 687 sin las palmeras). GLB: 812 724 B sin comprimir; **181 684 B** con meshopt y KTX2 (135 862 B con gzip), de ellos 95 KB de textura; `gltf-transform validate`, 0 errores.
 - Los 12 amarres, la flotación (r 30 en el muelle; 27,2 en la escollera, con las rocas hasta 29,8; la arena entra en el agua a r 29,4) y la colisión no cambian. En los sectores de escollera y playa la costa visible queda entre 0,2 y 2,8 m por dentro del círculo, dentro de la banda de 0–3 m de AC-199 (a).
 
+### 9.7 Islas rediseñadas `island_<id>` (1.1 si pasa su piloto; D83)
+**La receta es el script**: `scripts/ux/mapa/islas.py` construye cada isla en coordenadas del mundo a partir de la tabla de círculos de `circulos.py` y pinta el atlas; por qué cada arquetipo y sus colores, en ART-DIRECTION §8.6. `blender_islas.py` exporta el GLB y se comprime como en §13, paso 4. Mientras Jonattan no apruebe la lámina D83, valen §9.4 y la tabla de GDD §4.
+
+**Tabla de círculos** (colisión B, GDD §4; la copia producto a GDD §4 cuando se apruebe la lámina). Cada isla es la unión de sus círculos; el primero es el principal. «Centro» es el de GDD §4, que no se mueve: es la referencia de la isla (la traslación de su nodo) y queda dentro de la unión, aunque en I2 e I6 el círculo principal no esté centrado en él.
+
+| Isla | Arquetipo | Centro (GDD §4) | Círculo de la 1.0 | Círculos (x, z, r) |
+|---|---|---|---|---|
+| PORT | puerto | (0, 0) | (0, 0, 30) | (0, 0, 30) |
+| I1 | tropical | (260, 200) | (260, 200, 45) | (260, 200, 45) · (212, 214, 30) · (305, 182, 28) · islotes (225, 150, 8) y (275, 255, 7) |
+| I2 | rocosa, peñón | (−300, 170) | (−300, 170, 35) | (−305, 160, 28) · (−282, 188, 18) · (−318, 186, 13) · islote (−336, 138, 6) |
+| I3 | rocosa, volcán | (−220, −280) | (−220, −280, 55) | (−220, −280, 55) · (−175, −250, 30) · islote (−158, −312, 9) |
+| I4 | rocosa, acantilado | (250, −260) | (250, −260, 40) | (250, −260, 40) · (212, −232, 24) · (262, −218, 18) · islote (205, −282, 8) |
+| I5 | tropical | (20, 360) | (20, 360, 30) | (20, 360, 30) · (−14, 340, 18) · islote (56, 338, 8) |
+| I6 | tropical | (−410, −30) | (−410, −30, 28) | (−413, −36, 21) · (−400, −18, 12) · islote (−368, −62, 9) |
+| T1 | islote habitado | (150, −150) | — | (150, −150, 22) · (128, −168, 14) · (170, −132, 12) |
+| T2 | islote habitado | (−170, 150) | — | (−170, 150, 22) · (−190, 132, 14) · (−150, 168, 12) |
+| E1a, E1b, E1c | escollos | (140, 260), (117,5, 299), (162,5, 299) | — | Sin cambios: r 7 cada uno |
+| G1 a G4 | cala pirata | (±368, ±368) | — | Respaldo r 13 a 8 m del centro, en el lado contrario al puerto, y 2 brazos r 9 a 4 m hacia el puerto y ±14 m de lado. G1 (368, −368): (373,66, −373,66, 13) · (355,27, −375,07, 9) · (375,07, −355,27, 9); las otras 3, simétricas (`cala()` en `circulos.py`) |
+
+**Reglas de disposición** (`python3 -I scripts/ux/mapa/circulos.py`, 2026-10-18; producto las fijó en GDD §4 y dev-npc las corre en AC-170 y AC-177): **44 círculos** (producto prefiere ≤ 48), **0 fallos**. Separación mínima entre círculos de islas distintas, **48,4 m** (I1–E1a; pide 46); a la zona segura, **80,1 m** (T1); al arco de la guarida, lo que crece fuera del círculo de la 1.0 queda a **57,0 m** (I1; pide 17); el anillo de la cañonera (400–470 m con 16 de margen) queda libre con **0,8 m** de holgura (I1, el más justo); hacia los puntos de guarida, I3 queda a **41,3 m** (no pasa de 25,3) e I4 a **39,7** (no pasa de 23,6). Todo dentro de ±490 m.
+
+**Canales entre una isla y su islote** (dato para las rutas de dev-npc, AC-171 y AC-177): I4 2,1 m · I2 4,0 · I5 4,2 · I1 5,0 y 8,0 · I3 5,8 · G1–G4, entre los 2 brazos, 10,0 · I6 22,0. Solo el de I6 admite un barco (la Balandra, margen 10); los demás son agua que se ve y no se navega, como pide el margen.
+
+| Regla | Valor |
+|---|---|
+| Archivo | `public/models/islands.glb`: una raíz `island_<id>` por isla, con la traslación al centro de GDD §4 y `extras` (§4) `sb_kind: "island"`, `sb_id`, `sb_archetype` (`tropical`, `rocky`, `reef`, `pirate_cove`), `sb_variant` (`stack`, `volcano`, `cliff`, `village`) y `sb_circles: [[x, z, r], …]` en coordenadas del mundo; su malla `island_<id>_lod0` va en coordenadas locales, sin LOD1. El piloto (AC-198) usa `island_I1.glb`, con la misma estructura. Los `sb_circles` son para validar (AS-V26): el cliente dibuja y el servidor simula con las mismas constantes (AC-199 e) |
+| Material | 1 para las 15, `OPAQUE`, con `baseColorTexture` (atlas de 512², KTX2 ETC1S) × `COLOR_0`. **Sin `NORMAL`**: `flatShading` (§6) |
+| Atlas | Grano (6 × 6 m por repetición, 256 px), roca con estratos (6 m; solo en las paredes y las laderas del volcán, nunca en las tapas), paja (2 m), tablas (3 m), lona (3 m), la bandera pirata y un texel blanco. El color, en `COLOR_0` |
+| Draw calls | **1 por isla en pantalla**: una malla por isla, que three recorta por su esfera envolvente. **No se fusionan**: juntas serían 61 112 triángulos con el puerto, siempre, por encima del techo de 60 000 (GDD §16) |
+| Vegetación | Fusionada en la malla de cada isla, no en `InstancedMesh`: palmera de la selva de 26 triángulos (tronco de 2 tramos de 3 caras y 7 hojas de 2), de playa de 46 (tronco de 4 tramos de 4 caras), copa de árbol de 21 (casquete de 7 lados en 2 anillos) y su tronco de 6. Un `InstancedMesh` por isla sumaría 1 llamada por isla visible; uno para todo el mapa contaría siempre las ≈ 540 palmeras (523 de las islas y 17 del puerto). Disco de Poisson cada 3,9 m en las tropicales (72 % palmeras) y cada 4,8 m en las rocosas (50 %) |
+| Terreno | Rejilla de 2 m, y de 6 m en el interior llano y en las tapas de las mesetas lejos de la pared (en las tapas, en abanico desde el centro por todos los nodos del borde, para que no queden grietas con las celdas de 2 m). Las mesetas (peñón, acantilado, respaldo de las calas, losa de los escollos y lago de lava) se cortan por su contorno y la pared se levanta en el corte, vertical, en 2 bandas (la del medio, 0,2–0,65 m hacia fuera); su pie entra 0,5 m en el suelo, y solo baja del agua si el suelo está en la flotación |
+| Piezas que salen | Cada palmera, copa, roca o lava se añade solo si ningún vértice con y > 0 queda a más de 0,4 m fuera de la unión ni tapa agua a más de 7,5 m de ella (`guarded()`) |
+| Mientras se descargan | Las islas llegan en segundo plano (AC-200 e). Hasta entonces, cada isla se dibuja con su misma unión: §9.1 (playa y meseta) en cada círculo, sin props. **Nunca con las formas de la 1.0** (AC-199) |
+
+**Comprobado** (`python3 -I scripts/ux/mapa/islas.py`, 2026-10-18; lo escribe en `islas-medidas.json`; la costa se mide en la malla, con los cortes de y = 0 de cada triángulo, paredes incluidas):
+
+| Isla | Tris (terreno + props + palmeras) | Palmeras | Costa por dentro (m) | Fuera, y > 0 (m) | Oclusión fuera (m) | Altura (m) |
+|---|---|---|---|---|---|---|
+| I1 | 12 255 (4 729 + 2 414 + 5 112) | 182 | 0,95–2,81 | −1,00 | 0,03 | 14,2 |
+| I2 | 4 377 (2 557 + 1 124 + 696) | 26 | 0,82–2,42 | 0,28 | 5,17 | 18,1 |
+| I3 | 10 462 (4 678 + 3 352 + 2 432) | 92 | 0,91–2,38 | 0,31 | 2,24 | 17,3 |
+| I4 | 8 807 (4 767 + 2 220 + 1 820) | 70 | 0,83–2,82 | −0,29 | 3,82 | 15,1 |
+| I5 | 4 208 (1 658 + 816 + 1 734) | 59 | 0,82–2,48 | 0,37 | 4,10 | 9,4 |
+| I6 | 1 953 (949 + 170 + 834) | 29 | 0,91–2,13 | 0,34 | 0,79 | 9,4 |
+| T1 | 2 779 (1 179 + 568 + 1 032) | 32 | 0,88–2,48 | 0,06 | 1,86 | 9,4 |
+| T2 | 2 246 (1 072 + 568 + 606) | 21 | 0,87–2,36 | −0,37 | 1,60 | 9,2 |
+| E1a, E1b, E1c | 524, 516, 524 | 0 | 0,14–0,34 (≤ 0,42 = 0,06·r) | ≤ −0,14 | ≤ 0,11 | 1,14 |
+| G1 a G4 | 1 255, 1 183, 1 265, 1 257 | 2–4 | 0,63–2,64 | ≤ 0,21 | ≤ 3,02 | 16,4 (la bandera de la atalaya) |
+
+- **Vista peor** (`python3 -I scripts/ux/mapa/presupuesto.py`): cámara ortográfica a 55° con N3 a 1,5× en 1440×900 (3,36 px/m: 428,9 × 327,2 m de suelo), recorriendo cada punto navegable cada 5 m y contando cada malla cuya esfera toque el frustum. **48 427 triángulos y 7 llamadas** con la cámara en (−35, −65): el puerto, I1, I2, I3, I4, T1 y T2. El máximo de llamadas es 8 (el puerto, I1, I2, I5, T2 y los 3 escollos). La vista de más superficie de isla (la de AC-200) da 19 284 y 6. Con los topes por isla de §5 y el puerto en el suyo (8 000 más sus 17 palmeras), la vista peor sería ≈ 53 100.
+- **Descarga** (`blender_islas.py` y la compresión de §13, paso 4): las 15, **599 040 B** (360 827 con gzip), de ellos ≈ 35 KB de textura; I1 sola, **147 308 B** (91 864 con gzip). `gltf-transform validate`: 0 errores (los 2 avisos de siempre de `KHR_texture_basisu`, que el validador no conoce).
+- **Firma en grises** (`python3 -I scripts/ux/mapa/firmas.py`, AD-39 c, en el modelo): 0 fallos; ART-DIRECTION §8.6.
+
 ---
 
 ## 10. Assets del MVP
@@ -690,6 +744,7 @@ Se ejecuta con un script de desarrollo (`npm run assets:validate`, dependencia d
 | AS-V23 | **Libreas sin cruzar canales** (1.1; D66; mecanismo interno: en la 1.1, el Galeón). (a) Test unitario por clase y librea: la librea solo cambia el color de los vértices con `_livery_slot` > 0 (o solo los uniforms); posiciones, normales, velas, casco, cubierta y palos, idénticos. (b) Colores de la librea con el método de `scripts/ux/pal.py`. (c) Las capturas de AS-V20 con cada librea. (d) La librea por defecto, frente a la escena sin soporte de libreas | (a) Se cumple en todas. (b) `band`: L\* ≥ 45 y ≥ 15 sobre el casco; `band` y `trim`: ΔE76 ≥ 25 frente a `#B3261E` y `#E8DCC0`; `flag`: ΔE76 ≥ 25 frente a `#111111` y `#2F7FB8`; las tres, en visión normal, protan, deutan y tritan. (c) AS-V20 pasa con cada librea. (d) 0 píxeles distintos |
 | AS-V24 | **Islas de la 1.1** (D67, D68; AC-103 y AC-170). Test unitario sobre `buildIslands` con las 16 formas | (1) El `sb_collider` de cada forma es igual al círculo que importa la simulación (GDD §4). (2) Ningún vértice sobre el agua (y > 0) de islas, puerto y props a más de r + 0,5 m del centro de su forma: generaliza AS-V16. (3) En cada forma, el radio en la flotación de cada columna del borde (playa, losa, cara del peñón o del acantilado, muelle) está en [0,94·r, r]; en los escollos, en [0,96·r, r], para que también los lados queden en [0,94·r, r] (AC-174 a). (4) El punto de suelo que tapa cada vértice con y > 0 queda a ≤ r + 8 m del centro (≤ 31 m en el puerto; AD-39 b). (5) Los escollos no tienen ningún vértice por encima de 1,2 m. (6) 16 formas en el sombreado del agua (`ocean-material.ts:8`), las mismas de la simulación |
 | AS-V25 | **Presupuesto de la geometría estática** (1.1; D67, D68; AC-175). Test unitario sobre `buildIslands(ISLANDS).triangles` (`island-geometry.ts:23`, ya cuenta por id) y la escena de AC-89 con `renderer.info` | Cada forma, ≤ su presupuesto de §5 (puerto 3 000 · I1 900 · I5 e I6 700 · T1 y T2 900 · I2 1 000 · I3 1 500 · I4 1 200 · escollo 150 · cala 900); la suma, ≤ 16 000; la geometría estática es **1** malla y 1 draw call; con la escena estándar del mapa de la 1.1, ≤ 100 draw calls y ≤ 250 000 tris (AC-89, AC-175) |
+| AS-V26 | **Islas rediseñadas** (1.1 si pasa su piloto; D83; AC-199 y AC-200; sustituye a AS-V24 y AS-V25 para las islas). Test unitario sobre `islands.glb` (o la geometría que lo sustituya mientras se descarga) y la vista peor de §9.7 con `renderer.info` | (1) Los `sb_circles` de cada raíz son los círculos que importa la simulación (GDD §4). (2) La costa visible, medida en la malla (los cortes de y = 0 de cada triángulo), queda de 0 a 3 m por dentro del borde de la unión; en los escollos, de 0 a 0,06·r. (3) Ningún vértice con y > 0 a más de 0,5 m fuera de la unión. (4) El punto de suelo que tapa cada vértice con y > 0, `(x, 0, z − 0,70·y)`, a ≤ 8 m de la unión. (5) Escollos ≤ 1,2 m. (6) Cada isla, ≤ su tope de §5; en la vista peor (cámara en (−35, −65), N3 a 1,5× en 1440×900), el escenario ≤ 60 000 triángulos y ≤ 10 draw calls (AC-200 b). (7) Las 15 islas comparten 1 material y 1 textura |
 
 ---
 
