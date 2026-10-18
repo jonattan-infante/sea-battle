@@ -180,6 +180,9 @@ export const PIRATE_DISENGAGE_TARGET = 110;
 export const PIRATE_LEASH = 200;
 export const PIRATE_ORBIT_RADIUS = 45;
 export const PIRATE_ORBIT_SPEED = 8;
+// La órbita apunta a un punto adelantado este ángulo sobre el círculo (rad). Perseguirlo recorta la cuerda: el radio de
+// ese círculo se compensa con 1 / cos(ORBIT_LEAD) para que la órbita real sea la nominal (GDD §9, «Órbita real = nominal»)
+export const ORBIT_LEAD = 0.45;
 export const PIRATE_PATROL_RADIUS = 120;
 export const PIRATE_PATROL_WAIT = { min: 2, max: 5 };
 export const PIRATE_RETURN_ARRIVE = 10;
