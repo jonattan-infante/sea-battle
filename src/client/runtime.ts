@@ -803,7 +803,7 @@ export class GameRuntime implements OverlayHost, ChipHost {
 
     this.director = new VfxDirector(this);
     this.subscribe(client);
-    this.shipGlb.warm(); // con manifiesto, el cargador y el transcodificador bajan mientras se conecta
+    this.shipGlb.warm(); // con manifiesto, el cargador baja mientras se conecta (el transcodificador, después del GLB propio)
   }
 
   private subscribe(src: RenderSource): void {
