@@ -48,8 +48,18 @@ export function createShutdown({ game, io, httpServer, pool, log, exit = (code) 
   };
 }
 
+// AC-203: si desaparece quien lee los logs, escribir en stdout o stderr da EPIPE, y sin un listener de 'error' Node lo
+// lanza como uncaughtException. Sin listener eso tumba el proceso antes de guardar; con el de Next (15.5.27:
+// node_modules/next/dist/server/next-server.js:216, que solo hace console.error) entra en bucle y el apagado no termina.
+// Va en los streams y no en uncaughtException porque Next borra los listeners de ese evento (next-server.js:184-189).
+// Se pierde el log, no el juego ni el apagado
+export function ignoreStdioErrors(streams: NodeJS.WriteStream[] = [process.stdout, process.stderr]): void {
+  for (const stream of streams) stream.on('error', () => {});
+}
+
 // SIGTERM (Railway) y SIGINT (Ctrl-C en local) disparan el mismo apagado; lo usan server/index.ts y el proceso de los tests
 export function installShutdown(deps: ShutdownDeps): (signal: string) => Promise<void> {
+  ignoreStdioErrors();
   const shutdown = createShutdown(deps);
   process.once('SIGTERM', () => void shutdown('SIGTERM'));
   process.once('SIGINT', () => void shutdown('SIGINT'));
