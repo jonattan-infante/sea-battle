@@ -71,28 +71,33 @@ export const MAP_1_0: MapDef = {
   islands: ISLANDS
 };
 
-// ---- Mapa de la 1.1 · PROVISIONAL ----
-// La tabla de islas de GDD §4 (ART-DIRECTION D67): el puerto, las 6 islas de la 1.0 sin mover, T1, T2, los 3 escollos y
-// las 4 calas, de un círculo cada una. Son datos PROVISIONALES hasta que Jonattan apruebe la lámina nueva de islas (D67
-// se rehace con formas irregulares; AC-198 y AC-199): la disposición puede cambiar, y cambiarla es tocar solo este bloque.
-// Todavía no es el mapa del juego: lo usan los tests de la lógica del mapa nuevo con createWorld({ map: MAP_1_1 })
+// ---- Mapa de la 1.1 ----
+// Puerto · PROVISIONAL: el círculo de la 1.0. Jonattan pidió otro puerto («que no sea un círculo, más irregular como una
+// isla, con palmeras y plazas»; BACKLOG, decisiones del 2026-10-18, punto 5): cuando ux lo dibuje, cambiarlo es tocar
+// solo este bloque (y lo que dependa de PORT_RADIUS: amarres, zona segura y rutas del puerto, AC-176 a AC-178)
+export const PORT_SHAPE_1_1: IslandShape = { id: 'PORT', archetype: 'port', circles: [{ x: 0, z: 0, radius: 30 }] };
+
+// Islas de la 1.1 (D83, aprobada por Jonattan el 2026-10-18; GDD §4, ASSET-SPEC §9.7): uniones de círculos (AC-199,
+// opción B). Las 6 islas de la 1.0 conservan su círculo o crecen alrededor de él, T1 y T2 son nuevas, E1 son los 3
+// escollos y G1–G4 las 4 calas: 43 círculos en 15 formas, la tabla de scripts/ux/mapa/circulos.py. Todavía no es el mapa
+// del juego: lo usan los tests de la lógica del mapa nuevo con createWorld({ map: MAP_1_1 })
 export const ISLAND_SHAPES_1_1: IslandShape[] = [
-  { id: 'PORT', archetype: 'port', circles: [{ x: 0, z: 0, radius: 30 }] },
-  { id: 'I1', archetype: 'tropical', circles: [{ x: 260, z: 200, radius: 45 }] },
-  { id: 'I2', archetype: 'rocky', circles: [{ x: -300, z: 170, radius: 35 }] },
-  { id: 'I3', archetype: 'rocky', circles: [{ x: -220, z: -280, radius: 55 }] },
-  { id: 'I4', archetype: 'rocky', circles: [{ x: 250, z: -260, radius: 40 }] },
-  { id: 'I5', archetype: 'tropical', circles: [{ x: 20, z: 360, radius: 30 }] },
-  { id: 'I6', archetype: 'tropical', circles: [{ x: -410, z: -30, radius: 28 }] },
-  { id: 'T1', archetype: 'tropical', circles: [{ x: 150, z: -150, radius: 22 }] },
-  { id: 'T2', archetype: 'tropical', circles: [{ x: -170, z: 150, radius: 22 }] },
+  PORT_SHAPE_1_1,
+  { id: 'I1', archetype: 'tropical', circles: [{ x: 260, z: 200, radius: 45 }, { x: 212, z: 214, radius: 30 }, { x: 305, z: 182, radius: 28 }, { x: 225, z: 150, radius: 8 }, { x: 275, z: 255, radius: 7 }] },
+  { id: 'I2', archetype: 'rocky', circles: [{ x: -305, z: 160, radius: 28 }, { x: -282, z: 188, radius: 18 }, { x: -318, z: 186, radius: 13 }, { x: -336, z: 138, radius: 6 }] },
+  { id: 'I3', archetype: 'rocky', circles: [{ x: -220, z: -280, radius: 55 }, { x: -175, z: -250, radius: 30 }, { x: -158, z: -312, radius: 9 }] },
+  { id: 'I4', archetype: 'rocky', circles: [{ x: 250, z: -260, radius: 40 }, { x: 212, z: -232, radius: 24 }, { x: 262, z: -218, radius: 18 }, { x: 205, z: -282, radius: 8 }] },
+  { id: 'I5', archetype: 'tropical', circles: [{ x: 20, z: 360, radius: 30 }, { x: -14, z: 340, radius: 18 }, { x: 56, z: 338, radius: 8 }] },
+  { id: 'I6', archetype: 'tropical', circles: [{ x: -413, z: -36, radius: 21 }, { x: -400, z: -18, radius: 12 }, { x: -368, z: -62, radius: 9 }] },
+  { id: 'T1', archetype: 'tropical', circles: [{ x: 150, z: -150, radius: 22 }, { x: 128, z: -168, radius: 14 }, { x: 170, z: -132, radius: 12 }] },
+  { id: 'T2', archetype: 'tropical', circles: [{ x: -170, z: 150, radius: 22 }, { x: -190, z: 132, radius: 14 }, { x: -150, z: 168, radius: 12 }] },
   { id: 'E1a', archetype: 'reef', circles: [{ x: 140, z: 260, radius: 7 }] },
   { id: 'E1b', archetype: 'reef', circles: [{ x: 117.5, z: 299, radius: 7 }] },
   { id: 'E1c', archetype: 'reef', circles: [{ x: 162.5, z: 299, radius: 7 }] },
-  { id: 'G1', archetype: 'cove', circles: [{ x: 368, z: -368, radius: 20 }] },
-  { id: 'G2', archetype: 'cove', circles: [{ x: -368, z: -368, radius: 20 }] },
-  { id: 'G3', archetype: 'cove', circles: [{ x: -368, z: 368, radius: 20 }] },
-  { id: 'G4', archetype: 'cove', circles: [{ x: 368, z: 368, radius: 20 }] }
+  { id: 'G1', archetype: 'cove', circles: [{ x: 373.66, z: -373.66, radius: 13 }, { x: 355.27, z: -375.07, radius: 9 }, { x: 375.07, z: -355.27, radius: 9 }] },
+  { id: 'G2', archetype: 'cove', circles: [{ x: -373.66, z: -373.66, radius: 13 }, { x: -375.07, z: -355.27, radius: 9 }, { x: -355.27, z: -375.07, radius: 9 }] },
+  { id: 'G3', archetype: 'cove', circles: [{ x: -373.66, z: 373.66, radius: 13 }, { x: -355.27, z: 375.07, radius: 9 }, { x: -375.07, z: 355.27, radius: 9 }] },
+  { id: 'G4', archetype: 'cove', circles: [{ x: 373.66, z: 373.66, radius: 13 }, { x: 375.07, z: 355.27, radius: 9 }, { x: 355.27, z: 375.07, radius: 9 }] }
 ];
 export const MAP_1_1: MapDef = mapOf('1.1', ISLAND_SHAPES_1_1, true);
 

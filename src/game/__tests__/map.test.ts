@@ -1,6 +1,8 @@
 import {
   CAPTAIN_CLASS,
   DEATH_COUNTDOWN,
+  GUNBOAT_CLASS,
+  GUNBOAT_RING,
   ISLANDS,
   ISLAND_SHAPES_1_1,
   MAP_1_1,
@@ -19,10 +21,9 @@ import { Vec2, angleDelta, distance, forward } from '../vec';
 import { addPlayer, createWorld, moveTo, navigatorOf, respawn, shipOfPlayer, step } from '../world';
 import { DT, placeCaptain, placeGunboat, placePlayer, run, runUntil } from './helpers';
 
-// Mapa de la 1.1 (GDD §4; puesto 5). Los datos de MAP_1_1 son PROVISIONALES hasta que Jonattan apruebe la lámina nueva de
-// islas (D67, que se rehace con formas irregulares; AC-198 y AC-199): si la disposición cambia, cambian estos datos y los
-// tests de AC-170 y AC-177 se vuelven a correr con ella. La lógica (uniones de círculos, destino inalcanzable y amarres)
-// no depende de la disposición
+// Mapa de la 1.1 (GDD §4; puesto 5). Las islas de MAP_1_1 son las de D83, aprobada por Jonattan el 2026-10-18; el puerto
+// sigue PROVISIONAL (constants.ts, PORT_SHAPE_1_1): si cambia, cambian sus datos y los tests de AC-170 y AC-177 se vuelven
+// a correr con él. La lógica (uniones de círculos, destino inalcanzable y amarres) no depende de la disposición
 const world11 = (seed = 1, i2 = false) => createWorld({ seed, spawnNpcs: false, i2, map: MAP_1_1 });
 const nav11 = () => navigatorOf(world11());
 const deg = (d: number) => (d * Math.PI) / 180;
@@ -55,32 +56,51 @@ const hullTouchesRock = (pos: Vec2, heading: number, length: number) => {
   });
 };
 
-describe('E16 — Mapa de la 1.1 (datos provisionales)', () => {
-  // GDD §4, tabla de islas: id, arquetipo, centro y radio
-  const GDD_TABLE: [string, string, number, number, number][] = [
-    ['PORT', 'port', 0, 0, 30],
-    ['I1', 'tropical', 260, 200, 45],
-    ['I2', 'rocky', -300, 170, 35],
-    ['I3', 'rocky', -220, -280, 55],
-    ['I4', 'rocky', 250, -260, 40],
-    ['I5', 'tropical', 20, 360, 30],
-    ['I6', 'tropical', -410, -30, 28],
-    ['T1', 'tropical', 150, -150, 22],
-    ['T2', 'tropical', -170, 150, 22],
-    ['E1a', 'reef', 140, 260, 7],
-    ['E1b', 'reef', 117.5, 299, 7],
-    ['E1c', 'reef', 162.5, 299, 7],
-    ['G1', 'cove', 368, -368, 20],
-    ['G2', 'cove', -368, -368, 20],
-    ['G3', 'cove', -368, 368, 20],
-    ['G4', 'cove', 368, 368, 20]
+describe('E16 — Mapa de la 1.1 (D83; el puerto, provisional)', () => {
+  // GDD §4, tabla de islas de D83 (scripts/ux/mapa/circulos.py, ASSET-SPEC §9.7): id, arquetipo y sus círculos [x, z, radio].
+  // El del puerto es provisional (constants.ts, PORT_SHAPE_1_1)
+  const GDD_TABLE: [string, string, [number, number, number][]][] = [
+    ['PORT', 'port', [[0, 0, 30]]],
+    ['I1', 'tropical', [[260, 200, 45], [212, 214, 30], [305, 182, 28], [225, 150, 8], [275, 255, 7]]],
+    ['I2', 'rocky', [[-305, 160, 28], [-282, 188, 18], [-318, 186, 13], [-336, 138, 6]]],
+    ['I3', 'rocky', [[-220, -280, 55], [-175, -250, 30], [-158, -312, 9]]],
+    ['I4', 'rocky', [[250, -260, 40], [212, -232, 24], [262, -218, 18], [205, -282, 8]]],
+    ['I5', 'tropical', [[20, 360, 30], [-14, 340, 18], [56, 338, 8]]],
+    ['I6', 'tropical', [[-413, -36, 21], [-400, -18, 12], [-368, -62, 9]]],
+    ['T1', 'tropical', [[150, -150, 22], [128, -168, 14], [170, -132, 12]]],
+    ['T2', 'tropical', [[-170, 150, 22], [-190, 132, 14], [-150, 168, 12]]],
+    ['E1a', 'reef', [[140, 260, 7]]],
+    ['E1b', 'reef', [[117.5, 299, 7]]],
+    ['E1c', 'reef', [[162.5, 299, 7]]],
+    ['G1', 'cove', [[373.66, -373.66, 13], [355.27, -375.07, 9], [375.07, -355.27, 9]]],
+    ['G2', 'cove', [[-373.66, -373.66, 13], [-375.07, -355.27, 9], [-355.27, -375.07, 9]]],
+    ['G3', 'cove', [[-373.66, 373.66, 13], [-355.27, 375.07, 9], [-375.07, 355.27, 9]]],
+    ['G4', 'cove', [[373.66, 373.66, 13], [375.07, 355.27, 9], [355.27, 375.07, 9]]]
   ];
   const circles = ISLAND_SHAPES_1_1.flatMap((s) => s.circles.map((c) => ({ shape: s, ...c })));
-  const isNew = (id: string) => !ISLANDS.some((i) => i.id === id);
+  type ShapeCircle = (typeof circles)[number];
+  const OLD = new Map(ISLANDS.map((i) => [i.id, i]));
+  // Un círculo entero dentro del de la 1.0 de su isla no tapa nada que la 1.0 no tapara: las reglas de AC-170 (AC-199 b)
+  // son sobre lo que crece fuera de la 1.0
+  const contained = (c: ShapeCircle) => {
+    const o = OLD.get(c.shape.id);
+    return !!o && Math.hypot(c.x - o.x, c.z - o.z) + c.radius <= o.radius + 1e-9;
+  };
+  // Lo que crece: los puntos del borde del círculo (cada 0,5°) que caen fuera del de la 1.0 de su isla (todo el borde si
+  // es nueva)
+  const growth = (c: ShapeCircle) => {
+    const o = OLD.get(c.shape.id);
+    return Array.from({ length: 720 }, (_, k) => ({ x: c.x + c.radius * Math.cos((2 * Math.PI * k) / 720), z: c.z + c.radius * Math.sin((2 * Math.PI * k) / 720) })).filter(
+      (p) => !o || Math.hypot(p.x - o.x, p.z - o.z) > o.radius + 1e-6
+    );
+  };
+  // Distancia de un punto al borde de la unión de una isla (negativa dentro)
+  const unionEdge = (id: string, p: Vec2) => Math.min(...circles.filter((c) => c.shape.id === id).map((c) => Math.hypot(p.x - c.x, p.z - c.z) - c.radius));
 
-  test('AC-170: las 16 formas de GDD §4 con su arquetipo, su centro y su radio, y la lista plana de círculos del mapa', () => {
-    expect(ISLAND_SHAPES_1_1.map((s) => [s.id, s.archetype, ...s.circles.flatMap((c) => [c.x, c.z, c.radius])])).toEqual(GDD_TABLE);
-    expect(MAP_1_1.islands).toEqual(GDD_TABLE.map(([id, , x, z, radius]) => ({ id, x, z, radius })));
+  test('AC-170: las 16 formas de GDD §4 (D83) con su arquetipo y sus 44 círculos, y la lista plana de círculos del mapa', () => {
+    expect(ISLAND_SHAPES_1_1.map((s) => [s.id, s.archetype, s.circles.map((c) => [c.x, c.z, c.radius])])).toEqual(GDD_TABLE);
+    expect(MAP_1_1.islands).toEqual(GDD_TABLE.flatMap(([id, , cs]) => cs.map(([x, z, radius], k) => ({ id: cs.length > 1 ? `${id}.${k}` : id, x, z, radius }))));
+    expect(MAP_1_1.islands).toHaveLength(44);
     expect(MAP_1_1.moorings).toBe(true);
   });
 
@@ -104,27 +124,56 @@ describe('E16 — Mapa de la 1.1 (datos provisionales)', () => {
     Array.from({ length: 31 }, (_, k) => ({ sector: id, deg: 7.5 + 2.5 * k, x: Math.cos(deg(7.5 + 2.5 * k)) * 440 * sx, z: Math.sin(deg(7.5 + 2.5 * k)) * 440 * sz }))
   );
 
-  test('AC-170: las formas nuevas no tocan el arco de la guarida con 17 m de margen ni el anillo de la cañonera (400–470 m) con 16 m', () => {
-    const touches = circles
-      .filter((c) => isNew(c.shape.id))
-      .filter((c) => {
-        const d = Math.hypot(c.x, c.z);
-        const ring = d + c.radius > 400 - 16 && d - c.radius < 470 + 16;
-        return ring || lairArc.some((p) => Math.hypot(p.x - c.x, p.z - c.z) < c.radius + 17);
-      })
-      .map((c) => c.shape.id);
+  test('AC-170: lo que las islas crecen fuera de la 1.0 queda a ≥ 17 m del arco de la guarida y fuera del anillo de la cañonera (400–470 m) con 16 m', () => {
+    let arcMin = { d: Infinity, id: '' };
+    const inBand: string[] = [];
+    for (const c of circles)
+      for (const p of growth(c)) {
+        const d = Math.min(...lairArc.map((q) => Math.hypot(p.x - q.x, p.z - q.z)));
+        if (d < arcMin.d) arcMin = { d, id: c.shape.id };
+        const r = Math.hypot(p.x, p.z);
+        if (r > 400 - 16 && r < 470 + 16) inBand.push(`${c.shape.id} (${c.x}, ${c.z}, ${c.radius}) a r ${r.toFixed(1)}`);
+      }
+    console.log(`AC-170: lo nuevo, a ${arcMin.d.toFixed(2)} m del arco de la guarida (${arcMin.id}; pide ≥ 17) · bordes nuevos dentro del anillo 384–486 m: ${inBand.length}`);
     expect(lairArc).toHaveLength(124);
-    expect(touches).toEqual([]);
+    expect(arcMin.d).toBeGreaterThanOrEqual(17);
+    expect([...new Set(inBand.map((s) => s.split(' ')[0]))]).toEqual([]);
   });
 
-  test('AC-170: de los 124 puntos del arco, solo el de 7,5° del sector NO no es navegable para el Capitán, a ≈ 10 m del borde de I6', () => {
+  // El abanico de aparición de la cañonera con el navigable() real (pirateSpot, world.ts): de 0,12 a π/2 − 0,12 rad de
+  // cada sector, r de 400 a 470 m y el margen de la cañonera, en una rejilla de 1 m por 0,25°. La 1.0 ya tapa parte del
+  // abanico (I3 e I4 entran en 400 − 16): la regla es que D83 no tape ningún punto que la 1.0 dejaba libre. La holgura de
+  // cada círculo se escribe aparte para los nuevos y para los que caen dentro de la 1.0 (que no pueden tapar nada nuevo):
+  // con una sola cifra por isla, los círculos contenidos de I6 (−23,3) escondían su islote nuevo (+1,8)
+  test('AC-170: el abanico de aparición de la cañonera no pierde ningún punto que la 1.0 dejaba libre; holgura de los círculos nuevos ≥ 0', () => {
+    const m = navClearance(GUNBOAT_CLASS);
+    const nav = nav11();
+    const nav10 = new Navigator(ISLANDS);
+    const fan: Vec2[] = [];
+    for (const { sx, sz } of PIRATE_SECTORS)
+      for (let a = 0.12; a <= Math.PI / 2 - 0.12 + 1e-9; a += deg(0.25))
+        for (let r = GUNBOAT_RING.min; r <= GUNBOAT_RING.max + 1e-9; r += 1) fan.push({ x: Math.cos(a) * r * sx, z: Math.sin(a) * r * sz });
+    const newlyBlocked = fan.filter((p) => nav10.navigable(p, m) && !nav.navigable(p, m));
+    // Holgura de cada círculo al abanico, solo de los que quedan a < 30 m de su corona (los demás no pueden tocarlo)
+    const near = circles.filter((c) => Math.hypot(c.x, c.z) + c.radius + m > GUNBOAT_RING.min - 30 && Math.hypot(c.x, c.z) - c.radius - m < GUNBOAT_RING.max + 30);
+    const slack = (c: ShapeCircle) => fan.reduce((min, p) => Math.min(min, Math.hypot(p.x - c.x, p.z - c.z) - c.radius - m), Infinity);
+    const fresh = near.filter((c) => !contained(c)).map((c) => ({ c, d: slack(c) })).sort((a, b) => a.d - b.d);
+    const inside = near.filter(contained).map((c) => ({ c, d: slack(c) })).sort((a, b) => a.d - b.d);
+    const show = (l: { c: ShapeCircle; d: number }[]) => l.slice(0, 4).map(({ c, d }) => `${c.shape.id} (${c.x}, ${c.z}, ${c.radius}) ${d.toFixed(2)}`).join(' · ');
+    console.log(
+      `AC-170: abanico de la cañonera, ${fan.length} puntos, margen ${m}: libres en la 1.0 y tapados por D83: ${newlyBlocked.length} · holgura de los círculos nuevos a < 30 m del anillo (${fresh.length}): ${show(fresh)} · de los contenidos en la 1.0 (${inside.length}, no cuentan): ${show(inside)}`
+    );
+    expect(newlyBlocked).toEqual([]);
+    expect(Math.min(...fresh.map((f) => f.d))).toBeGreaterThanOrEqual(0);
+  });
+
+  test('AC-170: de los 124 puntos del arco, solo el de 7,5° del sector NO no es navegable para el Capitán, a 10,6 ±0,5 m del borde de la unión de I6', () => {
     const nav = nav11();
     const blocked = lairArc.filter((p) => !nav.navigable(p, navClearance(CAPTAIN_CLASS)));
-    const i6 = ISLANDS.find((i) => i.id === 'I6')!;
-    const edge = blocked.map((p) => Math.hypot(p.x - i6.x, p.z - i6.z) - i6.radius);
-    console.log(`AC-170: puntos del arco no navegables para el Capitán: ${blocked.map((p, k) => `${p.sector} ${p.deg}° (a ${edge[k].toFixed(1)} m de I6)`).join(' · ')}`);
+    const edge = blocked.map((p) => unionEdge('I6', p));
+    console.log(`AC-170: puntos del arco no navegables para el Capitán: ${blocked.map((p, k) => `${p.sector} ${p.deg}° (a ${edge[k].toFixed(2)} m de la unión de I6)`).join(' · ')}`);
     expect(blocked.map((p) => [p.sector, p.deg])).toEqual([['NO', 7.5]]);
-    expect(Math.abs(edge[0] - 10)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(edge[0] - 10.6)).toBeLessThanOrEqual(0.5);
   });
 
   // AC-171 sin reloj: lo que pide es que los grafos ya estén hechos al crear el mundo. Se cuenta con buildCount: la primera
@@ -371,7 +420,7 @@ describe('E16 — Amarres del puerto (AC-176)', () => {
   });
 });
 
-describe('E16 — Rutas del puerto (AC-177, con la disposición provisional)', () => {
+describe('E16 — Rutas del puerto (AC-177, con las islas de D83 y el puerto provisional)', () => {
   const HEADINGS = Array.from({ length: MOORINGS.count }, (_, k) => deg(MOORINGS.firstDeg + k * MOORINGS.stepDeg));
   const LAIRS = PIRATE_SECTORS.map(({ id, sx, sz }) => ({ id, x: 311.1 * sx, z: 311.1 * sz }));
   const ratio = (nav: Navigator, from: Vec2, to: Vec2, margin: number) => {

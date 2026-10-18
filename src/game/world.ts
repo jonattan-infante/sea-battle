@@ -98,7 +98,7 @@ export interface CreateWorldOptions {
   seed?: number;
   spawnNpcs?: boolean;
   i2?: boolean; // AC-187: apagado por defecto, como en staging y prod
-  map?: MapDef; // por defecto, el de la 1.0 (el del juego); MAP_1_1 es provisional (constants.ts)
+  map?: MapDef; // por defecto, el de la 1.0 (el del juego); MAP_1_1 es el de la 1.1, aún sin activar (constants.ts)
 }
 
 export function createWorld(options: CreateWorldOptions = {}): World {
