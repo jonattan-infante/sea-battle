@@ -1,5 +1,5 @@
 import { IslandDef, MAP_1_0, MAP_1_1 } from '../constants';
-import { Navigator, segmentPointDistance } from '../nav';
+import { Navigator, OpenList, segmentPointDistance } from '../nav';
 import { Vec2, createRng } from '../vec';
 
 // Coste de las rutas con las islas de D83 (O-43; BACKLOG, decisiones de producto del 2026-10-18). Con MAP_1_1 (44 círculos
@@ -84,6 +84,34 @@ describe('Coste de las rutas con MAP_1_1 (O-43)', () => {
     console.log(`O-43 B ${name}: ${total} tramos, ${blocked} cortados`);
     expect(blocked).toBeGreaterThan(total / 10);
     expect(total - blocked).toBeGreaterThan(total / 10);
+    expect(wrong).toEqual([]);
+  });
+
+  // D: el montículo de la lista abierta saca siempre una entrada de f mínima, frente a una lista ordenada a mano, con
+  // entradas y salidas mezcladas como en el A* (más entradas que salidas, f repetidas y nodos que vuelven a entrar)
+  test('D: la lista abierta saca siempre una entrada de f mínima', () => {
+    const rng = createRng(13);
+    const open = new OpenList();
+    const naive: { id: number; key: number }[] = [];
+    const wrong: string[] = [];
+    let pops = 0;
+    for (let step = 0; step < 5000; step++) {
+      if (naive.length === 0 || rng() < 0.6) {
+        const id = Math.floor(rng() * 400);
+        const key = Math.round(rng() * 2000) / 4; // f repetidas, como en los empates del A*
+        open.push(id, key);
+        naive.push({ id, key });
+      } else {
+        const min = Math.min(...naive.map((e) => e.key));
+        const id = open.pop();
+        pops++;
+        const k = naive.findIndex((e) => e.id === id && e.key === min);
+        if (k < 0 && wrong.length < 5) wrong.push(`salida ${pops}: el nodo ${id} no tiene una entrada con la f mínima ${min}`);
+        naive.splice(k < 0 ? naive.findIndex((e) => e.key === min) : k, 1);
+      }
+      if (open.size !== naive.length && wrong.length < 5) wrong.push(`paso ${step}: ${open.size} entradas frente a ${naive.length}`);
+    }
+    expect(pops).toBeGreaterThan(1000);
     expect(wrong).toEqual([]);
   });
 });

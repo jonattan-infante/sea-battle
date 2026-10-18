@@ -40,6 +40,57 @@ function segmentPointDistance2(a: Vec2, abx: number, abz: number, len2: number, 
   return dx * dx + dz * dz;
 }
 
+// Lista abierta del A* (O-43): un montículo binario de nodos por f, en vez de recorrer la lista entera en cada paso. Cada
+// entrada guarda la f con la que entró: cuando la f de un nodo baja, el nodo entra otra vez, y la entrada vieja sale
+// después y se salta porque el nodo ya está cerrado
+export class OpenList {
+  private readonly keys: number[] = [];
+  private readonly ids: number[] = [];
+
+  get size(): number {
+    return this.ids.length;
+  }
+
+  push(id: number, key: number): void {
+    const { keys, ids } = this;
+    let i = ids.length;
+    keys.push(key);
+    ids.push(id);
+    while (i > 0) {
+      const parent = (i - 1) >> 1;
+      if (keys[parent] <= key) break;
+      keys[i] = keys[parent];
+      ids[i] = ids[parent];
+      i = parent;
+    }
+    keys[i] = key;
+    ids[i] = id;
+  }
+
+  // El nodo de menor f (la lista no puede estar vacía)
+  pop(): number {
+    const { keys, ids } = this;
+    const top = ids[0];
+    const lastKey = keys.pop() as number;
+    const lastId = ids.pop() as number;
+    const n = ids.length;
+    if (n === 0) return top;
+    let i = 0;
+    for (;;) {
+      const left = 2 * i + 1;
+      if (left >= n) break;
+      const child = left + 1 < n && keys[left + 1] < keys[left] ? left + 1 : left;
+      if (keys[child] >= lastKey) break;
+      keys[i] = keys[child];
+      ids[i] = ids[child];
+      i = child;
+    }
+    keys[i] = lastKey;
+    ids[i] = lastId;
+    return top;
+  }
+}
+
 // Una forma del mapa con el círculo que envuelve los suyos (O-43): centro en la media de sus centros y radio hasta su
 // borde más lejano. Los círculos de una forma son los «id.k» de mapOf (constants.ts); con uno solo, el id de la forma
 interface Shape {
@@ -243,16 +294,13 @@ export class Navigator {
     const f = new Float64Array(n + 2).fill(Infinity);
     const came = new Int32Array(n + 2).fill(-1);
     const closed = new Uint8Array(n + 2);
-    const open: number[] = [START];
+    const open = new OpenList();
     g[START] = 0;
     f[START] = distance(from, to);
+    open.push(START, f[START]);
 
-    while (open.length > 0) {
-      let bi = 0;
-      for (let i = 1; i < open.length; i++) if (f[open[i]] < f[open[bi]]) bi = i;
-      const cur = open[bi];
-      open[bi] = open[open.length - 1];
-      open.pop();
+    while (open.size > 0) {
+      const cur = open.pop();
       if (cur === GOAL) break;
       if (closed[cur]) continue;
       closed[cur] = 1;
@@ -264,7 +312,7 @@ export class Navigator {
           g[next] = cost;
           f[next] = cost + distance(pos(next), to);
           came[next] = cur;
-          open.push(next);
+          open.push(next, f[next]);
         }
       };
       for (const next of neighbors) relax(next);
