@@ -12,7 +12,7 @@ import {
 } from '../constants';
 import { GameEvent, Ship, Upgrades, World } from '../types';
 import { createRng, distance } from '../vec';
-import { addPlayer, attack, createWorld, maxHpFor, moveTo, respawn, setRepair, shipOfPlayer, spawnCaptain, spawnMerchant, spawnPirate } from '../world';
+import { addPlayer, attack, createWorld, maxHpFor, moveTo, respawn, setRepair, shipOfPlayer, spawnCaptain, spawnGunboat, spawnMerchant, spawnPirate } from '../world';
 import { DT, i2World, median, placeCaptain, placePlayer, run } from './helpers';
 
 const PORT = { x: 0, z: 0 };
@@ -105,6 +105,20 @@ describe('H-305 — Aparición del Capitán pirata (AC-54)', () => {
     const second = captains(world);
     expect(second).toHaveLength(1);
     expect(second[0].id).not.toBe(first[0].id);
+  });
+
+  test('AC-54: las cañoneras cuentan como los piratas (H-306): 5 piratas y 5 cañoneras hundidos, el capitán aparece con la 10.ª', () => {
+    const world = i2World(7);
+    placePlayer(world, 'K', -200, 200);
+    for (let i = 0; i < 5; i++) {
+      sinkByPlayer(world, spawnPirate(world, 0));
+      if (i < 4) sinkByPlayer(world, spawnGunboat(world, 0)!);
+    }
+    expect(world.killsSinceBoss).toBe(9);
+    expect(captains(world)).toHaveLength(0);
+    const tick = sinkByPlayer(world, spawnGunboat(world, 0)!);
+    expect(captains(world)).toHaveLength(1);
+    expect(tick).toContainEqual(expect.objectContaining({ type: 'captain', shipId: captains(world)[0].id }));
   });
 
   test('AC-54: si el centro del arco exterior del sector elegido está a < 150 m de un jugador, aparece en otro punto del mismo arco (440 m) a ≥ 150 m', () => {

@@ -1,9 +1,9 @@
 // AC-188: el controlador de órbita compartido por los NPC deja la órbita real en el radio nominal (GDD §9, «Órbita real =
 // nominal»). Los radios van escritos a mano, del GDD: así el test no se ajusta a las constantes que compara AC-04
-import { CAPTAIN_CLASS, GUNBOAT_CLASS, SHIP_CLASSES, TICK_RATE } from '../constants';
+import { CAPTAIN_CLASS, GUNBOAT_CLASS, TICK_RATE } from '../constants';
 import { Ship, World } from '../types';
 import { distance } from '../vec';
-import { shipOfPlayer, spawnCaptain, spawnPirate } from '../world';
+import { shipOfPlayer, spawnCaptain, spawnGunboat, spawnPirate } from '../world';
 import { i2World, median, placePlayer, run } from './helpers';
 
 // BACKLOG AC-188: «cuando un pirata (45 m), un capitán (50 m) o una cañonera (62 m) orbitan 20 s un objetivo quieto,
@@ -17,11 +17,7 @@ const START_ANGLES = [0, 1.6, 3.2, 4.8]; // rad alrededor del objetivo
 const TARGET = { x: 0, z: -300 };
 
 function hostile(world: World, classId: string, x: number, z: number): Ship {
-  const ship = classId === CAPTAIN_CLASS ? spawnCaptain(world, { x, z })! : spawnPirate(world, 0);
-  if (classId === GUNBOAT_CLASS) {
-    ship.classId = classId;
-    ship.hp = ship.maxHp = SHIP_CLASSES[classId].maxHp;
-  }
+  const ship = classId === CAPTAIN_CLASS ? spawnCaptain(world, { x, z })! : classId === GUNBOAT_CLASS ? spawnGunboat(world, 0)! : spawnPirate(world, 0);
   ship.pos = { x, z };
   ship.ai!.origin = { x, z };
   ship.ai!.wait = 999;

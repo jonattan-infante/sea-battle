@@ -173,10 +173,11 @@ describe('E3 — Mercante pasivo (§9)', () => {
 });
 
 describe('E3 — Población y reaparición (§9)', () => {
-  test('AC-51: al arrancar hay 12 piratas (3 por sector) y 8 mercantes en sus zonas', () => {
+  test('AC-51 (I2 apagado, también tras H-306): al arrancar hay 12 piratas (3 por sector), 8 mercantes en sus zonas y ninguna cañonera', () => {
     const world = createWorld({ seed: 3 });
     const pirates = [...world.ships.values()].filter((s) => s.kind === 'pirate');
     const merchants = [...world.ships.values()].filter((s) => s.kind === 'merchant');
+    expect(pirates.map((s) => s.classId)).toEqual(Array(12).fill('pirate'));
     expect(pirates).toHaveLength(12);
     expect(merchants).toHaveLength(8);
     const sectors = [0, 0, 0, 0];

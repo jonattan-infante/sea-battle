@@ -1,6 +1,6 @@
 import { TICK_RATE } from '../constants';
 import { GameEvent, Ship, World } from '../types';
-import { addPlayer, createWorld, drainEvents, shipOfPlayer, spawnCaptain, spawnMerchant, spawnPirate, step } from '../world';
+import { addPlayer, createWorld, drainEvents, shipOfPlayer, spawnCaptain, spawnGunboat, spawnMerchant, spawnPirate, step } from '../world';
 
 export const DT = 1 / TICK_RATE;
 
@@ -60,6 +60,20 @@ export function placeCaptain(world: World, x: number, z: number, heading = 0): S
   const ship = spawnCaptain(world, { x, z });
   if (!ship) throw new Error('No se pudo colocar el capitán');
   ship.heading = heading;
+  ship.ai!.wait = 999;
+  ship.destination = null;
+  ship.path = [];
+  return ship;
+}
+
+// Cañonera con su origen en (x, z) y el sector de ese punto, en patrulla y sin moverse hasta que vea a alguien. Necesita
+// el I2 encendido (AC-187)
+export function placeGunboat(world: World, x: number, z: number, heading = 0): Ship {
+  const ship = spawnGunboat(world, x > 0 ? (z < 0 ? 0 : 3) : z < 0 ? 1 : 2);
+  if (!ship) throw new Error('No se pudo colocar la cañonera: ¿I2 apagado?');
+  ship.pos = { x, z };
+  ship.heading = heading;
+  ship.ai!.origin = { x, z };
   ship.ai!.wait = 999;
   ship.destination = null;
   ship.path = [];

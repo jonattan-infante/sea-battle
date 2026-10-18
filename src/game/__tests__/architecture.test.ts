@@ -157,8 +157,14 @@ describe('E0 — Arquitectura de la simulación', () => {
     expect([g.kind, g.label, g.length, g.radius, g.maxHp, g.patrolSpeed, g.maxSpeed, g.accel, g.brake, Math.round((g.turnRate * 180) / Math.PI), g.cannonsPerSide, g.cannon, g.reward, g.wreck, g.respawnTime]).toEqual([
       'pirate', 'Cañonera pirata', 28, 8, 900, 5, 8, 2.5, 4, 50, 6, { damage: 20, accuracy: 0.55, range: 65, reload: 5.0 }, 210, 50, 45
     ]);
-    expect([C.HOSTILE_AI.gunboat.aggro, C.HOSTILE_AI.gunboat.orbitRadius, C.HOSTILE_AI.gunboat.orbitSpeed, C.HOSTILE_AI.gunboat.leash]).toEqual([80, 62, 6, 200]);
+    // Detección, objetivo perdido (> 110 m, como el pirata), correa, órbita, patrulla y las bandas de mantener la distancia:
+    // se acerca por encima de 64 m y se aleja por debajo de 55 m
+    expect(C.HOSTILE_AI.gunboat).toEqual({ aggro: 80, disengage: 110, leash: 200, orbitRadius: 62, orbitSpeed: 6, patrolRadius: 120, keepAway: { approach: 64, flee: 55 } });
+    expect(C.navClearance(C.GUNBOAT_CLASS)).toBe(16);
+    // Población (AC-51): con el I2 apagado, la de la 1.0; encendido, 4 cañoneras (1 por sector, en el anillo de 400–470 m)
+    // sustituyen a 4 piratas
     expect([C.NPC_POPULATION.pirate, C.NPC_POPULATION.merchant, C.PIRATES_PER_SECTOR]).toEqual([12, 8, 3]);
+    expect([C.NPC_POPULATION_I2, C.PIRATES_PER_SECTOR_I2, C.GUNBOATS_PER_SECTOR, C.GUNBOAT_RING]).toEqual([{ pirate: 8, gunboat: 4, merchant: 8 }, 2, 1, { min: 400, max: 470 }]);
     expect([C.PIRATE_AGGRO_RADIUS, C.PIRATE_DISENGAGE_TARGET, C.PIRATE_LEASH, C.PIRATE_ORBIT_RADIUS, C.PIRATE_ORBIT_SPEED, C.PIRATE_PORT_EXCLUSION]).toEqual([70, 110, 200, 45, 8, 130]);
     expect([C.THREAT_WINDOW, C.MERCHANT_FLEE_TIME]).toEqual([10, 12]);
     // §10 Economía
