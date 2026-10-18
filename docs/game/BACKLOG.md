@@ -1601,6 +1601,15 @@ Si A tumba el proceso o pierde progreso, el fallo es P0, y con la 1.0 ya en prod
         - **Las 20 corridas sí hacen falta, pero después de la salida 1.** Medir ahora 20 sobre una versión que va a cambiar gasta máquina sin decidir nada. Serán 20 por perfil, con `firstFrameAt` y la hora de la bienvenida. Una corrida que pase del tope con el modelo a tiempo se investiga; no se descarta.
       - **Las 10 descargas, en caché en ≤ 10 s: cumplen.** Terminan con un p95 de 1 553, 2 543 y 5 775 ms tras la entrada (casa, hotspot y hotspot malo).
       - **Mutantes del cargador:** 15 de 22 mueren por aserción en el log. Los 4 e2e también son rojos por aserción, pero los códigos ANSI de Playwright los clasificaron mal. J5 y J6 los veían tests que lanzan excepción, y dev-render los endureció; J8 no compilaba. Los tres se repiten en un turno corto (datos de dev-render). **Resultado: 22 de 22 por aserción** (`scratchpad/dev-render-turno-p2b-8292bd6.log`, FIN a las 18:03:53Z, leído por producto). J5 muere en `test:409`, J6 en `:191` y J8 en `:272` (`:34-41`); J8 da además un crash en `:304`, que no cuenta. Los 4 e2e reclasificados mueren por `expect`: E1 en `spec:175`, E2 y E4 en `:160`, y E3 en `:193`, `:209` y `:230` (`:2-28`). Con los tests endurecidos, tsc da EXIT 0 y el Jest del archivo, 36 de 36 (`:30-32`). dev-render los commitea sin push.
+    - **Qué pide fusionar el PR #19 y qué pide encender los modelos** (producto, 2026-10-18; aclaración, porque el resumen del lead las juntaba). Son dos puertas distintas. El PR #19 trae el cargador, y en `main` va con el manifiesto de modelos vacío, así que ningún jugador ve un modelo nuevo.
+      - **Para fusionar el PR #19:**
+        - (a) `/basis` con caché larga y su e2e de «0 peticiones a la red en la visita siguiente» (arriba);
+        - (b) los 4 triángulos explicados: cumplido;
+        - (c) con el manifiesto vacío, la primera visita no baja la cadena de carga: 0 peticiones al cargador y a `/basis`, y la entrada como hoy. La medida no lo comprobó: midió con modelos. Si hoy la baja, es condición, porque cada jugador bajaría ~315 KB sin usarlos. Verificación: e2e con el manifiesto vacío.
+      - **Para llenar el manifiesto en un entorno desplegado** (staging, vistas previas o prod, es decir, que alguien vea un modelo nuevo):
+        - la salida 1 aplicada y las 20 corridas por perfil, con el criterio de la entrada;
+        - el visto bueno de Jonattan a la lámina de ese barco (AC-192; AC-193 e).
+      - La salida 1 y las 20 corridas no frenan la fusión del cargador, porque con el manifiesto vacío no hay entrada que esperar.
 
     La cota definitiva se fija con la medida del piloto en el juego (dev-render, con turno de máquina), y puede bajar o subir con ella;
   - (d) la clase y la familia se leen como pide AC-194 (b) y (c), y AC-72 sigue en verde con los 2 Navíos como «otro jugador»;
