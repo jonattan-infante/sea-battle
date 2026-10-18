@@ -27,6 +27,7 @@ export interface RenderShip {
   repairing: boolean;
   protectedUntil: number; // tiempo de servidor (s); protegido si > client.serverTime()
   sinkingSince: number; // performance.now() en que empezó a hundirse (0 si no)
+  level: number | null; // nivel del jugador (1.1, `lv`): la insignia de la placa y del objetivo; null en los NPC
 }
 
 interface Sample {
@@ -442,7 +443,8 @@ function toRender(s: ShipSnapshot): RenderShip {
     targetId: s.t,
     repairing: s.r,
     protectedUntil: s.pu,
-    sinkingSince: 0
+    sinkingSince: 0,
+    level: s.lv ?? null
   };
 }
 
@@ -472,6 +474,7 @@ function interpolate(entity: Entity, renderTime: number, nowMs: number): void {
   render.targetId = s.t;
   render.repairing = s.r;
   render.protectedUntil = s.pu;
+  render.level = s.lv ?? null;
   if (s.st === 'sinking' && render.state !== 'sinking') render.sinkingSince = nowMs;
   if (s.st === 'alive') render.sinkingSince = 0;
   render.state = s.st;
