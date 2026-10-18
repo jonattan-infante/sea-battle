@@ -189,11 +189,7 @@ export class Navigator {
     const GOAL = n + 1;
     const pos = (i: number) => (i === START ? from : i === GOAL ? to : nodes[i]);
     const startLinks: number[] = [];
-    const goalLinks = new Set<number>();
-    for (let i = 0; i < n; i++) {
-      if (this.segmentClear(from, nodes[i], startClear)) startLinks.push(i);
-      if (this.segmentClear(nodes[i], to, clearance)) goalLinks.add(i);
-    }
+    for (let i = 0; i < n; i++) if (this.segmentClear(from, nodes[i], startClear)) startLinks.push(i);
 
     const g = new Float64Array(n + 2).fill(Infinity);
     const f = new Float64Array(n + 2).fill(Infinity);
@@ -224,7 +220,9 @@ export class Navigator {
         }
       };
       for (const next of neighbors) relax(next);
-      if (cur !== START && goalLinks.has(cur)) relax(GOAL);
+      // El destino se prueba desde cada nodo al expandirlo, no desde todos antes de empezar: cada nodo se expande una vez
+      // como mucho, así que es la misma prueba, solo en los nodos que el A* llega a expandir (O-43)
+      if (cur !== START && this.segmentClear(nodes[cur], to, clearance)) relax(GOAL);
     }
 
     const route = (end: number) => {
