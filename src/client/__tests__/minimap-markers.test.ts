@@ -4,7 +4,7 @@
 // que dibuja drawShipMarker con un contexto falso: el trazado entre beginPath y fill, y el relleno y cada trazo (color y
 // grosor) en el momento de fill y stroke
 import { GUNBOAT_CLASS } from '../../game/constants';
-import { drawShipMarker, MarkerContext } from '../minimap-markers';
+import { AnchorContext, drawPortAnchor, drawShipMarker, MarkerContext, PORT_ANCHOR_SCALE } from '../minimap-markers';
 
 interface Drawn {
   path: unknown[][];
@@ -83,6 +83,82 @@ describe('Marcadores del minimapa (O-40 y D63)', () => {
       // Los radios en px CSS: el trazo va centrado en el círculo, así que cubre de r − ancho / 2 a r + ancho / 2
       const r = (d.path[0][3] as number) / dpr;
       expect(d.strokes.map((s) => [r - s.width / dpr / 2, r + s.width / dpr / 2])).toEqual([[1, 4.5], [2, 3.5]]);
+    });
+  }
+});
+
+// ⚓ del puerto (D73, D87; ART-DIRECTION §4.3, aclarado en r11 52dd3a1): se graba la transformación, el trazado en las
+// unidades del viewBox de 24 y cada trazo con su color, su grosor y sus extremos
+function recordAnchor(x: number, y: number, dpr: number) {
+  const calls: unknown[][] = [];
+  const path: unknown[][] = [];
+  const strokes: { color: string; width: number; cap: string; join: string }[] = [];
+  const state = { fillStyle: '', strokeStyle: '', lineWidth: 0, lineCap: 'butt', lineJoin: 'miter' };
+  const ctx = {
+    get fillStyle() { return state.fillStyle; },
+    set fillStyle(v: string) { state.fillStyle = v; },
+    get strokeStyle() { return state.strokeStyle; },
+    set strokeStyle(v: string) { state.strokeStyle = v; },
+    get lineWidth() { return state.lineWidth; },
+    set lineWidth(v: number) { state.lineWidth = v; },
+    get lineCap() { return state.lineCap; },
+    set lineCap(v: string) { state.lineCap = v; },
+    get lineJoin() { return state.lineJoin; },
+    set lineJoin(v: string) { state.lineJoin = v; },
+    save: () => calls.push(['save']),
+    restore: () => calls.push(['restore']),
+    translate: (...a: number[]) => calls.push(['translate', ...a]),
+    scale: (...a: number[]) => calls.push(['scale', ...a]),
+    beginPath: () => { path.length = 0; },
+    moveTo: (...a: number[]) => path.push(['moveTo', ...a]),
+    lineTo: (...a: number[]) => path.push(['lineTo', ...a]),
+    closePath: () => path.push(['closePath']),
+    rect: (...a: number[]) => path.push(['rect', ...a]),
+    arc: (...a: number[]) => path.push(['arc', ...a]),
+    ellipse: (...a: number[]) => path.push(['ellipse', ...a]),
+    fill: () => calls.push(['fill']),
+    stroke: () => strokes.push({ color: state.strokeStyle, width: state.lineWidth, cap: state.lineCap, join: state.lineJoin })
+  } as unknown as AnchorContext;
+  drawPortAnchor(ctx, x, y, dpr, SAND);
+  return { calls, path, strokes };
+}
+
+const SAND = '#E6CF9A';
+// El SVG de la lámina D87: <circle cx="12" cy="5" r="2.5"/> y <path d="M12 7.5V19.5M7 11h10M5 13a7 6.5 0 0 0 14 0"/>, con
+// las 4 llamadas de §4.3 (r11 dfed3c6). El arco, con sweep 0 de (5, 13) a (19, 13), es la mitad de abajo de la elipse de
+// centro (12, 13): pasa por (12, 19,5). Cada pieza empieza con su moveTo: sin él, el canvas la uniría con una recta
+const D87_ANCHOR = [
+  ['moveTo', 14.5, 5],
+  ['arc', 12, 5, 2.5, 0, Math.PI * 2],
+  ['moveTo', 12, 7.5],
+  ['lineTo', 12, 19.5],
+  ['moveTo', 7, 11],
+  ['lineTo', 17, 11],
+  ['moveTo', 5, 13],
+  ['ellipse', 12, 13, 7, 6.5, 0, Math.PI, 0, true]
+];
+
+describe('⚓ del puerto en el minimapa (D73, D87)', () => {
+  for (const dpr of [1, 2]) {
+    test(`a DPR ${dpr}: es el ancla de la lámina D87, de 13 px de alto y 10,7 de ancho, centrada en el puerto`, () => {
+      const { calls, path } = recordAnchor(91, 91, dpr);
+      expect(path).toEqual(D87_ANCHOR);
+      const k = PORT_ANCHOR_SCALE * dpr;
+      expect(calls).toEqual([['save'], ['translate', 91, 91], ['scale', k, k], ['translate', -12, -11], ['restore']]);
+      // La caja del ancla en el viewBox (x 5–19, y 2,5–19,5) llevada a px CSS por la transformación
+      const toCss = (vx: number, vy: number) => [(91 + (vx - 12) * k) / dpr, (91 + (vy - 11) * k) / dpr];
+      const [x0, y0] = toCss(5, 2.5);
+      const [x1, y1] = toCss(19, 19.5);
+      expect([y1 - y0, x1 - x0, (x0 + x1) / 2, (y0 + y1) / 2].map((v) => +v.toFixed(3))).toEqual([13, 10.706, +(91 / dpr).toFixed(3), +(91 / dpr).toFixed(3)]);
+    });
+
+    test(`a DPR ${dpr}: trazo de 1,5 px en arena sobre uno de 3,5 px #07121B, con extremos y uniones redondos`, () => {
+      const { strokes } = recordAnchor(91, 91, dpr);
+      const k = PORT_ANCHOR_SCALE * dpr;
+      expect(strokes.map((s) => [s.color, +((s.width * k) / dpr).toFixed(6), s.cap, s.join])).toEqual([
+        [OUTLINE, 3.5, 'round', 'round'],
+        [SAND, 1.5, 'round', 'round']
+      ]);
     });
   }
 });

@@ -574,7 +574,7 @@ export default function Hud({
 }: {
   client: GameClient;
   actions: HudActions;
-  islands: { x: number; z: number; radius: number }[];
+  islands: { id: string; x: number; z: number; radius: number }[];
   viewRect?: () => ViewRect | null;
   onMinimapView?: (x: number, z: number) => void; // vista libre (E13): el minimapa centra la vista
   onRecenter?: () => void; // vista libre (E13): Centrar vuelve al seguimiento
