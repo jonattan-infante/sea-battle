@@ -19,12 +19,13 @@ let game: GameServer;
 let url: string;
 let logs: string[];
 const sockets: ClientSocket[] = [];
+const CLOCK = Date.UTC(2026, 9, 17, 21, 30, 0); // reloj fijo del servidor: la hora de la línea del log
 
 async function start(): Promise<void> {
   httpServer = createServer();
   io = new Server(httpServer);
   logs = [];
-  game = createGameServer(io, { authenticate: testAuth, seed: 5, spawnNpcs: false, autoStart: false, now: () => 0, log: (m) => logs.push(m) });
+  game = createGameServer(io, { authenticate: testAuth, seed: 5, spawnNpcs: false, autoStart: false, now: () => CLOCK, log: (m) => logs.push(m) });
   await new Promise<void>((resolve) => httpServer.listen(0, resolve));
   url = `http://localhost:${(httpServer.address() as AddressInfo).port}`;
 }
@@ -119,7 +120,9 @@ describe('E14 — XP con el servidor de juego real', () => {
     expect(levelDeltas().map((d) => d.lv)).toEqual([2]);
   });
 
-  test('AC-148: cada hundimiento entre jugadores deja una línea en el log con el nivel de la víctima y de cada atacante y la XP dada, sin nombres ni ids', async () => {
+  // BACKLOG AC-148 (r11): «el servidor anota en su log cada hundimiento entre jugadores, con los niveles de la víctima y
+  // de cada atacante, la XP dada y la hora, sin nombre ni `userId` […] el log en un Jest+socket, que no contiene ningún `userId`»
+  test('AC-148: cada hundimiento entre jugadores deja una línea en el log con la hora, el nivel de la víctima y de cada atacante y la XP dada, sin nombres ni userId', async () => {
     await start();
     const alpha = await join('user_alpha', 'Alfa');
     const bravo = await join('user_bravo', 'Bravo');
@@ -142,8 +145,10 @@ describe('E14 — XP con el servidor de juego real', () => {
 
     expect(victim.state).toBe('sinking');
     const lines = logs.filter((l) => /PvP \{/.test(l));
-    expect(lines).toEqual(['⚔️  PvP {"victim":10,"attackers":[{"level":10,"xp":70},{"level":12,"xp":15}]}']);
-    expect(lines[0]).not.toMatch(/user_|Alfa|Bravo|Charlie/);
+    expect(lines).toEqual(['⚔️  PvP {"at":"2026-10-17T21:30:00.000Z","victim":10,"attackers":[{"level":10,"xp":70},{"level":12,"xp":15}]}']);
+    const userIds = [...game.world.players.keys()];
+    expect(userIds.sort()).toEqual(['user_alpha', 'user_bravo', 'user_charlie']);
+    for (const text of [...userIds, 'Alfa', 'Bravo', 'Charlie']) expect({ text, inLog: lines[0].includes(text) }).toEqual({ text, inLog: false });
     // Cada atacante recibe solo su evento de XP
     expect(eventsOf(alpha.frames).filter((e) => e.type === 'xp')).toEqual([{ type: 'xp', playerId: 'user_alpha', xp: 70, pos: expect.any(Object), source: 'pvp' }]);
     expect(eventsOf(charlie.frames).filter((e) => e.type === 'xp')).toEqual([{ type: 'xp', playerId: 'user_charlie', xp: 15, pos: expect.any(Object), source: 'pvp' }]);

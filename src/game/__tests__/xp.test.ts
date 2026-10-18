@@ -319,13 +319,31 @@ describe('E14 — H-1402 XP por hundir jugadores (§10b)', () => {
     expect(openPairs(world, 'B')).toEqual([{ victimId: 'A', kills: 1, expiresAt: expect.any(Number) }]);
   });
 
-  // Lectura de dev, pendiente de producto: «el primer hundimiento con XP» (§10b) = el que da más de 0 XP a ese atacante
-  test('AC-147 (lectura de dev): un hundimiento sin XP (4 niveles por debajo) no abre la ventana de la pareja', () => {
-    const world = pvpWorld({ A: 10, B: 6 });
+  // BACKLOG AC-147 (r11, 2026-10-17): «Un hundimiento sin XP no gasta la ventana (GDD §10b): si A (nivel 9) hunde a B
+  // (nivel 5), cobra 0 y la pareja A → B no se abre; cuando B llega al nivel 6, el siguiente hundimiento de A da 25 como
+  // 1.º de la pareja.»
+  test('AC-147: A (nivel 9) hunde a B (nivel 5) y cobra 0 sin abrir la pareja; con B en el nivel 6, el siguiente da 25 como 1.º (y el otro, 12 como 2.º)', () => {
+    const world = pvpWorld({ A: 9, B: 5 });
     expect(pvpSink(world, 'A', 'B').gained.A).toBe(0);
     expect(openPairs(world, 'A')).toEqual([]);
-    setLevel(world, 'B', 10);
-    expect(pvpSink(world, 'A', 'B').gained.A).toBe(100);
+    setLevel(world, 'B', 6);
+    expect(pvpSink(world, 'A', 'B').gained.A).toBe(25);
+    expect(openPairs(world, 'A').map((p) => p.kills)).toEqual([1]);
+    expect(pvpSink(world, 'A', 'B').gained.A).toBe(12); // floor(25 × 0,5)
+  });
+
+  // GDD §10b (r11): «“Con XP” quiere decir que el atacante cobró más de 0: un hundimiento que no le da XP (p. ej., a 4 o
+  // más niveles por encima de la víctima, o con una parte del reparto que redondea a 0) no abre la ventana ni avanza en ella.»
+  test('AC-147: una parte del reparto que redondea a 0 no abre la ventana ni avanza en ella', () => {
+    const world = pvpWorld({ A: 10, B: 10, C: 10 });
+    const tiny = (): number => pvpSink(world, 'A', 'B', [['C', 3000, 0.1]]).gained.A; // A, 30 de 3 030: floor(0,99) = 0
+    expect(tiny()).toBe(0);
+    expect(openPairs(world, 'A')).toEqual([]);
+    expect(openPairs(world, 'C').map((p) => [p.victimId, p.kills])).toEqual([['B', 1]]);
+    expect(pvpSink(world, 'A', 'B').gained.A).toBe(100); // 1.º de la pareja
+    expect(tiny()).toBe(0);
+    expect(openPairs(world, 'A').map((p) => p.kills)).toEqual([1]);
+    expect(pvpSink(world, 'A', 'B').gained.A).toBe(50); // 2.º: el de 0 no avanzó
   });
 
   test('AC-148: B (nivel 10) con el 70 % del daño de A (nivel 10) y el 30 % de C (nivel 12) → A 70 y C 15; el oro de la penalización, entero a quien dio el último golpe', () => {
@@ -353,28 +371,31 @@ describe('E14 — H-1402 XP por hundir jugadores (§10b)', () => {
     expect(drainPvpLog(world)).toEqual([{ victimLevel: 4, attackers: [{ level: 10, xp: 0 }] }]);
   });
 
-  // Lectura de dev, pendiente de producto: el daño de los NPC no se anota (como en el oro), así que no resta parte
-  test('AC-148 (lectura de dev): B dañado casi entero por un pirata y rematado por A → A cobra los 100, como si lo hubiera hundido solo', () => {
-    const world = pvpWorld({ A: 10, B: 10 });
+  // BACKLOG AC-148 (r11): «El daño de los NPC no entra: si a B lo dañaron un pirata (90 %) y A (10 %), A cobra los 100
+  // con su factor (GDD §10b).» Aquí, con B dos niveles por encima de A, «los 100 con su factor» son 120
+  test('AC-148: B dañado un 90 % por un pirata y un 10 % por A, que lo remata → A cobra los 100 con su factor (120 con Δ = +2)', () => {
+    const world = pvpWorld({ A: 10, B: 12 });
     const b = shipOfPlayer(world, 'B')!;
-    const a = shipOfPlayer(world, 'A')!;
+    shipOfPlayer(world, 'A')!.pos = { x: 0, z: 340 };
     b.pos = { x: 0, z: 300 };
-    a.pos = { x: 0, z: 340 };
+    b.hp = b.maxHp = 316; // el pirata hace 286 (13 balas de 22) y A, 30: 90,5 % y 9,5 %
     const pirate = npcOf(world, 'pirate', 30, 300);
     pirate.ai = { state: 'combat', origin: { x: 30, z: 300 }, sector: 0, wait: 0, targetId: b.id, route: [], routeIndex: 0, fleeUntil: 0, threatId: null };
-    world.rng = () => 0;
-    while (b.hp > 60) run(world, DT);
+    world.rng = () => 0; // 3 andanadas enteras: 264
+    while (b.hp > 316 - 264) run(world, DT);
+    scriptedRng(world, ONE_HIT); // la 4.ª, 1 bala: 286
+    while (b.hp > 30) run(world, DT);
     pirate.ai = null;
     pirate.attackTargetId = null;
-    run(world, 1); // las balas del pirata que aún vuelan
-    expect(b.hp).toBeLessThan(0.1 * b.maxHp);
-    expect(b.damage).toEqual([]);
-    const { gained } = pvpSink(world, 'A', 'B');
-    expect(gained.A).toBe(100);
+    run(world, 1);
+    expect(b.hp).toBe(30);
+    expect((316 - 30) / 316).toBeGreaterThanOrEqual(0.9);
+    expect(b.damage).toEqual([]); // el daño del pirata no se anota, como en el oro
+    expect(pvpSink(world, 'A', 'B').gained.A).toBe(120);
   });
 
-  // Lectura de dev: los factores usan el nivel de cada uno antes de acreditar ese hundimiento
-  test('AC-146 (lectura de dev): A (nivel 1, 0 XP) que hunde a B (nivel 2) cobra 110 con Δ = +1, aunque esos 110 lo suban al nivel 2', () => {
+  // BACKLOG AC-148 (r11): «Los factores usan el nivel de cada uno justo antes de acreditar este hundimiento.»
+  test('AC-148: el factor usa el nivel justo antes de acreditar: A (nivel 1, 0 XP) que hunde a B (nivel 2) cobra 110 con Δ = +1, aunque esos 110 lo suban al nivel 2', () => {
     const world = pvpWorld({ A: 1, B: 2 });
     expect(pvpSink(world, 'A', 'B').gained.A).toBe(110);
     expect(levelOf(xpOfPlayer(world, 'A'))).toBe(2);
