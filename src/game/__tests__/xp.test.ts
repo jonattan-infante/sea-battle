@@ -471,6 +471,45 @@ describe('E14 — H-1402 XP por hundir jugadores (§10b)', () => {
     expect(events.some((e) => e.type === 'xp')).toBe(false);
     expect(drainPvpLog(world)).toEqual([]);
   });
+
+  // BACKLOG AC-148 (r11, eee3be9; O-35): «La ventana de 60 s vale también aquí: si A dañó a B hace más de 60 s y no ha
+  // vuelto a impactarle, y C lo remata, A cobra 0 de XP y C cobra los 100 con su factor.» Gemelo de windowCase (AC-145),
+  // con un jugador como víctima: B (nivel 10), A (nivel 10) y C (nivel 12, Δ = −2: el 50 %)
+  function pvpWindowCase(aHitsAgainAt85: boolean): number[][] {
+    const world = pvpWorld({ A: 10, B: 10, C: 12 });
+    const a = shipOfPlayer(world, 'A')!;
+    const c = shipOfPlayer(world, 'C')!;
+    const b = shipOfPlayer(world, 'B')!;
+    a.pos = { x: 300, z: 300 };
+    c.pos = { x: 330, z: 300 };
+    b.pos = { x: 300, z: 340 };
+    world.time = 85;
+    seedDamage(b, [[a, aHitsAgainAt85 ? 270 : 300, 0, 0], [c, 120, 80, 84]]);
+    b.hp = 60;
+    const events: GameEvent[] = [];
+    if (aHitsAgainAt85) {
+      scriptedRng(world, ONE_HIT); // A vuelve a impactar a los 85 s: 300 / 120
+      expect(attack(world, 'A', b.id).ok).toBe(true);
+      events.push(...run(world, 1));
+      cancelAttack(world, 'A');
+    } else {
+      b.hp = 30;
+    }
+    while (world.time < 89.6) events.push(...run(world, DT));
+    scriptedRng(world, ONE_HIT); // C lo hunde a los ~90 s: 300 / 150
+    expect(attack(world, 'C', b.id).ok).toBe(true);
+    events.push(...run(world, 2));
+    expect(b.state).not.toBe('alive');
+    return [xpOf(events, 'A', 'pvp'), xpOf(events, 'C', 'pvp')];
+  }
+
+  test('AC-148 (O-35): A dañó a B hace 85 s sin volver a impactar y C lo remata → A cobra 0 y C los 100 con su factor (50 con Δ = −2)', () => {
+    expect(pvpWindowCase(false)).toEqual([[], [50]]);
+  });
+
+  test('AC-148 (O-35): si A vuelve a impactar a los 85 s cuenta todo su daño → 300 / 150 da 67 y 33, y C cobra floor(33 × 0,5) = 16', () => {
+    expect(pvpWindowCase(true)).toEqual([[67], [16]]);
+  });
 });
 
 // Dos bots que se hunden por turnos lo más rápido que permiten las reglas, en el mundo real: la víctima zarpa en cuanto
