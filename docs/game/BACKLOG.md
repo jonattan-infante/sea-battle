@@ -510,12 +510,18 @@ La lectura de las filas de la 1.0 y la vuelta atrás están en E14 (AC-156 y AC-
   La causa de O-32 sigue siendo HIPÓTESIS (el corte de la Wi-Fi al abrir Chrome), pero con (b) da igual: el e2e deja de depender de resolver nombres. Verificación: el diff de (a), el log de (b) y la lista de (c). *Por qué no «3 corridas seguidas sin el error», lo que proponía QA-23:* si el fallo es raro, tres verdes no prueban nada, como pasó con O-29.
 - **AC-203 · P2** (O-41; decidido por producto el 2026-10-18) — Dado el servidor en un proceso hijo con un jugador conectado, cuando se cierran las tuberías de su stdout y su stderr (el proceso que las leía desaparece) y después recibe `SIGTERM`, entonces se apaga igual que con las tuberías abiertas (AC-129):
   - (a) escribe el estado de los jugadores y **solo después** cierra sus conexiones: cuando el cliente recibe la desconexión, la fila de la BD ya tiene el estado final;
-  - (b) sale solo, en ≤ 10 s desde el `SIGTERM`, y no queda vivo ningún proceso de la corrida ni su puerto escuchando;
+  - (b) sale solo, con código 0 como con las tuberías abiertas (AC-129), en ≤ 10 s desde el `SIGTERM`, y no queda vivo ningún proceso de la corrida ni su puerto escuchando;
   - (c) con las tuberías cerradas y **sin** `SIGTERM`, el juego sigue: tras una acción que el servidor escriba en su log, un cliente conectado sigue recibiendo frames durante 5 s. Un error al escribir en stdout o stderr no tumba ni bloquea el servidor.
 
   Verificación: Jest con el servidor en un proceso hijo y Postgres real, como el test de AC-129, cerrando sus tuberías antes del `SIGTERM`. La salida en ≤ 10 s, el estado de la fila y los frames de (c) se asertan con `expect`, sin depender del tiempo de espera de Jest (regla de los mutantes). **Se prueba en dos modos, y en los dos el mutante sin el arreglo da rojo por aserción** (precisado por producto el 2026-10-18, a propuesta de dev):
-  - **con el listener de uncaughtException de Next**, como arranca `server/index.ts`: es el modo que reproduce prod. Sin el arreglo entra en el bucle de EPIPE, y el rojo **tiene que salir en (b)**. Si sale también en (a), mejor;
-  - **sin listener**, como el fixture de tests de hoy: sin el arreglo, el proceso se cae enseguida con el EPIPE, así que (b) pasa, y el rojo sale en (a) o en (c).
+  - **con el listener de uncaughtException de Next**, como arranca `server/index.ts`: es el modo que reproduce prod. Sin el arreglo entra en el bucle de EPIPE, y el rojo **tiene que salir en (b)**;
+  - **sin listener**, como el fixture de tests de hoy: sin el arreglo, el proceso se cae enseguida con el EPIPE, y el rojo sale en (b), porque sale con código 1, o en (c).
+
+  **Medido por dev-tests** (`scratchpad/o41/dev-tests-o41-rojo-4a125e0.log`, 20:31:09–32Z, JEST EXIT 1, 3 rojos; producto leyó el log). Sin el arreglo, (b) cae **en los dos modos**, por `expect` en `shutdown.test.ts:218`:
+  - sin listener, porque sale con código 1; cae también (c), en `:235`;
+  - con el de Next, con «sigue vivo a los 10 s del SIGTERM» frente a `{"code": 0, "signal": null}`. En este modo (c) pasa: el bucle gasta CPU, pero no bloquea el juego.
+
+  Con el arreglo, 11 de 11, entre ellos los 7 de AC-129 (`…/dev-tests-o41-verde-final-4a125e0-0078dc0.log`, JEST EXIT 0 a las 20:34:29Z). *Corregido el 2026-10-18:* el texto anterior decía que sin listener (b) pasaba. Era una suposición de producto, antes de que dev-tests lo midiera.
 
   Los dos modos corren siempre, en el mismo archivo. Un verde en uno solo no cierra el AC. Al terminar, `ps` no muestra ningún proceso de la corrida, como pide O-36. *Por qué P2 y en la 1.1:* en prod no debería pasar, porque Railway mantiene abierta la tubería de los logs (HIPÓTESIS de dev, sin medir). Pero si pasara, un redeploy perdería el progreso de todos desde el último guardado, que es justo lo que AC-129 promete que no pasa. Y en las pruebas ya dejó un servidor huérfano gastando CPU en la máquina compartida (O-41). El arreglo es pequeño. No frena el candidato.
 
