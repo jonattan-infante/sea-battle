@@ -708,6 +708,37 @@ Una librea nunca cambia las velas (AD-10, AS-V21), el casco, la cubierta (AS-V22
 
 **Icono de clase del HUD.** Hoy es el `sailboat` de Lucide para todas las clases (`Hud.tsx:101`). Con 5 clases pasa a ser la silueta de perfil generada desde la receta (ASSET-SPEC §10), la misma de la tienda, para que el panel diga en qué barco vas.
 
+
+### 9.3 Familias de barcos: británica y española (1.1 si pasa el piloto; E17; D80)
+Una familia es un **estilo de construcción** que cambia el casco, los castillos, la popa, los colores, el emblema de las velas y la bandera, **nunca la clase ni la facción** (GDD §6, «Familias de barcos»). En la gramática de §9.2 es una cuarta capa por debajo de la clase: no toca la silueta de clase (AD-37: S1–S6 iguales en las 2 familias) ni los canales de facción (AD-10: las velas del jugador siguen claras).
+
+**Láminas del piloto** (el Navío de línea en las 2 familias, junto a la Fragata de hoy y al Navío de la lámina D64, en el formato de AC-192 g): `docs/game/art/D80-familia-britanica.png` y `D80-familia-espanola.png`. Son renders de Blender del GLB de la cadena de ASSET-SPEC §13.
+
+| Elemento | Británica (`gb`) | Española (`es`) |
+|---|---|---|
+| Qué comunica | La Armada de Nelson: sobria, ordenada, muchas portas a la vista | El galeón de las Indias: popa alta, labrada y dorada, colores cálidos |
+| Casco, obra muerta | Negro `#1E1C1A` | Madera oscura `#4A2C1A`; de la franja alta a la regala, rojo `#8E2A1E` |
+| Franjas de portas (las 2 de la clase) | Ocre `#D9A84A` con cintas negras: el «Nelson chequer» del HMS Victory, «bands of black and yellow paint along the sides of the hull, broken up by black gunports» ([Wikipedia, Nelson Chequer](https://en.wikipedia.org/wiki/Nelson_Chequer)) | Almagre `#A3301F` con filetes dorados `#D9A93F` |
+| Portas | Tapas negras `#100E0C`; en la batería alta, abiertas a 55° con el interior rojo `#9E2B1E` | Tapas oscuras `#140E0A` con el canto dorado; la batería alta, abierta como en la británica |
+| Obra viva | Forro de cobre `#7A4A2E` | `hull.bottom` `#3A2416` |
+| Castillos | Los de ASSET-SPEC §8.4: alcázar de 2 pisos y castillo de proa | Alcázar de **3 pisos** (+0,4 m en cada uno y una toldilla de 1,2 m) y castillo de proa 0,4 m más alto |
+| Popa | 3 filas de ventanas `lantern` en negro con franjas ocres; galerías laterales sobrias | Ventanas con marco dorado, tallas doradas pintadas y una cartela oval **sin escudo**; galerías laterales con techo dorado |
+| Velas | Las del jugador (D40), sin emblema | Las mismas, con la **cruz de Borgoña** `#B3261E` en el trinquete y la mayor (aspas de 0,07 del ancho, en las 2 caras) |
+| Bandera de popa | Blanca con la cruz roja hasta el borde | Blanca con el aspa raída roja (cruz de Borgoña) |
+| Gallardete del jugador en la mayor | El de hoy, dorado `flag`: es señal de relación y no cambia con la familia | Igual |
+| Mascarón | Ocre `#D9A84A` | Dorado `#D9A93F` |
+
+**Detalle común a las 2 familias** (lo que más se ve con la cámara a 55°, que mira sobre todo la cubierta y las velas): 2 botes sobre calzos en el combés, cabrestante con barras, carronadas en el alcázar y el castillo de proa, rueda del timón, campana, 3 faroles de popa (los españoles, más grandes y dorados), estays y brandales, obenques desde los canales y tapas de porta abiertas en la batería alta. La tablazón y la oclusión van en la textura (ASSET-SPEC §13).
+
+| Medida del piloto (2026-10-18, en el scratchpad de ux) | Británica | Española | Presupuesto (ASSET-SPEC §13) |
+|---|---|---|---|
+| Triángulos LOD0 / LOD1 | 3 463 / 580 | 3 813 / 590 | ≤ 5 000 / 1 200 |
+| GLB (textura WebP de 1024², sin meshopt ni KTX2; los sockets de cañón ya miran hacia fuera, AS-V07) | 292 KB | 317 KB | ≤ 400 KB |
+
+- **La cruz de Borgoña no es lona**: en AD-10 queda fuera del L\* medio de las velas, como las franjas azules del Mercante (`sailStripe`). La lona sigue en los 3 tonos del jugador.
+- **Familia por defecto (propuesta de ux): la británica**, porque es la más parecida a los barcos de hoy (franja ocre sobre casco oscuro y velas claras). Quien no elija no ve un cambio brusco.
+- **Riesgos, en las láminas como «en contra»**: el casco negro británico se acerca al del pirata, y el rojo español, a su franja. Los separan los canales de facción de §9.2: las velas (claras frente a negras), la franja (ocre o almagre con oro, frente al rojo del pirata) y la caída de los palos. Lo comprueban AC-72 y AC-194 d con las 2 familias mezcladas, también en grises; si falla, se cambia la librea de la familia, no la regla.
+
 ---
 
 ## 10. NPC
