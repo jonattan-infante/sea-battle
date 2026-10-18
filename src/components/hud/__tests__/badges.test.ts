@@ -1,12 +1,13 @@
 // AD-40 (c), D74: el marcado de RankBadge es el de scripts/ux/calibracion/insignias-1-1.json en los 5 rangos y los 4
 // tamaños: los mismos elementos en el mismo orden y los mismos atributos, salvo width y height del <svg>, con los números
-// a ±0,001 y los colores sin distinguir mayúsculas. El `rank` del JSON es el de src/game/xp.ts (1 Grumete … 5 Almirante)
+// a ±0,001 y los colores sin distinguir mayúsculas. El `rank` del JSON es el de src/game/xp.ts (1 Grumete … 5 Almirante).
+// Lo mismo para rankBadgeSvg, la cadena que escriben las placas (overlays.ts, sin React) a 12 px
 import fs from 'fs';
 import path from 'path';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Rank, rankLabel } from '../../../game/xp';
-import { BadgeSize, RankBadge } from '../badges';
+import { BadgeSize, RankBadge, rankBadgeSvg } from '../badges';
 
 interface El {
   tag: string;
@@ -51,8 +52,12 @@ describe('Insignias de rango (AD-40 c, D74)', () => {
     for (const [name, b] of Object.entries(SPEC.insignias)) expect(rankLabel(b.rank as Rank).toLowerCase()).toBe(name);
   });
 
-  test.each(CASES)('%s (rank %d) a %d px: el marcado es el del JSON', (_name, rank, size, svg) => {
-    const got = parse(renderToStaticMarkup(React.createElement(RankBadge, { rank: rank as Rank, size })));
+  const render = {
+    RankBadge: (rank: Rank, size: BadgeSize) => renderToStaticMarkup(React.createElement(RankBadge, { rank, size })),
+    rankBadgeSvg: (rank: Rank, size: BadgeSize) => rankBadgeSvg(rank, size)
+  };
+  test.each(Object.keys(render).flatMap((how) => CASES.map((c) => [how as keyof typeof render, ...c] as const)))('%s: %s (rank %d) a %d px, el marcado es el del JSON', (how, _name, rank, size, svg) => {
+    const got = parse(render[how](rank as Rank, size));
     const want = parse(svg);
     expect(got[0].tag).toBe('svg');
     expect([got[0].attrs.width, got[0].attrs.height]).toEqual([String(size), String(size)]);
