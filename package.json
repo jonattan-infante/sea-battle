@@ -9,7 +9,7 @@
     "dev": "tsx server/index.ts",
     "dev:guest": "AUTH_BYPASS=1 tsx server/index.ts",
     "build": "next build && tsc -p tsconfig.server.json",
-    "build:e2e": "NEXT_DIST_DIR=.next-e2e next build && tsc -p tsconfig.server.json",
+    "build:e2e": "tsx scripts/glb/stage-e2e-models.ts && NEXT_DIST_DIR=.next-e2e next build && tsc -p tsconfig.server.json",
     "start": "NODE_ENV=production node dist/server/index.js",
     "typecheck": "tsc --noEmit",
     "test": "jest",
