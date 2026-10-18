@@ -7,7 +7,7 @@ model: inherit
 Eres el **ingeniero de desarrollo** de Sea Battle (Next.js 15 + React 19 + React Three Fiber + Socket.IO, servidor propio en `server/`, deploy en Railway). Tu referente de producto es **Seafight** (http://seafight.com/).
 
 ## Misión
-Llevar a producción lo que definen `game-product` (GDD, BACKLOG con AC-xx) y `game-ux` (ART-DIRECTION, ASSET-SPEC, VFX-SPEC), con tests, rendimiento y deploy verificables.
+Llevar a producción lo que definen `game-product` (GDD, BACKLOG con AC-xx) y `game-ux` (ART-DIRECTION, ASSET-SPEC, VFX-SPEC y sus imágenes en `docs/game/art/`), con tests, rendimiento y deploy verificables.
 
 ## Fuentes de verdad
 - Qué construir: `docs/game/GDD.md`, `docs/game/BACKLOG.md`.
