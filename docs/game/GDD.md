@@ -391,7 +391,7 @@ Aceleración y frenado: Pirata 3 / 5 m/s², Mercante 2,5 / 4 m/s², Cañonera 2,
 - Nunca dispara.
 
 ### IA de la cañonera pirata (I2)
-Comportamiento propio: **mantiene la distancia**. Su alcance (65 m) supera al cañón N1 del jugador (60 m), así que obliga a perseguirla o a mejorar los cañones.
+Comportamiento propio: **mantiene la distancia**. Su alcance (65 m) supera al cañón N1 del jugador (60 m), así que obliga a perseguirla o a mejorar los cañones. **No es presa para N1** (BACKLOG AC-114). El juego lo comunica: con N1, el panel del objetivo dice «✕ Fuera de alcance» mientras ella dispara desde 62 m. Por eso el bot de AC-60 no la ataca hasta tener Cañones N2 (§10).
 - **Patrulla, represalia, regreso, correa (200 m) y zona prohibida del puerto (130 m):** igual que el pirata. También **pierde al objetivo a > 110 m**, patrulla a ≤ 120 m de su origen con esperas de 2–5 s y da por llegado el regreso a ≤ 10 m, como el pirata y el Capitán (confirmado por producto el 2026-10-17, a pregunta de dev-npc). Con detección a ≤ 80 m, quedan 30 m de margen antes de soltar al objetivo. Lo que esta sección no fije para la cañonera es lo del pirata.
 - **Combate** (detecta a ≤ 80 m):
   - si la distancia al objetivo es > 64 m, se acerca a velocidad máxima;
@@ -474,11 +474,12 @@ El tesoro que cruza el mar de los mercantes: rico, lento, pasivo y defendido. Es
 - La cañonera sustituye a 4 piratas (la población total sigue en 20) y cumple la regla de recompensa de §9. Por eso no debería subir el oro por segundo de combate.
 - El jefe queda fuera de la curva: el bot del AC-60 no lo ataca, no entra a menos de 200 m de su guarida y, si el capitán lo elige, navega al puerto. **Medido con H-305 en I2** (dev-npc): la semilla 3 compra todo en 44,3 min, por debajo de 45, y la mediana de las 5 semillas sigue dentro de 45–70 min. AC-60 pasa, porque se juzga por la mediana, pero el margen se estrecha. Se vigila al volver a medir con H-306.
 - Si con I2 el AC-60 sale de rango, la palanca es la recompensa de la cañonera (y sus restos), en pasos de 10 oro. No se tocan pirata, mercante ni precios.
+- **Medido con H-306** (dev-npc, 2026-10-17, Jest suelto): con la población de I2, el hito de los 500 de oro sale en **4,06 min** (> 4). La recompensa de la cañonera no lo mueve: de 220 a 270, el hito no cambia. La cañonera no paga antes de los 500: el bot con la Balandra N1 pasa 100 s y 57 s atacándola en las semillas 2 y 3, y no la hunde a tiempo. **Decidido por producto: el bot de AC-60 no ataca una cañonera mientras su cañón tenga menos alcance que ella (65 m)**, es decir, con N1 (60 m), hasta comprar Cañones N2 (70 m). Así lo diseña §9: la cañonera no es presa para N1 (BACKLOG AC-114). El jugador lo ve en el juego, porque con N1 el panel dice «✕ Fuera de alcance» mientras ella le dispara desde 62 m. **Descartado:** subir el umbral a 4,1 min, porque es mover el umbral después de ver el resultado; y tocar el pirata o el mercante, por la regla de arriba. La recompensa de la cañonera sigue siendo la palanca de los hitos del Bergantín y de «todo comprado».
 
 **Cómo encaja la 1.1:**
 - **AC-60 sigue midiendo el catálogo de la 1.0** (12 800 de oro). Su bot no compra la Goleta ni el Navío: si los comprara, la Goleta (3 000), más barata que la Fragata, retrasaría «todo comprado» y la cifra dejaría de ser comparable. El catálogo de la 1.1 (**27 800 de oro**, §11) lo mide aparte BACKLOG AC-164.
 - El galeón queda fuera de la curva, como el Capitán (§9).
-- El mapa nuevo (§4) alarga algunas rutas. AC-60 se vuelve a medir con él, con la población de I2 y con los amarres. Si sale de rango, la palanca es la misma de arriba.
+- El mapa nuevo (§4) alarga algunas rutas. AC-60 se vuelve a medir con él, con la población de I2 y con los amarres. Si sale de rango, las palancas son las de arriba: la recompensa de la cañonera para los hitos del Bergantín y de «todo comprado». Si falla el hito de los 500 de oro con el bot ya corregido, producto decide con los datos por semilla.
 - La XP no cambia el oro: es una barra aparte (§10b).
 
 ## 10b. Experiencia, niveles e insignias (1.1)
