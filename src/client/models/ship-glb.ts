@@ -9,11 +9,12 @@ import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { creaseNormals } from './geometry-utils';
 import { getShipModel, LOD_PX, ShipExtras, ShipModel, ShipSockets } from './ship-geometry';
 
-// Clase → URL del GLB (public/models/<id>.glb, con hash en el nombre para cachearlo). Vacío hasta el piloto: sin entrada,
-// la clase usa el procedural y no se descarga nada
+// Clase → URL del GLB (/models/<id>.<hash de su contenido>.glb, servido con caché de un año: next.config.ts). Vacío hasta el
+// piloto: sin entrada, la clase usa el procedural y no se descarga nada
 export const SHIP_GLB: Partial<Record<string, string>> = {};
-// Transcodificador de KTX2 (basis_transcoder.js y .wasm, copiados de three/examples/jsm/libs/basis a public/basis)
-export const BASIS_PATH = '/basis/';
+// Transcodificador de KTX2 (basis_transcoder.js y .wasm, copiados de three/examples/jsm/libs/basis), en una carpeta con el
+// hash de los dos: se sirve con caché de un año, y al subir three cambia de URL (lo comprueba ship-glb.test.ts)
+export const BASIS_PATH = '/basis/dc5e5d6a/';
 const CREASE = (40 * Math.PI) / 180; // D23: normales con pliegue de 40° si el GLB no trae NORMAL
 // AC-193 c, opción B: lo más que la entrada espera al GLB del barco propio, sobre la de hoy (el primer frame)
 export const OWN_GLB_WAIT_MS = 500;

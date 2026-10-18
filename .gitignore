@@ -48,6 +48,8 @@ next-env.d.ts
 /qa-artifacts
 /test-results
 /playwright-report
+# fixtures de GLB que build:e2e copia para servirlos desde el servidor del juego (scripts/glb/stage-e2e-models.ts)
+/public/models/e2e_*
 
 # sesión del usuario de prueba del arnés remoto (playwright.remote.config.ts)
 /.auth
