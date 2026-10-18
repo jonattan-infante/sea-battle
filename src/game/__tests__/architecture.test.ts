@@ -4,7 +4,8 @@ import * as C from '../constants';
 import { PlayerShipClass } from '../constants';
 import { World } from '../types';
 import { createRng } from '../vec';
-import { addPlayer, attack, createWorld, drainEvents, moveTo, setRepair, shipOfPlayer, spawnCaptain, step } from '../world';
+import { maxHpFor as statsMaxHpFor } from '../stats';
+import { addPlayer, attack, createWorld, drainEvents, maxHpFor, moveTo, setRepair, shipOfPlayer, spawnCaptain, step } from '../world';
 import { DT, percentile } from './helpers';
 
 const GAME_DIR = path.join(__dirname, '..');
@@ -28,6 +29,37 @@ describe('E0 — Arquitectura de la simulación', () => {
       }
       expect({ file, random: /Math\.random|Date\.now|new Date|performance\.now/.test(code) }).toEqual({ file, random: false });
     }
+  });
+
+  // AC-189: el cliente calcula el coste de un NPC con las tablas de la simulación sin arrastrar el grafo de rutas, que
+  // world.ts construye al importarse (navigator). stats.ts es lo que puede importar el cliente: ni él ni lo que importa
+  // llegan a world.ts ni a nav.ts
+  test('stats.ts no importa world.ts ni nav.ts, tampoco a través de otro módulo de src/game', () => {
+    const local = (code: string) => [...code.matchAll(/from\s+['"]\.\/([^'"]+)['"]/g)].map((m) => `${m[1]}.ts`);
+    const reached = new Set<string>();
+    const pending = ['stats.ts'];
+    while (pending.length) {
+      const file = pending.pop()!;
+      if (reached.has(file)) continue;
+      reached.add(file);
+      const src = sources.find((s) => s.file === file);
+      expect({ file, found: !!src }).toEqual({ file, found: true });
+      pending.push(...local(src!.code));
+    }
+    expect([...reached].filter((f) => f === 'world.ts' || f === 'nav.ts')).toEqual([]);
+  });
+
+  test('maxHpFor vive en stats.ts y world.ts lo reexporta: la vida máxima con el casco de §11 (×1 / ×1,2 / ×1,4)', () => {
+    expect(maxHpFor).toBe(statsMaxHpFor);
+    const hull = (h: number) => ({ upgrades: { cannons: 1, hull: h, sails: 1 } });
+    expect([
+      statsMaxHpFor('sloop', undefined),
+      statsMaxHpFor('sloop', hull(2)),
+      statsMaxHpFor('sloop', hull(3)),
+      statsMaxHpFor('brig', hull(2)),
+      statsMaxHpFor('frigate', hull(3)),
+      statsMaxHpFor('gunboat', undefined)
+    ]).toEqual([800, 960, 1120, 1680, 3080, 900]);
   });
 
   // Secuencia fija de intenciones aplicada a un mundo con semilla

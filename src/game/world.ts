@@ -70,6 +70,7 @@ import {
 import { Navigator } from './nav';
 import { NpcAi, Player, PlayerView, Ship, ShipSnapshot, World } from './types';
 import { Vec2, angleDelta, createRng, distance, forward, headingTo, normalizeAngle } from './vec';
+import { maxHpFor } from './stats';
 import { creditNpcXp, creditPvpXp, levelOf, npcXp } from './xp';
 
 export const navigator = new Navigator(ISLANDS);
@@ -139,10 +140,8 @@ export function maxSpeedOf(world: World, ship: Ship): number {
   return classOf(ship).maxSpeed * mult;
 }
 
-export function maxHpFor(classId: string, player: Player | undefined): number {
-  const mult = player ? UPGRADE_LEVELS.hull.multipliers[player.upgrades.hull - 1] : 1;
-  return Math.round(SHIP_CLASSES[classId].maxHp * mult);
-}
+// La vida máxima con el casco vive en stats.ts, que el cliente puede importar sin el grafo de rutas (AC-189)
+export { maxHpFor };
 
 export function isInSafeZone(pos: Vec2): boolean {
   return distance(pos, PORT_POSITION) <= SAFE_ZONE_RADIUS;
