@@ -18,6 +18,8 @@ const SIZES: Record<Size, BrowserContextOptions> = {
   landscape: { viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true }
 };
 const XP_COLOR = 'rgb(183, 156, 255)'; // --ui-xp (D70)
+// El navegador serializa los elementos vacíos con cierre (<rect …></rect>); el JSON de ux y rankBadgeSvg, con «/>»
+const markup = (html: string | null | undefined) => (html ?? '').replace(/><\/(rect|circle|polygon)>/g, '/>');
 
 async function open(browser: Browser, server: OwnServer, size: Size, contexts: BrowserContext[]): Promise<Page> {
   const ctx = await browser.newContext(SIZES[size]);
@@ -119,7 +121,7 @@ async function expectPlayerPanel(page: Page, size: Size, level: number, rank: nu
   expect(p.badge).toMatchObject({ w: badgePx, h: badgePx });
   expect(Math.abs(p.badge.x + p.badge.w - (p.icon.x + p.icon.w + over))).toBeLessThanOrEqual(0.5);
   expect(Math.abs(p.badge.y + p.badge.h - (p.icon.y + p.icon.h + over))).toBeLessThanOrEqual(0.5);
-  expect(p.badgeSvg).toBe(rankBadgeSvg(rank as 1 | 2 | 3 | 4 | 5, badgePx));
+  expect(markup(p.badgeSvg)).toBe(rankBadgeSvg(rank as 1 | 2 | 3 | 4 | 5, badgePx));
   expect(p.xpBar).toEqual(['progressbar', xpText, xpText, String(into), String(span)]);
   expect(p.levelText).toBe(level === 20 ? 'Nivel máximo' : `Nivel ${level}`);
   if (size === 'desktop') {
@@ -193,7 +195,8 @@ test.describe('HUD de la experiencia (1.1)', () => {
         );
         console.log(`AC-153 placas en ${size}: ${JSON.stringify(plates.map(({ html: _h, ...p }) => p))}`);
         expect(plates.find((p) => p.relation === 'pirate')).toMatchObject({ rank: '0', html: '' });
-        expect(plates.find((p) => p.relation === 'self')).toMatchObject({ rank: '2', html: rankBadgeSvg(2, 12) });
+        const own = plates.find((p) => p.relation === 'self')!;
+        expect([own.rank, markup(own.html)]).toEqual(['2', rankBadgeSvg(2, 12)]);
 
         await watchLevelUp(page, LEVEL_XP[8]);
         await sinkBait(page);
@@ -342,13 +345,13 @@ test.describe('HUD de la experiencia (1.1)', () => {
       }, meB.id);
       console.log(`AC-153 placa de B: ${JSON.stringify({ ...plate, badge: plate.badge.length })}`);
       // Solo la insignia: sin número de nivel ni marcas (la fila 1 es el nombre y la insignia no lleva texto)
-      expect(plate).toMatchObject({ relation: 'player', rank: '4', badgeText: '', badge: rankBadgeSvg(4, 12), row: meB.name });
+      expect({ ...plate, badge: markup(plate.badge) }).toMatchObject({ relation: 'player', rank: '4', badgeText: '', badge: rankBadgeSvg(4, 12), row: meB.name });
       expect(plate.width).toBeLessThanOrEqual(128);
 
       await select(a, meB.id, false);
       const t = await targetPanel(a);
       console.log(`AC-153 objetivo: ${JSON.stringify({ ...t, badge: !!t.badge })}`);
-      expect(t).toMatchObject({ type: 'Balandra · Nivel 13 · Teniente', typeFits: true, rankFits: true, badge: rankBadgeSvg(4, 16), range: '· ✕ No atacable' });
+      expect({ ...t, badge: markup(t.badge) }).toMatchObject({ type: 'Balandra · Nivel 13 · Teniente', typeFits: true, rankFits: true, badge: rankBadgeSvg(4, 16), range: '· ✕ No atacable' });
     } finally {
       for (const ctx of contexts) await ctx.close();
       await server.kill();
@@ -378,7 +381,7 @@ test.describe('HUD de la experiencia (1.1)', () => {
         await select(page, meB.id, touch);
         const t = await targetPanel(page);
         console.log(`AC-153 caso largo ${label}: ${JSON.stringify({ ...t, badge: !!t.badge })}`);
-        expect(t).toMatchObject({ type: 'Bergantín · Nivel 12 · Contramaestre', typeFits: true, rankFits: true, badge: rankBadgeSvg(3, touch ? 12 : 16) });
+        expect({ ...t, badge: markup(t.badge) }).toMatchObject({ type: 'Bergantín · Nivel 12 · Contramaestre', typeFits: true, rankFits: true, badge: rankBadgeSvg(3, touch ? 12 : 16) });
         if (touch) {
           expect([t.frame.w, t.frame.h]).toEqual([262, 70]);
           for (const child of t.children) expect(inside(child, t.frame)).toBe(true);
