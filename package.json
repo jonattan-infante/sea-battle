@@ -68,7 +68,7 @@
       "**/__tests__/**/*.test.ts"
     ],
     "transform": {
-      "^.+\\.ts$": [
+      "^.+\\.tsx?$": [
         "ts-jest",
         {
           "tsconfig": {
@@ -80,6 +80,7 @@
               "ES2021",
               "DOM"
             ],
+            "jsx": "react-jsx",
             "skipLibCheck": true
           }
         }
@@ -87,6 +88,7 @@
     },
     "moduleFileExtensions": [
       "ts",
+      "tsx",
       "js",
       "json"
     ],
