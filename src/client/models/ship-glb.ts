@@ -1,6 +1,7 @@
 // Barcos en GLB (ASSET-SPEC §13, paso 6; D80; AC-193): el .glb de una clase sustituye al procedural cuando termina de
 // cargar. Mientras tanto, y si falla, se pinta el procedural. La entrada solo espera al GLB del barco propio, con un tope
 // de 0,5 s sobre la de hoy (AC-193 c, opción B): si no llega a tiempo, se entra con el procedural y cambia al llegar.
+// Con el respaldo de su textura (D90), el GLB se dibuja sin esperar al transcodificador y cambia a la KTX2 al llegar.
 // El GLB cumple el mismo contrato que el procedural (§0–§4): raíz con extras, mallas <id>_lod0 y <id>_lod1 y sockets con
 // nombre. Del material del GLB solo se usa la textura: el color, el destello, el daño y el borde de protección son los del
 // material del barco, clonado por instancia (§6). La geometría y la textura se comparten entre los barcos de la clase
@@ -161,37 +162,47 @@ function disposeScene(scene: THREE.Object3D, keep: THREE.Texture | null = null):
   });
 }
 
+// Una textura KTX2 con su respaldo (D90): el respaldo, que es el mapa del modelo al leerlo, y la KTX2 que lo sustituye
+// cuando el transcodificador la entrega (null si no se pudo leer)
+export type TextureUpgrade = [fallback: THREE.Texture | null, ktx2: THREE.Texture | null];
+
+export interface ParsedGlb {
+  scene: THREE.Object3D;
+  upgrades: Promise<TextureUpgrade[]>; // vacío si ninguna textura lleva respaldo
+}
+
 export interface GlbLoader {
-  parse(bytes: ArrayBuffer, url: string, renderer: THREE.WebGLRenderer): Promise<THREE.Object3D>;
+  parse(bytes: ArrayBuffer, url: string, renderer: THREE.WebGLRenderer): Promise<ParsedGlb>;
   dispose(): void;
 }
 
-// GLTFLoader con MeshoptDecoder y KTX2Loader (§1). Se importan al crear el cargador, que es al haber un GLB que bajar: sin
-// GLB, el bundle del juego no los lleva. Al crearlo también empieza a bajar el transcodificador de KTX2 (basis_transcoder
-// .js y .wasm, ≈ 585 KB), que está en el camino de la entrada (AC-193 c, opción B). init() no necesita el renderer: los
-// workers se crean al transcodificar, y para entonces detectSupport ya eligió el formato de GPU con el del primer parse
+// GLTFLoader con MeshoptDecoder, KTX2Loader y el plugin del respaldo (§1; basisu-fallback.ts). Se importan al crear el
+// cargador, que es al haber un GLB que bajar: sin GLB, el bundle del juego no los lleva. El transcodificador de KTX2 (basis_transcoder.js y
+// .wasm, ≈ 585 KB) no baja al crearlo: lo pide la primera KTX2 (KTX2Loader.load llama a init), que con respaldo sale del
+// parse del GLB propio, así que no compite con su descarga (salida 1 de AC-193 c). detectSupport elige el formato de GPU
+// con el renderer del primer parse, antes de cualquier KTX2
 export function createGlbLoader(): GlbLoader {
   let ktx2: { dispose(): void } | null = null;
   let detected = false;
-  const loader = Promise.all([
+  const modules = Promise.all([
     import('three/examples/jsm/loaders/GLTFLoader.js'),
     import('three/examples/jsm/loaders/KTX2Loader.js'),
-    import('three/examples/jsm/libs/meshopt_decoder.module.js')
-  ]).then(([{ GLTFLoader }, { KTX2Loader }, { MeshoptDecoder }]) => {
+    import('three/examples/jsm/libs/meshopt_decoder.module.js'),
+    import('./basisu-fallback')
+  ]).then(([{ GLTFLoader }, { KTX2Loader }, { MeshoptDecoder }, { basisuWithFallback }]) => {
     const k = new KTX2Loader().setTranscoderPath(BASIS_PATH);
-    k.init().catch(() => undefined); // si falla, falla el parse del GLB que lo necesite, con su aviso
     ktx2 = k;
-    return { gltf: new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).setKTX2Loader(k), ktx2: k };
+    return { GLTFLoader, MeshoptDecoder, basisuWithFallback, ktx2: k };
   });
   return {
     parse: (bytes, url, renderer) =>
-      loader
-        .then((l) => {
-          if (!detected) l.ktx2.detectSupport(renderer);
-          detected = true;
-          return l.gltf.parseAsync(bytes, THREE.LoaderUtils.extractUrlBase(url));
-        })
-        .then((gltf: GLTF) => gltf.scene),
+      modules.then(async (m) => {
+        if (!detected) m.ktx2.detectSupport(renderer);
+        detected = true;
+        const basisu = m.basisuWithFallback(m.ktx2);
+        const gltf: GLTF = await new m.GLTFLoader().setMeshoptDecoder(m.MeshoptDecoder).register(basisu.register).parseAsync(bytes, THREE.LoaderUtils.extractUrlBase(url));
+        return { scene: gltf.scene, upgrades: basisu.upgrades() };
+      }),
     dispose: () => ktx2?.dispose()
   };
 }
@@ -241,8 +252,8 @@ export class ShipGlbStore {
     return !!this.manifest[classId] && !this.ready.has(classId) && !this.failed.has(classId);
   }
 
-  // Con manifiesto, crea ya el cargador: sus módulos y el transcodificador de KTX2 empiezan a bajar (lo llama el runtime
-  // al crearse, antes de conectar)
+  // Con manifiesto, crea ya el cargador: sus módulos empiezan a bajar (lo llama el runtime al crearse, antes de conectar).
+  // El transcodificador de KTX2 no: lo pide la primera KTX2 (createGlbLoader)
   warm(): void {
     if (!this.disposed && !this.loader && Object.values(this.manifest).some(Boolean)) this.loader = this.makeLoader();
   }
@@ -292,17 +303,19 @@ export class ShipGlbStore {
     this.loading = classId;
     bytes
       .then((b) => loader.parse(b, url, renderer))
-      .then((scene) => {
+      .then(({ scene, upgrades }) => {
         let model: ShipModel;
         try {
           model = shipModelFromGlb(scene, classId);
         } catch (e) {
           disposeScene(scene);
+          this.upgrade(classId, url, null, upgrades);
           throw e;
         }
         disposeScene(scene, model.map ?? null);
         if (this.disposed || this.manifest[classId] !== url) this.release(model);
         else this.ready.set(classId, model);
+        this.upgrade(classId, url, model, upgrades);
       })
       .catch((e: Error) => {
         if (this.manifest[classId] === url) this.failed.add(classId);
@@ -311,6 +324,33 @@ export class ShipGlbStore {
       .finally(() => {
         this.loading = null;
       });
+  }
+
+  // Salida 1 de AC-193 c (D90): al llegar la KTX2 del respaldo, la clase pasa a un modelo nuevo con ella, que updateShips
+  // (runtime.ts) pone en las vistas porque compara por identidad, y el respaldo se libera. La KTX2 toma el colorSpace y el
+  // canal del respaldo: el programa no cambia (del mapa solo cuentan que exista, su canal y si es vídeo, WebGLPrograms.js
+  // :205, :261 y :343). Si la KTX2 falla se queda el respaldo; si el modelo ya no está (otro GLB, dispose o el contrato
+  // incumplido), la KTX2 se libera sin ponerla
+  private upgrade(classId: string, url: string, model: ShipModel | null, upgrades: Promise<TextureUpgrade[]>): void {
+    void upgrades.then((pairs) => {
+      const current = !!model && !this.disposed && this.ready.get(classId) === model;
+      for (const [fallback, ktx2] of pairs) {
+        if (!current || fallback !== (model!.map ?? null)) {
+          ktx2?.dispose();
+          continue;
+        }
+        if (!ktx2) {
+          console.warn(`[ship-glb] ${classId} (${url}): la KTX2 no llegó; se queda el respaldo`);
+          continue;
+        }
+        if (fallback) {
+          ktx2.colorSpace = fallback.colorSpace;
+          ktx2.channel = fallback.channel;
+        }
+        this.ready.set(classId, { ...model!, map: ktx2 });
+        fallback?.dispose();
+      }
+    });
   }
 
   private release(model: ShipModel): void {
