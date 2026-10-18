@@ -6,10 +6,10 @@ import { AddressInfo } from 'net';
 import { Pool } from 'pg';
 import { Server } from 'socket.io';
 import { Socket as ClientSocket } from 'socket.io-client';
-import { DISCONNECT_GRACE, GOLD_CAP, SHIP_CLASSES, TICK_RATE, UPGRADE_LEVELS } from '../../src/game/constants';
+import { DISCONNECT_GRACE, GOLD_CAP, LEVEL_XP, NPC_XP, SHIP_CLASSES, TICK_RATE, UPGRADE_LEVELS } from '../../src/game/constants';
 import { C2S, S2C } from '../../src/game/protocol';
 import { Notice, PlayerView } from '../../src/game/types';
-import { isInSafeZone, shipOfPlayer } from '../../src/game/world';
+import { isInSafeZone, shipOfPlayer, spawnPirate } from '../../src/game/world';
 import { levelOf } from '../../src/game/xp';
 import { migrate } from '../db/migrate';
 import { createPool } from '../db/pool';
@@ -498,6 +498,56 @@ describe('AC-155: la XP se guarda con las mismas reglas que el oro', () => {
     expect(spy.calls).toEqual({ load: 0, save: 0 });
     expect((await db.admin.query('SELECT count(*)::int AS n FROM player_progress')).rows[0].n).toBe(0);
   });
+});
+
+// La cadena que vive el jugador, sin sumar XP a mano: hunde un pirata con su cañón (la intención por el socket y el
+// combate de world.ts, con el reparto de la XP por daño), esa XP llega a la fila v: 2 con el guardado periódico, y tras
+// reiniciar el servidor vuelve con la misma XP y con el nivel que viaja en su barco (lv)
+describe('AC-155 de punta a punta: hundir un pirata → XP → fila v: 2 → reiniciar', () => {
+  const lastLevel = (j: Joined) =>
+    j.frames
+      .flatMap((f) => f.s ?? [])
+      .filter((s) => s.id === j.welcome.shipId && s.lv !== undefined)
+      .at(-1)?.lv;
+
+  test.each([
+    ['un jugador de la 1.0 (fila v: 1, 0 de XP)', SLOOP_ONLY, 1],
+    ['un jugador a 10 de XP del nivel 7 (fila v: 2), que sube con el hundimiento', { ...SLOOP_ONLY, xp: LEVEL_XP[6] - 10 }, 7]
+  ])('%s: la XP del hundimiento queda escrita en v: 2 en ≤ 5 s y vuelve tras reiniciar, con su nivel', async (_label, seeded, level) => {
+    await seed('u-caza', seeded);
+    await startServer(); // reloj y guardado periódico reales
+    const a = await join('u-caza');
+    const ship = world().ships.get(a.welcome.shipId)!;
+    ship.pos = { x: 300, z: 300 }; // fuera de la zona segura
+    ship.protectedUntil = 0;
+    const pirate = spawnPirate(world(), 0);
+    pirate.pos = { x: 300, z: 330 }; // a tiro de los cañones N1
+    pirate.ai = null;
+    pirate.hp = 1;
+    world().rng = () => 0; // todas las balas aciertan
+    a.c.emit(C2S.attack, { targetId: pirate.id });
+
+    const xp = seeded.xp + NPC_XP.pirate;
+    await waitFor(() => a.me().xp === xp, 10_000, 'la XP del hundimiento en la vista');
+    const t0 = Date.now();
+    const events = a.frames.flatMap((f) => f.e ?? []);
+    expect(events).toContainEqual(expect.objectContaining({ type: 'sunk', shipId: pirate.id, byShipId: ship.id }));
+    expect(events).toContainEqual(expect.objectContaining({ type: 'xp', playerId: 'u-caza', xp: NPC_XP.pirate, source: 'kill' }));
+    expect(levelOf(xp)).toBe(level);
+    await waitFor(() => lastLevel(a) === level, 2000, 'el nivel en el barco propio');
+    const played = fields(a.me());
+
+    await waitFor(async () => (await rowOf('u-caza'))!.state.xp === xp, 5000, 'la XP del hundimiento en la fila');
+    expect(Date.now() - t0).toBeLessThanOrEqual(5000);
+    expect((await rowOf('u-caza'))!.state).toEqual({ v: 2, ...played });
+
+    await restart();
+    const again = await join('u-caza');
+    expect(fields(again.me())).toEqual(played);
+    expect(again.me().xp).toBe(xp);
+    await waitFor(() => lastLevel(again) !== undefined, 2000, 'el barco propio tras reiniciar');
+    expect(lastLevel(again)).toBe(level);
+  }, 20_000);
 });
 
 describe('AC-156: las filas de la 1.0 entran intactas, con 0 de XP, y solo pasan a v: 2 cuando su jugador escribe', () => {
