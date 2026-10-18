@@ -30,6 +30,16 @@ export function segmentPointDistance(a: Vec2, b: Vec2, c: Vec2): number {
   return Math.hypot(a.x + abx * t - c.x, a.z + abz * t - c.z);
 }
 
+// El cuadrado de esa distancia, con el tramo ya restado (ab y su longitud al cuadrado), para segmentClear: la misma cuenta
+// sin la raíz ni objetos (O-43)
+function segmentPointDistance2(a: Vec2, abx: number, abz: number, len2: number, x: number, z: number): number {
+  let t = len2 > 0 ? ((x - a.x) * abx + (z - a.z) * abz) / len2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  const dx = a.x + abx * t - x;
+  const dz = a.z + abz * t - z;
+  return dx * dx + dz * dz;
+}
+
 // Una forma del mapa con el círculo que envuelve los suyos (O-43): centro en la media de sus centros y radio hasta su
 // borde más lejano. Los círculos de una forma son los «id.k» de mapOf (constants.ts); con uno solo, el id de la forma
 interface Shape {
@@ -64,12 +74,20 @@ export class Navigator {
 
   // Libre si el segmento no entra en ninguna isla inflada por `clearance`. Una forma de varios círculos se prueba antes por
   // su círculo envolvente (O-43): si el tramo pasa a radio + margen o más de su centro, pasa a más del margen de cada uno
-  // de sus círculos (desigualdad triangular), con el EPS de sobra, y la forma entera se salta con una sola cuenta
+  // de sus círculos (desigualdad triangular), con el EPS de sobra, y la forma entera se salta con una sola cuenta. Las
+  // distancias se comparan al cuadrado
   segmentClear(a: Vec2, b: Vec2, clearance: number): boolean {
+    const abx = b.x - a.x;
+    const abz = b.z - a.z;
+    const len2 = abx * abx + abz * abz;
     for (const shape of this.shapes) {
-      if (shape.circles.length > 1 && segmentPointDistance(a, b, shape) >= shape.radius + clearance) continue;
+      if (shape.circles.length > 1) {
+        const reach = shape.radius + clearance;
+        if (segmentPointDistance2(a, abx, abz, len2, shape.x, shape.z) >= reach * reach) continue;
+      }
       for (const island of shape.circles) {
-        if (segmentPointDistance(a, b, { x: island.x, z: island.z }) < island.radius + clearance - EPS) return false;
+        const reach = island.radius + clearance - EPS;
+        if (reach > 0 && segmentPointDistance2(a, abx, abz, len2, island.x, island.z) < reach * reach) return false;
       }
     }
     return true;
