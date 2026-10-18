@@ -428,6 +428,30 @@ describe('Servidor — Capitán pirata (AC-111), con el I2 encendido (AC-187)', 
     expect(game.world.ships.has(cap.id)).toBe(false);
   }, 30_000);
 
+  // AC-111 (3): el aviso es del momento en que aparece; quien entra después lo ve solo por el marcador (el barco del
+  // capitán, que el snapshot completo de entrada trae aunque esté fuera de su área de interés)
+  test('AC-111 (3): quien entra con el capitán ya vivo recibe su barco en el snapshot completo de entrada y no recibe el aviso', async () => {
+    await start({ i2: true });
+    const a = await join('a', 'Ana');
+    const ship = (j: Joined) => game.world.ships.get(j.welcome.shipId)!;
+    ship(a).pos = { x: -60, z: 60 };
+    await advance(0.2);
+    game.world.killsSinceBoss = CAPTAIN_KILLS_TO_SPAWN;
+    await advance(0.3);
+    const cap = [...game.world.ships.values()].find((s) => s.classId === CAPTAIN_CLASS)!;
+    expect(cap).toBeDefined();
+    expect(eventsOf(a.frames).filter((e) => e.type === 'captain')).toHaveLength(1); // quien estaba, sí
+
+    const b = await join('b', 'Bea');
+    await advance(3);
+    const full = b.frames.find((f) => f.full);
+    expect(full).toBeDefined();
+    expect(distance(ship(b).pos, cap.pos)).toBeGreaterThan(INTEREST_RADIUS);
+    expect(deltasOf([full!], cap.id)[0]).toMatchObject({ id: cap.id, k: 'pirate', c: CAPTAIN_CLASS, n: 'Capitán pirata' });
+    expect(eventsOf(b.frames).filter((e) => e.type === 'captain')).toEqual([]);
+    expect(deltasOf(b.frames, cap.id).length).toBeGreaterThan(1); // y lo sigue recibiendo mientras patrulla
+  }, 30_000);
+
   // D49: el aviso que pinta el cliente sale del evento (cuadrante y punto de la guarida) con captainSpawnText. Un jugador
   // en la zona segura de cada uno de los otros 3 cuadrantes deja libre solo el del caso, y la guarida queda en su punto
   // de 45° del arco de 440 m (a ≥ 150 m de todos)
