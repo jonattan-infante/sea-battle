@@ -95,9 +95,9 @@ describe('arranque con SEA_BATTLE_I2 (server/bootstrap.ts)', () => {
   const ioOnly = () => new Server(createServer());
 
   test.each([
-    [{}, false, /I2 apagado/],
-    [{ SEA_BATTLE_I2: '0' }, false, /I2 apagado/],
-    [{ SEA_BATTLE_I2: '1' }, true, /I2 encendido \(SEA_BATTLE_I2=1\)/]
+    [{}, false, /I2 apagado: sin Capitán pirata ni cañoneras/],
+    [{ SEA_BATTLE_I2: '0' }, false, /I2 apagado: sin Capitán pirata ni cañoneras/],
+    [{ SEA_BATTLE_I2: '1' }, true, /I2 encendido \(SEA_BATTLE_I2=1\): el Capitán pirata y las cañoneras entran en partida/]
   ])('con %j el mundo queda con i2 = %s y lo dice el log', async (env, on, line) => {
     const logs: string[] = [];
     const server = ioOnly();

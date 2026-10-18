@@ -49,7 +49,7 @@ export async function startGame(io: Server, env: Env = process.env, log: (msg: s
   } else {
     log('⚠️  Sin DATABASE_URL: el progreso vive solo en memoria (se pierde al reiniciar)');
   }
-  log(i2 ? '🏴‍☠️ I2 encendido (SEA_BATTLE_I2=1): el Capitán pirata entra en partida' : 'I2 apagado: sin Capitán pirata (se enciende con SEA_BATTLE_I2=1)');
+  log(i2 ? '🏴‍☠️ I2 encendido (SEA_BATTLE_I2=1): el Capitán pirata y las cañoneras entran en partida' : 'I2 apagado: sin Capitán pirata ni cañoneras (se enciende con SEA_BATTLE_I2=1)');
   const game = createGameServer(io, {
     authenticate: (auth) => authenticateHandshake(auth, env),
     spawnNpcs: env.SEA_BATTLE_NPCS !== '0', // servidor de prueba sin NPC (AC-83, AC-87)
