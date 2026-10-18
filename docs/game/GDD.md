@@ -589,7 +589,7 @@ El tesoro que cruza el mar de los mercantes: rico, lento, pasivo y defendido. Es
 - **En la placa va solo la insignia: 5 dibujos, sin marcas del grado dentro de cada una.** El nivel exacto se lee en el panel del jugador y en el del objetivo (§14). *Por qué (medido por `game-ux`, 2026-10-17):* con 0–3 marcas de grado, su regla de legibilidad AD-40 falla (0 px de diferencia entre dos variantes a tamaño de placa). En combate basta con saber el tramo: una víctima dos insignias por debajo está como mínimo 5 niveles por debajo y ya no da XP (§10b, «Reglas»). El número exacto se consulta al seleccionar.
 - **Se ven también en grande**, en la pantalla de niveles (§14): ahí se tienen que reconocer como las mismas de la placa (BACKLOG AC-190).
 
-*Rediseño (2026-10-18):* Jonattan pidió rediseñarlas. `game-ux` le prepara 2 o 3 direcciones y él elige (BACKLOG AC-191 y AC-192). Estas reglas valen para cualquier dirección.
+*Rediseño (2026-10-18):* Jonattan pidió rediseñarlas. `game-ux` le preparó 3 direcciones, y él eligió la de galones (B), rediseñada con inspiración en las insignias de la Armada de Colombia (BACKLOG AC-191 y AC-192). Estas reglas valen también para ella: en esa referencia hay anclas y estrellas, que aquí son iconos de relación.
 
 ### Abuso: casos y cotas
 | Caso | Regla que lo frena | Cota medible |
