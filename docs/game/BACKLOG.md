@@ -834,7 +834,7 @@ Reportes (el último manda):
   **Medido con la cláusula** (dev-npc, `eda179f` en `feat/h-306-gunboat-ai`, Jest suelto con `--maxWorkers=2`, sin QA; `cannonOf(bot).range < cannonOf(cañonera).range`). Las cifras son 500 de oro / Bergantín / todo comprado:
   - **I2 encendido:** mediana **2,7 / 14,2 / 47,7 min**. Por semilla, 4,4 / 14,5 / 48,1 · 5,2 / 19,5 / 53,2 · 2,6 / 14,2 / 45,2 · 2,7 / 13,7 / 47,7 · 2,1 / 12,0 / 43,6, con 3, 3, 2, 0 y 0 muertes.
   - **I2 apagado:** 3,7 / 17,7 / 51,6, sin cambios.
-  - **Pasa.** El margen más justo es el de «todo comprado» con el I2 encendido: 2,7 min sobre 45. Las semillas 3 y 5 bajan de 45, pero AC-60 se juzga por la mediana.
+  - **Pasa.** El margen más justo es el de «todo comprado» con el I2 encendido: 2,7 min sobre 45. Una semilla de cada modo baja de 45 en «todo comprado»: con el I2 encendido, la 5 (43,6 min); con el I2 apagado, la 3 (43,4 min; por semilla, 51,6 · 54,6 · 43,4 · 59,8 · 51,3). AC-60 se juzga por la mediana. *Corregido el 2026-10-17 (errata de dev-npc que encontró QA):* decía «las semillas 3 y 5», y con el I2 encendido la 3 da 45,2.
 
   **Ya no es HIPÓTESIS:** el panel de alcance no le dice al jugador que la cañonera no es para N1 (99,2 % del combate a tiro; AC-114). Lo dirá la marca de peligro de **AC-189**, sin la que la cañonera no se enciende. Un jugador real con N1 que la ataca pese a la marca vive algo más cercano a 4,06 que a 2,7 min. Se acepta, porque es su elección y el juego se lo ha dicho.
 
