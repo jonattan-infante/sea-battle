@@ -87,7 +87,7 @@ function ShipCard({ classId, owned, active, gold, hullLevel, locked, onBuy, onUs
       <div className="card__body">
         <div className="card__title"><span>{c.label}</span></div>
         <div className="card__stats">
-          Vida <b>{fmt(hp)}</b> · Velocidad <b>{c.maxSpeed} m/s</b> · Cañones <b>{c.cannonsPerSide} por banda</b> · Eslora {c.length} m
+          Vida <b>{fmt(hp)}</b> · Velocidad <b>{dec(c.maxSpeed)} m/s</b> · Cañones <b>{c.cannonsPerSide} por banda</b> · Eslora {c.length} m
         </div>
         <div className="card__foot">
           {active ? (
