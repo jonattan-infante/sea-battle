@@ -2,10 +2,13 @@
 // el servidor vuelve a validar cada intención (GDD §13).
 import {
   CANNON_LEVELS,
+  LATENT_SHIPS,
   LEVEL_XP,
   LOW_HP_WARNING,
   MAP_HALF_SIZE,
   PirateSectorId,
+  PLAYER_SHIP_ORDER,
+  PlayerShipClass,
   PORT_POSITION,
   PVP_ENABLED,
   SAFE_ZONE_RADIUS,
@@ -215,6 +218,12 @@ export const DANGER_TEXT = 'Demasiado fuerte para tu barco';
 
 export function targetDanger(target: { kind: ShipKind; classId: string; state: ShipState }, player: PlayerView | null): boolean {
   return target.kind !== 'player' && target.state === 'alive' && !!player && tooStrong(target.classId, player);
+}
+
+// Barcos que ofrece la tienda, por precio: la Goleta y el Navío, solo con su interruptor encendido (Welcome.newShips,
+// AC-201). Apagado, el servidor tampoco los da a nadie, así que la tienda es la de la 1.0.3
+export function shipyardShips(newShips: boolean): readonly PlayerShipClass[] {
+  return newShips ? PLAYER_SHIP_ORDER : PLAYER_SHIP_ORDER.filter((c) => !LATENT_SHIPS.includes(c));
 }
 
 // Vida baja (< 30 %, AC-41): el panel propio avisa y el botón Reparar pulsa

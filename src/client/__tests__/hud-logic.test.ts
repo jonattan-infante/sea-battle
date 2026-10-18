@@ -1,7 +1,7 @@
 // AC-41 (QA-5 H-15): umbral de vida baja del HUD. El e2e no lo fija, porque sus muestras de vida saltan de 31,25 % a 23 %
 import { CANNON_LEVELS, CAPTAIN_CLASS, CAPTAIN_LAIR_RADIUS, PIRATE_SECTORS, PlayerShipClass, ShipKind } from '../../game/constants';
 import { PlayerView, ShipState } from '../../game/types';
-import { captainDownText, captainSpawnText, DANGER_TEXT, isLowHp, rangeText, sectorOf, targetDanger, targetDistance } from '../hud-logic';
+import { captainDownText, captainSpawnText, DANGER_TEXT, isLowHp, rangeText, sectorOf, shipyardShips, targetDanger, targetDistance } from '../hud-logic';
 import type { Relation } from '../hud-store';
 
 describe('Vida baja del HUD (AC-41)', () => {
@@ -111,5 +111,13 @@ describe('Marca de peligro en el panel del objetivo (AC-189, D77)', () => {
 
   test('el texto es el de §12.10', () => {
     expect(DANGER_TEXT).toBe('Demasiado fuerte para tu barco');
+  });
+});
+
+describe('Barcos del astillero (AC-201)', () => {
+  // La tienda pinta estos barcos, en este orden. Apagadas (la bienvenida trae newShips: false), es la de la 1.0.3
+  test('con la Goleta y el Navío apagados, la tienda es la de la 1.0.3; encendidos, los ofrece por precio', () => {
+    expect(shipyardShips(false)).toEqual(['sloop', 'brig', 'frigate']);
+    expect(shipyardShips(true)).toEqual(['sloop', 'brig', 'schooner', 'frigate', 'line']);
   });
 });

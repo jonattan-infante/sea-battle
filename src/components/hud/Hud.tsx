@@ -551,7 +551,7 @@ function Compass16() {
 
 // ---------- Raíz ----------
 
-export default function Hud({ client, actions, islands, viewRect }: { client: GameClient; actions: HudActions; islands: { x: number; z: number; radius: number }[]; viewRect?: () => ViewRect | null }) {
+export default function Hud({ client, actions, islands, newShips, viewRect }: { client: GameClient; actions: HudActions; islands: { x: number; z: number; radius: number }[]; newShips: boolean; viewRect?: () => ViewRect | null }) {
   const dead = useHud((s) => s.me?.state !== undefined && s.me.state !== 'alive');
   const shopOpen = useHud((s) => s.shopOpen);
   return (
@@ -567,7 +567,7 @@ export default function Hud({ client, actions, islands, viewRect }: { client: Ga
         <MobileButtons actions={actions} />
         <Hint />
       </div>
-      {shopOpen && <Shop actions={actions} />}
+      {shopOpen && <Shop actions={actions} newShips={newShips} />}
       <DeathOverlay client={client} actions={actions} />
     </>
   );
