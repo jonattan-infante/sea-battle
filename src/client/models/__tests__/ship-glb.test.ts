@@ -34,9 +34,7 @@ const without = (attribute: string) => (gltf: Json) => {
 describe('ASSET-SPEC §13: GLB de un barco con el contrato de §1–§4', () => {
   test('el GLB escrito desde la Balandra da el mismo modelo: triángulos, extras, sockets y caja de cada LOD', async () => {
     const proc = getShipModel('sloop');
-    const warn: string[] = [];
-    const m = shipModelFromGlb(await glb('sloop'), 'sloop', warn);
-    expect(warn).toEqual([]);
+    const m = shipModelFromGlb(await glb('sloop'), 'sloop');
     expect(m.recipe).toBe(proc.recipe); // los números de la clase son los del juego (AC-193 a)
     expect(m.triangles).toEqual(proc.triangles);
     expect(m.extras).toEqual(proc.extras);
@@ -60,13 +58,20 @@ describe('ASSET-SPEC §13: GLB de un barco con el contrato de §1–§4', () => 
     expect([m.sockets.cannonsPort.length, m.sockets.cannonsStbd.length, m.extras.sb_length]).toEqual([8, 8, getShipModel('frigate').recipe.L]);
   });
 
-  test('sin COLOR_0 pone blanco; sin NORMAL calcula las de pliegue de 40°; sin _RIM_MASK avisa', async () => {
-    const warn: string[] = [];
-    const m = shipModelFromGlb(await glb('sloop', { edit: (g) => (without('COLOR_0')(g), without('NORMAL')(g), without('_RIM_MASK')(g)) }), 'sloop', warn);
+  test('sin COLOR_0 pone blanco y sin NORMAL calcula las de pliegue de 40°', async () => {
+    const m = shipModelFromGlb(await glb('sloop', { edit: (g) => (without('COLOR_0')(g), without('NORMAL')(g)) }), 'sloop');
     const g = m.lods[0];
     expect(Array.from(g.getAttribute('color').array).every((v) => v === 1)).toBe(true);
     expect(g.getAttribute('normal').count).toBe(g.getAttribute('position').count);
-    expect(warn).toEqual(['ship_sloop_lod0 sin _RIM_MASK: sin borde de protección (§6)', 'ship_sloop_lod1 sin _RIM_MASK: sin borde de protección (§6)']);
+  });
+
+  // ux (2026-10-18, §13 paso 3): COLOR_0 multiplica la textura; en la jarcia y los cañones lleva su color, sobre un texel
+  // blanco del atlas. El loader no lo toca: blanco solo si falta
+  test('un COLOR_0 con color se conserva tal cual', async () => {
+    const proc = getShipModel('sloop').lods[0].getAttribute('color');
+    const g = shipModelFromGlb(await glb('sloop'), 'sloop').lods[0].getAttribute('color');
+    expect(Array.from(g.array)).toEqual(Array.from(proc.array));
+    expect(Array.from(g.array).some((v) => v < 1)).toBe(true);
   });
 
   test('el transform de un nodo de LOD se hornea en la geometría', async () => {
@@ -89,6 +94,7 @@ describe('ASSET-SPEC §13: GLB de un barco con el contrato de §1–§4', () => 
     ['la raíz movida', (g: Json) => (nodes(g)[0].translation = [0, 0.5, 0]), 'la raíz no tiene el transform identidad (§3)'],
     ['otros umbrales de LOD', (g: Json) => ((nodes(g)[0] as unknown as { extras: Json }).extras.sb_lod_px = [80, 70]), `sb_lod_px [80,70]; el juego usa ${JSON.stringify(LOD_PX)} (§7)`],
     ['sin versión', (g: Json) => delete (nodes(g)[0] as unknown as { extras: Json }).extras.sb_version, 'sb_version undefined; se espera 1 (§4)'],
+    ['sin _RIM_MASK (AS-V09; ux: no un barco a medias)', without('_RIM_MASK'), 'ship_sloop_lod0 sin _RIM_MASK: sin borde de protección (§6, AS-V09)'],
     ['dos raíces', (g: Json) => {
       nodes(g).push({ name: 'extra' });
       (g.scenes as { nodes: number[] }[])[0].nodes.push(nodes(g).length - 1);
