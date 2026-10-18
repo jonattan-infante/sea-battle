@@ -15,7 +15,8 @@ import { useHud } from './hud-store';
 import { buildBuoyGeometry, buildIslands, buildLootGeometry, buildPalmGeometry, buoyInstances, PropInstance } from './models/island-geometry';
 import { createOceanGeometry, createOceanMaterial } from './models/ocean-material';
 import { measureSailVisibility, measureShipValues, SailVisibility, ShipValues } from './models/sail-visibility';
-import { createShipMaterial, getShipModel, LOD_PX, ShipMaterial, ShipModel } from './models/ship-geometry';
+import { createShipMaterial, LOD_PX, ShipMaterial, ShipModel } from './models/ship-geometry';
+import { setShipMap, ShipGlbStore } from './models/ship-glb';
 import { FloatingTextLayer, LabelLayer, LabelTarget, OverlayHost, ReloadState, ScreenPoint } from './overlays';
 import { DAMAGE_FX, Effects, RENDER_ORDER, rgba } from './vfx/effects';
 import { makeRing, RING_MODE, RingSpec } from './vfx/rings';
@@ -669,6 +670,8 @@ export class GameRuntime implements OverlayHost, ChipHost {
   readonly mobile: boolean;
   readonly renderInfo: RenderInfo = { calls: 0, triangles: 0 };
   readonly views = new Map<string, ShipView>();
+  // GLB de las clases (ASSET-SPEC §13): el procedural se pinta mientras carga y si falla
+  readonly shipGlb = new ShipGlbStore();
   hoverId: string | null = null;
   clickMarker: ClickMarker | null = null;
   labels: LabelLayer | null = null;
@@ -1248,6 +1251,7 @@ export class GameRuntime implements OverlayHost, ChipHost {
       this.chips?.frame(now);
       return;
     }
+    this.shipGlb.pump(state.gl);
     this.src.update(now);
     if (this.src !== this.client) this.client.update(now); // drena sus eventos aunque no se dibuje
     const step = Math.min(dt, 0.1);
@@ -1389,8 +1393,10 @@ export class GameRuntime implements OverlayHost, ChipHost {
   }
 
   private createView(ship: RenderShip): ShipView {
-    const model = getShipModel(ship.classId);
+    const model = this.shipGlb.model(ship.classId);
+    this.shipGlb.request(ship.classId, ship.id === this.src.myShipId); // el propio, el primero (AC-193 c)
     const material = this.materialPool.pop() ?? createShipMaterial();
+    setShipMap(material, model.map ?? null);
     const lod: 0 | 1 = model.recipe.L * this.ppm >= LOD_PX[0] ? 0 : 1;
     const mesh = new THREE.Mesh(model.lods[lod], material);
     mesh.rotation.order = 'YXZ';
@@ -1412,11 +1418,15 @@ export class GameRuntime implements OverlayHost, ChipHost {
     const serverTime = this.src.serverTime();
     for (const view of this.views.values()) {
       const s = view.ship;
-      if (view.model.classId !== s.classId && getShipModel(s.classId).classId !== view.model.classId) {
-        view.model = getShipModel(s.classId);
-        view.length = view.model.recipe.L;
-        view.beam = view.model.recipe.B;
-        view.mesh.geometry = view.model.lods[view.lod];
+      // Cambio de clase o llegada del GLB de la clase: misma vista y mismo LOD, con la geometría y la textura nuevas
+      const model = this.shipGlb.model(s.classId);
+      if (model !== view.model) {
+        view.model = model;
+        view.length = model.recipe.L;
+        view.beam = model.recipe.B;
+        view.mesh.geometry = model.lods[view.lod];
+        setShipMap(view.mesh.material, model.map ?? null);
+        this.shipGlb.request(s.classId, view.id === this.src.myShipId);
       }
       const r = view.model.recipe;
       // LOD por eslora proyectada con histéresis (ASSET-SPEC §7)
@@ -1726,7 +1736,14 @@ export class GameRuntime implements OverlayHost, ChipHost {
     this.buoys.geometry.dispose();
     this.loot.geometry.dispose();
     this.staticMaterial.dispose();
+    this.shipGlb.dispose();
     this.scene.clear();
+  }
+
+  // Vista previa de un GLB (ux) y e2e: la clase usa ese GLB en cuanto carga, con el procedural mientras tanto
+  useShipGlb(classId: string, url: string): void {
+    this.shipGlb.setUrl(classId, url);
+    for (const view of this.views.values()) if (view.ship.classId === classId) this.shipGlb.request(classId, view.id === this.src.myShipId);
   }
 }
 
