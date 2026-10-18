@@ -3,6 +3,7 @@
 > Autor: `game-ux` · v1.0 · 2026-10-10 · **v1.1 · 2026-10-17**: Goleta, Navío de línea y Galeón del tesoro, libreas como mecanismo interno, 16 islas de un círculo en 5 arquetipos y puerto con amarres (D64, D66–D68; fase 2 ajustada a las cifras finales del GDD) · Consumidores: `game-developer`, `game-qa`
 > Motor: three.js 0.180 + React Three Fiber. Números de juego: [`GDD.md`](./GDD.md) (§4, §6, §9). Estética: [`ART-DIRECTION.md`](./ART-DIRECTION.md).
 > **Regla de oro:** el modelo procedural del MVP y un `.glb` futuro cumplen el **mismo contrato**: ejes, escala, pivote, sockets, `extras` y presupuesto. Cambiar uno por otro no toca la lógica (CLAUDE.md, regla 5). Las reglas verificables llevan id `AS-Vnn` (§11).
+> **Citas** (BACKLOG, «Convenciones»): los otros documentos se citan por sección o id (GDD §13, AS-V22, D51, AC-159), nunca por línea. En el código, salvo que la cita diga otra cosa, las `ruta:línea` de `src/`, `server/`, `e2e/` y `scripts/` son del tag `v1.0.2` (como en el GDD); las de `node_modules/three`, de three 0.180.0; y las de clerk-js, de la versión que dice cada cita. Los scripts de `scripts/ux/` se citan por nombre y sección de su salida.
 
 ## 0. El contrato en una tabla
 

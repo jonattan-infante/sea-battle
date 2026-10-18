@@ -3,6 +3,7 @@
 > Autor: `game-ux` · v1.0 · 2026-10-10 · **v1.1 · 2026-10-17**: experiencia ganada, ascenso de rango (D70; §9 y §16) y balas que no se recortan contra las islas (§3, VFX-26); fase 2 ajustada a GDD §14 y AC-151, AC-152 y AC-159 · Consumidores: `game-developer`, `game-qa`
 > Reglas de juego: [`GDD.md`](./GDD.md) (§7 combate, §8 reparación, §10 restos, §12 muerte). Estética y paleta: [`ART-DIRECTION.md`](./ART-DIRECTION.md). Sockets: [`ASSET-SPEC.md`](./ASSET-SPEC.md) §3.
 > Las reglas verificables llevan id `VFX-NN` (§15). Los tamaños van en metros del mundo y tienen un **mínimo en px de pantalla**: tamaño final = `max(m, px_min / ppm)`, para que se lean también en móvil (2,29 ppm).
+> **Citas** (BACKLOG, «Convenciones»): los otros documentos se citan por sección o id (GDD §13, AS-V22, D51, AC-159), nunca por línea. En el código, salvo que la cita diga otra cosa, las `ruta:línea` de `src/`, `server/`, `e2e/` y `scripts/` son del tag `v1.0.2` (como en el GDD); las de `node_modules/three`, de three 0.180.0; y las de clerk-js, de la versión que dice cada cita. Los scripts de `scripts/ux/` se citan por nombre y sección de su salida.
 
 ## 0. Arquitectura y presupuesto global
 
@@ -27,7 +28,7 @@
 
 **Orden de render** (`renderOrder`): océano 0 → `P_WATER` 1 → `P_CONTACT` 2 → islas 3 → `RINGS` 4 → barcos 5 → `P_BALL_SHADOW` 6 → `P_BALL` 7 → `P_ALPHA` 8 → `P_ADD` 9. Los anillos se pintan sobre las islas y los barcos los tapan.
 
-**Alfa del framebuffer (verificado; D20).** three r180 crea el contexto WebGL **siempre** con `alpha: true` (`node_modules/three/src/renderers/WebGLRenderer.js:345`), así que `gl={{ alpha: false }}` no basta. Regla: todo material con `CustomBlending` fija `blendSrcAlpha = ONE` y `blendDstAlpha = ONE_MINUS_SRC_ALPHA`, y así el alfa del framebuffer se queda en 1. `NormalBlending` ya lo cumple (`WebGLState.js:684`: `ONE, ONE_MINUS_SRC_ALPHA` en alfa) y `AdditiveBlending` satura en 1. Sin esos factores, el humo abría huecos de alfa, el fondo oscuro de la página se veía a través y el humo **oscurecía** lo que debía aclarar (dev-render: 42 254 px con α < 255 antes del arreglo y 0 después; aplicado en `particles.ts:214`, `balls.ts:208` y `rings.ts:157`). Lo comprueba VFX-22.
+**Alfa del framebuffer (verificado; D20).** three r180 crea el contexto WebGL **siempre** con `alpha: true` (`node_modules/three/src/renderers/WebGLRenderer.js:345`), así que `gl={{ alpha: false }}` no basta. Regla: todo material con `CustomBlending` fija `blendSrcAlpha = ONE` y `blendDstAlpha = ONE_MINUS_SRC_ALPHA`, y así el alfa del framebuffer se queda en 1. `NormalBlending` ya lo cumple (`WebGLState.js:684`: `ONE, ONE_MINUS_SRC_ALPHA` en alfa) y `AdditiveBlending` satura en 1. Sin esos factores, el humo abría huecos de alfa, el fondo oscuro de la página se veía a través y el humo **oscurecía** lo que debía aclarar (dev-render: 42 254 px con α < 255 antes del arreglo y 0 después; aplicado en `particles.ts:233`, `balls.ts:208` y `rings.ts:157`). Lo comprueba VFX-22.
 
 ### 0.3 Partícula estándar (atributos de instancia)
 | Atributo | Contenido |
@@ -36,7 +37,7 @@
 | `aV0Life` (vec4) | Velocidad inicial xyz (m/s) + vida (s) |
 | `aSize` (vec4) | Tamaño inicial, tamaño final (m), gravedad (m/s², + = sube), arrastre (s⁻¹) |
 | `aC0` / `aC1` (vec4) | Color RGBA inicial y final (lineal) |
-| `aMisc` (vec4) | Forma (0 disco suave · 1 anillo · 2 llama · 3 astilla cuadrada · 4 estela de chispa · 5 espuma ruidosa: disco suave × ruido de valor **interpolado** (bilineal, 3 celdas por diámetro, semilla por instancia). Un `floor()` sin interpolar da bloques pixelados, como en `particles.ts:124-126` · 6 cruz · 7 **bocanada** (D20): disco de borde firme `a = 1 − smoothstep(0.6, 1.0, r)` con luz cenital `rgb *= 0.9 + 0.2·smoothstep(−0.6, 0.6, uv.y)`; solo para el humo de vida baja · 8 **llama de daño** (D24): el perfil de la forma 2 con el sesgo de profundidad de la 7; solo para el fuego de vida baja), rotación inicial, velocidad de giro (rad/s), estiramiento |
+| `aMisc` (vec4) | Forma (0 disco suave · 1 anillo · 2 llama · 3 astilla cuadrada · 4 estela de chispa · 5 espuma ruidosa: disco suave × ruido de valor **interpolado** (bilineal, 3 celdas por diámetro, semilla por instancia). Un `floor()` sin interpolar da bloques pixelados · 6 cruz · 7 **bocanada** (D20): disco de borde firme `a = 1 − smoothstep(0.6, 1.0, r)` con luz cenital `rgb *= 0.9 + 0.2·smoothstep(−0.6, 0.6, uv.y)`; solo para el humo de vida baja · 8 **llama de daño** (D24): el perfil de la forma 2 con el sesgo de profundidad de la 7; solo para el fuego de vida baja), rotación inicial, velocidad de giro (rad/s), estiramiento |
 
 ```
 τ = uTime − t0 ;  si τ < 0 o τ > life → fuera del clip
@@ -63,7 +64,7 @@ En calidad "baja" (media del frame > 20 ms durante 3 s, o en móvil): tasas × 0
 
 | Campo | Valor |
 |---|---|
-| Disparador | Evento `volley { shipId, targetId, from, to, duration, hits, cannons }` (`src/game/types.ts:96`; D3). **Banda**: babor si `dot(to − from, (cos ψ, 0, −sin ψ)) > 0` (el +X local del tirador en el mundo), si no estribor. Un fogonazo por cada uno de los `min(cannons, sockets de la banda)` sockets `socket_cannon_<banda>_NN`, con un desfase visual de 45 ms del cañón 01 (popa) a N (proa) |
+| Disparador | Evento `volley { shipId, targetId, from, to, duration, hits, cannons }` (`src/game/types.ts:99`; D3). **Banda**: babor si `dot(to − from, (cos ψ, 0, −sin ψ)) > 0` (el +X local del tirador en el mundo), si no estribor. Un fogonazo por cada uno de los `min(cannons, sockets de la banda)` sockets `socket_cannon_<banda>_NN`, con un desfase visual de 45 ms del cañón 01 (popa) a N (proa) |
 | Duración | 100 ms |
 | Forma | Núcleo: disco aditivo en la boca, de 0,9 a 1,5 m. Penacho: disco a `boca + dir·0.9 m`, de 0,6 a 1,2 m. Chispas: 3 de forma 4 a 9 m/s dentro de un cono de 25° alrededor de `dir`, g = −9,8, vida 0,25 s, 0,18 m |
 | Colores | Núcleo `#FFF6C8` α1 → `#FFB347` α0 · penacho `#FF8A2B` α0,9 → `#FF5A1F` α0 · chispas `#FFD27A` → `#FF6A1F` α0 |
