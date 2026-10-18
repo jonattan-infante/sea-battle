@@ -16,7 +16,7 @@ import { PlayerView } from '../game/types';
 import { Vec2 } from '../game/vec';
 import { levelOf, Rank, rankLabel, rankOf } from '../game/xp';
 import type { GameClient, RenderShip } from './game-client';
-import type { MeHud, Relation } from './hud-store';
+import type { MeHud, Relation, TargetHud } from './hud-store';
 
 export function inSafeZone(x: number, z: number): boolean {
   return Math.hypot(x - PORT_POSITION.x, z - PORT_POSITION.z) <= SAFE_ZONE_RADIUS;
@@ -185,6 +185,25 @@ export function rewardParts(r: Reward): { gold: string; xp: string } {
 export function rewardText(r: Reward): string {
   const { gold, xp } = rewardParts(r);
   return [r.lead, r.name, [gold, xp].filter(Boolean).join(' · ')].filter(Boolean).join(' ');
+}
+
+// Alcance (AC-31, 1.1: «el panel dice exactamente lo que hace el servidor»). Se compara la distancia sin redondear, como
+// el servidor (world.ts no dispara con dist > alcance) y el estado de la acción. La distancia se muestra redondeada hacia
+// arriba: con alcances enteros, «distancia mostrada ≤ alcance» es «a tiro», así que a 60,4 m dice «61 m · ✕ Fuera de
+// alcance», y no «60 m» con un texto que la contradice
+export function inCannonRange(distance: number, cannonRange: number): boolean {
+  return distance <= cannonRange;
+}
+
+export function targetDistance(distance: number, cannonRange: number): { shown: number; inRange: boolean } {
+  return { shown: Math.ceil(distance), inRange: inCannonRange(distance, cannonRange) };
+}
+
+// La fila de la distancia del panel del objetivo. Si a otro jugador no se le puede atacar (protegido o en la zona
+// segura), «En alcance» o «Fuera de alcance» no significan nada: «✕ No atacable» (AC-153)
+export function rangeText(target: Pick<TargetHud, 'relation' | 'attackable' | 'inRange'>): string {
+  if (target.relation === 'player' && !target.attackable) return '✕ No atacable';
+  return target.inRange ? '✓ En alcance' : '✕ Fuera de alcance';
 }
 
 // Vida baja (< 30 %, AC-41): el panel propio avisa y el botón Reparar pulsa

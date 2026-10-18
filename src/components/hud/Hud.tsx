@@ -6,7 +6,7 @@ import { CAPTAIN_CLASS, REPAIR_RATE, REPAIR_RATE_UNDER_FIRE } from '../../game/c
 import { rankLabel, rankOf } from '../../game/xp';
 import type { GameClient } from '../../client/game-client';
 import { HINTS } from '../../client/hints';
-import { addTicker, hudSignals, isLowHp, levelText, portBlock, targetTypeLine, xpFill, XpProgress, xpNumbers, xpProgress } from '../../client/hud-logic';
+import { addTicker, hudSignals, isLowHp, levelText, portBlock, rangeText, targetTypeLine, xpFill, XpProgress, xpNumbers, xpProgress } from '../../client/hud-logic';
 import { MeHud, Relation, TargetHud, useHud } from '../../client/hud-store';
 import { HUD_BLOCKS_EVENT } from '../../client/overlays';
 import { RankBadge } from './badges';
@@ -214,8 +214,7 @@ function TargetPanel({ actions }: { actions: HudActions }) {
   // Otro jugador (1.1, AC-153; GDD §14, «Panel de objetivo»): su insignia delante de «Balandra · Nivel 13 · Teniente».
   // En móvil esa línea va la última, bajo la distancia, y el panel crece a 70 de alto (CSS, D75)
   const player = target.relation === 'player' && target.level !== null;
-  // Si no se le puede atacar, «En alcance» o «Fuera de alcance» no significan nada: «✕ No atacable»
-  const range = target.relation === 'player' && !target.attackable ? '✕ No atacable' : target.inRange ? '✓ En alcance' : '✕ Fuera de alcance';
+  const range = rangeText(target);
   return (
     <section className={`panel hud-target ${player ? 'is-player' : ''}`} data-testid="target-frame" data-target-id={target.id} data-hud-block="">
       <div className="hud-target__icon" style={{ color }}><RelationIcon relation={target.relation} classId={target.classId} /></div>
