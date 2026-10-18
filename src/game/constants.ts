@@ -42,6 +42,66 @@ export const ISLANDS: IslandDef[] = [
   { id: 'I6', x: -410, z: -30, radius: 28 }
 ];
 
+// Cada isla es la unión de 1 a 5 círculos (AC-199, opción B). La navegación y la colisión trabajan con la lista plana de
+// los círculos de todas las formas (`islands`, un IslandDef por círculo), así que una isla de varios círculos no cambia
+// el código: solo los datos
+export type IslandArchetype = 'port' | 'tropical' | 'rocky' | 'reef' | 'cove';
+export interface IslandShape {
+  id: string;
+  archetype: IslandArchetype;
+  circles: { x: number; z: number; radius: number }[];
+}
+export interface MapDef {
+  id: string;
+  shapes: IslandShape[];
+  islands: IslandDef[]; // los círculos de todas las formas: con uno, el id de la forma; con varios, «id.k»
+  moorings: boolean; // los jugadores aparecen en los amarres del puerto (AC-176); sin ellos, en el anillo de la 1.0
+}
+
+export function mapOf(id: string, shapes: IslandShape[], moorings: boolean): MapDef {
+  const islands = shapes.flatMap((s) => s.circles.map((c, k) => ({ id: s.circles.length > 1 ? `${s.id}.${k}` : s.id, ...c })));
+  return { id, shapes, islands, moorings };
+}
+
+// El mapa del juego: el de la 1.0 (con los arquetipos que la 1.1 da a sus 7 formas). Comparte la lista ISLANDS, y con
+// ella el navegador y sus grafos (world.ts)
+const ARCHETYPES_1_0: Record<string, IslandArchetype> = { PORT: 'port', I1: 'tropical', I2: 'rocky', I3: 'rocky', I4: 'rocky', I5: 'tropical', I6: 'tropical' };
+export const MAP_1_0: MapDef = {
+  ...mapOf('1.0', ISLANDS.map((i) => ({ id: i.id, archetype: ARCHETYPES_1_0[i.id], circles: [{ x: i.x, z: i.z, radius: i.radius }] })), false),
+  islands: ISLANDS
+};
+
+// ---- Mapa de la 1.1 · PROVISIONAL ----
+// La tabla de islas de GDD §4 (ART-DIRECTION D67): el puerto, las 6 islas de la 1.0 sin mover, T1, T2, los 3 escollos y
+// las 4 calas, de un círculo cada una. Son datos PROVISIONALES hasta que Jonattan apruebe la lámina nueva de islas (D67
+// se rehace con formas irregulares; AC-198 y AC-199): la disposición puede cambiar, y cambiarla es tocar solo este bloque.
+// Todavía no es el mapa del juego: lo usan los tests de la lógica del mapa nuevo con createWorld({ map: MAP_1_1 })
+export const ISLAND_SHAPES_1_1: IslandShape[] = [
+  { id: 'PORT', archetype: 'port', circles: [{ x: 0, z: 0, radius: 30 }] },
+  { id: 'I1', archetype: 'tropical', circles: [{ x: 260, z: 200, radius: 45 }] },
+  { id: 'I2', archetype: 'rocky', circles: [{ x: -300, z: 170, radius: 35 }] },
+  { id: 'I3', archetype: 'rocky', circles: [{ x: -220, z: -280, radius: 55 }] },
+  { id: 'I4', archetype: 'rocky', circles: [{ x: 250, z: -260, radius: 40 }] },
+  { id: 'I5', archetype: 'tropical', circles: [{ x: 20, z: 360, radius: 30 }] },
+  { id: 'I6', archetype: 'tropical', circles: [{ x: -410, z: -30, radius: 28 }] },
+  { id: 'T1', archetype: 'tropical', circles: [{ x: 150, z: -150, radius: 22 }] },
+  { id: 'T2', archetype: 'tropical', circles: [{ x: -170, z: 150, radius: 22 }] },
+  { id: 'E1a', archetype: 'reef', circles: [{ x: 140, z: 260, radius: 7 }] },
+  { id: 'E1b', archetype: 'reef', circles: [{ x: 117.5, z: 299, radius: 7 }] },
+  { id: 'E1c', archetype: 'reef', circles: [{ x: 162.5, z: 299, radius: 7 }] },
+  { id: 'G1', archetype: 'cove', circles: [{ x: 368, z: -368, radius: 20 }] },
+  { id: 'G2', archetype: 'cove', circles: [{ x: -368, z: -368, radius: 20 }] },
+  { id: 'G3', archetype: 'cove', circles: [{ x: -368, z: 368, radius: 20 }] },
+  { id: 'G4', archetype: 'cove', circles: [{ x: 368, z: 368, radius: 20 }] }
+];
+export const MAP_1_1: MapDef = mapOf('1.1', ISLAND_SHAPES_1_1, true);
+
+// Amarres del puerto (§4, «El puerto»; AC-176): 12, uno cada 30° de rumbo ψ desde 15°. El barco atracado tiene el centro
+// a PORT_RADIUS + L/2 + 2 m del centro del puerto (su margen de navegación), la popa hacia el muelle y la proa hacia fuera.
+// Un amarre está libre si ningún barco vivo tiene el centro a < freeRadius m de su eje: el segmento de r axisFrom a r
+// axisTo en su rumbo (76 = 30 + 42 + 4: el Navío entero, con 2 m de holgura a cada lado)
+export const MOORINGS = { count: 12, firstDeg: 15, stepDeg: 30, axisFrom: 30, axisTo: 76, freeRadius: 12 } as const;
+
 // Sectores piratas en pantalla: NE = (x+, z−), NO = (x−, z−), SO = (x−, z+), SE = (x+, z+)
 export const PIRATE_SECTORS = [
   { id: 'NE', sx: 1, sz: -1 },
