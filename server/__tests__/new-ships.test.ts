@@ -75,12 +75,10 @@ describe('SEA_BATTLE_NEW_SHIPS (AC-201)', () => {
     [{ SEA_BATTLE_NEW_SHIPS: '1' }, true, /Goleta y Navío encendidos \(SEA_BATTLE_NEW_SHIPS=1\): se venden en el astillero con su nivel/]
   ])('con %j el mundo queda con newShips = %s y lo dice el log', async (env, on, line) => {
     const logs: string[] = [];
-    const server = new Server(createServer());
-    const { game: g } = await startGame(server, { SEA_BATTLE_NPCS: '0', ...env }, (m) => logs.push(m));
-    expect(g.world.newShips).toBe(on);
+    io = new Server(createServer()); // lo para afterEach, también si falla un expect: el bucle vivo no deja salir a Jest (O-34)
+    ({ game } = await startGame(io, { SEA_BATTLE_NPCS: '0', ...env }, (m) => logs.push(m)));
+    expect(game.world.newShips).toBe(on);
     expect(logs.join('\n')).toMatch(line);
-    g.stop();
-    server.close();
   });
 
   test('apagadas (por defecto): la bienvenida lo dice, y una compra forjada de cada una se rechaza aunque haya nivel y oro, sin tocar nada; un cliente no las enciende', async () => {
