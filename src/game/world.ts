@@ -364,7 +364,7 @@ export function addPlayer(world: World, id: string, name: string, initial?: Pick
     kills: 0,
     deaths: 0,
     death: null,
-    xp: initial?.xp ?? 0
+    xp: initial?.xp ?? world.startingXp ?? 0
   };
   player.name = name;
   player.death = null;

@@ -2,6 +2,7 @@ import {
   CANNON_LEVELS,
   CAPTAIN_CLASS,
   INTEREST_RADIUS,
+  LEVEL_XP,
   ISLANDS,
   NAV_LIMIT,
   PIRATE_AGGRO_RADIUS,
@@ -16,6 +17,7 @@ import {
   TICK_RATE
 } from '../../src/game/constants';
 import { addPlayer, attack, createWorld, drainEvents, setRepair, shipOfPlayer, step } from '../../src/game/world';
+import { levelOf, rankOf } from '../../src/game/xp';
 import {
   AMBUSH_POINT,
   applyScenario,
@@ -34,7 +36,8 @@ import {
   SCENARIOS,
   SHOWCASE_POINT,
   TARGET_FAN,
-  TARGETS_POINT
+  TARGETS_POINT,
+  XP_BAIT_POINT
 } from '../scenarios';
 
 describe('escenario "showcase" para capturas', () => {
@@ -351,5 +354,54 @@ describe('escenarios del Capitán pirata (AC-111), con el I2 encendido (AC-187)'
     const r = Math.hypot(CAPTAIN_DOWN_POINT.x, CAPTAIN_DOWN_POINT.z);
     expect(r).toBeGreaterThan(PIRATE_PORT_EXCLUSION);
     expect(r - SAFE_ZONE_RADIUS).toBeLessThanOrEqual(CANNON_LEVELS[0].range);
+  });
+});
+
+// Experiencia (1.1; AC-151 y AC-153, e2e/xp-hud.spec.ts): cada jugador entra con la XP del escenario, salvo que traiga la
+// suya de la fila, que gana, como con el oro (así AC-155 no choca)
+describe('escenarios de la XP (AC-151, AC-153)', () => {
+  // Progreso guardado de un usuario con cuenta, con la XP de su fila
+  const row = (xp: number): Parameters<typeof addPlayer>[3] => ({ gold: 500, upgrades: { cannons: 1, hull: 1, sails: 1 }, ownedShips: ['sloop'], activeShip: 'sloop', xp });
+  const enter = (name: ScenarioName | null, initial?: Parameters<typeof addPlayer>[3]) => {
+    const world = createWorld({ seed: 1, spawnNpcs: false });
+    if (name) applyScenario(world, name);
+    return { world, player: addPlayer(world, 'u1', 'Ana', initial) };
+  };
+
+  test('"xp": sin progreso guardado, a 10 XP del nivel 9; con la XP de la fila, la de la fila; sin escenario, 0', () => {
+    expect(enter('xp').player.xp).toBe(LEVEL_XP[8] - 10);
+    expect(levelOf(enter('xp').player.xp)).toBe(8);
+    expect(enter('xp', row(1234)).player.xp).toBe(1234);
+    expect(enter('xp', row(0)).player.xp).toBe(0);
+    expect(enter(null).player.xp).toBe(0);
+    expect(enter(null, row(1234)).player.xp).toBe(1234);
+  });
+
+  test('"xp": un cebo quieto con 1 de vida a tiro desde el borde de la zona; hundirlo da 30 XP y el nivel 9, Contramaestre', () => {
+    const { world, player } = enter('xp');
+    const bait = [...world.ships.values()].find((s) => s.kind === 'pirate')!;
+    expect(bait).toMatchObject({ classId: 'pirate', hp: 1, ai: null, holdPosition: true, pos: XP_BAIT_POINT });
+    expect(Math.hypot(XP_BAIT_POINT.x, XP_BAIT_POINT.z) - SAFE_ZONE_RADIUS).toBeLessThanOrEqual(CANNON_LEVELS[0].range);
+    const ship = shipOfPlayer(world, 'u1')!;
+    ship.pos = { x: XP_BAIT_POINT.x, z: XP_BAIT_POINT.z - 45 };
+    world.rng = () => 0;
+    attack(world, 'u1', bait.id);
+    for (let i = 0; i < 2 * TICK_RATE; i++) {
+      step(world, 1 / TICK_RATE);
+      drainEvents(world);
+    }
+    expect(player.xp).toBe(LEVEL_XP[8] + 20);
+    expect([levelOf(player.xp), rankOf(levelOf(player.xp))]).toEqual([9, 3]);
+  });
+
+  test('"xp-13": nivel 13 (Teniente); "xp-12": nivel 12 (Contramaestre) con el oro del Bergantín; ninguno añade NPC', () => {
+    const t = enter('xp-13');
+    expect([levelOf(t.player.xp), rankOf(levelOf(t.player.xp))]).toEqual([13, 4]);
+    expect(t.player.gold).toBe(STARTING_GOLD);
+    const c = enter('xp-12');
+    expect([levelOf(c.player.xp), rankOf(levelOf(c.player.xp))]).toEqual([12, 3]);
+    expect(c.player.gold).toBe(SHIP_CLASSES.brig.price);
+    expect([t.world.ships.size, c.world.ships.size]).toEqual([1, 1]);
+    expect([parseScenario('xp'), parseScenario('xp-13'), parseScenario('xp-12')]).toEqual(['xp', 'xp-13', 'xp-12']);
   });
 });

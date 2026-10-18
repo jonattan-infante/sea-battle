@@ -1,6 +1,6 @@
 // Escenarios deterministas para capturas de QA y UX (ART-DIRECTION §18). Solo se aplican con el modo
 // invitado permitido (nunca en Railway); en producción el mundo es siempre el del GDD.
-import { CANNON_LEVELS, CAPTAIN_KILLS_TO_SPAWN, SHIP_CLASSES, WRECK_LIFETIME } from '../src/game/constants';
+import { CANNON_LEVELS, CAPTAIN_KILLS_TO_SPAWN, LEVEL_XP, SHIP_CLASSES, WRECK_LIFETIME } from '../src/game/constants';
 import { World } from '../src/game/types';
 import { spawnCaptain, spawnMerchant, spawnPirate } from '../src/game/world';
 
@@ -60,7 +60,19 @@ export const REPAIR_START_HULL = 0.1;
 export const CAPTAIN_BAIT_POINT = { x: 0, z: 150 };
 export const CAPTAIN_DOWN_POINT = { x: 0, z: -160 };
 
-export const SCENARIOS = ['showcase', 'shipyard', 'targets', 'endurance', 'repair', 'legibility', 'captain', 'captain-down'] as const;
+// Experiencia (1.1; AC-151 y AC-153, e2e/xp-hud.spec.ts). Cada jugador entra con la XP del escenario, salvo que traiga la
+// suya de la fila, que gana, como con el oro. "xp": a 10 XP del nivel 9 (Contramaestre: el aviso más largo, «¡Nivel 9!
+// Ahora eres Contramaestre», ART-DIRECTION §12.9) y un cebo (pirata quieto, sin IA y con 1 de vida, que da 30 XP) a tiro
+// desde el borde de la zona segura. "xp-13": nivel 13 (Teniente). "xp-12": nivel 12 (Contramaestre) con el oro del
+// Bergantín, para el caso más largo del panel del objetivo, «Bergantín · Nivel 12 · Contramaestre»
+export const XP_BAIT_POINT = { x: 0, z: 150 };
+const XP_SCENARIOS = {
+  xp: { xp: LEVEL_XP[8] - 10 },
+  'xp-13': { xp: LEVEL_XP[12] },
+  'xp-12': { xp: LEVEL_XP[11], gold: SHIP_CLASSES.brig.price }
+} as const;
+
+export const SCENARIOS = ['showcase', 'shipyard', 'targets', 'endurance', 'repair', 'legibility', 'captain', 'captain-down', 'xp', 'xp-13', 'xp-12'] as const;
 export type ScenarioName = (typeof SCENARIOS)[number];
 // Escenarios del Capitán: con el I2 apagado no podría aparecer (AC-187), así que exigen SEA_BATTLE_I2=1
 export const I2_SCENARIOS: readonly ScenarioName[] = ['captain', 'captain-down'];
@@ -70,6 +82,22 @@ export function parseScenario(value: string | undefined): ScenarioName | null {
 }
 
 export function applyScenario(world: World, name: ScenarioName): void {
+  if (name === 'xp' || name === 'xp-13' || name === 'xp-12') {
+    const s: { xp: number; gold?: number } = XP_SCENARIOS[name];
+    world.startingXp = s.xp;
+    if (s.gold !== undefined) world.startingGold = s.gold;
+    if (name !== 'xp') return;
+    const bait = spawnPirate(world, 2);
+    bait.pos = { ...XP_BAIT_POINT };
+    bait.heading = 0;
+    bait.ai = null;
+    bait.holdPosition = true;
+    bait.destination = null;
+    bait.path = [];
+    bait.hp = 1;
+    bait.respawnPos = { ...bait.pos };
+    return;
+  }
   if (name === 'shipyard') {
     // AC-70: cada jugador entra con el oro justo para comprar el Bergantín en el puerto
     world.startingGold = SHIP_CLASSES.brig.price;
