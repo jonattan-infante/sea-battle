@@ -5,10 +5,10 @@ import { createServer, Server as HttpServer } from 'http';
 import { AddressInfo } from 'net';
 import { Server } from 'socket.io';
 import { io as ioClient, Socket as ClientSocket } from 'socket.io-client';
-import { CAPTAIN_CLASS, CAPTAIN_KILLS_TO_SPAWN, TICK_RATE } from '../../src/game/constants';
+import { CAPTAIN_CLASS, CAPTAIN_KILLS_TO_SPAWN, GUNBOAT_CLASS, TICK_RATE } from '../../src/game/constants';
 import { C2S, S2C } from '../../src/game/protocol';
-import { GameEvent, ServerFrame, Welcome } from '../../src/game/types';
-import { spawnCaptain } from '../../src/game/world';
+import { GameEvent, ServerFrame, ShipSnapshot, Welcome } from '../../src/game/types';
+import { shipOfPlayer, spawnCaptain } from '../../src/game/world';
 import { startGame } from '../bootstrap';
 import { i2Enabled } from '../features';
 import { createGameServer, GameServer } from '../game-server';
@@ -106,6 +106,40 @@ describe('arranque con SEA_BATTLE_I2 (server/bootstrap.ts)', () => {
     expect(logs.join('\n')).toMatch(line);
     g.stop();
     server.close();
+  });
+
+  // AC-51 por la vía de un e2e (startOwnServer): el entorno decide la población con NPC. Apagado, la de la 1.0; encendido,
+  // la del I2 (H-306)
+  test.each([
+    [{}, { pirate: 12, gunboat: 0, merchant: 8 }],
+    [{ SEA_BATTLE_I2: '0' }, { pirate: 12, gunboat: 0, merchant: 8 }],
+    [{ SEA_BATTLE_I2: '1' }, { pirate: 8, gunboat: 4, merchant: 8 }]
+  ])('con NPC y %j, el mundo arranca con %j (AC-51)', async (env, expected) => {
+    const httpServer = createServer();
+    io = new Server(httpServer);
+    ({ game } = await startGame(io, env, () => {}, { autoStart: false }));
+    const count = (classId: string) => [...game.world.ships.values()].filter((s) => s.classId === classId).length;
+    expect({ pirate: count('pirate'), gunboat: count(GUNBOAT_CLASS), merchant: count('merchant') }).toEqual(expected);
+  });
+
+  test('con NPC y SEA_BATTLE_I2=1, un cliente junto a una cañonera la recibe en el frame como «Cañonera pirata», hostil y con su clase', async () => {
+    const httpServer = createServer();
+    io = new Server(httpServer);
+    ({ game } = await startGame(io, { SEA_BATTLE_I2: '1' }, () => {}, { autoStart: false, authenticate: testAuth }));
+    await new Promise<void>((resolve) => httpServer.listen(0, resolve));
+    const c = ioClient(`http://localhost:${(httpServer.address() as AddressInfo).port}`, { transports: ['websocket'], reconnection: false, auth: { token: 'a' } });
+    sockets.push(c);
+    const frames: ServerFrame[] = [];
+    c.on(S2C.frame, (f: ServerFrame) => frames.push(f));
+    const welcome = new Promise<Welcome>((resolve) => c.once(S2C.welcome, resolve));
+    c.emit(C2S.join, { name: 'Ana' });
+    await welcome;
+    const boat = [...game.world.ships.values()].find((s) => s.classId === GUNBOAT_CLASS)!;
+    shipOfPlayer(game.world, 'a')!.pos = { x: boat.pos.x * 0.6, z: boat.pos.z * 0.6 }; // a ~180 m: dentro del área de interés (300 m)
+    for (let i = 0; i < TICK_RATE; i++) game.tick();
+    await flush(60);
+    const seen = frames.flatMap((f) => f.s ?? []).find((s) => s.id === boat.id) as ShipSnapshot | undefined;
+    expect(seen && { c: seen.c, k: seen.k, n: seen.n }).toEqual({ c: GUNBOAT_CLASS, k: 'pirate', n: 'Cañonera pirata' });
   });
 
   test.each(['captain', 'captain-down'])('el escenario "%s" no arranca con el I2 apagado, y con él encendido sí', async (scenario) => {
