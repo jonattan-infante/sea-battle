@@ -903,6 +903,12 @@ Reportes (el último manda):
   - (d) dev entrega la lista de archivos con conflicto resueltos a mano, con el motivo de cada uno, y QA la revisa.
   - (e) **AC-60 corre en `verify` en los dos modos** (decidido por producto, 2026-10-17): apagado, la curva de la 1.0.3; encendido, la medida de H-305. Cuesta ~25 s más por `verify`. Compensa porque dev-npc está cambiando el reparto de `world.ts`, justo donde se cruzan el Capitán y la curva. Así un cambio que rompa la curva con el I2 encendido sale en el momento y no en una puerta posterior. Cuando el I2 se encienda en prod, se queda solo el modo encendido.
 
+  **Pasada T2 de QA sobre el candidato `4a125e0`** (2026-10-18; dato de QA que adelantó el lead, con el informe pendiente). Son 121 tests listados y 121 en verde, en 35,0 min, sin que falte ni sobre ninguno frente a `--list`. Los 104 de la 1.0.3 cuadran por nombre:
+  - 102 con el mismo nombre;
+  - 2 sustituidos por sucesores ya nombrados aquí: el de AC-157, que pasa a «AC-157 y AC-155: …» (AC-157, «En el árbol de la 1.1»), y el AD-28 móvil, que pasa a su versión de D51.
+
+  Además hay 19 tests nuevos. `/healthz` da `i2: false` en las 1 368 lecturas de los 4 servidores del arnés, e `i2: true` solo en los puertos de los specs del I2. La lista está en `qa-artifacts/qa/4a125e0/T2/nombres.txt`, en el árbol principal. **Producto acepta (a) cuando QA entregue el informe**, en el que nombra también los tests que conservan su nombre pero cambian lo que asertan (el de AC-67 y el de AC-31, AC-153).
+
   Verificación: QA-REPORT con las pasadas (a) y (b), la lista de (d), `/healthz` con `i2: false` y los dos modos de AC-60. **Encender el I2 en un entorno** es añadir la variable y redesplegar. En staging va cuando el Capitán, la Cañonera y la vista libre pasen QA juntos, y con el sí de Jonattan.
 
 ## E4 — Botín y economía
