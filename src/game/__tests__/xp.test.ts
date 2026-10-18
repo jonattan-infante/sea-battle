@@ -1,11 +1,11 @@
 // E14 — Experiencia, niveles e insignias (GDD §10b): AC-144 a AC-150 y las constantes de §10b (AC-04)
 import * as C from '../constants';
-import { LEVEL_XP, SHIP_CLASSES, TICK_RATE } from '../constants';
+import { CAPTAIN_CLASS, LEVEL_XP, SHIP_CLASSES, TICK_RATE } from '../constants';
 import { GameEvent, Ship, World } from '../types';
 import { createRng } from '../vec';
-import { addPlayer, attack, buy, canAttack, cancelAttack, drainEvents, moveTo, playerView, removePlayer, respawn, setRepair, shipOfPlayer, shipSnapshot, splitReward, step } from '../world';
+import { addPlayer, attack, buy, canAttack, cancelAttack, drainEvents, moveTo, playerView, removePlayer, respawn, setRepair, shipOfPlayer, shipSnapshot, spawnCaptain, splitReward, step } from '../world';
 import { drainPvpLog, levelFactorPercent, levelOf, openPairs, pairKills, pvpXp, rankLabel, rankOf } from '../xp';
-import { DT, emptyWorld, placeMerchant, placePlayer, run } from './helpers';
+import { DT, emptyWorld, i2World, placeMerchant, placePlayer, run } from './helpers';
 
 // Tabla «XP por NPC» de GDD §10b, por id de clase (la Cañonera es `gunboat`, el Capitán `captain`, el Galeón `galleon`)
 const GDD_NPC_XP: Record<string, number> = { merchant: 10, pirate: 30, gunboat: 60, captain: 240, galleon: 160 };
@@ -30,9 +30,10 @@ function xpOf(events: GameEvent[], playerId: string, source?: 'kill' | 'pvp'): n
 
 const lootOf = (events: GameEvent[]) => events.flatMap((e) => (e.type === 'loot' ? [[e.playerId, e.gold, e.source]] : []));
 
-// NPC de la clase pedida, quieto, sin IA y con la vida de su clase
+// NPC de la clase pedida, quieto, sin IA y con la vida de su clase. El Capitán sale por su vía real, que solo actúa con
+// el I2 encendido (AC-187)
 function npcOf(world: World, classId: string, x: number, z: number): Ship {
-  const ship = placeMerchant(world, x, z);
+  const ship = classId === CAPTAIN_CLASS ? spawnCaptain(world, { x, z })! : placeMerchant(world, x, z);
   const stats = SHIP_CLASSES[classId];
   ship.classId = classId;
   ship.kind = stats.kind;
@@ -68,15 +69,19 @@ describe('E14 — Constantes de la experiencia (§10b)', () => {
 });
 
 describe('E14 — H-1401 XP por hundir NPC (§10b)', () => {
-  test('AC-144: cada clase NPC del juego tiene su XP en la tabla de GDD §10b', () => {
+  test('AC-144: cada clase NPC del juego tiene su XP en la tabla de GDD §10b, también el Capitán con el I2 apagado', () => {
     for (const id of NPC_CLASSES) expect({ id, inGdd: id in GDD_NPC_XP }).toEqual({ id, inGdd: true });
+    expect(NPC_CLASSES).toContain(CAPTAIN_CLASS);
+    expect(spawnCaptain(emptyWorld(), { x: 300, z: 340 })).toBeNull(); // apagado no aparece…
+    expect(C.NPC_XP[CAPTAIN_CLASS]).toBe(240); // …pero su XP está en la tabla
   });
 
   test.each(NPC_CLASSES)('AC-144: un %s dañado solo por A da a A su XP exacta, una sola vez y en el tick del oro; nadie más recibe XP', (classId) => {
-    const world = emptyWorld();
+    const world = classId === CAPTAIN_CLASS ? i2World() : emptyWorld();
     const a = placePlayer(world, 'A', 300, 300);
     placePlayer(world, 'C', 320, 300); // cerca, sin dañar
     const npc = npcOf(world, classId, 300, 340);
+    expect([npc.classId, npc.kind]).toEqual([classId, SHIP_CLASSES[classId].kind]);
     seedDamage(npc, [[a, npc.maxHp - 30, 0.1]]);
     npc.hp = 30;
     scriptedRng(world, ONE_HIT);
