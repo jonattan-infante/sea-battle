@@ -1,6 +1,6 @@
 // Iconos de línea 24×24, trazo de 2 px y currentColor (ART-DIRECTION §13). Sin dependencias. Swords copia el de
 // Lucide (ISC) y Coins y Wrench siguen su construcción; el resto son dibujos propios. CloudOff copia el de Lucide (ISC,
-// lucide-static 0.469.0): progreso sin guardar (D50).
+// lucide-static 0.469.0): progreso sin guardar (D50). Bomb copia el de Lucide (ISC, lucide-static 0.469.0): la Cañonera.
 import React from 'react';
 
 type IconProps = { size?: number; className?: string; title?: string };
@@ -47,6 +47,15 @@ export const Crown = (p: IconProps) => (
   <Svg {...p}>
     <path d="M4 18 2 7l5 5 5-8 5 8 5-5-2 11Z" />
     <path d="M5 21h14" />
+  </Svg>
+);
+
+// Bomba de la Cañonera pirata (ART-DIRECTION §4.3): copia el de Lucide (ISC, lucide-static 0.469.0)
+export const Bomb = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="11" cy="13" r="9" />
+    <path d="M14.35 4.65 16.3 2.7a2.41 2.41 0 0 1 3.4 0l1.6 1.6a2.4 2.4 0 0 1 0 3.4l-1.95 1.95" />
+    <path d="m22 2-1.5 1.5" />
   </Svg>
 );
 
