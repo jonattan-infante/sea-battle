@@ -1308,7 +1308,9 @@ export class GameRuntime implements OverlayHost {
 
   private createView(ship: RenderShip): ShipView {
     const model = this.shipGlb.model(ship.classId);
-    this.shipGlb.request(ship.classId, ship.id === this.src.myShipId); // el propio, el primero (AC-193 c)
+    // AC-193 c: el GLB del barco propio, el primero; al entrar, los demás del manifiesto en segundo plano
+    this.shipGlb.request(ship.classId, ship.id === this.src.myShipId);
+    if (ship.id === this.src.myShipId) this.shipGlb.prefetchAll();
     const material = this.materialPool.pop() ?? createShipMaterial();
     setShipMap(material, model.map ?? null);
     const lod: 0 | 1 = model.recipe.L * this.ppm >= LOD_PX[0] ? 0 : 1;
