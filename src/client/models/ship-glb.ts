@@ -181,8 +181,8 @@ export function createGlbLoader(renderer: THREE.WebGLRenderer): GlbLoader {
   };
 }
 
-// Los GLB de las clases: se piden al crear la vista de un barco y se cargan de uno en uno, el propio primero (AC-193 c:
-// después los demás, a medida que entran en el área de interés). model() devuelve el GLB si ya está y, si no, el procedural
+// Los GLB de las clases: se cargan de uno en uno, el del barco propio primero y, detrás, todos los del manifiesto en
+// segundo plano (AC-193 c). model() devuelve el GLB si ya está y, si no, el procedural
 export class ShipGlbStore {
   private readonly manifest: Partial<Record<string, string>>;
   private readonly ready = new Map<string, ShipModel>();
@@ -211,6 +211,12 @@ export class ShipGlbStore {
     if (at > 0) this.queue.splice(at, 1);
     if (first) this.queue.unshift(classId);
     else this.queue.push(classId);
+  }
+
+  // Encola detrás de lo pedido todas las clases del manifiesto: al entrar, el propio va el primero y los demás se descargan
+  // en segundo plano, sin esperar a que un barco de su clase entre en el área de interés (AC-193 c)
+  prefetchAll(): void {
+    for (const classId of Object.keys(this.manifest)) this.request(classId);
   }
 
   // Cambia el GLB de una clase (vista previa de ux y e2e): vuelve a cargarse la próxima vez que se pida
