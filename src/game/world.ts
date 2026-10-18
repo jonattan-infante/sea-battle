@@ -16,6 +16,7 @@ import {
   DISCONNECT_GRACE,
   GOLD_CAP,
   HOSTILE_AI,
+  ORBIT_LEAD,
   HostileAiStats,
   ISLANDS,
   LOOT_DAMAGE_WINDOW,
@@ -1090,10 +1091,13 @@ function updatePirate(world: World, ship: Ship, dt: number): void {
       const back = forward(headingTo(target.pos, ship.pos));
       steerTo(ship, pirateDestination({ x: target.pos.x + back.x * orbit, z: target.pos.z + back.z * orbit }));
     } else {
-      // Órbita (pirata 45 m, capitán 50 m): apunta a un punto adelantado sobre el círculo alrededor del objetivo
-      const around = headingTo(target.pos, ship.pos) + 0.45;
+      // Órbita (pirata 45 m, capitán 50 m): apunta a un punto adelantado ORBIT_LEAD sobre un círculo de radio
+      // orbit / cos(ORBIT_LEAD). Sobre el círculo nominal, la cuerda hasta ese punto deja la órbita en orbit · cos(ORBIT_LEAD),
+      // un 10 % por dentro (40,7 m para 45); con el radio compensado, la órbita real es la nominal (AC-188)
+      const around = headingTo(target.pos, ship.pos) + ORBIT_LEAD;
       const o = forward(around);
-      steerTo(ship, pirateDestination({ x: target.pos.x + o.x * orbit, z: target.pos.z + o.z * orbit }));
+      const aim = orbit / Math.cos(ORBIT_LEAD);
+      steerTo(ship, pirateDestination({ x: target.pos.x + o.x * aim, z: target.pos.z + o.z * aim }));
     }
     return;
   }
