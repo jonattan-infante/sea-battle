@@ -1,6 +1,6 @@
 // Protocolo cliente ↔ servidor (GDD §13). El cliente solo envía intenciones; el servidor valida forma y campos.
 // Validación estricta: tipos exactos, números finitos y ningún campo extra (AC-05).
-import { MAX_NAME_LENGTH, MAX_UPGRADE_LEVEL, PLAYER_SHIP_ORDER, PlayerShipClass, UPGRADE_LEVELS, UpgradeId } from './constants';
+import { MAP_HALF_SIZE, MAX_NAME_LENGTH, MAX_UPGRADE_LEVEL, PLAYER_SHIP_ORDER, PlayerShipClass, UPGRADE_LEVELS, UpgradeId } from './constants';
 import { Vec2 } from './vec';
 import type { ShopItem } from './world';
 
@@ -13,7 +13,8 @@ export const C2S = {
   repair: 'repair',
   buy: 'buy',
   selectShip: 'selectShip',
-  respawn: 'respawn'
+  respawn: 'respawn',
+  viewAt: 'viewAt' // vista libre (E13): centro de la vista mientras se desplaza, o null al volver al seguimiento
 } as const;
 
 export const S2C = {
@@ -69,6 +70,15 @@ export function parseMoveTo(data: unknown): Vec2 | null {
   if (!isFiniteNumber(data.x) || !isFiniteNumber(data.z)) return null;
   if (Math.abs(data.x) > COORD_LIMIT || Math.abs(data.z) > COORD_LIMIT) return null;
   return { x: data.x, z: data.z };
+}
+
+// Vista libre (GDD §13): {x, z} finitos como moveTo, ajustados a ±MAP_HALF_SIZE (AC-120), o null al volver al seguimiento
+export function parseViewAt(data: unknown): { center: Vec2 | null } | null {
+  if (data === null) return { center: null };
+  const p = parseMoveTo(data);
+  if (!p) return null;
+  const clamp = (v: number) => Math.max(-MAP_HALF_SIZE, Math.min(MAP_HALF_SIZE, v));
+  return { center: { x: clamp(p.x), z: clamp(p.z) } };
 }
 
 export function parseAttack(data: unknown): { targetId: string } | null {
