@@ -676,6 +676,7 @@ export class GameRuntime implements OverlayHost, ChipHost {
   // (la crea GameApp) tapa el juego
   readonly entry = new EntryGate();
   private entryCover: HTMLElement | null = null;
+  private noRenderer = false; // three no pudo crear el contexto WebGL: no habrá frames
   hoverId: string | null = null;
   clickMarker: ClickMarker | null = null;
   labels: LabelLayer | null = null;
@@ -1090,11 +1091,18 @@ export class GameRuntime implements OverlayHost, ChipHost {
     return PVP_ENABLED && !safe(target) && !safe(me) && target.protectedUntil <= now && me.protectedUntil <= now;
   }
 
-  // La portada de la entrada. Sin manifiesto no hay nada que esperar y se oculta al conectarla, como hoy: sin WebGL no hay
-  // frames que la quiten. Con él, la oculta el frame en que se abre la entrada (o al conectarla, si ya se abrió)
+  // La portada de la entrada. Sin manifiesto no hay nada que esperar y se oculta al conectarla, como hoy. Con él, la
+  // oculta el frame en que se abre la entrada (o al conectarla, si ya se abrió)
   attachEntryCover(el: HTMLElement | null): void {
     this.entryCover = el;
-    if (el && (this.entry.shownAt || !this.shipGlb.waiting(null))) el.hidden = true;
+    if (el && (this.entry.shownAt || this.noRenderer || !this.shipGlb.waiting(null))) el.hidden = true;
+  }
+
+  // Sin WebGL no hay frames que abran la entrada: se quita la portada y se ve lo de la 1.0.3, el canvas vacío con el HUD
+  // (AC-193 c). Lo llama GameCanvas si three no puede crear el renderer
+  rendererFailed(): void {
+    this.noRenderer = true;
+    if (this.entryCover) this.entryCover.hidden = true;
   }
 
   attachOverlays(labels: HTMLElement, floating: HTMLElement, chips: HTMLElement): void {
