@@ -614,7 +614,7 @@ Coordenadas locales con el origen en el centro del puerto (GDD §4: (0, 0)), +X 
 
 
 ### 9.6 Puerto rediseñado `island_port` (1.1 si pasa su piloto; D82)
-**La receta es el script**: `scripts/ux/mapa/puerto_colonial.py` construye la malla en coordenadas locales (origen en el centro del puerto, +X este, +Z sur, y arriba) y pinta el atlas; las posiciones, medidas y colores de cada pieza están ahí y en ART-DIRECTION §8.5. `scripts/ux/mapa/blender_estatico.py` la exporta y se comprime como en §13, paso 4. Mientras Jonattan no apruebe la lámina D82, vale §9.5.
+**La receta es el script**: `scripts/ux/mapa/puerto_colonial.py` construye la malla en coordenadas locales (origen en el centro del puerto, +X este, +Z sur, y arriba) y pinta el atlas; las posiciones, medidas y colores de cada pieza están ahí y en ART-DIRECTION §8.5. `scripts/ux/mapa/blender_estatico.py` la exporta y se comprime como en §13, paso 4. Mientras Jonattan no apruebe la lámina D82, vale §9.5. Jonattan pidió cambios el 2026-10-18: el puerto pasa a tener forma de isla (GDD §4, «El puerto con forma de isla»), así que esta receta se rehace con la lámina nueva.
 
 | Regla | Valor |
 |---|---|
@@ -632,7 +632,7 @@ Coordenadas locales con el origen en el centro del puerto (GDD §4: (0, 0)), +X 
 - Los 12 amarres, la flotación (r 30 en el muelle; 27,2 en la escollera, con las rocas hasta 29,8; la arena entra en el agua a r 29,4) y la colisión no cambian. En los sectores de escollera y playa la costa visible queda entre 0,2 y 2,8 m por dentro del círculo, dentro de la banda de 0–3 m de AC-199 (a): en la playa, la arena corta la flotación a r 28,80–28,82, **1,18–1,20 m por dentro** (medido en la malla; `costa_playa_por_dentro` en `puerto-medidas.json`; el perfil no es recto: +1,2 m en r 23,5, +1,05 en 26, +0,35 en 28 y −0,25 en 29,4); en la escollera, la pared a r 27,2 (2,8 m) y las rocas hasta r 29,8 (0,2 m).
 
 ### 9.7 Islas rediseñadas `island_<id>` (1.1 si pasa su piloto; D83)
-**La receta es el script**: `scripts/ux/mapa/islas.py` construye cada isla en coordenadas del mundo a partir de la tabla de círculos de `circulos.py` y pinta el atlas; por qué cada arquetipo y sus colores, en ART-DIRECTION §8.6. `blender_islas.py` exporta el GLB y se comprime como en §13, paso 4. Mientras Jonattan no apruebe la lámina D83, valen §9.4 y la tabla de GDD §4.
+**La receta es el script**: `scripts/ux/mapa/islas.py` construye cada isla en coordenadas del mundo a partir de la tabla de círculos de `circulos.py` y pinta el atlas; por qué cada arquetipo y sus colores, en ART-DIRECTION §8.6. `blender_islas.py` exporta el GLB y se comprime como en §13, paso 4. Jonattan aprobó la lámina D83 el 2026-10-18 (BACKLOG, registro de AC-192 y decisión de producto tras sus 14 decisiones): para las islas, esta sección sustituye a §9.4, y los círculos son los de la tabla de GDD §4, que copió producto (`5e3a49e`). El círculo del puerto sigue provisional hasta su rediseño (GDD §4, «El puerto con forma de isla»).
 
 **Tabla de círculos** (colisión B, GDD §4; la copia producto a GDD §4 cuando se apruebe la lámina). Cada isla es la unión de sus círculos; el primero es el principal. «Centro» es el de GDD §4, que no se mueve: es la referencia de la isla (la traslación de su nodo) y queda dentro de la unión, aunque en I2 e I6 el círculo principal no esté centrado en él.
 
