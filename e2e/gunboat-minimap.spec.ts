@@ -27,7 +27,7 @@ const OUTLINE = '#07121b';
 
 // Grabador del minimapa: cada redibujado empieza con su clearRect a lienzo completo; se guarda el anterior, ya completo
 function minimapRecorder() {
-  type Rec = { op: 'fill' | 'stroke'; style: string; lineWidth: number; identity: boolean; path: (string | number)[][] };
+  type Rec = { op: 'fill' | 'stroke'; style: string; lineWidth: number; identity: boolean; m: number[]; cap: string; path: (string | number)[][] };
   const w = window as unknown as { __o40: { frame: Rec[]; last: Rec[] | null } };
   w.__o40 = { frame: [], last: null };
   const P = CanvasRenderingContext2D.prototype;
@@ -47,10 +47,11 @@ function minimapRecorder() {
     }
   });
   wrap('beginPath', () => { path = []; });
-  for (const name of ['moveTo', 'lineTo', 'rect', 'arc', 'closePath']) wrap(name, (_ctx, a) => { path.push([name, ...a]); });
+  for (const name of ['moveTo', 'lineTo', 'rect', 'arc', 'ellipse', 'closePath']) wrap(name, (_ctx, a) => { path.push([name, ...a]); });
   for (const op of ['fill', 'stroke'] as const) {
     wrap(op, (ctx) => {
-      w.__o40.frame.push({ op, style: String(op === 'fill' ? ctx.fillStyle : ctx.strokeStyle).toLowerCase(), lineWidth: ctx.lineWidth, identity: ctx.getTransform().isIdentity, path: path.map((p) => [...p]) });
+      const t = ctx.getTransform();
+      w.__o40.frame.push({ op, style: String(op === 'fill' ? ctx.fillStyle : ctx.strokeStyle).toLowerCase(), lineWidth: ctx.lineWidth, identity: t.isIdentity, m: [t.a, t.b, t.c, t.d, t.e, t.f], cap: `${ctx.lineCap} ${ctx.lineJoin}`, path: path.map((p) => [...p]) });
     });
   }
 }
@@ -213,6 +214,82 @@ test.describe('Marcadores de D63 en el minimapa', () => {
       }
     } finally {
       await otherCtx.close();
+      await server.kill();
+    }
+  });
+});
+
+// ⚓ del puerto (D73, D87; ART-DIRECTION §4.3, r11 52dd3a1): en lugar del disco de arena del puerto, el ancla de la lámina
+// D87. De las llamadas de dibujo del minimapa: los 2 trazos del ancla (el único trazado con elipse) con su transformación,
+// llevados a px CSS: 13 px de alto (17 unidades del viewBox), el centro de su caja (12, 11) en el puerto, 3,5 px de
+// #07121b y 1,5 de arena con extremos redondos; y ningún disco de arena centrado en el puerto
+const D87_ANCHOR = [
+  ['moveTo', 14.5, 5],
+  ['arc', 12, 5, 2.5, 0, 6.283],
+  ['moveTo', 12, 7.5],
+  ['lineTo', 12, 19.5],
+  ['moveTo', 7, 11],
+  ['lineTo', 17, 11],
+  ['moveTo', 5, 13],
+  ['ellipse', 12, 13, 7, 6.5, 0, 3.142, 0, true]
+];
+
+test.describe('⚓ del puerto en el minimapa', () => {
+  test('D87: el puerto sale como el ⚓ de la lámina, de 13 px de alto y centrado en el puerto, y sin su disco de arena, a DPR 1 y 2 (1440×900 y 390×844)', async ({ browser }) => {
+    test.setTimeout(120_000);
+    const server = await startOwnServer({ SEA_BATTLE_NPCS: '0' });
+    try {
+      for (const [size, { pixels: _pixels, ...options }] of Object.entries(SIZES)) {
+        const ctx = await browser.newContext(options);
+        try {
+          await ctx.addInitScript(minimapRecorder);
+          const page = await ctx.newPage();
+          await enterGame(page, server.url);
+          await page.waitForTimeout(1_200);
+          const a = await page.evaluate(() => {
+            const canvas = document.querySelector('[data-testid="minimap"] canvas') as HTMLCanvasElement;
+            const cssW = canvas.getBoundingClientRect().width;
+            const dpr = canvas.width / cssW;
+            const recs = (window as unknown as { __o40: { last: { op: string; style: string; lineWidth: number; m: number[]; cap: string; path: (string | number)[][] }[] } }).__o40.last ?? [];
+            const anchor = recs.filter((r) => r.path.some((p) => p[0] === 'ellipse'));
+            const port = cssW / 2; // el puerto está en (0, 0): el centro del mapa
+            const discs = recs.filter((r) => r.op === 'fill' && r.style === '#e6cf9a' && r.path.length === 1 && r.path[0][0] === 'arc' && Math.hypot(Number(r.path[0][1]) / dpr - port, Number(r.path[0][2]) / dpr - port) <= 1.5);
+            return {
+              dpr,
+              cssW,
+              discs: discs.length,
+              strokes: anchor.map((r) => {
+                const [sa, , , sd, e, f] = r.m;
+                return {
+                  op: r.op,
+                  style: r.style,
+                  cap: r.cap,
+                  width: +((r.lineWidth * sa) / dpr).toFixed(3),
+                  height: +((17 * sd) / dpr).toFixed(3),
+                  dx: +((e + 12 * sa) / dpr - port).toFixed(3) + 0, // + 0: sin −0
+                  dy: +((f + 11 * sd) / dpr - port).toFixed(3) + 0,
+                  ops: r.path.map((p) => p[0]).join(' '),
+                  path: r.path.map((p) => p.map((v) => (typeof v === 'number' ? +v.toFixed(3) : v)))
+                };
+              })
+            };
+          });
+          console.log(`D87 ⚓ ${size}: ${JSON.stringify(a)}`);
+          expect(a.dpr).toBe(options.deviceScaleFactor);
+          expect.soft(a.discs, `${size}: sin disco de arena en el puerto`).toBe(0);
+          expect.soft(a.strokes.map((s) => [s.op, s.style, s.width, s.cap]), `${size}: 2 trazos, 3,5 px de contorno y 1,5 de arena, redondos`).toEqual([
+            ['stroke', '#07121b', 3.5, 'round round'],
+            ['stroke', '#e6cf9a', 1.5, 'round round']
+          ]);
+          expect.soft(a.strokes.map((s) => [s.height, s.dx, s.dy]), `${size}: 13 px de alto y centrado en el puerto`).toEqual([[13, 0, 0], [13, 0, 0]]);
+          expect.soft(a.strokes.map((s) => s.ops), `${size}: las 4 piezas, cada una con su moveTo`).toEqual(Array(2).fill('moveTo arc moveTo lineTo moveTo lineTo moveTo ellipse'));
+          // El trazado en unidades del viewBox de 24: el de la lámina D87 (§4.3), no el Anchor de icons.tsx (caña hasta 21, arco 8 × 7)
+          expect.soft(a.strokes.map((s) => s.path), `${size}: el trazado de la lámina D87`).toEqual(Array(2).fill(D87_ANCHOR));
+        } finally {
+          await ctx.close();
+        }
+      }
+    } finally {
       await server.kill();
     }
   });

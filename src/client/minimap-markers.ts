@@ -50,3 +50,39 @@ export function drawShipMarker(ctx: MarkerContext, ship: Pick<RenderShip, 'kind'
   ctx.strokeStyle = MARKER_COLORS.outline;
   ctx.stroke();
 }
+
+// ⚓ del puerto (D73, D87; ART-DIRECTION §4.3): el ancla de la lámina D87, no el Anchor de icons.tsx (el de las placas). En
+// su viewBox de 24 ocupa de x 5 a 19 y de y 2,5 a 19,5 (17 unidades), así que va escalada a 13 px de alto (0,765 px por
+// unidad) con el centro de su caja, (12, 11), en el puerto. Trazo de 1,5 px en arena sobre uno de 3,5 px #07121B (el
+// contorno de 1 px), con extremos y uniones redondos. Son las llamadas de §4.3 equivalentes a su SVG (anillo, caña hasta
+// 19,5, cruceta y el arco «M5 13a7 6.5 0 0 0 14 0», la mitad de abajo de la elipse de centro (12, 13)), cada pieza con su
+// moveTo para que no se una a la anterior con una recta
+export const PORT_ANCHOR_SCALE = 13 / 17;
+
+export type AnchorContext = MarkerContext & Pick<CanvasRenderingContext2D, 'save' | 'restore' | 'translate' | 'scale' | 'ellipse' | 'lineCap' | 'lineJoin'>;
+
+export function drawPortAnchor(ctx: AnchorContext, x: number, y: number, dpr: number, fill: string): void {
+  const k = PORT_ANCHOR_SCALE * dpr;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(k, k);
+  ctx.translate(-12, -11);
+  ctx.beginPath();
+  ctx.moveTo(14.5, 5);
+  ctx.arc(12, 5, 2.5, 0, Math.PI * 2);
+  ctx.moveTo(12, 7.5);
+  ctx.lineTo(12, 19.5);
+  ctx.moveTo(7, 11);
+  ctx.lineTo(17, 11);
+  ctx.moveTo(5, 13);
+  ctx.ellipse(12, 13, 7, 6.5, 0, Math.PI, 0, true);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 3.5 / PORT_ANCHOR_SCALE;
+  ctx.strokeStyle = MARKER_COLORS.outline;
+  ctx.stroke();
+  ctx.lineWidth = 1.5 / PORT_ANCHOR_SCALE;
+  ctx.strokeStyle = fill;
+  ctx.stroke();
+  ctx.restore();
+}
