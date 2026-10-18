@@ -345,6 +345,13 @@ describe('E14 — H-1402 XP por hundir jugadores (§10b)', () => {
     expect(drainPvpLog(world)).toEqual([]);
   });
 
+  test('AC-148: en el log, un atacante 4 o más niveles por encima de la víctima figura con 0 XP, nunca con XP negativa', () => {
+    const world = pvpWorld({ A: 10, B: 4 });
+    drainPvpLog(world);
+    expect(pvpSink(world, 'A', 'B').gained.A).toBe(0);
+    expect(drainPvpLog(world)).toEqual([{ victimLevel: 4, attackers: [{ level: 10, xp: 0 }] }]);
+  });
+
   // Lectura de dev, pendiente de producto: el daño de los NPC no se anota (como en el oro), así que no resta parte
   test('AC-148 (lectura de dev): B dañado casi entero por un pirata y rematado por A → A cobra los 100, como si lo hubiera hundido solo', () => {
     const world = pvpWorld({ A: 10, B: 10 });
@@ -455,15 +462,16 @@ describe('E14 — Abuso: dos bots que se hunden por turnos (AC-149)', () => {
     expect([r.xp.A, r.xp.B]).toEqual([300, 300]); // turnos estrictos: las dos ventanas completas
   });
 
+  // A no lo fija el BACKLOG; sale de las mismas reglas (297 = 100 + floor(37,5) + 110 + 50, el redondeo hacia abajo)
   test.each([
-    ['ABAB', 'ABAB', 320],
-    ['ABAB', 'AABB', 330],
-    ['AABB', 'AABB', 310]
-  ])('AC-149 (b): los dos en el nivel 1, órdenes %s|%s → B gana %i y cada uno ≤ 450 XP', (first, second, expectedB) => {
+    ['ABAB', 'ABAB', 320, 300],
+    ['ABAB', 'AABB', 330, 300],
+    ['AABB', 'AABB', 310, 297]
+  ])('AC-149 (b): los dos en el nivel 1, órdenes %s|%s → B gana %i (A, %i) y cada uno ≤ 450 XP', (first, second, expectedB, expectedA) => {
     const r = duel(1, first, second);
     console.log(`AC-149 (b) ${first}${second}: ${r.kills.length} hundimientos, con XP ${r.rewarded.join('')} → A ${r.xp.A}, B ${r.xp.B} XP`);
     expect(r.rewarded.join('')).toBe(first + second);
-    expect(r.xp.B).toBe(expectedB);
+    expect([r.xp.B, r.xp.A]).toEqual([expectedB, expectedA]);
     expect(r.xp.A).toBeLessThanOrEqual(450);
     expect(r.xp.B).toBeLessThanOrEqual(450);
   });
@@ -491,6 +499,7 @@ describe('E14 — Abuso: dos bots que se hunden por turnos (AC-149)', () => {
     expect(Math.max(...scored.map((s) => Math.max(s.A, s.B)))).toBeLessThanOrEqual(450);
     expect([bestB.o, bestB.B]).toEqual(['ABABAABB', 330]);
     expect([score('ABABABAB').B, score('ABABAABB').B, score('AABBAABB').B]).toEqual([320, 330, 310]);
+    expect(pvpXp(C.PVP_XP, 2, 1, 1)).toBe(37); // Δ −1 y 2.º de la ventana: floor(100 × 0,75 × 0,5) = floor(37,5)
   });
 });
 
