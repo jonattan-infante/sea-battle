@@ -197,31 +197,44 @@ describe('E3 — Población y reaparición (§9)', () => {
     }
   });
 
-  test.each([['pirate', 30], ['merchant', 20]])('AC-52: un %s hundido reaparece a los %d s ±1 tick, en su zona, lejos de jugadores y fuera de islas', (kind, seconds) => {
-    const world = emptyWorld();
-    world.rng = createRng(4);
-    const victim: Ship = kind === 'pirate' ? placePirate(world, 300, -350) : placeMerchant(world, 200, 50);
-    const player = placePlayer(world, 'a', victim.pos.x, victim.pos.z + 30);
-    victim.hp = 1;
-    const rngBackup = world.rng;
-    world.rng = () => 0;
-    attack(world, 'a', victim.id);
-    let sunkAt = -1;
-    let respawnAt = -1;
-    for (let i = 1; i <= (seconds + 5) * TICK_RATE; i++) {
-      if (sunkAt > 0) world.rng = rngBackup;
-      for (const e of run(world, DT)) {
-        if (e.type === 'sunk' && e.shipId === victim.id) sunkAt = i;
-        if (e.type === 'respawn' && e.shipId === victim.id) respawnAt = i;
+  // O-33 (QA): con una sola semilla, la reaparición caía lejos del jugador aunque no se comprobara. Con 8 semillas y jugadores
+  // quietos en la zona de reaparición (el abanico del sector NE del pirata; el anillo del primer punto de ruta del mercante,
+  // a 160–230 m), la regla «a ≥ 100 m de cualquier jugador» queda protegida también en estas dos clases
+  const CAMPERS: Record<string, { x: number; z: number }[]> = {
+    pirate: [25, 65].map((deg) => ({ x: Math.cos((deg * Math.PI) / 180) * 380, z: -Math.sin((deg * Math.PI) / 180) * 380 })),
+    merchant: [0, 90, 180, 270].map((deg) => ({ x: Math.cos((deg * Math.PI) / 180) * 195, z: Math.sin((deg * Math.PI) / 180) * 195 }))
+  };
+  test.each([['pirate', 30], ['merchant', 20]])('AC-52: un %s hundido reaparece a los %d s ±1 tick, en su zona, lejos de jugadores y fuera de islas (8 semillas, con jugadores quietos en su zona de reaparición)', (kind, seconds) => {
+    for (let seed = 1; seed <= 8; seed++) {
+      const world = emptyWorld();
+      world.rng = createRng(seed);
+      const victim: Ship = kind === 'pirate' ? placePirate(world, 300, -350) : placeMerchant(world, 200, 50);
+      const players = [placePlayer(world, 'a', victim.pos.x, victim.pos.z + 30), ...CAMPERS[kind].map((p, i) => placePlayer(world, `c${i}`, p.x, p.z))];
+      victim.hp = 1;
+      const rngBackup = world.rng;
+      world.rng = () => 0;
+      attack(world, 'a', victim.id);
+      let sunkAt = -1;
+      let respawnAt = -1;
+      let at = { x: NaN, z: NaN }; // dónde reaparece (al final del tick de la reaparición, antes de moverse)
+      for (let i = 1; i <= (seconds + 5) * TICK_RATE && respawnAt < 0; i++) {
+        if (sunkAt > 0) world.rng = rngBackup;
+        for (const e of run(world, DT)) {
+          if (e.type === 'sunk' && e.shipId === victim.id) sunkAt = i;
+          if (e.type === 'respawn' && e.shipId === victim.id) {
+            respawnAt = i;
+            at = { ...victim.pos };
+          }
+        }
       }
+      expect({ seed, sunk: sunkAt > 0, onTime: Math.abs((respawnAt - sunkAt) * DT - seconds) <= DT + 1e-9, state: victim.state }).toEqual({ seed, sunk: true, onTime: true, state: 'alive' });
+      const nearest = Math.min(...players.map((p) => distance(at, p.pos)));
+      expect({ seed, nearest, far: nearest >= NPC_RESPAWN_MIN_PLAYER_DISTANCE }).toEqual({ seed, nearest, far: true });
+      for (const isl of ISLANDS) expect(Math.hypot(at.x - isl.x, at.z - isl.z)).toBeGreaterThan(isl.radius);
+      const r = distance(at, { x: 0, z: 0 });
+      if (kind === 'pirate') expect(r).toBeGreaterThanOrEqual(PIRATE_RING.min - 1e-6);
+      else expect(r).toBeGreaterThan(SAFE_ZONE_RADIUS);
     }
-    expect(Math.abs((respawnAt - sunkAt) * DT - seconds)).toBeLessThanOrEqual(DT + 1e-9);
-    expect(victim.state).toBe('alive');
-    expect(distance(victim.pos, player.pos)).toBeGreaterThanOrEqual(NPC_RESPAWN_MIN_PLAYER_DISTANCE);
-    for (const isl of ISLANDS) expect(Math.hypot(victim.pos.x - isl.x, victim.pos.z - isl.z)).toBeGreaterThan(isl.radius);
-    const r = distance(victim.pos, { x: 0, z: 0 });
-    if (kind === 'pirate') expect(r).toBeGreaterThanOrEqual(PIRATE_RING.min - 1e-6);
-    else expect(r).toBeGreaterThan(SAFE_ZONE_RADIUS);
   });
 
   test('respawnPos (solo escenarios de prueba): el mercante hundido reaparece a los 20 s en su punto, quieto y sin IA, aunque haya un jugador cerca', () => {
