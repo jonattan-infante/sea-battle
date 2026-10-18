@@ -357,8 +357,8 @@ describe('E4 — Curva económica (§10)', () => {
     return available.sort((x, y) => itemPrice(x) - itemPrice(y))[0] ?? null;
   }
 
-  function simulate(seed: number) {
-    const world = createWorld({ seed });
+  function simulate(seed: number, i2: boolean) {
+    const world = createWorld({ seed, i2 });
     addPlayer(world, 'g', 'Bot');
     const p = world.players.get('g')!;
     let earned = 0;
@@ -427,14 +427,19 @@ describe('E4 — Curva económica (§10)', () => {
     return { t500, tBrig, tAll, deaths: p.deaths, n1PerMin: earnedAtBrig / (tBrig / 60), captains, fled, minLair };
   }
 
-  test('AC-60: con el bot "barco primero", la mediana de las semillas 1–5 cumple 500 de oro ≤ 4 min, Bergantín ≤ 20 min y todo en 45–70 min', () => {
-    const runs = [1, 2, 3, 4, 5].map(simulate);
+  // Los dos modos del servidor (AC-187): con el I2 apagado, la curva de la 1.0.3; encendido, la medida con el Capitán (H-305)
+  test.each([
+    ['apagado', false],
+    ['encendido', true]
+  ] as const)('AC-60 (I2 %s): con el bot "barco primero", la mediana de las semillas 1–5 cumple 500 de oro ≤ 4 min, Bergantín ≤ 20 min y todo en 45–70 min', (mode, i2) => {
+    const runs = [1, 2, 3, 4, 5].map((seed) => simulate(seed, i2));
     const min = (v: number) => +(v / 60).toFixed(1);
     const t500 = median(runs.map((r) => r.t500));
     const tBrig = median(runs.map((r) => r.tBrig));
     const tAll = median(runs.map((r) => r.tAll));
-    console.log(`AC-60 por semilla (min): ${runs.map((r, i) => `s${i + 1} ${min(r.t500)}/${min(r.tBrig)}/${min(r.tAll)} (${r.deaths} muertes, N1 ${r.n1PerMin.toFixed(0)} oro/min)`).join(' · ')} → mediana ${min(t500)}/${min(tBrig)}/${min(tAll)}; N1 mediana ${median(runs.map((r) => r.n1PerMin)).toFixed(0)} oro/min`);
-    console.log(`AC-60 capitán por semilla: ${runs.map((r, i) => `s${i + 1} ${r.captains} capitán(es), ${r.fled} huidas, mínimo a la guarida ${r.minLair === Infinity ? '—' : r.minLair.toFixed(0) + ' m'}`).join(' · ')}`);
+    console.log(`AC-60 (I2 ${mode}) por semilla (min): ${runs.map((r, i) => `s${i + 1} ${min(r.t500)}/${min(r.tBrig)}/${min(r.tAll)} (${r.deaths} muertes, N1 ${r.n1PerMin.toFixed(0)} oro/min)`).join(' · ')} → mediana ${min(t500)}/${min(tBrig)}/${min(tAll)}; N1 mediana ${median(runs.map((r) => r.n1PerMin)).toFixed(0)} oro/min`);
+    console.log(`AC-60 (I2 ${mode}) capitán por semilla: ${runs.map((r, i) => `s${i + 1} ${r.captains} capitán(es), ${r.fled} huidas, mínimo a la guarida ${r.minLair === Infinity ? '—' : r.minLair.toFixed(0) + ' m'}`).join(' · ')}`);
+    if (!i2) expect(runs.map((r) => r.captains)).toEqual([0, 0, 0, 0, 0]);
     expect(t500).toBeLessThanOrEqual(4 * 60);
     expect(tBrig).toBeLessThanOrEqual(20 * 60);
     expect(tAll).toBeGreaterThanOrEqual(45 * 60);

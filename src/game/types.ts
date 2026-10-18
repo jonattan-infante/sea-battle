@@ -119,6 +119,7 @@ export interface World {
   rng: () => number;
   nextId: number;
   killsSinceBoss: number;
+  i2: boolean; // I2 encendido (AC-187): sin él no aparece el Capitán pirata. Lo decide el servidor (SEA_BATTLE_I2)
   startingGold?: number; // solo escenarios de prueba (server/scenarios.ts); por defecto STARTING_GOLD
   startingHull?: number; // solo escenarios de prueba: fracción de la vida máxima con la que entra un jugador; por defecto 1
 }

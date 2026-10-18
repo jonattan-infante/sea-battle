@@ -81,7 +81,7 @@ async function captainPlate(page: Page, captainId: string) {
 test.describe('Capitán pirata (AC-111)', () => {
   test('AC-111: al hundir el 10.º pirata, los dos jugadores reciben el aviso con la región y la celda de la guarida (D49) y ven el marcador propio del capitán en el minimapa, fuera de su área de interés', async ({ browser }) => {
     test.setTimeout(150_000);
-    const server = await startOwnServer({ SEA_BATTLE_NPCS: '0', SEA_BATTLE_SCENARIO: 'captain' });
+    const server = await startOwnServer({ SEA_BATTLE_NPCS: '0', SEA_BATTLE_I2: '1', SEA_BATTLE_SCENARIO: 'captain' });
     const contexts: BrowserContext[] = [];
     try {
       const pages: Page[] = [];
@@ -127,7 +127,7 @@ test.describe('Capitán pirata (AC-111)', () => {
 
   test('AC-111: al hundirse el capitán, el feed de los dos jugadores dice "El Capitán pirata ha caído: <quien lo hundió>" y su marcador sale del minimapa; su placa lleva calavera y corona y el nombre entero (D43)', async ({ browser }) => {
     test.setTimeout(150_000);
-    const server = await startOwnServer({ SEA_BATTLE_NPCS: '0', SEA_BATTLE_SCENARIO: 'captain-down' });
+    const server = await startOwnServer({ SEA_BATTLE_NPCS: '0', SEA_BATTLE_I2: '1', SEA_BATTLE_SCENARIO: 'captain-down' });
     const contexts: BrowserContext[] = [];
     try {
       const pages: Page[] = [];
@@ -168,7 +168,7 @@ test.describe('Capitán pirata (AC-111)', () => {
 
   test('D43 / AD-28: en 390×844 la placa del capitán lleva calavera y corona y «Capitán pirata» entero (máx. 116 + 14 px) @mobile', async ({ page }) => {
     test.setTimeout(120_000);
-    const server = await startOwnServer({ SEA_BATTLE_NPCS: '0', SEA_BATTLE_SCENARIO: 'captain-down' });
+    const server = await startOwnServer({ SEA_BATTLE_NPCS: '0', SEA_BATTLE_I2: '1', SEA_BATTLE_SCENARIO: 'captain-down' });
     try {
       await enterGame(page, server.url);
       await sailTo(page, CAPTAIN_DOWN_POINT.x, CAPTAIN_DOWN_POINT.z + 55);

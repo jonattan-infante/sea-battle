@@ -13,7 +13,7 @@ import {
 import { GameEvent, Ship, Upgrades, World } from '../types';
 import { createRng, distance } from '../vec';
 import { addPlayer, attack, createWorld, maxHpFor, moveTo, respawn, setRepair, shipOfPlayer, spawnCaptain, spawnMerchant, spawnPirate } from '../world';
-import { DT, emptyWorld, median, placeCaptain, placePlayer, run } from './helpers';
+import { DT, i2World, median, placeCaptain, placePlayer, run } from './helpers';
 
 const PORT = { x: 0, z: 0 };
 const CAPTAIN = HOSTILE_AI[CAPTAIN_CLASS];
@@ -50,7 +50,7 @@ function sinkByPlayer(world: World, npc: Ship, killerId = 'K'): GameEvent[] {
 
 describe('H-305 — Aparición del Capitán pirata (AC-54)', () => {
   test('AC-54: el 10.º pirata hundido hace aparecer 1 capitán, en el mismo tick, en el punto exterior (440 m) del sector con menos jugadores y a ≥ 150 m de todos; los mercantes no cuentan', () => {
-    const world = emptyWorld(7);
+    const world = i2World(7);
     placePlayer(world, 'K', -200, 200); // SO
     placePlayer(world, 'P1', 200, -200); // NE
     placePlayer(world, 'P2', -200, -200); // NO
@@ -78,7 +78,7 @@ describe('H-305 — Aparición del Capitán pirata (AC-54)', () => {
   });
 
   test('AC-54: nunca hay 2 capitanes vivos; al hundirse, la cuenta vuelve a 0 (su muerte no cuenta) y el siguiente necesita otros 10', () => {
-    const world = emptyWorld(8);
+    const world = i2World(8);
     placePlayer(world, 'K', -200, 200);
     for (let i = 0; i < CAPTAIN_KILLS_TO_SPAWN; i++) sinkByPlayer(world, spawnPirate(world, 0));
     const first = captains(world);
@@ -108,7 +108,7 @@ describe('H-305 — Aparición del Capitán pirata (AC-54)', () => {
   });
 
   test('AC-54: si el centro del arco exterior del sector elegido está a < 150 m de un jugador, aparece en otro punto del mismo arco (440 m) a ≥ 150 m', () => {
-    const world = emptyWorld(9);
+    const world = i2World(9);
     placePlayer(world, 'K', -200, 200);
     placePlayer(world, 'SO2', -250, 150);
     placePlayer(world, 'NE1', 200, -200);
@@ -133,7 +133,7 @@ describe('H-305 — Correa del capitán (AC-112)', () => {
   const LAIR = { x: (CAPTAIN_LAIR_RADIUS * Math.SQRT2) / 2, z: -(CAPTAIN_LAIR_RADIUS * Math.SQRT2) / 2 };
 
   test('AC-112: si el objetivo lo arrastra a más de 150 m de su guarida, vuelve sin disparar y llega con el 100 % de la vida', () => {
-    const world = emptyWorld(3);
+    const world = i2World(3);
     const cap = placeCaptain(world, LAIR.x, LAIR.z);
     const target = placePlayer(world, 'a', LAIR.x - 60, LAIR.z);
     target.hp = target.maxHp = 1e9;
@@ -174,7 +174,7 @@ describe('H-305 — Correa del capitán (AC-112)', () => {
     ['queda protegido', (w: World, t: Ship) => { t.protectedUntil = w.time + 30; }],
     ['se hunde', (_w: World, t: Ship) => { t.state = 'sinking'; t.stateTimer = 3; }]
   ])('AC-112: si pierde al objetivo (%s), vuelve sin disparar y llega con el 100 %% de la vida', (_label, lose) => {
-    const world = emptyWorld(4);
+    const world = i2World(4);
     const cap = placeCaptain(world, LAIR.x, LAIR.z);
     const target = placePlayer(world, 'a', LAIR.x - 70, LAIR.z);
     target.hp = target.maxHp = 1e9;
@@ -196,7 +196,7 @@ describe('H-305 — Correa del capitán (AC-112)', () => {
   });
 
   test('AC-112: detecta a ≤ 90 m (no a 95), orbita a 50 ±5 m (mediana en 20 s) y dispara solo a ≤ 65 m', () => {
-    const world = emptyWorld(5);
+    const world = i2World(5);
     const cap = placeCaptain(world, LAIR.x, LAIR.z);
     const target = placePlayer(world, 'a', LAIR.x - 95, LAIR.z);
     target.hp = target.maxHp = 1e9;
@@ -222,7 +222,7 @@ describe('H-305 — Correa del capitán (AC-112)', () => {
   });
 
   test('AC-112: en 10 min simulados con 20 bots, 4 de ellos lo atacan y huyen hacia el puerto para arrastrarlo, ningún capitán está nunca a menos de 130 m del puerto', () => {
-    const world = createWorld({ seed: 21 });
+    const world = createWorld({ seed: 21, i2: true });
     const rng = createRng(31);
     for (let i = 0; i < 20; i++) addPlayer(world, `bot${i}`, `Bot ${i}`);
     expect(spawnCaptain(world)).not.toBeNull();
@@ -308,7 +308,7 @@ describe('H-305 — Balance del capitán (AC-55, 1 000 duelos con semilla)', () 
 
   // Bot de duelo de AC-53: ataca y se mantiene a ≤ 40 m del objetivo, sin reparar. Varios jugadores atacan a la vez
   function duel(seed: number, sides: Side[]): DuelResult {
-    const world = emptyWorld(seed);
+    const world = i2World(seed);
     world.rng = createRng(seed * 7919 + 1);
     const cap = placeCaptain(world, 260, -330);
     const mine = sides.map((side, i) => {

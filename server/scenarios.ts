@@ -62,6 +62,8 @@ export const CAPTAIN_DOWN_POINT = { x: 0, z: -160 };
 
 export const SCENARIOS = ['showcase', 'shipyard', 'targets', 'endurance', 'repair', 'legibility', 'captain', 'captain-down'] as const;
 export type ScenarioName = (typeof SCENARIOS)[number];
+// Escenarios del Capitán: con el I2 apagado no podría aparecer (AC-187), así que exigen SEA_BATTLE_I2=1
+export const I2_SCENARIOS: readonly ScenarioName[] = ['captain', 'captain-down'];
 
 export function parseScenario(value: string | undefined): ScenarioName | null {
   return (SCENARIOS as readonly string[]).includes(value ?? '') ? (value as ScenarioName) : null;
