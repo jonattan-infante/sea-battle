@@ -6,6 +6,7 @@ import React, { useEffect, useRef } from 'react';
 import { CAPTAIN_CLASS, INTEREST_RADIUS, MAP_HALF_SIZE, PORT_POSITION, SAFE_ZONE_RADIUS } from '../../game/constants';
 import type { GameClient, RenderShip } from '../../client/game-client';
 import { sectorOf } from '../../client/hud-logic';
+import { drawShipMarker, MARKER_COLORS } from '../../client/minimap-markers';
 
 const REDRAW_MS = 500;
 const COLORS = {
@@ -14,10 +15,7 @@ const COLORS = {
   grass: '#5E9E48',
   zone: 'rgba(108, 195, 245, 0.85)',
   self: '#FFD166',
-  player: '#F5F1E6',
-  pirate: '#FF7A7A',
-  merchant: '#6CC3F5',
-  outline: '#07121B'
+  ...MARKER_COLORS
 };
 
 export interface ViewRect {
@@ -98,8 +96,8 @@ export default function Minimap({ client, islands, viewRect }: { client: GameCli
         ctx.stroke();
       }
 
-      // Orden de dibujo (D43): mercantes y jugadores, piratas, el capitán y, encima de todo, el ▲ propio. El capitán llega
-      // siempre, también fuera del área de interés (GDD §13), y su marcador desaparece al hundirse
+      // Orden de dibujo (D43): mercantes y jugadores, piratas y cañoneras (drawShipMarker), el capitán y, encima de todo,
+      // el ▲ propio. El capitán llega siempre, también fuera del área de interés (GDD §13), y su marcador desaparece al hundirse
       let captain: RenderShip | null = null;
       for (const hostile of [false, true]) for (const ship of client.getShips()) {
         if (ship.state === 'dead' || ship.id === client.myShipId || (ship.kind === 'pirate') !== hostile) continue;
@@ -107,29 +105,7 @@ export default function Minimap({ client, islands, viewRect }: { client: GameCli
           if (ship.state === 'alive') captain = ship;
           continue;
         }
-        const x = px(ship.x);
-        const y = py(ship.z);
-        ctx.beginPath();
-        if (ship.kind === 'pirate') {
-          const r = 3.5 * dpr; // ◆ 7 px
-          ctx.moveTo(x, y - r);
-          ctx.lineTo(x + r, y);
-          ctx.lineTo(x, y + r);
-          ctx.lineTo(x - r, y);
-          ctx.closePath();
-          ctx.fillStyle = COLORS.pirate;
-        } else if (ship.kind === 'merchant') {
-          const h = 3 * dpr; // ■ 6 px
-          ctx.rect(x - h, y - h, h * 2, h * 2);
-          ctx.fillStyle = COLORS.merchant;
-        } else {
-          ctx.arc(x, y, 2.5 * dpr, 0, Math.PI * 2); // ● 5 px
-          ctx.fillStyle = COLORS.player;
-        }
-        ctx.fill();
-        ctx.lineWidth = dpr;
-        ctx.strokeStyle = COLORS.outline;
-        ctx.stroke();
+        drawShipMarker(ctx, ship, px(ship.x), py(ship.z), dpr);
       }
 
       if (captain) {
