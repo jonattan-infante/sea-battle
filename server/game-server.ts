@@ -448,8 +448,11 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
     metrics?.step(performance.now() - stepStart);
     if (departing.size) releaseDeparted();
     pendingEvents.push(...drainEvents(world));
-    // Hundimientos entre jugadores con sus niveles y la XP dada, sin nombres ni ids: producto revisa con ellos Q30 (AC-148)
-    for (const sink of drainPvpLog(world)) log(`⚔️  PvP ${JSON.stringify({ victim: sink.victimLevel, attackers: sink.attackers })}`);
+    // Hundimientos entre jugadores con la hora, sus niveles y la XP dada, sin nombres ni userId: producto revisa con ellos
+    // Q30 (AC-148). La hora es la del proceso: los sellos de los logs de Railway llegan en lote
+    for (const sink of drainPvpLog(world)) {
+      log(`⚔️  PvP ${JSON.stringify({ at: new Date(now()).toISOString(), victim: sink.victimLevel, attackers: sink.attackers })}`);
+    }
     ticks++;
     if (ticks % snapshotEvery === 0) broadcast();
   }
