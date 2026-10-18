@@ -1,6 +1,7 @@
 // AC-41 (QA-5 H-15): umbral de vida baja del HUD. El e2e no lo fija, porque sus muestras de vida saltan de 31,25 % a 23 %
-import { CAPTAIN_LAIR_RADIUS, PIRATE_SECTORS } from '../../game/constants';
-import { captainDownText, captainSpawnText, isLowHp, sectorOf } from '../hud-logic';
+import { CANNON_LEVELS, CAPTAIN_LAIR_RADIUS, PIRATE_SECTORS } from '../../game/constants';
+import { captainDownText, captainSpawnText, isLowHp, rangeText, sectorOf, targetDistance } from '../hud-logic';
+import type { Relation } from '../hud-store';
 
 describe('Vida baja del HUD (AC-41)', () => {
   test('239/800 (29,9 %) es vida baja: el botón Reparar pulsa', () => {
@@ -42,5 +43,35 @@ describe('Avisos del Capitán pirata (AC-111)', () => {
     expect(captainDownText(['Ana', 'Bea', 'Caro'], 0)).toBe('El Capitán pirata ha caído: Ana, Bea y Caro');
     expect(captainDownText(['Ana', 'Bea', 'Caro'], 1)).toBe('El Capitán pirata ha caído: Ana, Bea, Caro y 1 más');
     expect(captainDownText(['Ana', 'Bea', 'Caro'], 17)).toBe('El Capitán pirata ha caído: Ana, Bea, Caro y 17 más');
+  });
+});
+
+// AC-31, 1.1 («el panel dice exactamente lo que hace el servidor»): el panel del objetivo compara la distancia sin
+// redondear, como el servidor (world.ts no dispara con dist > alcance) y el estado de la acción, y muestra la distancia
+// redondeada hacia arriba, para que el número y el texto no se contradigan
+describe('Alcance en el panel del objetivo (AC-31, 1.1)', () => {
+  const n1 = CANNON_LEVELS[0].range; // 60 m
+  const row = (distance: number, relation: Relation = 'pirate', attackable = true) => {
+    const { shown, inRange } = targetDistance(distance, n1);
+    return `${shown} m · ${rangeText({ relation, attackable, inRange })}`;
+  };
+
+  test('con N1 (60 m): a 59,6 y 60,0 m, «60 m · ✓ En alcance»; a 60,4 m, «61 m · ✕ Fuera de alcance»', () => {
+    expect(n1).toBe(60);
+    expect(targetDistance(59.6, n1)).toEqual({ shown: 60, inRange: true });
+    expect(targetDistance(60, n1)).toEqual({ shown: 60, inRange: true });
+    expect(targetDistance(60.4, n1)).toEqual({ shown: 61, inRange: false });
+    expect([row(59.6), row(60), row(60.4)]).toEqual(['60 m · ✓ En alcance', '60 m · ✓ En alcance', '61 m · ✕ Fuera de alcance']);
+  });
+
+  test('una cañonera a 58 m está a tiro con N1, y a 62 m no', () => {
+    expect(row(58)).toBe('58 m · ✓ En alcance');
+    expect(row(62)).toBe('62 m · ✕ Fuera de alcance');
+  });
+
+  test('un jugador que no se puede atacar dice «✕ No atacable» con cualquier distancia (AC-153); un NPC, nunca', () => {
+    expect(row(30, 'player', false)).toBe('30 m · ✕ No atacable');
+    expect(row(30, 'player', true)).toBe('30 m · ✓ En alcance');
+    expect(row(30, 'merchant', false)).toBe('30 m · ✓ En alcance');
   });
 });

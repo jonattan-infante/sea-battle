@@ -15,6 +15,7 @@ import {
   classLabel,
   cycleTarget,
   hudSignals,
+  inCannonRange,
   inSafeZone,
   levelUpOf,
   levelUpText,
@@ -25,7 +26,8 @@ import {
   relationOf,
   RewardDraft,
   rewardLines,
-  rewardText
+  rewardText,
+  targetDistance
 } from '../client/hud-logic';
 import { MeHud, resetSaveWarning, sameShallow, syncUnsaved, TargetHud, useHud } from '../client/hud-store';
 import { attachOverlays, createRuntime, disposeRuntime, GameRuntime } from '../client/runtime';
@@ -218,7 +220,7 @@ export default function GameApp({ guest }: { guest: boolean }) {
         const targetId = client.myTargetId();
         const repairing = client.myRepairing();
         const attacked = targetId ? client.getShip(targetId) : undefined;
-        const inRange = !!attacked && Math.hypot(attacked.x - mine.x, attacked.z - mine.z) <= cannon.range;
+        const inRange = !!attacked && inCannonRange(Math.hypot(attacked.x - mine.x, attacked.z - mine.z), cannon.range);
         me = {
           shipId: mine.id,
           name: mine.name,
@@ -242,7 +244,8 @@ export default function GameApp({ guest }: { guest: boolean }) {
       if (selectedId && (!sel || (sel.state !== 'alive' && performance.now() - sel.sinkingSince > DESELECT_SUNK_MS))) selectedId = null;
       let target: TargetHud | null = null;
       if (sel && selectedId) {
-        const distance = mine ? Math.round(Math.hypot(sel.x - mine.x, sel.z - mine.z)) : 0;
+        // AC-31 (1.1): se compara sin redondear, como el servidor, y se muestra redondeada hacia arriba
+        const range = targetDistance(mine ? Math.hypot(sel.x - mine.x, sel.z - mine.z) : 0, cannon.range);
         target = {
           id: sel.id,
           name: sel.name,
@@ -253,8 +256,8 @@ export default function GameApp({ guest }: { guest: boolean }) {
           hp: sel.hp,
           maxHp: sel.maxHp,
           state: sel.state,
-          distance,
-          inRange: distance <= cannon.range,
+          distance: range.shown,
+          inRange: range.inRange,
           attackable: canAttackClient(client, mine, sel),
           level: sel.level
         };

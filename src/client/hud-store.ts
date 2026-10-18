@@ -34,7 +34,7 @@ export interface TargetHud {
   hp: number;
   maxHp: number;
   state: ShipState;
-  distance: number; // m, entero
+  distance: number; // m, redondeada hacia arriba (AC-31, 1.1): la que se muestra
   inRange: boolean;
   attackable: boolean;
   level: number | null; // nivel de un jugador (1.1, AC-153); null en los NPC
