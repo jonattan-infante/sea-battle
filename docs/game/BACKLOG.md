@@ -348,7 +348,11 @@ La lectura de las filas de la 1.0 y la vuelta atrás están en E14 (AC-156 y AC-
 - **AC-184 · P1** (O-29) — Dado el test del coste de la medida de AC-142 (`server/__tests__/metrics.test.ts:334-351`), cuando dev cambie su método, entonces:
   - (a) **Ruido:** en una prueba A/A (la medida apagada en los dos lados, con el mismo método y dentro de la pasada paralela de Jest, como en `verify`), en 20 repeticiones la diferencia nunca pasa de **0,1 ms**, la mitad de la cota de 0,2. Así un rojo falso queda lejos de la cota y no al borde;
   - (b) **Sensibilidad:** el mutante que sube el coste de la medida por encima de la cota da rojo **por aserción** en 5 de 5. El arreglo no puede consistir en aflojar la cota;
-  - (c) `npm run verify` en verde 5 veces seguidas en local y en las corridas de la CI del PR.
+  - (c) `npm run verify` en verde 5 veces seguidas en local y en las corridas de la CI del PR. **Cómo se cuenta la racha con la regla de carga** (decidido por producto el 2026-10-18, a propuesta de dev-tests):
+    - una pasada NO VERIFICADA por carga ni corta la racha ni cuenta;
+    - una pasada válida en rojo la reinicia;
+    - **una pasada no verificada solo se descarta por sus rojos de tiempo:** los tests que comparan un tiempo con una cota, como `metrics.test.ts:350` (AC-142) y AC-03 (`architecture.test.ts:105`). Un rojo de cualquier otro test es un rojo de verdad aunque haya carga: reinicia la racha y es un hallazgo. dev-tests anota en el log de cada pasada qué tests dieron rojo.
+    - Con la serie de `2892890` (NV, NV, el 3 válido en verde, NV, NV), faltan 4 válidas en verde seguidas.
 
   El cómo es de dev: en serie, aislado o con más muestras. Va en el primer PR tras la 1.0.3, antes de fusionar código de la 1.1. **Mientras no esté**, si el único rojo de una corrida es `metrics.test.ts:350`, se reintenta una vez y se anota en el PR (así se hizo en el PR #11, QA-23 §5). Verificación: el log A/A con las 20 diferencias, los 5 rojos del mutante y los logs de `verify` y de la CI. *Por qué no basta con «5 `verify` en verde», lo que proponía QA-22:* con un rojo cada ~10 corridas, como en la CI (HIPÓTESIS, n ≈ 10), 5 verdes seguidos salen el 59 % de las veces sin arreglar nada (0,9⁵). Y la carga no lo explica: en la CI falló con carga ≈ 1 (QA-23 §5).
 
