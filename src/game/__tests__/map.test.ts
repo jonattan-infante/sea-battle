@@ -222,6 +222,18 @@ describe('E16 — Escollos y destino inalcanzable (AC-172)', () => {
     expect(path.every((p, i) => nav.segmentClear(i === 0 ? WEST : path[i - 1], p, margin))).toBe(true);
   });
 
+  // AC-199 (e): el cliente calcula la ruta desde su posición interpolada para pintar el marcador en el mismo frame, así que
+  // el punto alcanzable no puede depender del origen exacto, solo de la zona desde la que se llega
+  test.each([16, 17])('AC-199 (e): con margen %i, el punto alcanzable que sustituye al centro del triángulo es el mismo desde orígenes distintos de la misma zona', (margin) => {
+    const nav = nav11();
+    const starts = [WEST, EAST, { x: 140, z: 360 }, { x: 140, z: 225 }, { x: 128, z: 316 }, { x: 101, z: 272 }];
+    const ends = starts.map((s) => {
+      const path = nav.findPath(s, CENTER, margin);
+      return path[path.length - 1];
+    });
+    expect(ends.map((e) => ({ x: e.x.toFixed(6), z: e.z.toFixed(6) }))).toEqual(starts.map(() => ({ x: ends[0].x.toFixed(6), z: ends[0].z.toFixed(6) })));
+  });
+
   test('AC-172 (b): moveTo de un barco al que no le cabe el paso deja como destino el punto alcanzable, no el centro', () => {
     const world = world11(4, true);
     const ship = placePlayer(world, 'a', WEST.x, WEST.z, Math.PI / 2);
