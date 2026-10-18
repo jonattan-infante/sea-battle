@@ -625,7 +625,7 @@ Coordenadas locales con el origen en el centro del puerto (GDD §4: (0, 0)), +X 
 | **1.1** · Islas por arquetipo (D67) | Las 15 de GDD §4 (I1–I6, T1, T2, E1a–c, G1–G4) | Procedural §9.4 | Opcional | — | §5, por forma | 1.1 (P0; la regla de grises de AC-174 es P1) |
 | **1.1** · `island_port` (D68) | Puerto con muelle, 12 pantalanes, astillero y faro | Procedural §9.5 | Opcional | — | ≤ 3 000 (≈ 1 400 estimados) | 1.1 (P0) |
 | **1.1** · `prop_wreck`, `prop_crate`, `prop_barrel`, `prop_tent`, `prop_pirate_flag`, `prop_hut` | Calas, puerto e islotes habitados | Procedural §9.3 | Opcional | — | ≤ 200 / 12 / 24 / 4 / 18 / 32 | 1.1 |
-| **1.1** · Insignias de rango (SVG; D69) | Placas, HUD, avisos, feed y tienda | SVG de la geometría de ART-DIRECTION §11.5 (5 insignias), en un módulo propio como los iconos | — | — | — | 1.1 |
+| **1.1** · Insignias de rango (SVG; D69, D74) | Placas, HUD, avisos, feed y tienda | El marcado exacto de `scripts/ux/calibracion/insignias-1-1.json` (5 insignias, ART-DIRECTION §11.5), copiado tal cual en un módulo propio como los iconos; el mismo SVG en los 4 tamaños | — | — | — | 1.1 |
 
 **No deben volver**: texturas PNG sobre planos (como el antiguo `src/assets/barco_modelo_1.png`) ni barcos hechos de `<mesh>` sueltos (en `f3f1345`, cada barco tenía más de 40 draw calls).
 
