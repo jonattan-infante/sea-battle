@@ -127,32 +127,33 @@ describe('E16 — Mapa de la 1.1 (datos provisionales)', () => {
     expect(Math.abs(edge[0] - 10)).toBeLessThanOrEqual(0.5);
   });
 
-  // La primera ruta tras arrancar: de un amarre a la guarida del otro lado del puerto (rodea el puerto). Sin los grafos
-  // preparados, esa ruta los construiría dentro del tick; se registra cuánto, sin asertarlo (depende de la máquina)
-  test('AC-171: el mundo prepara al crearse los grafos de todos los márgenes, y la primera ruta de cada margen tarda ≤ 2 ms (el menor de 3 arranques)', () => {
-    const margins = [10, 12, 13, 14, 16, 17, 19, 20, 23];
-    const first = (prepared: boolean, runs: number) =>
-      margins.map((m) => {
-        let best = Infinity;
-        for (let k = 0; k < runs; k++) {
-          const nav = new Navigator(MAP_1_1.islands);
-          if (prepared) nav.prepare([m]); // los grafos de cada margen son independientes
-          const f = forward(deg(195));
-          const t0 = performance.now();
-          nav.findPath({ x: f.x * (PORT_RADIUS + m), z: f.z * (PORT_RADIUS + m) }, { x: 311.1, z: -311.1 }, m);
-          best = Math.min(best, performance.now() - t0);
-        }
-        return best;
-      });
-    const cold = first(false, 1);
-    const warm = first(true, 3);
-    console.log(`AC-171: primera ruta por margen (ms), con los grafos preparados · sin ellos: ${margins.map((m, i) => `${m}: ${warm[i].toFixed(3)} · ${cold[i].toFixed(3)}`).join(' | ')}`);
-    expect(Math.max(...warm)).toBeLessThanOrEqual(2);
-
-    const prepare = jest.spyOn(Navigator.prototype, 'prepare');
-    world11(2);
-    expect(prepare).toHaveBeenCalledWith(expect.arrayContaining([...new Set(Object.keys(SHIP_CLASSES).map(navClearance))]));
-    prepare.mockRestore();
+  // AC-171 sin reloj: lo que pide es que los grafos ya estén hechos al crear el mundo. Se cuenta con buildCount: la primera
+  // ruta, el primer clic dentro de una isla y el primer contacto con la costa de cada clase no construyen nada. El mapa es
+  // una copia de MAP_1_1 con su propia lista de islas, así que su navegador es nuevo y no hereda lo que hayan construido
+  // otros tests. El tiempo de la primera ruta (preparada y sin preparar) solo se registra: depende de la máquina, y con una
+  // cota absoluta de 2 ms la CI daba rojos de tiempo (2,06 ms en el run 39140547625)
+  test('AC-171: el mundo prepara al crearse los grafos y los cruces de todas las clases: la primera ruta, el primer clic en una isla y el primer contacto con la costa de cada clase no construyen nada', () => {
+    const world = createWorld({ seed: 2, spawnNpcs: false, map: mapOf('1.1-arranque', ISLAND_SHAPES_1_1, true) });
+    const nav = navigatorOf(world);
+    const prepared = nav.buildCount;
+    const lair = { x: 311.1, z: -311.1 };
+    const firstRoute = Object.keys(SHIP_CLASSES).map((classId) => {
+      const m = navClearance(classId);
+      const f = forward(deg(195));
+      const t0 = performance.now();
+      nav.findPath({ x: f.x * (PORT_RADIUS + m), z: f.z * (PORT_RADIUS + m) }, lair, m); // rodea el puerto: necesita el grafo
+      const ms = performance.now() - t0;
+      nav.nearestNavigable({ x: E1a.x, z: E1a.z + 1 }, m); // dentro de una roca: necesita los cruces
+      nav.pushOut({ x: E1a.x, z: E1a.z + 1 }, SHIP_CLASSES[classId].radius);
+      return `${classId} ${ms.toFixed(3)}`;
+    });
+    const cold = new Navigator(MAP_1_1.islands);
+    const t0 = performance.now();
+    cold.findPath({ x: -40, z: -40 }, lair, navClearance('frigate'));
+    console.log(`AC-171: ${prepared} grafos y conjuntos de cruces preparados al crear el mundo · primera ruta (ms): ${firstRoute.join(' · ')} · sin preparar (frigate): ${(performance.now() - t0).toFixed(3)}`);
+    const classes = Object.values(SHIP_CLASSES);
+    expect(prepared).toBe(2 * new Set(classes.map((c) => c.length)).size + new Set(classes.map((c) => c.radius)).size);
+    expect(nav.buildCount).toBe(prepared);
   });
 });
 
