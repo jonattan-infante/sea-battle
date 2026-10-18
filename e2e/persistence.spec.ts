@@ -1,12 +1,12 @@
 // AC-97 y AC-155 en el navegador: un usuario con progreso guardado recupera oro, mejoras, barcos y XP al recargar y
 // también tras reiniciar el servidor (la memoria ya no está: sale de la BD); el invitado vuelve a 100 y no escribe nada.
-// El HUD todavía no muestra la XP (AC-152): se lee del estado del cliente, que es lo que leerá el HUD. El e2e no
-// puede iniciar sesión en Clerk: usa el usuario de prueba (?testUser=), que solo existe con el modo invitado y se guarda
+// La XP se lee del estado del cliente y, en AC-155, también de la pantalla: el nivel y la insignia del panel del jugador
+// (AC-152). El e2e no puede iniciar sesión en Clerk: usa el usuario de prueba (?testUser=), que solo existe con el modo invitado y se guarda
 // como un usuario de Clerk. Servidor propio con su Postgres temporal, nunca la BD de otro ni la de Railway
 import { expect, Page, test } from '@playwright/test';
 import { Client } from 'pg';
 import { UPGRADE_LEVELS } from '../src/game/constants';
-import { levelOf } from '../src/game/xp';
+import { levelOf, rankOf } from '../src/game/xp';
 import { rowV1, rowV2 } from '../server/__tests__/fixtures/progress-rows';
 import { startTempCluster, TempCluster } from '../server/__tests__/pg/cluster';
 import { migrate } from '../server/db/migrate';
@@ -83,7 +83,13 @@ test('AC-97: con 750 de oro, Cañones N2 y un Bergantín, recargar devuelve exac
   expect(await progress(page)).toEqual(expected);
 });
 
-test('AC-155: con 1 234 de XP (nivel 7), recargar y reiniciar el servidor devuelven 1 234 y nivel 7', async ({ page }) => {
+// El nivel restaurado en pantalla: «Nivel 7» y la insignia de su rango en el panel del jugador (AC-152)
+async function expectLevelOnScreen(page: Page, level: number) {
+  await expect(page.getByTestId('player-level')).toHaveText(`Nivel ${level}`);
+  await expect(page.getByTestId('player-badge')).toHaveAttribute('data-rank', String(rankOf(level)));
+}
+
+test('AC-155: con 1 234 de XP (nivel 7), recargar y reiniciar el servidor devuelven 1 234 y nivel 7, también en pantalla', async ({ page }) => {
   test.setTimeout(120_000);
   const seeded: SavedProgress = { gold: 500, upgrades: { cannons: 2, hull: 1, sails: 1 }, ownedShips: ['sloop', 'brig'], activeShip: 'brig', xp: 1234 };
   await sql('INSERT INTO player_progress (user_id, state) VALUES ($1, $2)', ['test-xia', rowV2(seeded)]);
@@ -91,10 +97,12 @@ test('AC-155: con 1 234 de XP (nivel 7), recargar y reiniciar el servidor devuel
   await open(page, '?testUser=xia');
   expect(await progress(page)).toEqual(seeded);
   expect(levelOf((await progress(page))!.xp)).toBe(7);
+  await expectLevelOnScreen(page, 7);
 
   // 1) Recargar la página
   await open(page, '?testUser=xia');
   expect(await progress(page)).toEqual(seeded);
+  await expectLevelOnScreen(page, 7);
 
   // 2) Reiniciar el servidor (kill -9): sale de la BD
   await server.kill();
@@ -103,6 +111,7 @@ test('AC-155: con 1 234 de XP (nivel 7), recargar y reiniciar el servidor devuel
   console.log(`AC-155: tras reiniciar el servidor ${JSON.stringify(await progress(page))}`);
   expect(await progress(page)).toEqual(seeded);
   expect(levelOf((await progress(page))!.xp)).toBe(7);
+  await expectLevelOnScreen(page, 7);
 });
 
 test('AC-97: un invitado vuelve a 100 de oro tras reiniciar el servidor y no escribe nada en la BD', async ({ page }) => {
