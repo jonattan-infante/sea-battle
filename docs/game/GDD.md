@@ -8,7 +8,7 @@
 ## 0. Resumen
 
 **Sea Battle es "Seafight en 10 minutos"**: navegas con un clic, marcas un barco, pulsas una tecla y tu barco dispara andanadas solo hasta hundirlo; recoges el oro y la experiencia, y en el puerto conviertes el oro en mejores cañones, casco, velas y barcos.
-- **Un mundo de 1 000 × 1 000 m**, con un puerto de verdad en el centro (muelles y 12 amarres, 1.1), 12 islas y un campo de 3 escollos, de 4 arquetipos (1.1), 8 piratas y 4 cañoneras hostiles (I2), 8 mercantes pasivos, un Capitán pirata que aparece como jefe (I2) y un Galeón del tesoro con escolta (1.1, P2), para **20 jugadores** por servidor.
+- **Un mundo de 1 000 × 1 000 m**, con un puerto de verdad en el centro (muelles y 12 amarres, 1.1), 12 islas y un campo de 3 escollos, de 4 arquetipos (1.1), 8 piratas y 4 cañoneras hostiles (I2), 8 mercantes pasivos, un Capitán pirata que aparece como jefe (I2) y un Galeón del tesoro pasivo que responde al fuego (1.1, P2), para **20 jugadores** por servidor.
 - **Progresión con oro en unos 45–70 min**: 3 clases de barco y 3 ejes de mejora con 3 niveles cada uno. La 1.1 añade 2 clases (Goleta y Navío de línea) para después de esa progresión.
 - **Experiencia (1.1)**: hundir NPC y jugadores da XP; 20 niveles en 5 insignias, unas 6–7 h hasta el máximo contra NPC (§10b).
 - **Calidad antes que cantidad**: una sola munición. No hay perlas, monstruos ni abordaje.
@@ -55,7 +55,7 @@
 | Barcos del jugador | 3 clases: Balandra, Bergantín y Fragata. **1.1:** 5, con la Goleta y el Navío de línea (§6), y, si pasa el piloto, con más detalle y en 2 familias, española y británica, a elegir en el puerto (§6, Q31) |
 | Combate | Selección, ataque persistente con andanadas, alcance, recarga, precisión, números de daño y reparación |
 | Experiencia (1.1) | XP por hundir NPC y jugadores, con reparto por daño y reglas contra el abuso; 20 niveles y 5 insignias (§10b) |
-| NPC | Pirata (hostil) y Mercante (pasivo). **Incremento I2, en la versión 1.1.0 y P0 en ella** (Q12; antes P1): Cañonera pirata (hostil, mantiene la distancia) y Capitán pirata (jefe). **1.1 (P2):** Galeón del tesoro con escolta (§9) |
+| NPC | Pirata (hostil) y Mercante (pasivo). **Incremento I2, en la versión 1.1.0 y P0 en ella** (Q12; antes P1): Cañonera pirata (hostil, mantiene la distancia) y Capitán pirata (jefe). **1.1 (P2):** Galeón del tesoro, pasivo que responde al fuego, sin escolta (§9) |
 | Cámara | Sigue al barco. **I2, en la 1.1.0 y P0 en ella (antes P1):** vista libre con arrastre, minimapa y flechas, y vuelta al barco (§5) |
 | Economía | Oro: recompensas por hundir, restos flotantes (P1), tienda de mejoras y barcos |
 | Muerte | Hundimiento, pantalla de muerte, reaparición en el puerto y protección |
@@ -457,13 +457,13 @@ Lectura de diseño: la Balandra repara 32 HP/s y, bajo fuego, 12 HP/s. Contra un
 | **Cañonera pirata** (hostil, I2) | 900 | 5 / 8 m/s | 50 °/s | 6 | 20 | 55 % | 65 m | 5,0 s | 13,2 | 210 oro | 50 oro | 45 s | 4 (1 por sector, anillo de 400–470 m) |
 | **Mercante** (pasivo) | 300 | 7 / 9 m/s | 50 °/s | 0 | — | — | — | — | 0 | 60 oro | 15 oro | 20 s | 8 |
 | **Capitán pirata** (jefe, I2 P1) | 1 800 | 6 / 10 m/s | 60 °/s | 6 | 28 | 65 % | 65 m | 4,0 s | 27,3 | 600 oro | 150 oro | Tras 10 piratas o cañoneras hundidos en el servidor desde su última muerte; máximo 1 vivo | 0–1 |
-| **Galeón del tesoro** (pasivo, de evento; 1.1, P2) | 2 400 | 5 / 7 m/s | 40 °/s | 0 | — | — | — | — | 0 | 600 oro | 150 oro | 10 min después del arranque o de que el anterior se hunda o escape; máximo 1 | 0–1, con 2 escoltas |
+| **Galeón del tesoro** (pasivo que responde al fuego, de evento; 1.1, P2) | 2 400 | 5 / 7 m/s | 40 °/s | 8 | 24 | 60 % | 60 m | 5,0 s | 23,0 (solo contra quien lo ataca) | 600 oro | 150 oro | 10 min después del arranque o de que el anterior se hunda o escape; máximo 1 | 0–1, sin escolta |
 
 Eslora y radio de colisión: Pirata 20 m / 6 m, Mercante 22 m / 7 m, Cañonera 28 m / 8 m, Capitán 30 m / 9 m y Galeón 36 m / 10 m (1.1).
 
 Aceleración y frenado: Pirata 3 / 5 m/s², Mercante 2,5 / 4 m/s², Cañonera 2,5 / 4 m/s², Capitán 2,5 / 4 m/s² (los tres, como la Fragata, §6) y Galeón 2 / 3,5 m/s² (como el Navío, §6).
 
-**Regla de recompensa** (para que añadir tipos no suba el oro por segundo de combate): hostiles ≈ 0,23 × vida (pirata 105/450; cañonera 210/900) y pasivos ≈ 0,20 × vida (mercante 60/300). El jefe lleva una prima de riesgo (0,33 × vida) porque es raro y exige grupo o una Fragata mejorada. El galeón (1.1) lleva una prima de evento (0,25 × vida): es raro, va escoltado y se escapa. **La XP de cada NPC (1.1) sigue la misma lógica por vida (§10b).**
+**Regla de recompensa** (para que añadir tipos no suba el oro por segundo de combate): hostiles ≈ 0,23 × vida (pirata 105/450; cañonera 210/900) y pasivos ≈ 0,20 × vida (mercante 60/300). El jefe lleva una prima de riesgo (0,33 × vida) porque es raro y exige grupo o una Fragata mejorada. El galeón (1.1) lleva una prima de evento (0,25 × vida): es raro, responde al fuego y se escapa. **La XP de cada NPC (1.1) sigue la misma lógica por vida (§10b).**
 
 ### IA del pirata
 ```
@@ -510,23 +510,31 @@ En Seafight aparece un "almirante" tras hundir 10 NPC de un tipo, y los almirant
 - **Aviso a todos** (texto de ART-DIRECTION D49): al aparecer, «¡Capitán pirata en el <región>, sector <celda>!», p. ej., «¡Capitán pirata en el noroeste, sector B2!». La región es el cuadrante de su guarida, escrito entero (noreste, noroeste, suroeste o sureste), y la celda es la de la rejilla del minimapa en la que está la guarida. En pantalla, «sector» solo nombra la celda de la rejilla; los cuadrantes nunca se muestran como «sector NE». Además, el capitán tiene un marcador propio en el minimapa, visible desde cualquier punto del mapa. **Quien entra con el capitán ya vivo no recibe el aviso**, pero ve el marcador desde el snapshot completo de entrada. Al hundirse, el feed dice "El Capitán pirata ha caído: A, B y C" (hasta 3 nombres, por daño, y "y N más"). **Los nombres son los de quienes cobran del reparto** (§10).
 - **Reparto:** proporcional al daño (§10), así que premia ir en grupo.
 
-### Galeón del tesoro con escolta (1.1, P2)
-El tesoro que cruza el mar de los mercantes: rico, lento, pasivo y defendido. Es el evento **cerca del puerto**, al alcance de un Bergantín con ayuda, frente al Capitán, que es el evento **lejos**. Es el primero que se recorta si la 1.1 no llega (BACKLOG, «Release 1.1.0»).
-- **Aparición:** 10 min después del arranque, o de que el anterior se hunda o escape; nunca hay 2. Nace en el anillo de 250 m alrededor del puerto, en el punto del anillo más alejado de los jugadores y a ≥ 150 m de todos, con 2 escoltas (piratas de la tabla) a 30 m.
-- **Ruta:** una vuelta completa al anillo de 250 m (8 *waypoints*, ≈ 1 570 m, ≈ 5 min a 5 m/s), esquivando islas (T1 y T2 caen cerca). Si la completa sin hundirse, el galeón desaparece (su escolta, según la regla de «Escolta», abajo): «El Galeón del tesoro ha escapado».
-- **Huida:** como el mercante. Al recibir daño se aleja del atacante a 7 m/s durante 12 s y vuelve a la ruta por el *waypoint* más cercano. No dispara.
-- **Escolta:** las 2 escoltas se quedan a ≤ 60 m del galeón (su correa se mueve con él), atacan a quien dañe al galeón y a cualquier jugador atacable a ≤ 70 m de ellas (como el pirata), y nunca entran a < 130 m del puerto. Cuentan como piratas para la aparición del Capitán. Cuando el galeón se hunde o escapa, terminan su combate y desaparecen en cuanto no hay ningún jugador a ≤ 110 m de ellas. No reaparecen.
+### Galeón del tesoro (1.1, P2)
+El tesoro que cruza el mar de los mercantes: rico, lento, **pasivo y armado**. No ataca a nadie, pero a quien lo ataca le responde con andanadas más fuertes que las del Capitán. Es el evento **cerca del puerto**, al alcance de un Bergantín con ayuda, frente al Capitán, que es el evento **lejos**. Es el primero que se recorta si la 1.1 no llega (BACKLOG, «Release 1.1.0»).
+
+*Cambiado el 2026-10-18 a petición de Jonattan, sobre la lámina D88* (cita en BACKLOG AC-192): «El diseño esta bien pero no puede ir acompañador por un pirata, es contradictorio. Este barco es pasivo pero si lo atacan que responda con fuerza.» **Ya no lleva escolta:** lo defienden sus propios cañones. Antes llevaba 2 piratas de escolta, huía como el mercante y no disparaba. Los números de abajo son de producto.
+
+- **Aparición:** 10 min después del arranque, o de que el anterior se hunda o escape; nunca hay 2. Nace en el anillo de 250 m alrededor del puerto, en el punto del anillo más alejado de los jugadores y a ≥ 150 m de todos.
+- **Ruta:** una vuelta completa al anillo de 250 m (8 *waypoints*, ≈ 1 570 m, ≈ 5 min a 5 m/s), esquivando islas (T1 y T2 caen cerca). Si la completa sin hundirse, el galeón desaparece: «El Galeón del tesoro ha escapado».
+- **Pasivo:** nunca dispara primero. Un jugador que no le ha hecho daño nunca recibe un disparo suyo, aunque pase a su lado.
+- **Responde con fuerza** (sustituye a la huida del mercante):
+  - **agresor** es el jugador que le ha hecho daño en los últimos 15 s;
+  - **objetivo:** de los agresores atacables (como en el pirata: vivos, fuera de la zona segura y sin protección) a ≤ 60 m, el que más daño le hizo en los últimos 10 s; si ninguno se lo hizo en ese tiempo, el más cercano. Si ningún agresor está a tiro, no dispara. Empieza con la recarga lista, así que responde en el tick siguiente al primer daño;
+  - **cañones:** 8 por banda, 24 de daño por bala, 60 % de precisión, 60 m de alcance y 5,0 s de recarga. Son **23,0 DPS** y 115 de daño esperado por andanada, más que la del Capitán (109) y más del doble que la del pirata (53). El alcance es el del cañón N1 del jugador, entre los 55 m del pirata y los 65 de la Cañonera y el Capitán, así que quien tenga cañones N2 (70 m) o N3 (80 m) y más velocidad que él lo hunde sin recibir daño si mantiene la distancia (pilar P3);
+  - **movimiento:** ni persigue ni huye; sigue su ruta. Mientras tenga un agresor, navega a su velocidad máxima (7 m/s) en vez de a 5, y vuelve a 5 m/s a los 15 s sin recibir daño. Atacarlo acorta el tiempo que le queda para escapar: a 7 m/s, la vuelta entera dura ≈ 3,7 min.
+- **Cómo lo sabe el jugador antes de atacar:** el panel del objetivo lo da como «pasivo» y le pone la marca de peligro (D77; BACKLOG AC-189) con la regla de siempre (§14, «Panel de objetivo»): DPS del NPC × (su vida / DPS propio) / vida máxima propia > 50 %. Con la Balandra N1 da 329 % y con un Bergantín de cañones y casco N2, 67 %, así que sale; con la Fragata con todo a N3 da 18 %, y no sale (cálculo de producto con las tablas de §6, §7 y §11). Antes, con 0 DPS, no salía nunca. Es justo lo que tiene que decir: «no te atacará, pero si lo atacas tú solo, te costará caro». **El aspecto aprobado no cambia** («El diseño esta bien»): D88 lo dibuja sin cañones a la vista y sin portas, y las andanadas salen del costado que mira al objetivo, como en todos los barcos (§7). Si `game-ux` cree que hacen falta portas para que se lea armado, se lo propone a Jonattan como cambio de la lámina, sin acercarlo al Navío español (AC-194 d).
 - **Aviso a todos:** al aparecer, «¡Galeón del tesoro en el <región>, sector <celda>!» (texto de `game-ux`, ART-DIRECTION §10.1, con la regla de D49 del aviso del Capitán: la región es el cuadrante de su punto de aparición, escrito entero, y la celda, la de la rejilla del minimapa; BACKLOG AC-166), con un marcador propio en el minimapa visible desde cualquier punto (como el Capitán, §13). Al hundirse, «El Galeón del tesoro ha caído: A, B y C».
 - **Recompensa:** 600 de oro + 150 de restos y 160 XP (§10b), repartidos por daño (§10).
 - **Fuera de la curva:** el bot de AC-60 no lo ataca ni se acerca a < 150 m de él, igual que con el Capitán (§10).
-- **Entidades:** con el galeón y su escolta, el mundo llega a 44 (§13).
+- **Entidades:** con el galeón, el mundo llega a 42 (§13): 20 jugadores, 20 NPC, el Capitán y el Galeón. Con escolta eran 44.
 
 ### Requisitos de arte de los NPC de I2 y de la 1.1 (qué deben comunicar; el diseño es de `game-ux`)
 | NPC | Debe leerse como | Requisito verificable |
 |---|---|---|
 | Cañonera pirata | Hostil, pesada, de largo alcance | Código hostil (velas oscuras, como el pirata) más una **forma** propia (casco ancho y bajo, batería de cañones visible) que la distinga del pirata y del capitán **en escala de grises** a 1,0× en 390×844. Placa "Cañonera pirata" |
 | Capitán pirata | El más peligroso del mar | Mayor que cualquier pirata (30 m) y con silueta propia. Un rasgo exclusivo (bandera u ornamento) visible a 1,0× en móvil y en grises. Marcador de minimapa distinto de todos los demás. Placa "Capitán pirata" |
-| Galeón del tesoro (1.1, P2) | Pasivo, rico y pesado | Código **pasivo** (nunca se confunde con un hostil) y distinto del mercante en grises a 1,0× en 390×844: mayor (36 m) y con un rasgo de riqueza propio. Placa "Galeón del tesoro". Marcador de minimapa distinto de los 6 de AC-115. Sus escoltas son piratas normales |
+| Galeón del tesoro (1.1, P2) | Pasivo, rico y pesado; que no ataca, pero responde | Código **pasivo** (nunca se confunde con un hostil) y distinto del mercante en grises a 1,0× en 390×844: mayor (36 m) y con un rasgo de riqueza propio. Placa "Galeón del tesoro". Marcador de minimapa distinto de los 6 de AC-115. Que responde se comunica con la marca de peligro del panel del objetivo y con sus andanadas, no con un código hostil. Sin escolta desde el 2026-10-18 |
 
 ### Reaparición de NPC
 - La reaparición es en su zona (sector pirata o ruta mercante), a **≥100 m de cualquier jugador** y fuera de islas.
@@ -546,9 +554,15 @@ El tesoro que cruza el mar de los mercantes: rico, lento, pasivo y defendido. Es
 | Goleta (cañones N2) vs Cañonera (1.1), ambos a tiro | 20–30 s | 20–45 %. Manteniéndose a 66–70 m (fuera de los 65 m de la cañonera y dentro de sus 70), 0 % |
 | Navío con todo a N3 vs Capitán pirata (1.1) | 9–16 s | 5–15 % |
 | Navío con todo a N3 vs Fragata con todo a N3, PvP (1.1) | Gana el Navío en ≥ 95 % | 45–75 % |
+| Balandra N1 vs Galeón del tesoro (1.1, P2) | El jugador pierde en ≥ 95 % de los casos | — |
+| Bergantín (cañones y casco N2) solo vs Galeón (1.1, P2) | 44–55 s | 55–85 % (le sale la marca de peligro) |
+| 2 Bergantines (cañones y casco N2) vs Galeón (1.1, P2) | 20–28 s, sin muertes en ≥ 95 % de los casos | 20–45 % (el objetivo del galeón) |
+| Fragata con todo a N3 vs Galeón (1.1, P2) | 18–26 s | 12–25 % |
+| Goleta (cañones N3) vs Galeón (1.1, P2), a 61–80 m | 40–55 s | 0 % (fuera de sus 60 m y dentro de sus 80) |
 
 *Referencia de `game-product` (Monte Carlo, 1 000 duelos, ambos a tiro): 2 Bergantines contra el Capitán, 18,0 s, 32 % y 0,00 muertes; Bergantín contra Cañonera, 18,0 s y 17 %; Balandra contra Cañonera, 68 %. En el juego real, la cañonera mantiene la distancia y alarga los duelos. Medido con la IA real del Capitán (I2, H-305, dev-npc): con 2 Bergantines, el objetivo pierde el 25,0 %, dentro de la banda del 20–45 %.*
 *Referencia de las filas 1.1 (valor esperado por andanadas, sin Monte Carlo; HIPÓTESIS hasta BACKLOG AC-163): Goleta contra Pirata, 20,5 s y 24 % (6 andanadas de 84 de daño; el pirata dispara 5 de 52,8 sobre 1 100); Goleta contra Cañonera, 25 s y 33 %; Navío contra Capitán, 12,5 s y 10 % (5 andanadas de 384; el capitán dispara 4 de 109,2 sobre 4 480); Navío contra Fragata, 24,5 s y 62 % (la Fragata necesitaría 15 andanadas y solo dispara 9).*
+*Referencia de las filas del Galeón (valor esperado por andanadas, sin Monte Carlo; HIPÓTESIS hasta BACKLOG AC-202; producto, 2026-10-18). El Galeón responde en el tick siguiente al primer daño y dispara cada 5 s andanadas de 115,2 (8 × 0,6 × 24). La Balandra N1 lo hundiría en ≈ 114 s, y él la hunde con 7 andanadas, en ≈ 30 s. El Bergantín solo necesita 15 andanadas de 171 (≈ 49 s) y recibe 10, 1 152 sobre 1 680 (69 %). Los 2 Bergantines necesitan 7 u 8 rondas de 342 (21–24,5 s) y su objetivo recibe 5 andanadas, 576 (34 % de 1 680). La Fragata necesita 8 andanadas de 307 (≈ 21 s) y recibe 5, 576 sobre 3 080 (19 %). La Goleta, a 61–80 m, necesita 16 andanadas de 154 (≈ 45 s) y no recibe ninguna.*
 
 ## 10. Botín y economía
 
@@ -612,7 +626,7 @@ El tesoro que cruza el mar de los mercantes: rico, lento, pasivo y defendido. Es
 | Pirata | 450 | Hostil | 30 | 1,4 |
 | Cañonera pirata (I2) | 900 | Hostil | 60 | 1,4 |
 | Capitán pirata (I2) | 1 800 | Hostil, de evento | 240 | 2,8, repartida en el grupo |
-| Galeón del tesoro (1.1, P2) | 2 400 | Pasivo, de evento | 160 | 1,4 (sus escoltas dan 30 cada una) |
+| Galeón del tesoro (1.1, P2) | 2 400 | Pasivo que responde al fuego, de evento | 160 | 1,4 (sin escolta desde el 2026-10-18) |
 | Jugador del mismo nivel, la 1.ª vez | — | — | 100 | — |
 
 *Por qué estos números:*
@@ -726,7 +740,7 @@ Con esas tasas salen los tiempos de la tabla de niveles: XP acumulada de 421 a l
 | Parámetro | Valor |
 |---|---|
 | Jugadores por servidor | 20 (el jugador 21 recibe "Servidor lleno") |
-| Entidades máximas | 20 jugadores + 20 NPC + 1 jefe = 41. **1.1 (P2):** 44 con el Galeón del tesoro y sus 2 escoltas (§9); AC-03, AC-88 y AC-89 se miden con 44 |
+| Entidades máximas | 20 jugadores + 20 NPC + 1 jefe = 41. **1.1 (P2):** 42 con el Galeón del tesoro, que ya no lleva escolta (§9; eran 44 con sus 2 escoltas); AC-03, AC-88 y AC-89 se miden con 42 |
 | Simulación | 20 Hz, autoritativa en el servidor |
 | Snapshots | 10 Hz, **solo deltas** de las entidades que cambiaron dentro del área de interés (radio de 300 m alrededor del barco y, en vista libre (I2), también alrededor del centro de la vista). Snapshot completo al entrar. **Si no cambia nada, no se envía nada.** El Capitán pirata vivo se envía siempre, para el marcador del minimapa, y el Galeón vivo también (1.1, P2). **1.1:** la XP propia y el nivel de cada jugador viajan solo cuando cambian (al hundir algo o al subir de nivel), nunca en cada frame. También solo al cambiar viajan el **evento de ascenso** y las **parejas abiertas** («Piezas de red de la 1.1», debajo de esta tabla) |
 | Interpolación en el cliente | Búfer de 100 ms. Sin predicción, también para el barco propio. El marcador de clic es inmediato y local. |
@@ -852,7 +866,7 @@ El layout, la paleta y la forma los define `game-ux`. Aquí solo se fija qué de
 | Islas en el sombreado del agua (1.1) | ≤ 16 formas (`src/client/models/ocean-material.ts:8`); la 1.1 usa 16. Una más exige medir AC-90 antes. **Con el rediseño (D83, 44 círculos):** la pasada del océano no puede crecer con el número de círculos. En el M4 Pro a DPR 2, su mediana es ≤ 3,35 ms (hoy, 3,04 + 10 %) con 44 y con 60 círculos. Con la lista de círculos, D83 la dobla, a 6,28 ms (medida de dev-render; BACKLOG AC-198 e). Por eso se toma la salida 1 sin esperar a que falle en un equipo modesto |
 | Cálculo de ruta con el mapa nuevo (1.1) | AC-22 sin cambios (el menor de 3 p99 ≤ 2 ms), ahora con 16 formas (256 nodos frente a 112; `src/game/nav.ts:7`). **Los grafos de navegación se preparan al arrancar el servidor, nunca dentro de un tick**: hoy se construyen la primera vez que se pide cada margen (`src/game/nav.ts:66-93`), y con 16 formas y 9 márgenes distintos (§6) ese primer cálculo podría dar un pico en el event loop. *Medido el 2026-10-18 por dev-npc:* un grafo cuesta hasta 4 ms con 16 círculos y hasta 18 ms con 41, y preparar los 9 al arrancar suma unos 0,1 s. Al crear el mundo se preparan también los conjuntos de cruces de cada margen y de cada radio de colisión, para que ni el primer clic dentro de una isla ni el primer contacto con la costa los construyan en un tick. Se comprueba con un contador de construcciones, no con un tiempo (BACKLOG AC-171) |
 | Red con XP y niveles (1.1) | En AC-88, con el candidato entero, ≤ 12 KB/s por cliente con el servidor lleno (el tope de §13), y los campos de la XP (XP propia, niveles, evento de ascenso y parejas abiertas) ≤ 5 % de los bytes de bajada. La diferencia con la 1.0.2 se registra sin asertarla, porque el candidato lleva también I2 y los barcos nuevos (BACKLOG AC-154) |
-| Entidades (1.1, P2) | Con el galeón y su escolta, 44: AC-03, AC-88 y AC-89 se miden con 44. Peor caso con todo en LOD0 y los presupuestos por clase de ASSET-SPEC §5 (los 20 jugadores en Navío, 3 200 cada uno; el Galeón, 2 800): **≈ 140 300 triángulos (56 % de 250 000) y 56 draw calls (≤ 60 con el tope de VFX) de 100**. Es una cota, no una predicción: QA-12 midió en la 1.0.2 51 draw calls y 72 526 triángulos (AC-89). **No se añaden islas ni NPC por encima de esto sin avisar a ux y al lead** |
+| Entidades (1.1, P2) | Con el galeón, 42 (sin escolta desde el 2026-10-18; eran 44): AC-03, AC-88 y AC-89 se miden con 42. El peor caso de abajo se calculó con 44 y sigue valiendo como cota. Peor caso con todo en LOD0 y los presupuestos por clase de ASSET-SPEC §5 (los 20 jugadores en Navío, 3 200 cada uno; el Galeón, 2 800): **≈ 140 300 triángulos (56 % de 250 000) y 56 draw calls (≤ 60 con el tope de VFX) de 100**. Es una cota, no una predicción: QA-12 midió en la 1.0.2 51 draw calls y 72 526 triángulos (AC-89). **No se añaden islas ni NPC por encima de esto sin avisar a ux y al lead** |
 
 ## 17. Preguntas para Jonattan y decisiones de producto
 
