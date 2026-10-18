@@ -383,6 +383,7 @@ export interface ShipModel {
   decks: [[number, number][][], [number, number][][]];
   extras: ShipExtras;
   sockets: ShipSockets;
+  map?: THREE.Texture | null; // atlas de color del GLB (§13); el procedural no lleva textura
 }
 
 // ---- Construcción ----

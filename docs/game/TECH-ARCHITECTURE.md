@@ -29,6 +29,21 @@ Dueño: `game-developer`. Fuentes de verdad: `GDD.md` y `BACKLOG.md` (qué se co
 | HUD | `src/client/hud-store.ts`, `hud-logic.ts`, `src/components/hud/` | El store solo cambia con los datos (≤ 10 Hz). Lo que avanza con el reloj (recarga, protección, cuenta atrás) se pinta por ref desde un único `requestAnimationFrame` (AC-83) |
 | Runtime | `package.json` (`engines.node`), `.nvmrc`, `.github/workflows/ci.yml` | Node 24 en local, en la CI y en Railway (DT-14). Railpack toma la mayor de `engines.node` (`24.x` → la última 24); sin ella usaría su «lts», que pasa a Node 26 el 2026-10-28. La CI lee `.nvmrc`. El npm de Node 24.21 no ejecuta los scripts de instalación de las dependencias sin `allowScripts`; ninguno hace falta (son avisos o descargas de respaldo de binarios que ya llegan como dependencias opcionales) |
 
+### 1.1 Barcos en GLB (ASSET-SPEC §13, paso 6; D80; E17, AC-193)
+
+Un `.glb` con el contrato de ASSET-SPEC §1–§4 sustituye al procedural de su clase sin tocar el juego. El procedural se pinta mientras carga y se queda si el GLB falla, así que la entrada nunca espera a un modelo (AC-193 c).
+
+| Pieza | Dónde | Regla |
+|---|---|---|
+| Manifiesto | `SHIP_GLB` (`src/client/models/ship-glb.ts`) | Clase → URL (`public/models/<id>.glb`, con hash). Vacío hasta el piloto: sin entrada no se descarga nada. `runtime.useShipGlb(clase, url)` lo cambia en caliente (vista previa de ux, e2e) |
+| Carga | `ShipGlbStore`, `createGlbLoader` | `GLTFLoader` + `MeshoptDecoder` + `KTX2Loader` (transcodificador en `public/basis/`, copiado de three 0.180.0; un test vigila que siga igual). Se importan al pedir el primer GLB, así que sin GLB no pesan en el bundle. Se piden al crear la vista de un barco, cuando entra en el área de interés, y se cargan de uno en uno, con el propio el primero. Si falla la descarga o el contrato, aviso en consola, el procedural y sin reintentos |
+| Contrato | `shipModelFromGlb` | Una raíz con transform identidad y los `extras` de §4 (`sb_lod_px` = 72/64 y la `sb_length` de la clase ±1 %); `<id>_lod0` y `<id>_lod1` con 1 primitiva `OPAQUE`; los sockets de §3 con el número de cañones de `sb_cannons_per_side`. Si un nodo de LOD trae transform, se hornea. Sin `COLOR_0`, blanco; sin `NORMAL`, pliegue de 40° (D23); sin `_RIM_MASK`, aviso (sin borde de protección) |
+| Modelo | `ShipModel` con `map` | La receta (números de la clase, §8.4) es la del procedural: placa, anillo, selección, VFX y simulación no cambian. Del GLB salen los LOD, los triángulos, los sockets, los extras y la textura. Lo comparten los barcos de la clase |
+| Material | `setShipMap` (`runtime.ts`: `createView` y el cambio de modelo en `updateShips`) | El del barco, clonado por instancia (§6), con la textura del GLB en `map`: `uHit`, `uDamage` y el borde de protección siguen igual. Poner o quitar el mapa recompila (2 programas: con y sin textura); cambiar de textura, no. El LOD sigue la regla de §7 sobre los LOD del GLB |
+| Middleware | `src/middleware.ts` | `.glb`, `.ktx2` y `.wasm` no pasan por Clerk: son estáticos |
+
+Tests: `src/client/models/__tests__/ship-glb.test.ts` (el GLB escrito desde el procedural da el mismo modelo; 9 incumplimientos rechazados; la cola, el respaldo y la liberación; el mapa) y `e2e/ship-glb.spec.ts` (en el navegador, con una textura KTX2 sin supercompresión servida por `page.route`). `glb-writer.ts` escribe esos GLB sin dependencias. Lo que falta: ETC1S y meshopt reales, que llegan con el GLB del piloto de ux.
+
 ## 2. Red (GDD §13)
 
 - **Un mensaje por envío**: `frame` (`ServerFrame` en `src/game/types.ts`) lleva los deltas de barcos (`s`), las salidas (`r`), los eventos visibles (`e`), la vista privada si cambió (`me`) y los avisos (`n`). Así se cumple ≤ 10 mensajes/s (AC-88).
