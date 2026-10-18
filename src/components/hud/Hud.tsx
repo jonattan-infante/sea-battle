@@ -6,7 +6,7 @@ import { CAPTAIN_CLASS, REPAIR_RATE, REPAIR_RATE_UNDER_FIRE } from '../../game/c
 import { rankLabel, rankOf } from '../../game/xp';
 import type { GameClient } from '../../client/game-client';
 import { HINTS } from '../../client/hints';
-import { addTicker, hudSignals, isLowHp, mobileLevelText, portBlock, targetTypeLine, xpFill, XpProgress, xpNumbers, xpProgress } from '../../client/hud-logic';
+import { addTicker, hudSignals, isLowHp, levelText, portBlock, targetTypeLine, xpFill, XpProgress, xpNumbers, xpProgress } from '../../client/hud-logic';
 import { MeHud, Relation, TargetHud, useHud } from '../../client/hud-store';
 import { HUD_BLOCKS_EVENT } from '../../client/overlays';
 import { RankBadge } from './badges';
@@ -74,7 +74,8 @@ function RelationIcon({ relation, classId, size = 22 }: { relation: Relation; cl
 
 // ---------- Panel del jugador ----------
 
-// Barra de XP (§12.9): 200 × 4 bajo la vida en escritorio y franja en el borde inferior del bloque en móvil. Al ganar XP el
+// Barra de XP (§12.9): 200 × 4 bajo la vida en escritorio y franja en el borde inferior del bloque en móvil. Los números
+// («1240 / 2000 XP») no caben en el panel: van en el title y en el nombre accesible de la barra (D76). Al ganar XP el
 // relleno avanza en 400 ms (CSS) y brilla 300 ms (Web Animations, en el commit del cambio). Con una subida de nivel el
 // relleno se monta de nuevo (key): la barra del nivel nuevo empieza ahí y no retrocede animada desde el nivel anterior
 function XpBar({ progress, xp }: { progress: XpProgress; xp: number }) {
@@ -87,7 +88,17 @@ function XpBar({ progress, xp }: { progress: XpProgress; xp: number }) {
     fillRef.current.animate([{ filter: 'brightness(1.4)' }, { filter: 'brightness(1)' }], { duration: 300, easing: 'ease-out' });
   }, [xp]);
   return (
-    <div className="hud-xp" data-testid="player-xp" data-level={progress.level}>
+    <div
+      className="hud-xp"
+      data-testid="player-xp"
+      data-level={progress.level}
+      role="progressbar"
+      aria-valuemin={0}
+      aria-valuemax={progress.span ?? 1}
+      aria-valuenow={progress.span === null ? 1 : progress.into}
+      aria-label={xpNumbers(progress)}
+      title={xpNumbers(progress)}
+    >
       <div key={progress.level} ref={fillRef} className="hud-xp__fill" style={{ width: `${(xpFill(progress) * 100).toFixed(2)}%` }} />
     </div>
   );
@@ -143,11 +154,12 @@ function PlayerPanel({ client }: { client: GameClient }) {
     base = <><Swords size={12} /> Atacando · <span ref={reloadRef}>0,0</span> s</>;
   } else if (me.action === 'armed') base = <><Swords size={12} /> Fuera de alcance</>;
 
-  // Nivel, insignia y XP (1.1; GDD §14, ART-DIRECTION §12.9). En escritorio, «Balandra · Nivel 12» y los números a la
-  // derecha de la línea de estado; en 390×844, «Nivel 12» junto a la vida, y en 844×390, en la fila del nombre
+  // Nivel, insignia y XP (1.1; GDD §14, ART-DIRECTION §12.9, D76). «Nivel 12» («Nivel máximo» en el 20): en escritorio a
+  // la derecha de la línea de estado, con la fila del nombre como en la 1.0; en 390×844 junto a la vida, y en 844×390 en
+  // la fila del nombre
   const progress = xpProgress(xp);
   const desktop = layout === 'desktop';
-  const level = <span className="hud-player__level" data-testid="player-level">{mobileLevelText(progress)}</span>;
+  const level = <span className="hud-player__level" data-testid="player-level">{levelText(progress)}</span>;
   const xpBar = <XpBar progress={progress} xp={xp} />;
   return (
     <section className={`panel hud-player ${low ? 'is-low' : ''}`} data-testid="player-frame" data-hud-block="">
@@ -160,7 +172,7 @@ function PlayerPanel({ client }: { client: GameClient }) {
       <div className="hud-player__body">
         <div className="hud-player__name">
           <strong data-testid="player-name">{me.name}</strong>
-          {desktop && <span className="hud-player__class" data-testid="player-class">{me.classLabel} · Nivel {progress.level}</span>}
+          {desktop && <span className="hud-player__class" data-testid="player-class">{me.classLabel}</span>}
           {layout === 'landscape' && level}
         </div>
         <div className="hud-player__hp">
@@ -176,7 +188,7 @@ function PlayerPanel({ client }: { client: GameClient }) {
             <span ref={baseRef}>{base}</span>
             <span ref={shieldRef} className="hud-status is-shield" style={{ display: 'none' }} data-testid="protection" />
           </div>
-          {desktop && <span className="hud-player__xp-text" data-testid="player-xp-text">{xpNumbers(progress)}</span>}
+          {desktop && level}
         </div>
       </div>
       {!desktop && <div className="hud-xp-strip">{xpBar}</div>}

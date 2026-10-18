@@ -208,6 +208,9 @@ test.describe('Selección y ataque', () => {
     expect(intentNames(net).filter((n) => n === 'attack')).toHaveLength(1);
     expect(intentNames(net).filter((n) => n !== 'attack' && n !== 'moveTo')).toEqual([]);
     await expect(page.getByTestId('action-state')).toHaveAttribute('data-state', 'firing');
+    // En el DOM, con un objetivo atacable: desde la 1.1 es el único e2e que ve «✓ En alcance», porque AC-67 usa un jugador
+    // en la zona segura, que dice «✕ No atacable» (AC-153)
+    await expect(page.getByTestId('target-range')).toHaveText('· ✓ En alcance');
     await page.keyboard.press('Escape');
   });
 });

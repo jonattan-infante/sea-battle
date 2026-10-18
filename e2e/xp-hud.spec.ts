@@ -62,7 +62,6 @@ async function watchLevelUp(page: Page, xpAtLeast: number) {
         const text = (sel: string) => document.querySelector(sel)?.textContent ?? null;
         w.__lv.dom = {
           toast: t.textContent,
-          classLine: text('[data-testid="player-class"]'),
           level: text('[data-testid="player-level"]'),
           xpLevel: document.querySelector('[data-testid="player-xp"]')?.getAttribute('data-level') ?? null,
           badge: document.querySelector('[data-testid="player-badge"]')?.getAttribute('data-rank') ?? null
@@ -101,15 +100,16 @@ async function playerPanel(page: Page) {
       level: box(q('[data-testid="player-level"]')),
       levelText: q('[data-testid="player-level"]')?.textContent ?? null,
       classText: q('[data-testid="player-class"]')?.textContent ?? null,
-      xpText: q('[data-testid="player-xp-text"]')?.textContent ?? null,
+      xpBar: ['role', 'aria-label', 'title', 'aria-valuenow', 'aria-valuemax'].map((a) => q('[data-testid="player-xp"]')?.getAttribute(a) ?? null),
       gold: box(document.querySelector('[data-testid="player-gold-panel"]')),
       texts
     };
   });
 }
 
-// AC-152 (§12.9): insignia, nivel y barra de XP en su sitio, todo dentro del panel y sin recortes de texto
-async function expectPlayerPanel(page: Page, size: Size, level: number, rank: number, xpText: string) {
+// AC-152 (§12.9, D76): insignia, nivel y barra de XP en su sitio, todo dentro del panel y sin recortes de texto. Los
+// números de la barra van en su title y su nombre accesible
+async function expectPlayerPanel(page: Page, size: Size, level: number, rank: number, xpText: string, into: number, span: number) {
   const p = await playerPanel(page);
   console.log(`AC-152 panel ${size}: ${JSON.stringify(p)}`);
   for (const part of [p.icon, p.badge, p.hp, ...(size === 'desktop' ? [p.xp] : [])]) expect(inside(part, p.frame)).toBe(true);
@@ -120,13 +120,15 @@ async function expectPlayerPanel(page: Page, size: Size, level: number, rank: nu
   expect(Math.abs(p.badge.x + p.badge.w - (p.icon.x + p.icon.w + over))).toBeLessThanOrEqual(0.5);
   expect(Math.abs(p.badge.y + p.badge.h - (p.icon.y + p.icon.h + over))).toBeLessThanOrEqual(0.5);
   expect(p.badgeSvg).toBe(rankBadgeSvg(rank as 1 | 2 | 3 | 4 | 5, badgePx));
+  expect(p.xpBar).toEqual(['progressbar', xpText, xpText, String(into), String(span)]);
+  expect(p.levelText).toBe(level === 20 ? 'Nivel máximo' : `Nivel ${level}`);
   if (size === 'desktop') {
-    expect(p.classText).toBe(`Balandra · Nivel ${level}`);
-    expect(p.xpText).toBe(xpText);
+    expect(p.classText).toBe('Balandra'); // la fila del nombre, como en la 1.0 (D76)
     expect([p.xp.w, p.xp.h]).toEqual([200, 4]);
     expect(Math.abs(p.xp.y - (p.hp.y + p.hp.h + 3))).toBeLessThanOrEqual(0.5); // 3 px bajo la vida
+    expect(Math.abs(p.level!.x + p.level!.w - (p.frame.x + p.frame.w - 13))).toBeLessThanOrEqual(1); // a la derecha de la línea de estado
+    expect(p.level!.y).toBeGreaterThan(p.xp.y);
   } else {
-    expect(p.levelText).toBe(level === 20 ? 'Nivel máximo' : `Nivel ${level}`);
     expect(p.level!.w).toBeLessThanOrEqual(76);
     if (size === 'portrait') {
       expect(p.xp).toEqual({ x: 0, y: p.frame.y + 49, w: 390, h: 3 }); // franja en el borde inferior de la barra superior
@@ -182,7 +184,7 @@ test.describe('HUD de la experiencia (1.1)', () => {
         const page = await open(browser, server, size, contexts);
         const pirate = SHIP_CLASSES.pirate;
         // Antes: nivel 8 (Marinero), 690 de los 700 que faltan hasta el 9
-        await expectPlayerPanel(page, size, 8, 2, '690 / 700 XP');
+        await expectPlayerPanel(page, size, 8, 2, '690 / 700 XP', 690, 700);
         // El cebo es un NPC: su placa no lleva insignia; la propia, sí (§11.5)
         const plates = await page.evaluate(() =>
           Array.from(document.querySelectorAll<HTMLElement>('[data-plate]'))
@@ -199,7 +201,7 @@ test.describe('HUD de la experiencia (1.1)', () => {
         console.log(`AC-151 ${size}: frame → aviso ${(lv.domAt! - lv.frameAt!).toFixed(1)} ms; en ese commit ${JSON.stringify(lv.dom)}`);
         expect(lv.domAt! - lv.frameAt!).toBeLessThanOrEqual(200);
         expect(lv.dom).toMatchObject({ toast: '¡Nivel 9! Ahora eres Contramaestre', xpLevel: '9', badge: '3' });
-        expect(size === 'desktop' ? lv.dom!.classLine : lv.dom!.level).toBe(size === 'desktop' ? 'Balandra · Nivel 9' : 'Nivel 9');
+        expect(lv.dom!.level).toBe('Nivel 9');
 
         // El aviso: uno solo, en una línea, con la insignia de 24 px, bloque del HUD, sin pista ni placas encima
         const [toast] = await achievementToasts(page);
@@ -235,7 +237,22 @@ test.describe('HUD de la experiencia (1.1)', () => {
         // Después: nivel 9 (Contramaestre), 20 de los 900 que faltan hasta el 10, y un solo aviso en todo el rato
         await page.waitForTimeout(1500);
         expect((await levelUp(page)).toasts).toEqual(['¡Nivel 9! Ahora eres Contramaestre']);
-        await expectPlayerPanel(page, size, 9, 3, '20 / 900 XP');
+        await expectPlayerPanel(page, size, 9, 3, '20 / 900 XP', 20, 900);
+        if (size === 'desktop') {
+          // D76: el peor caso de la línea de estado, «Reparando +1,5 %/s» con su icono y «Nivel máximo» (196 de 202 px según
+          // ux). Se escribe en el DOM al final del test, con la fuente y el CSS reales, solo para medir
+          const row = await page.evaluate(() => {
+            const foot = document.querySelector<HTMLElement>('[data-testid="player-frame"] .hud-player__foot')!;
+            const status = foot.querySelector<HTMLElement>('[data-testid="action-state"]')!;
+            const base = status.firstElementChild as HTMLElement;
+            const level = foot.querySelector<HTMLElement>('[data-testid="player-level"]')!;
+            base.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24"></svg> Reparando +1,5 %/s';
+            level.textContent = 'Nivel máximo';
+            return { foot: foot.clientWidth, status: status.scrollWidth, statusClient: status.clientWidth, level: level.getBoundingClientRect().width };
+          });
+          console.log(`D76 fila de estado: ${JSON.stringify(row)}`);
+          expect(row.status).toBeLessThanOrEqual(row.statusClient);
+        }
       } finally {
         for (const ctx of contexts) await ctx.close();
         await server.kill();
@@ -249,7 +266,7 @@ test.describe('HUD de la experiencia (1.1)', () => {
     const contexts: BrowserContext[] = [];
     try {
       const page = await open(browser, server, 'desktop', contexts);
-      await expectPlayerPanel(page, 'desktop', 1, 1, '0 / 60 XP');
+      await expectPlayerPanel(page, 'desktop', 1, 1, '0 / 60 XP', 0, 60);
       await watchLevelUp(page, 240);
       await arrive(page, CAPTAIN_DOWN_POINT.x, CAPTAIN_DOWN_POINT.z + 55);
       const captain = (await ships(page)).find((s) => s.classId === CAPTAIN_CLASS)!;
@@ -262,8 +279,8 @@ test.describe('HUD de la experiencia (1.1)', () => {
       console.log(`AC-151 varios niveles: ${(lv.domAt! - lv.frameAt!).toFixed(1)} ms; avisos ${JSON.stringify(after.toasts)}; ${JSON.stringify(lv.dom)}`);
       expect(lv.domAt! - lv.frameAt!).toBeLessThanOrEqual(200);
       expect(after.toasts).toEqual(['¡Nivel 3!']);
-      expect(lv.dom).toMatchObject({ classLine: 'Balandra · Nivel 3', xpLevel: '3', badge: '1' });
-      await expectPlayerPanel(page, 'desktop', 3, 1, '90 / 150 XP');
+      expect(lv.dom).toMatchObject({ level: 'Nivel 3', xpLevel: '3', badge: '1' });
+      await expectPlayerPanel(page, 'desktop', 3, 1, '90 / 150 XP', 90, 150);
     } finally {
       for (const ctx of contexts) await ctx.close();
       await server.kill();
