@@ -157,7 +157,7 @@ export default function GameApp({ guest }: { guest: boolean }) {
           break;
         // Capitán pirata (AC-111): aviso a todos al aparecer y feed de todos al hundirse
         case 'captain':
-          hud.pushToast('warn', captainSpawnText(e.sector));
+          hud.pushToast('warn', captainSpawnText(e.sector, e.pos));
           break;
         case 'captainDown':
           hud.pushFeed('info', captainDownText(e.names, e.more));

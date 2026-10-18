@@ -3,6 +3,8 @@
 import {
   CANNON_LEVELS,
   LOW_HP_WARNING,
+  MAP_HALF_SIZE,
+  PirateSectorId,
   PORT_POSITION,
   PVP_ENABLED,
   SAFE_ZONE_RADIUS,
@@ -10,6 +12,7 @@ import {
   TAB_TARGET_RADIUS
 } from '../game/constants';
 import { PlayerView } from '../game/types';
+import { Vec2 } from '../game/vec';
 import type { GameClient, RenderShip } from './game-client';
 import type { MeHud, Relation } from './hud-store';
 
@@ -30,9 +33,22 @@ export function classLabel(classId: string): string {
   return SHIP_CLASSES[classId]?.label ?? classId;
 }
 
-// Aviso y feed del Capitán pirata (GDD §9, AC-111): hasta 3 nombres por daño y "y N más"
-export function captainSpawnText(sector: string): string {
-  return `¡El Capitán pirata ha aparecido en el sector ${sector}!`;
+// Celda de la rejilla del minimapa, «Sector E5» en su pie (D39): columnas A–J de oeste a este y filas 1–10 de norte a sur,
+// en celdas de 100 m. En pantalla, «sector» solo nombra esta celda (D49)
+export function sectorOf(x: number, z: number): string {
+  const col = Math.max(0, Math.min(9, Math.floor((x + MAP_HALF_SIZE) / 100)));
+  const row = Math.max(0, Math.min(9, Math.floor((z + MAP_HALF_SIZE) / 100)));
+  return `${'ABCDEFGHIJ'[col]}${row + 1}`;
+}
+
+// Los cuadrantes del GDD (§4) se nombran como región, escrita entera, nunca «sector NE» (D49)
+const REGIONS: Record<PirateSectorId, string> = { NE: 'noreste', NO: 'noroeste', SO: 'suroeste', SE: 'sureste' };
+
+// Aviso y feed del Capitán pirata (GDD §9, AC-111). Aviso de D49: la región de su guarida y la celda de la guarida con
+// sectorOf, la misma función del pie del minimapa, para que los dos textos no puedan divergir. Feed: hasta 3 nombres
+// por daño y "y N más"
+export function captainSpawnText(sector: PirateSectorId, lair: Vec2): string {
+  return `¡Capitán pirata en el ${REGIONS[sector]}, sector ${sectorOf(lair.x, lair.z)}!`;
 }
 
 export function captainDownText(names: string[], more: number): string {

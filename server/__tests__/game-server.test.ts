@@ -2,7 +2,8 @@ import { createServer, Server as HttpServer } from 'http';
 import { AddressInfo } from 'net';
 import { Server } from 'socket.io';
 import { io as ioClient, Socket as ClientSocket } from 'socket.io-client';
-import { CAPTAIN_CLASS, INTEREST_RADIUS, MAX_PLAYERS, TICK_RATE } from '../../src/game/constants';
+import { captainSpawnText } from '../../src/client/hud-logic';
+import { CAPTAIN_CLASS, CAPTAIN_KILLS_TO_SPAWN, CAPTAIN_LAIR_RADIUS, INTEREST_RADIUS, MAX_PLAYERS, PIRATE_SECTORS, TICK_RATE } from '../../src/game/constants';
 import { C2S, S2C } from '../../src/game/protocol';
 import { GameEvent, Notice, ServerFrame, ShipDelta, Welcome } from '../../src/game/types';
 import { createRng, distance } from '../../src/game/vec';
@@ -425,5 +426,39 @@ describe('Servidor — Capitán pirata (AC-111)', () => {
     await advance(3.5);
     [a, b, c, d].forEach((j) => expect(j.frames.some((f) => f.r?.includes(cap.id))).toBe(true));
     expect(game.world.ships.has(cap.id)).toBe(false);
+  }, 30_000);
+
+  // D49: el aviso que pinta el cliente sale del evento (cuadrante y punto de la guarida) con captainSpawnText. Un jugador
+  // en la zona segura de cada uno de los otros 3 cuadrantes deja libre solo el del caso, y la guarida queda en su punto
+  // de 45° del arco de 440 m (a ≥ 150 m de todos)
+  test.each([
+    ['NE', '¡Capitán pirata en el noreste, sector I2!'],
+    ['NO', '¡Capitán pirata en el noroeste, sector B2!'],
+    ['SO', '¡Capitán pirata en el suroeste, sector B9!'],
+    ['SE', '¡Capitán pirata en el sureste, sector I9!']
+  ] as const)('AC-111 (D49): con la guarida en el %s, todos reciben el evento y el aviso dice «%s»', async (quadrant, text) => {
+    await start();
+    const others = PIRATE_SECTORS.filter((s) => s.id !== quadrant);
+    const joined: Joined[] = [];
+    for (const s of others) {
+      const j = await join(`p-${s.id}`);
+      game.world.ships.get(j.welcome.shipId)!.pos = { x: 60 * s.sx, z: 60 * s.sz };
+      joined.push(j);
+    }
+    await advance(0.2);
+    const before = joined.map((j) => j.frames.length);
+    game.world.killsSinceBoss = CAPTAIN_KILLS_TO_SPAWN;
+    await advance(0.3);
+    const cap = [...game.world.ships.values()].find((s) => s.classId === CAPTAIN_CLASS)!;
+    expect(cap).toBeDefined();
+    const { sx, sz } = PIRATE_SECTORS.find((s) => s.id === quadrant)!;
+    expect(cap.ai!.origin.x).toBeCloseTo(sx * CAPTAIN_LAIR_RADIUS * Math.SQRT1_2, 6);
+    expect(cap.ai!.origin.z).toBeCloseTo(sz * CAPTAIN_LAIR_RADIUS * Math.SQRT1_2, 6);
+    joined.forEach((j, i) => {
+      const spawn = eventsOf(j.frames.slice(before[i])).filter((e) => e.type === 'captain');
+      expect(spawn).toHaveLength(1);
+      const e = spawn[0] as Extract<GameEvent, { type: 'captain' }>;
+      expect([e.sector, captainSpawnText(e.sector, e.pos)]).toEqual([quadrant, text]);
+    });
   }, 30_000);
 });
