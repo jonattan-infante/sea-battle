@@ -59,7 +59,7 @@ export const LEGIBILITY_I2 = {
   self: SHOWCASE_POINT,
   other: { x: -30, z: 230 },
   ships: [
-    { classId: 'pirate', x: 45, z: 255, headingDeg: 45 },
+    { classId: 'pirate', x: 45, z: 262, headingDeg: 45 }, // a z 255, en 390×844 la placa del Capitán le tapaba 8 px
     { classId: GUNBOAT_CLASS, x: 40, z: 158, headingDeg: 135 },
     { classId: CAPTAIN_CLASS, x: 48, z: 212, headingDeg: 225 },
     { classId: 'merchant', x: -40, z: 160, headingDeg: 315 }
