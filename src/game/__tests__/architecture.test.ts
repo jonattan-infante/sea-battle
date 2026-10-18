@@ -151,6 +151,13 @@ describe('E0 — Arquitectura de la simulación', () => {
     expect([C.CAPTAIN_KILLS_TO_SPAWN, C.CAPTAIN_LAIR_RADIUS, C.CAPTAIN_SPAWN_MIN_PLAYER_DISTANCE]).toEqual([10, 440, 150]);
     expect([C.HOSTILE_AI.captain.aggro, C.HOSTILE_AI.captain.orbitRadius, C.HOSTILE_AI.captain.leash]).toEqual([90, 50, 150]);
     expect(C.HOSTILE_AI.pirate).toEqual({ aggro: 70, disengage: 110, leash: 200, orbitRadius: 45, orbitSpeed: 8, patrolRadius: 120 });
+    // Cañonera pirata (I2): eslora, radio, vida, patrulla/máx., acel./frenado, giro, cañones, artillería, recompensa, restos y
+    // reaparición; detección, órbita, velocidad de órbita y correa (§9)
+    const g = C.SHIP_CLASSES[C.GUNBOAT_CLASS];
+    expect([g.kind, g.label, g.length, g.radius, g.maxHp, g.patrolSpeed, g.maxSpeed, g.accel, g.brake, Math.round((g.turnRate * 180) / Math.PI), g.cannonsPerSide, g.cannon, g.reward, g.wreck, g.respawnTime]).toEqual([
+      'pirate', 'Cañonera pirata', 28, 8, 900, 5, 8, 2.5, 4, 50, 6, { damage: 20, accuracy: 0.55, range: 65, reload: 5.0 }, 210, 50, 45
+    ]);
+    expect([C.HOSTILE_AI.gunboat.aggro, C.HOSTILE_AI.gunboat.orbitRadius, C.HOSTILE_AI.gunboat.orbitSpeed, C.HOSTILE_AI.gunboat.leash]).toEqual([80, 62, 6, 200]);
     expect([C.NPC_POPULATION.pirate, C.NPC_POPULATION.merchant, C.PIRATES_PER_SECTOR]).toEqual([12, 8, 3]);
     expect([C.PIRATE_AGGRO_RADIUS, C.PIRATE_DISENGAGE_TARGET, C.PIRATE_LEASH, C.PIRATE_ORBIT_RADIUS, C.PIRATE_ORBIT_SPEED, C.PIRATE_PORT_EXCLUSION]).toEqual([70, 110, 200, 45, 8, 130]);
     expect([C.THREAT_WINDOW, C.MERCHANT_FLEE_TIME]).toEqual([10, 12]);
