@@ -359,6 +359,7 @@ body {
 /* Conectando / Desconectado (§16.2) */
 .connecting { position: absolute; inset: 0; z-index: 40; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; background: linear-gradient(#0f3f5c, #1a5f86); font-size: 16px; }
 .connecting svg { animation: spin 2s linear infinite; color: var(--ui-gold); }
+.connecting[hidden] { display: none; }
 .offline { width: 400px; max-width: calc(100vw - 32px); min-height: 220px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 20px; text-align: center; }
 .offline h2 { font-size: 32px; color: var(--ui-gold); }
 .offline__body { font-size: 16px; color: var(--ui-text); }
