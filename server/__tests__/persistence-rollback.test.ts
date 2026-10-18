@@ -131,7 +131,8 @@ describe('AC-157 (a, b): la 1.0.3 lee las filas v: 2 de la 1.1 y juega con lo de
     a.c.emit(C2S.moveTo, { x: 60, z: 60 });
     world().players.get('u-ana')!.gold += 1;
     await waitFor(() => a.frames.length >= 4 && a.me().gold === 4322, 3000, 'frames con deltas y la vista nueva');
-    expect(wire(a)).not.toMatch(/"(schooner|line|xp)"/);
+    expect(wire(a)).not.toMatch(/"(schooner|line)"/);
+    expect(a.me().xp).toBe(0); // la XP de la fila (V2.xp = 1234) no entra al mundo hasta AC-155; la del mundo sí viaja (1.1)
   });
 
   test.each([
@@ -143,7 +144,8 @@ describe('AC-157 (a, b): la 1.0.3 lee las filas v: 2 de la 1.1 y juega con lo de
     const b = await join('u-bea');
     expect(b.me().activeShip).toBe(playing);
     expect(shipOfPlayer(world(), 'u-bea')!.classId).toBe(playing);
-    expect(wire(b)).not.toMatch(/"(schooner|line|xp)"/);
+    expect(wire(b)).not.toMatch(/"(schooner|line)"/);
+    expect(b.me().xp).toBe(0); // la XP de la fila (V2.xp = 1234) no entra al mundo hasta AC-155; la del mundo sí viaja (1.1)
   });
 });
 
@@ -167,7 +169,8 @@ describe('AC-157 (c): la 1.0.3 escribe la misma v que leyó', () => {
     expect((await rowOf('u-dan')).state).toEqual({ ...V2, gold: 0, ownedShips: ['sloop', 'brig', 'line'], activeShip: 'brig' });
     await waitFor(() => d.me().activeShip === 'brig', 3000, 'la vista con el Bergantín');
     expect(fields(d.me())).toEqual({ gold: 0, upgrades: V2.upgrades, ownedShips: ['sloop', 'brig'], activeShip: 'brig' });
-    expect(wire(d)).not.toMatch(/"(schooner|line|xp)"/);
+    expect(wire(d)).not.toMatch(/"(schooner|line)"/);
+    expect(d.me().xp).toBe(0); // la XP de la fila (V2.xp = 1234) no entra al mundo hasta AC-155; la del mundo sí viaja (1.1)
   });
 
   test('v: 2: el cambio de barco en el puerto guarda el elegido, con lo nuevo intacto', async () => {
