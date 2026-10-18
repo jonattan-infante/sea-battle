@@ -49,6 +49,7 @@ import {
   step,
   stop
 } from '../src/game/world';
+import { drainPvpLog } from '../src/game/xp';
 import type { Identity } from './auth';
 import { createServerMetrics } from './metrics';
 import { createPersistence, ProgressStore, StoredProgress } from './persistence';
@@ -98,7 +99,7 @@ type Point = { x: number; z: number };
 
 // Margen para que un evento en el borde del área (p. ej. una andanada desde fuera) llegue a quien lo ve
 const EVENT_MARGIN = 60;
-const SNAPSHOT_KEYS: (keyof ShipSnapshot)[] = ['k', 'c', 'n', 'o', 'x', 'z', 'h', 's', 'hp', 'mhp', 'st', 't', 'r', 'pu'];
+const SNAPSHOT_KEYS: (keyof ShipSnapshot)[] = ['k', 'c', 'n', 'o', 'x', 'z', 'h', 's', 'hp', 'mhp', 'st', 't', 'r', 'pu', 'lv'];
 
 export function createGameServer(io: Server, options: GameServerOptions): GameServer {
   const tickRate = options.tickRate ?? TICK_RATE;
@@ -358,6 +359,7 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
     const near = (p: Point) => centers.some((c) => distance(p, c) <= radius);
     switch (e.type) {
       case 'loot':
+      case 'xp':
         return e.playerId === client.userId;
       case 'wreck':
       case 'wreckGone':
@@ -446,6 +448,8 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
     metrics?.step(performance.now() - stepStart);
     if (departing.size) releaseDeparted();
     pendingEvents.push(...drainEvents(world));
+    // Hundimientos entre jugadores con sus niveles y la XP dada, sin nombres ni ids: producto revisa con ellos Q30 (AC-148)
+    for (const sink of drainPvpLog(world)) log(`⚔️  PvP ${JSON.stringify({ victim: sink.victimLevel, attackers: sink.attackers })}`);
     ticks++;
     if (ticks % snapshotEvery === 0) broadcast();
   }
