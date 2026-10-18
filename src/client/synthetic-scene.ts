@@ -24,6 +24,7 @@ export interface SceneShip {
   orbit: number; // radio del círculo que describe (0 = línea recta)
   targetId?: string; // objetivo fijo (si no, el del duelo)
   protectedFor?: number; // s de protección desde el inicio de la escena
+  level?: number; // nivel de un jugador (1.1, la insignia de su placa); por defecto, el 1
 }
 
 export interface SceneDuel {
@@ -92,7 +93,8 @@ export class SyntheticSource implements RenderSource {
       const ship: RenderShip = {
         id: s.id, kind: s.kind, classId: s.classId, name: s.name, ownerId: s.kind === 'player' ? `owner-${s.id}` : null,
         x: s.x, z: s.z, heading: s.heading, speed: s.speed, hp: Math.round(maxHp * s.hp), maxHp, state: 'alive',
-        targetId: s.targetId ?? targets.get(s.id) ?? null, repairing: false, protectedUntil: s.protectedFor ?? 0, sinkingSince: 0
+        targetId: s.targetId ?? targets.get(s.id) ?? null, repairing: false, protectedUntil: s.protectedFor ?? 0, sinkingSince: 0,
+        level: s.kind === 'player' ? s.level ?? 1 : null
       };
       this.ships.push(ship);
       this.byId.set(s.id, ship);
