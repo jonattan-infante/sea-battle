@@ -164,6 +164,20 @@ test.describe('Barcos en GLB (ASSET-SPEC §13)', () => {
     });
   }
 
+  // Sin manifiesto, la entrada es la de hoy también antes del primer frame: la portada se quita al conectarla, sin
+  // esperar a ninguno. Con requestAnimationFrame parado no llega ningún frame aunque haya WebGL
+  test('AC-193 c (B): sin GLB en el manifiesto la portada no espera a ningún frame, como hoy', async ({ page }) => {
+    await page.addInitScript(() => {
+      window.requestAnimationFrame = () => 0;
+    });
+    await page.goto('/game');
+    await expect(page.getByTestId('player-frame')).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('.game-root > [data-testid="loading"]')).toBeHidden();
+    const entry = await entryOf(page);
+    console.log(`AC-193 c entrada sin frames y sin GLB: ${JSON.stringify(entry)}`);
+    expect(entry.firstFrameAt).toBe(0);
+  });
+
   test('AC-193 c (B): con el GLB propio a tiempo, el barco propio entra ya con él', async ({ page }) => {
     const bytes = fs.readFileSync(FIXTURE);
     const requests: string[] = [];
