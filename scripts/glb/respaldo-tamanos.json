@@ -1,0 +1,5 @@
+{
+  "_leeme": "Respaldo de D90 de cada GLB con KTX2, por sb_id (ASSET-SPEC §13, paso 4b; AS-V10): lado en px (cuadrado, potencia de 2) y mimeType. Los valores los da game-ux con la medida de la regla de 4b (respaldo.py medir para el piloto; respaldo_curvo.py para los barcos de la receta) y los commitea game-developer junto al validador de AS-V10, que la lee y no pasa un GLB cuyo sb_id no esté aquí.",
+  "ship_line_es": { "lado": 256, "mimeType": "image/png", "medida": "respaldo.py medir y, con la KTX2 desde el PNG, el turno B4 de ux (2026-10-18): ΔE76 1,22 frente a un umbral de 1,52; 128² da 2,03 (ART-DIRECTION, fila D90)" },
+  "ship_line_gb": { "lado": 256, "mimeType": "image/png", "medida": "respaldo.py medir y, con la KTX2 desde el PNG, el turno B4 de ux (2026-10-18): ΔE76 1,14 frente a un umbral de 1,38; 128² da 1,97 (ART-DIRECTION, fila D90)" }
+}

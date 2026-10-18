@@ -2,16 +2,21 @@
 // /basis/<hash>/ y los GLB en /models/<nombre>.<hash>.glb, con caché de un año (next.config.ts); los trozos del cargador
 // son de /_next/static, que Next ya sirve así. Los GLB los sirve el servidor del juego, como en prod: build:e2e copia el
 // fixture a public/models/e2e_*.glb (fuera de git). El del puerto es el mismo fixture con otro nombre: su cargador llega
-// con D82, y aquí solo se prueba la regla de /models/
+// con D82, y aquí solo se prueba la regla de /models/. El par del paso 4c de §13, un GLB y su KTX2 aparte, sale de
+// scripts/glb/e2e-models.ts
 import fs from 'fs';
 import path from 'path';
 import { expect, Page, test } from '@playwright/test';
 import { contentHash, E2E_PREFIX } from '../scripts/glb/content-hash';
+import { externalKtx2Fixture } from '../scripts/glb/e2e-models';
 import { enterGame, entryOf, glbBeforeEntry } from './helpers';
 
 const FIXTURE = fs.readFileSync(path.join(__dirname, 'fixtures', 'ship_sloop_etc1s_meshopt.glb'));
 const SHIP_URL = `/models/${E2E_PREFIX}ship_sloop.${contentHash(FIXTURE)}.glb`;
 const PORT_URL = `/models/${E2E_PREFIX}port.${contentHash(FIXTURE)}.glb`;
+const EXT = externalKtx2Fixture(new Uint8Array(FIXTURE));
+const EXT_GLB_URL = `/models/${EXT.glbFile}`;
+const EXT_KTX2_URL = `/models/${EXT.ktx2File}`;
 const three = (file: string) => fs.readFileSync(path.join(__dirname, '..', 'node_modules', 'three', 'examples', 'jsm', 'libs', 'basis', file));
 const BASIS = `/basis/${contentHash(three('basis_transcoder.js'), three('basis_transcoder.wasm'))}/`;
 const IMMUTABLE = 'public, max-age=31536000, immutable';
@@ -48,6 +53,19 @@ function track(page: Page) {
 
 const loaded = (page: Page) =>
   expect.poll(() => page.evaluate(() => (window.__SEA_BATTLE__!.runtime() as unknown as { shipGlb: { loaded(c: string): boolean } }).shipGlb.loaded('sloop')), { timeout: 20_000 }).toBe(true);
+
+// El mapa del barco propio es ya la KTX2 (la del .ktx2 aparte, transcodificada)
+const compressed = (page: Page) =>
+  expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const rt = window.__SEA_BATTLE__!.runtime() as unknown as { shipGlb: { model(c: string): { map?: { isCompressedTexture?: boolean } | null } } };
+          return rt.shipGlb.model('sloop').map?.isCompressedTexture === true;
+        }),
+      { timeout: 30_000 }
+    )
+    .toBe(true);
 
 // El cargador del puerto aún no existe (D82): la página lo baja con fetch, como lo haría
 const fetchPort = (page: Page) =>
@@ -111,11 +129,34 @@ test.describe('Caché de la cadena de carga de los GLB (AC-193 c)', () => {
     expect(next).toEqual(pieces.map((p) => ({ path: p, requests: 1, toNetwork: 0, bytes: 0, body: true })));
   });
 
+  // Paso 4c de §13: la KTX2 del barco va en su .ktx2 aparte, junto al GLB, que la enlaza por `uri`; GLTFLoader la pide al
+  // lado del GLB. Lleva las reglas del GLB (BACKLOG :419): immutable y 0 peticiones a la red en la visita siguiente
+  test('con la KTX2 en su .ktx2 aparte (paso 4c), el GLB y la KTX2 se sirven con caché de un año, y en la visita siguiente hacen 0 peticiones a la red', async ({ context, page }) => {
+    test.setTimeout(120_000);
+    const pieces = [EXT_GLB_URL, EXT_KTX2_URL];
+    const first = track(page);
+    await glbBeforeEntry(page, EXT_GLB_URL);
+    await enterGame(page);
+    await compressed(page);
+    const headers = Object.fromEntries(pieces.map((p) => [p, first.responses.get(p) ?? 'sin pedir']));
+    console.log(`AC-193 c paso 4c, 1.ª visita: ${JSON.stringify(headers)}`);
+    expect(headers).toEqual(Object.fromEntries(pieces.map((p) => [p, `200 ${IMMUTABLE}`])));
+    await page.close();
+
+    const again = await context.newPage();
+    await glbBeforeEntry(again, EXT_GLB_URL);
+    await enterGame(again);
+    await compressed(again);
+    const next = await network(again, pieces);
+    console.log(`AC-193 c paso 4c, visita siguiente: ${JSON.stringify(next)}`);
+    expect(next).toEqual(pieces.map((p) => ({ path: p, requests: 1, toNetwork: 0, bytes: 0, body: true })));
+  });
+
   // En un relevo de Railway los dos servidores se solapan ~1,3–2,3 s: si el HTML sale del nuevo y su /basis/<hash>/ cae en
   // el viejo, un 404 con caché de un año dejaría al navegador sin transcodificador. El 404 no se guarda
   test('un 404 en /basis/<hash>/ o en /models/ no se guarda: sin immutable ni max-age > 0', async ({ request }) => {
     expect(BASIS).not.toBe('/basis/ffffffff/');
-    for (const url of ['/basis/ffffffff/basis_transcoder.js', '/models/no_existe.00000000.glb', '/models/no-existe.00000000.glb']) {
+    for (const url of ['/basis/ffffffff/basis_transcoder.js', '/models/no_existe.00000000.glb', '/models/no-existe.00000000.glb', '/models/no_existe_atlas.00000000.ktx2']) {
       const r = await request.get(url);
       const cacheControl = r.headers()['cache-control'] ?? '';
       console.log(`AC-193 c 404: ${url} → ${r.status()} ${cacheControl}`);

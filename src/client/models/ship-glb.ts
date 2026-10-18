@@ -178,8 +178,9 @@ export interface GlbLoader {
 
 // GLTFLoader con MeshoptDecoder, KTX2Loader y el plugin del respaldo (§1; basisu-fallback.ts). Se importan al crear el
 // cargador, que es al haber un GLB que bajar: sin GLB, el bundle del juego no los lleva. El transcodificador de KTX2 (basis_transcoder.js y
-// .wasm, ≈ 585 KB) no baja al crearlo: lo pide la primera KTX2 (KTX2Loader.load llama a init), que con respaldo sale del
-// parse del GLB propio, así que no compite con su descarga (salida 1 de AC-193 c). detectSupport elige el formato de GPU
+// .wasm, ≈ 585 KB) no baja al crearlo: con respaldo lo pide el plugin en el parse del GLB propio, a la vez que su KTX2
+// (también si va en su .ktx2 aparte, §13 paso 4c), así que no compite con su descarga (salida 1 de AC-193 c); sin respaldo,
+// la primera KTX2 (KTX2Loader.load llama a init al tenerla). detectSupport elige el formato de GPU
 // con el renderer del primer parse, antes de cualquier KTX2
 export function createGlbLoader(): GlbLoader {
   let ktx2: { dispose(): void } | null = null;
