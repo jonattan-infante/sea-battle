@@ -8,7 +8,15 @@ import { DebugShip, enterGame, me, ships, waitFor } from './helpers';
 import { startOwnServer } from './own-server';
 
 const VIEWPORT = { width: 1440, height: 900 };
-const sectorOf = (s: { x: number; z: number }) => (s.x > 0 ? (s.z < 0 ? 'NE' : 'SE') : s.z < 0 ? 'NO' : 'SO');
+const quadrantOf = (s: { x: number; z: number }) => (s.x > 0 ? (s.z < 0 ? 'NE' : 'SE') : s.z < 0 ? 'NO' : 'SO');
+// Aviso de D49 por cuadrante, escrito a mano (no con captainSpawnText): con los dos jugadores junto al puerto, la guarida
+// es el punto de 45° del arco de 440 m (GDD §9), a 311 m de los ejes, así que la patrulla (≤ 120 m) no cambia el cuadrante
+const SPAWN_TEXT = {
+  NE: '¡Capitán pirata en el noreste, sector I2!',
+  NO: '¡Capitán pirata en el noroeste, sector B2!',
+  SO: '¡Capitán pirata en el suroeste, sector B9!',
+  SE: '¡Capitán pirata en el sureste, sector I9!'
+} as const;
 
 // Lleva el barco propio a (x, z) (posicionarse no es lo que se verifica) y espera a que llegue
 async function sailTo(page: Page, x: number, z: number): Promise<void> {
@@ -71,7 +79,7 @@ async function captainPlate(page: Page, captainId: string) {
 }
 
 test.describe('Capitán pirata (AC-111)', () => {
-  test('AC-111: al hundir el 10.º pirata, los dos jugadores reciben el aviso con el sector y ven el marcador propio del capitán en el minimapa, fuera de su área de interés', async ({ browser }) => {
+  test('AC-111: al hundir el 10.º pirata, los dos jugadores reciben el aviso con la región y la celda de la guarida (D49) y ven el marcador propio del capitán en el minimapa, fuera de su área de interés', async ({ browser }) => {
     test.setTimeout(150_000);
     const server = await startOwnServer({ SEA_BATTLE_NPCS: '0', SEA_BATTLE_SCENARIO: 'captain' });
     const contexts: BrowserContext[] = [];
@@ -95,7 +103,7 @@ test.describe('Capitán pirata (AC-111)', () => {
         const captain = await waitFor(async () => (await ships(page)).find((s) => s.classId === CAPTAIN_CLASS), (s) => !!s, 30_000, 100);
         const own = (await me(page))!;
         const dist = Math.hypot(captain!.x - own.x, captain!.z - own.z);
-        const text = `¡El Capitán pirata ha aparecido en el sector ${sectorOf(captain!)}!`;
+        const text = SPAWN_TEXT[quadrantOf(captain!)];
         await expect(page.getByTestId('toasts').getByText(text, { exact: true })).toBeVisible({ timeout: 5000 });
         // El marcador se redibuja a 2 Hz: se espera a que el halo siga al capitán y luego se mide
         await waitFor(() => minimapMarker(page, captain!), (m) => m.haloShip === captain!.id, 3000, 100);

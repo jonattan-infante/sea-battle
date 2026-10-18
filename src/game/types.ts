@@ -1,4 +1,4 @@
-import { IslandDef, PlayerShipClass, ShipKind, UpgradeId } from './constants';
+import { IslandDef, PirateSectorId, PlayerShipClass, ShipKind, UpgradeId } from './constants';
 import { Vec2 } from './vec';
 
 export type Upgrades = Record<UpgradeId, number>; // nivel 1..3
@@ -104,7 +104,7 @@ export type GameEvent =
   | { type: 'wreck'; wreckId: string; pos: Vec2; gold: number; expiresAt: number }
   | { type: 'wreckGone'; wreckId: string }
   // Capitán pirata (§9): se envían a todos los jugadores, estén donde estén (AC-111)
-  | { type: 'captain'; shipId: string; sector: string; pos: Vec2 }
+  | { type: 'captain'; shipId: string; sector: PirateSectorId; pos: Vec2 } // cuadrante y punto de la guarida (aviso de D49)
   | { type: 'captainDown'; shipId: string; names: string[]; more: number; pos: Vec2 }; // hasta 3 nombres por daño y "y N más"
 
 export interface World {

@@ -5,6 +5,7 @@
 import React, { useEffect, useRef } from 'react';
 import { CAPTAIN_CLASS, INTEREST_RADIUS, MAP_HALF_SIZE, PORT_POSITION, SAFE_ZONE_RADIUS } from '../../game/constants';
 import type { GameClient, RenderShip } from '../../client/game-client';
+import { sectorOf } from '../../client/hud-logic';
 
 const REDRAW_MS = 500;
 const COLORS = {
@@ -18,13 +19,6 @@ const COLORS = {
   merchant: '#6CC3F5',
   outline: '#07121B'
 };
-
-// "Sector E5": columnas A–J de oeste a este y filas 1–10 de norte a sur, en celdas de 100 m
-export function sectorOf(x: number, z: number): string {
-  const col = Math.max(0, Math.min(9, Math.floor((x + MAP_HALF_SIZE) / 100)));
-  const row = Math.max(0, Math.min(9, Math.floor((z + MAP_HALF_SIZE) / 100)));
-  return `${'ABCDEFGHIJ'[col]}${row + 1}`;
-}
 
 export interface ViewRect {
   minX: number;

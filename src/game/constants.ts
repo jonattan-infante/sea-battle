@@ -48,6 +48,7 @@ export const PIRATE_SECTORS = [
   { id: 'SO', sx: -1, sz: 1 },
   { id: 'SE', sx: 1, sz: 1 }
 ] as const;
+export type PirateSectorId = (typeof PIRATE_SECTORS)[number]['id'];
 
 // ---- Navegación (§6) ----
 export const ARRIVE_DISTANCE = 2;
