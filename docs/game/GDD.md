@@ -282,7 +282,7 @@ Orientaciones soportadas: vertical (390×844) y horizontal (844×390). Mientras 
   - En vista libre, un clic en el agua navega hacia ese punto (aunque esté lejos del barco) y un clic en un barco lo selecciona. Nada más cambia.
   - El centro de la vista no sale del mapa (±500 m).
   - **Volver al seguimiento** (transición de 300 ms): con `C` o el botón Centrar, cuando el barco propio recibe daño, al morir o al reaparecer.
-  - Si el barco propio queda fuera de pantalla, un indicador en el borde señala hacia él.
+  - Si el barco propio no se ve, un indicador en el borde señala hacia él. «No se ve» quiere decir que está fuera de la pantalla o tapado por el HUD: fuera del marco útil (ART-DIRECTION §12.8, BACKLOG AC-121). Lo mismo vale para el atacante de §14.
   - **Lo que se ve está vivo:** los barcos que hay en la zona mirada se muestran; nunca se ve mar vacío donde hay NPC (§13).
 
 ## 6. Navegación y barcos
