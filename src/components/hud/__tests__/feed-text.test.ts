@@ -26,10 +26,14 @@ describe('Línea de botín del feed (AC-152)', () => {
     expect(text(html)).toBe('Botín +5 oro');
   });
 
-  test('XP sin oro (PvP, quien ayudó): «Botín de combate +40 XP», sin «·»', () => {
-    const html = markup(line({ lead: 'Botín de combate', name: null, gold: 0, xp: 40 }));
+  test('XP sin oro (PvP, quien ayudó): «Ayudaste en un hundimiento +40 XP», sin «·»', () => {
+    const html = markup(line({ lead: 'Ayudaste en un hundimiento', name: null, gold: 0, xp: 40 }));
     expect(html).toContain('<span class="feed-text__xp"> +40 XP</span>');
-    expect(text(html)).toBe('Botín de combate +40 XP');
+    expect(text(html)).toBe('Ayudaste en un hundimiento +40 XP');
+  });
+
+  test('PvP sin oro ni XP: «Hundiste a Barbarroja», la única línea sin tramos', () => {
+    expect(text(markup(line({ lead: 'Hundiste a', name: 'Barbarroja', gold: 0, xp: 0 })))).toBe('Hundiste a Barbarroja');
   });
 
   test('una línea sin botín es su texto tal cual, como en la 1.0', () => {
