@@ -1500,7 +1500,13 @@ Si A tumba el proceso o pierde progreso, el fallo es P0, y con la 1.0 ya en prod
     - **Por qué la rejilla y no la textura:** da la costa y la espuma **exactas**, con la misma fórmula que la lista. Así, «se ven igual» se comprueba con capturas idénticas píxel a píxel frente a la lista, con el tiempo congelado, y ux juzga sobre esas mismas imágenes. La textura (4–8 MB a 0,5 m por texel) suaviza las esquinas donde se juntan dos círculos, justo en los canales entre isla e islote, y ahí podría deformar la espuma de orilla.
     - **Coste:** por debajo de los 3,04 ms de hoy, porque la mayoría de los píxeles no recorre ningún círculo (HIPÓTESIS de dev-render). Se mide igual que la tabla de arriba.
     - **Si la rejilla no llega a 3,35 ms,** dev-render prueba la textura. Si tampoco llega, trae las dos cifras a producto antes de pasar a la salida 2.
-    - **Cuándo:** en otro turno, después del piloto y del visto bueno de Jonattan a D83.
+    - **Cuándo:** ~~en otro turno, después del piloto y del visto bueno de Jonattan a D83~~. **Se construye ya, sin esperar a D83, en cuanto dev-render cierre las condiciones del PR #19** (`/basis` con `immutable` y la salida 1 de la entrada). Lo decidió producto el 2026-10-18, a petición de dev-render y con la opinión del lead a favor.
+      - **Por qué:** con las 7 islas de hoy, la rejilla da el mismo píxel, así que no cambia nada de lo que ve el jugador y no hay diseño que aprobar (AC-192 c). Además vale para cualquier disposición, porque los huecos por celda salen de los datos: si Jonattan pide cambios a D83, no se tira nada. Y adelanta el riesgo: si la rejilla no llega a 3,35 ms, se sabe antes del visto bueno y no después.
+      - **Condiciones:**
+        - con las 7 islas de hoy, 0 píxeles distintos frente al agua de hoy, con el tiempo congelado, en 1440×900, 390×844 y 844×390;
+        - una pasada del océano que no cueste más que hoy, medida como la tabla de arriba;
+        - una corrida pesada a la vez, con turno.
+      - **Lo que sigue esperando a D83:** las cifras con 44 y con 60 círculos de su arnés orientan, pero no cierran el criterio de la salida 1. La medida que lo cierra va con la disposición de D83 ya aprobada, en el juego.
 
   **Qué pasa según el resultado** (decidido por producto el 2026-10-18, antes de tener ningún dato):
   - Si pasa, el arte nuevo entra en la 1.1 como P0, con AC-174, AC-175, AC-178, AC-199 y AC-200.
