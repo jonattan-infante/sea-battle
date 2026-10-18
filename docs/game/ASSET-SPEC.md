@@ -389,6 +389,8 @@ Notación: vela cuadra = `w × h @ y_b` (ancho × alto en la altura de su borde 
 | Tris estimados | LOD0 ≈ 1 200 · LOD1 ≈ 270. Con D36: LOD0 2 370 (≤ 2 500 gracias a la porta de 1 quad y al cañón sin tapa interior, §8.2) · LOD1 419. Con D40: LOD0 2 440 (los foques radiales, de 3 filas, pagan los paños de 0,55 m) · LOD1 419 |
 
 #### `ship_schooner` — Goleta (1.1; perfil estándar)
+**Lámina** (AC-192): `docs/game/art/D64-barcos.png`, con el Navío, junto a la Balandra, el Bergantín y la Fragata. Jonattan pidió cambios («me parecen muy simples y quiero más detalle»): la Goleta y el Navío se rehacen dentro de las familias (E17, AC-193).
+
 | Parámetro | Valor |
 |---|---|
 | L / B / F / D / bauprés / railH | 22 / 5,6 / 1,6 / 0,9 / 7,0 / 0,56 m (casco bajo: F 1,6 frente a 2,0 del Bergantín) |
@@ -548,6 +550,8 @@ Isla genérica (r = 30, sin colina) más:
 **Instanciar o fusionar** (1.1): un prop que se repite ≥ 20 veces y tiene ≥ 50 tris va en un `InstancedMesh` (1 draw call), como las palmeras. El resto se fusiona en la geometría estática, que no suma draw calls.
 
 ### 9.4 Islas de la 1.1 por arquetipo (D67)
+**Lámina** (AC-192): `docs/game/art/D67-islas.png`, render por software de estas recetas con la luz y el agua del juego: los 7 tipos a 3 px/m en planta y a 55°, 3 de cerca a 6,7 px/m y el mapa con las 16 formas. Las rocas, arbustos y palmeras salen de una semilla de ejemplo, no de `hash(id)`. Lo que la receta no fija (dónde va el secadero de redes, cuánto entra la cala del acantilado, dónde van los props de la cala pirata y hacia dónde ondean sus banderas) va en la lámina como ejemplo, sin valor de spec.
+
 Entrada: `sb_collider` [x, z, r] de GDD §4, `sb_archetype`, `sb_variant` y la semilla `hash(id)`. Por qué cada arquetipo: ART-DIRECTION §8.3. Las 6 islas de la 1.0 no se mueven; I2, I3 e I4 cambian de receta (pasan a rocosas).
 
 | Regla común | Valor |
@@ -571,6 +575,8 @@ Entrada: `sb_collider` [x, z, r] de GDD §4, `sb_archetype`, `sb_variant` y la s
 **Tris** (presupuesto por forma, §5): puerto 3 000 · I1 900 · I5 e I6 700 · T1 y T2 900 · I2 1 000 · I3 1 500 · I4 1 200 · escollo 150 · cala 900. Total ≤ 14 850 frente a 16 000 (GDD §16). Los medirá AS-V25 con `buildIslands(...).triangles`, que ya los cuenta por id (`island-geometry.ts:23`).
 
 ### 9.5 Puerto de la 1.1 `island_port` (D68)
+**Lámina** (AC-192): `docs/game/art/D68-puerto.png`, render por software de esta tabla en planta y a 55° (5 px/m), con 6 barcos atracados de ejemplo (dos Navíos en amarres contiguos, el caso más justo). Las palmeras y la carga van en posiciones de ejemplo dentro de lo que fija la tabla.
+
 Coordenadas locales con el origen en el centro del puerto (GDD §4: (0, 0)), +X al este, +Z al sur (hacia la cámara), y arriba. `TOP` = +1,2 m. Rumbo ψ de un amarre k: 15° + 30°·k (k = 0…11), con su dirección `(sin ψ, cos ψ)`. Por qué cada pieza: ART-DIRECTION §8.4.
 
 | Pieza | Geometría | Colocación | Color |

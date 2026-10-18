@@ -801,6 +801,8 @@ Es un círculo de 18 px a la izquierda de la placa propia: pista `rgba(255,255,2
 AD-32 lo verifica.
 
 ### 11.5 Insignia de rango en la placa (1.1; D69)
+**Direcciones de rediseño** (AC-191, a la espera de la elección de Jonattan; no cambian nada de esta sección hasta entonces): `docs/game/art/D69-insignias-direcciones.png`, con la de hoy y 3 direcciones (A escudo, B galones, C medallas) medidas con la métrica de AD-40, y las 5 de cada una a 48 px en `D69-insignias-a.svg`, `-b.svg` y `-c.svg`.
+
 **Dónde.** En las placas de todos los jugadores (la propia y las ajenas, iguales), en la 2.ª fila, debajo del icono de relación: 12 × 12 px y 3 px hasta la barra, que se desplaza 15 px a la derecha y queda alineada con el nombre. **Solo la insignia: sin número de nivel ni marcas de grado** (GDD §10b y §14). Los NPC no llevan. Seafight la pone a la izquierda del barco (R14); aquí la columna del icono ya está a la izquierda y no ensancha la placa.
 
 ```
