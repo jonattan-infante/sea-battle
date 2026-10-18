@@ -161,6 +161,7 @@ Vista superior del asset (desde +Y)           En pantalla (cámara de ART-DIRECT
 | **1.1** · Galeón del tesoro (`npc_merchant_galleon`, NPC de evento, P2) | ≤ 2 800 | ≤ 900 | 1 | 1 | ≤ 1024² | ≤ 400 KB |
 | **1.1** · Islas por forma (D67; ART-DIRECTION §8.3) | Tropical: I1 ≤ 900, I5 e I6 ≤ 700 · islote habitado (T1, T2) ≤ 900 · rocosa: peñón I2 ≤ 1 000, volcán I3 ≤ 1 500, acantilado I4 ≤ 1 200 · escollo ≤ 150 cada uno · cala pirata ≤ 900 cada una | — | 0 propias: fusionadas | Compartido | ≤ 512² | ≤ 150 KB |
 | **1.1** · Puerto (D68; sustituye a la fila de arriba) | ≤ 3 000: muelle, cantil, 12 pantalanes con norays, astillero, faro, almacenes, grúa, capitanía y casas. Sin barcos de decorado | — | Fusionado con las islas | Compartido | ≤ 512² | ≤ 250 KB |
+| **1.1** · Puerto rediseñado (D82; sustituye a la fila de D68 si Jonattan aprueba su lámina) | ≤ 8 000 sin las palmeras (medido: 6 687; con las 17 palmeras, 7 501) | — | **1 propio**: malla con textura (§9.6) | 1 | 1024², KTX2 ETC1S | ≤ 250 KB (medido: 181 684 B comprimido) |
 | **1.1** · Geometría estática total (las 16 formas) | ≤ 16 000 (GDD §16). Con los presupuestos por forma de arriba, ≤ 14 850. Hoy, 3 090 (medido) | — | **1** | Compartido | — | — |
 
 **Medido hoy** (2026-10-17, `qa-artifacts/render/r11-fase1/`, script de `tsx` sobre `buildIslands(ISLANDS)` y `getShipModel` del código de la 1.0.2, igual en el worktree y en el árbol principal): islas PORT 650 · I1 480 · I2 380 · I3 580 · I4 412 · I5 294 · I6 294 (total 3 090); 45 palmeras de 54 tris (2 430); 24 boyas de 30 (720); barcos LOD0 / LOD1: Balandra 978 / 196, Bergantín 1 524 / 298, Fragata 2 440 / 419, Pirata 1 122 / 236, Mercante 1 645 / 405 y Capitán 2 073 / 392 (la Cañonera de I2, 1 624 / 241, en `85ab00b`). En escena, la última medida de QA (QA-12, AC-89) da **51 draw calls y 72 526 tris** con 41 barcos, y AC-90 da 120 fps con un p95 de 2,55 ms por frame en el M4 Pro.
@@ -608,6 +609,25 @@ Coordenadas locales con el origen en el centro del puerto (GDD §4: (0, 0)), +X 
 - Barcos atracados en los 12 amarres, con todos de la misma clase: holgura entre las popas de dos vecinos de 12,3 m (Balandra), 11,2 (Goleta), 10,6 (Bergantín), 8,3 (Fragata) y **5,8 m (Navío)**. Con clases mezcladas en amarres contiguos (los 25 pares; R-04 de QA), el peor sigue siendo Navío–Navío (5,75 m); Navío–Balandra da 9,07 (tabla de la sección (4b) de `scripts/ux/puerto.py`). Con la regla de amarre libre de GDD §4, el centro de un barco atracado queda a 20,0–26,5 m del eje del amarre contiguo (≥ 12): nunca lo bloquea.
 - Tris estimados: ≈ 1 400 (presupuesto 3 000; el de hoy, medido, 650).
 - Astillero en pantalla con N1: esqueleto de 87 px en 1440×900 (cuadernas cada 12,4 px, de 2,5 px) y de 39 px en 390×844 (cada 5,6 px, de 1,1 px).
+
+
+### 9.6 Puerto rediseñado `island_port` (1.1 si pasa su piloto; D82)
+**La receta es el script**: `scripts/ux/mapa/puerto_colonial.py` construye la malla en coordenadas locales (origen en el centro del puerto, +X este, +Z sur, y arriba) y pinta el atlas; las posiciones, medidas y colores de cada pieza están ahí y en ART-DIRECTION §8.5. `scripts/ux/mapa/blender_estatico.py` la exporta y se comprime como en §13, paso 4. Mientras Jonattan no apruebe la lámina D82, vale §9.5.
+
+| Regla | Valor |
+|---|---|
+| Archivo | `public/models/island_port.glb`: raíz `island_port` con `extras` (§4) `sb_kind: "island"`, `sb_collider: [0, 0, 30]` y `sb_archetype: "port"`; una malla `island_port_lod0`, sin LOD1 (estático, como las islas) |
+| Material | 1, `OPAQUE`, con `baseColorTexture` (atlas de 1024², KTX2 ETC1S) × `COLOR_0`. **Sin `NORMAL`**: islas y estáticos van con `flatShading` (§6), que no las usa |
+| Atlas | Sillar de muralla, piedra del muelle, losas, empedrado (4 × 4 m por repetición); tejas y tablas (3 × 3 m); 7 fachadas de un vano de 2 × 3 m; puerta (1,6 × 2,4 m), portón rojo (4 × 4 m), espadaña, arena, césped, azotea y 3 toldos; un texel blanco para las piezas de color liso |
+| Draw calls | **1 más que hoy** (el puerto ya no se fusiona con las islas, porque lleva textura). Las islas siguen en 1 |
+| Palmeras | Fuera del GLB del juego: 17 instancias de `prop_palm` en las posiciones de `SPOTS` del script, como las de hoy. La lámina y el GLB de prueba las llevan dentro (814 triángulos) |
+| Oclusión horneada | Franjas de suelo oscurecidas (×0,62) de 0,7 m al pie de las casas, la iglesia, la puerta y las murallas, como la oclusión de D23 |
+
+**Comprobado** (`python3 -I scripts/ux/mapa/puerto_colonial.py`, 2026-10-18; lo escribe en `puerto-medidas.json`):
+- Radio máximo de un vértice con y > 0: **30,00 m**. Oclusión a 55°: el punto de suelo tapado más lejano está a **30,97 m** (un bolardo a r 29,5 y +1,85 m; límite 31).
+- Holgura en planta entre las huellas macizas: ≥ 0,4 m; 0,3 m entre las casas en hilera, a propósito.
+- **7 501 triángulos** (6 687 sin las palmeras). GLB: 812 724 B sin comprimir; **181 684 B** con meshopt y KTX2 (135 862 B con gzip), de ellos 95 KB de textura; `gltf-transform validate`, 0 errores.
+- Los 12 amarres, la flotación (r 30 en el muelle; 27,2 en la escollera, con las rocas hasta 29,8; la arena entra en el agua a r 29,4) y la colisión no cambian. En los sectores de escollera y playa la costa visible queda entre 0,2 y 2,8 m por dentro del círculo, dentro de la banda de 0–3 m de AC-199 (a).
 
 ---
 
