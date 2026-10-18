@@ -80,8 +80,17 @@ export interface OceanPass {
   uniforms: Record<string, unknown>; // uniforms del océano en valores planos (vectores y colores lineales → arrays)
 }
 
+// Una textura (la rejilla de islas del agua) va como su tamaño: el modelo de AD-27 no la lee
 const plainUniform = (v: unknown): unknown =>
-  Array.isArray(v) ? v.map(plainUniform) : v instanceof THREE.Color ? [v.r, v.g, v.b] : v && typeof (v as THREE.Vector4).toArray === 'function' ? (v as THREE.Vector4).toArray() : v;
+  Array.isArray(v)
+    ? v.map(plainUniform)
+    : v instanceof THREE.Color
+      ? [v.r, v.g, v.b]
+      : v instanceof THREE.Texture
+        ? { texture: [v.image.width, v.image.height] }
+        : v && typeof (v as THREE.Vector4).toArray === 'function'
+          ? (v as THREE.Vector4).toArray()
+          : v;
 
 // Estado de render de un barco (malla propia, material propio, temporizadores de efectos)
 interface ShipView extends LabelTarget {

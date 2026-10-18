@@ -4,8 +4,8 @@
 import * as THREE from 'three';
 import { IslandDef, MAP_HALF_SIZE, PORT_POSITION, SAFE_ZONE_RADIUS } from '../../game/constants';
 import { CAMERA, LIGHTING, PALETTE } from '../art';
+import { buildIsleGrid, EMPTY, IsleGrid } from './isle-grid';
 
-const MAX_ISLANDS = 16;
 const deg = Math.PI / 180;
 
 // §7.1: λ (m), giro respecto a la dirección del viento, pendiente k·A
@@ -40,12 +40,16 @@ void main() {
 }
 `;
 
-const fragmentShader = /* glsl */ `
+// El número de círculos y los texels por celda de la rejilla (isle-grid.ts) van en el código del shader: se compila una vez
+// por material, con las islas del mapa
+const fragmentShader = (circles: number, texelsPerCell: number) => /* glsl */ `
 uniform float uTime;
 uniform vec3 uLightDir;
 uniform vec3 uViewDir;
-uniform vec3 uIslands[${MAX_ISLANDS}];
-uniform int uIslandCount;
+uniform vec3 uIslands[${circles}];
+uniform sampler2D uIsleGrid; // RGBA8: 4 índices de círculo por texel, ${EMPTY} = vacío
+uniform vec4 uIsleBox; // origen x, z de la rejilla, 1 / celda, sin uso
+uniform vec2 uIsleSize; // celdas en x y en z
 uniform float uMapHalf;
 uniform vec2 uSafeCenter;
 uniform float uSafeRadius;
@@ -126,10 +130,20 @@ void main() {
   float nc = (vnoise(p / 9.0 + drift * 0.6) + 0.5 * vnoise(p / 4.5 - drift * 0.4)) / 1.5 * 2.0 - 1.0;
   float hc = 0.6 * h + 0.4 * nc;
   vec3 c = mix(uDeep, mix(uTrough, uCrest, smoothstep(-0.6, 0.8, hc)), 0.55);
+  // Distancia a la costa: solo los círculos candidatos de la celda (AC-198 e). Fuera de la rejilla no hay ninguno a menos
+  // de 18 m, y 1e5 da lo mismo que la distancia de verdad
   float dIsle = 1e5;
-  for (int i = 0; i < ${MAX_ISLANDS}; i++) {
-    if (i >= uIslandCount) break;
-    dIsle = min(dIsle, length(p - uIslands[i].xy) - uIslands[i].z);
+  vec2 gi = floor((p - uIsleBox.xy) * uIsleBox.z);
+  if (gi.x >= 0.0 && gi.y >= 0.0 && gi.x < uIsleSize.x && gi.y < uIsleSize.y) {
+    ivec2 cell = ivec2(gi);
+    for (int l = 0; l < ${texelsPerCell}; l++) {
+      vec4 t = texelFetch(uIsleGrid, ivec2(cell.x * ${texelsPerCell} + l, cell.y), 0) * 255.0;
+      for (int k = 0; k < 4; k++) {
+        int i = int(t[k] + 0.5);
+        if (i == ${EMPTY}) break;
+        dIsle = min(dIsle, length(p - uIslands[i].xy) - uIslands[i].z);
+      }
+    }
   }
   float s = 1.0 - smoothstep(0.0, 18.0, dIsle);
   c = mix(c, uShallow, 0.85 * s);
@@ -189,11 +203,22 @@ void main() {
 
 const col = (hex: string) => new THREE.Color(hex);
 
+// La rejilla en una textura sin filtrar: texelFetch lee los índices tal cual. Sin islas, 1 texel vacío que no se lee
+function isleGridTexture(grid: IsleGrid): THREE.DataTexture {
+  const empty = grid.nx === 0;
+  const tex = new THREE.DataTexture(empty ? new Uint8Array(4).fill(EMPTY) : grid.data, empty ? 1 : grid.nx * grid.texelsPerCell, empty ? 1 : grid.nz, THREE.RGBAFormat, THREE.UnsignedByteType);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  tex.generateMipmaps = false;
+  tex.flipY = false;
+  tex.needsUpdate = true;
+  return tex;
+}
+
 export function createOceanMaterial(islands: IslandDef[]): THREE.ShaderMaterial {
-  const packed = Array.from({ length: MAX_ISLANDS }, (_, i) => {
-    const island = islands[i];
-    return island ? new THREE.Vector3(island.x, island.z, island.radius) : new THREE.Vector3(0, 0, -1);
-  });
+  const grid = buildIsleGrid(islands);
+  // Sin islas, un círculo que no se lee: GLSL no admite arrays de tamaño 0
+  const packed = islands.length ? islands.map((island) => new THREE.Vector3(island.x, island.z, island.radius)) : [new THREE.Vector3(0, 0, -1)];
   const waves = WAVES.map(([lambda, turn, slope]) => {
     const k = (2 * Math.PI) / lambda;
     const c = Math.sqrt((9.81 * lambda) / (2 * Math.PI)) * 0.35;
@@ -203,13 +228,15 @@ export function createOceanMaterial(islands: IslandDef[]): THREE.ShaderMaterial 
   const theta = CAMERA.elevation;
   return new THREE.ShaderMaterial({
     vertexShader,
-    fragmentShader,
+    fragmentShader: fragmentShader(packed.length, grid.texelsPerCell),
     uniforms: {
       uTime: { value: 0 },
       uLightDir: { value: new THREE.Vector3(...LIGHTING.sunDir) },
       uViewDir: { value: new THREE.Vector3(0, Math.sin(theta), Math.cos(theta)) },
       uIslands: { value: packed },
-      uIslandCount: { value: Math.min(islands.length, MAX_ISLANDS) },
+      uIsleGrid: { value: isleGridTexture(grid) },
+      uIsleBox: { value: new THREE.Vector4(grid.originX, grid.originZ, 1 / grid.cell, 0) },
+      uIsleSize: { value: new THREE.Vector2(grid.nx, grid.nz) },
       uMapHalf: { value: MAP_HALF_SIZE },
       uSafeCenter: { value: new THREE.Vector2(PORT_POSITION.x, PORT_POSITION.z) },
       uSafeRadius: { value: SAFE_ZONE_RADIUS },
