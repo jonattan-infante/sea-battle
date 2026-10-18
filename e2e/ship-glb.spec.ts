@@ -1,35 +1,16 @@
 // Loader de GLB de los barcos en el navegador (ASSET-SPEC §13 paso 6; D80; AC-193 a y c): el barco propio entra con el
-// procedural y, al llegar su GLB, cambia a su geometría y su textura KTX2 sin otra draw call; si el GLB no llega, se
-// queda el procedural. El GLB se escribe aquí desde el procedural de la Balandra (glb-writer.ts) con una textura KTX2
-// magenta sin supercompresión, y lo sirve page.route. La textura ETC1S y el meshopt reales llegan con el piloto de ux
+// procedural y, al llegar su GLB, cambia a su geometría y su textura sin otra draw call; si el GLB no llega, se queda el
+// procedural. El GLB es el fixture comprimido como pide §1 (e2e/fixtures/ship_sloop_etc1s_meshopt.glb, de
+// scripts/glb/make-ship-fixture.ts): la Balandra con meshopt, cuantización y una textura magenta en KTX2 ETC1S, que el
+// navegador transcodifica con public/basis. Lo sirve page.route
+import fs from 'fs';
+import path from 'path';
 import { expect, Page, test } from '@playwright/test';
-import * as THREE from 'three';
-import { KTX2Exporter } from 'three/examples/jsm/exporters/KTX2Exporter.js';
-import { buildShipAsset } from '../src/client/models/ship-geometry';
-import { writeGlb } from '../src/client/models/__tests__/glb-writer';
 import { enterGame } from './helpers';
 
 const URL_OK = '/models/test/ship_sloop.glb';
 const URL_404 = '/models/test/missing.glb';
-
-async function glbBytes(): Promise<Buffer> {
-  const size = 16;
-  const data = new Uint8Array(size * size * 4);
-  for (let i = 0; i < size * size; i++) data.set([255, 0, 255, 255], i * 4); // magenta: no sale en ningún barco procedural
-  const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat, THREE.UnsignedByteType);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  const ktx2 = await new KTX2Exporter().parse(texture);
-  // UV en (0,5; 0,5): cada vértice lee el centro de la textura
-  const root = buildShipAsset('sloop');
-  for (const child of root.children) {
-    const mesh = child as THREE.Mesh;
-    if (!mesh.isMesh) continue;
-    const g = mesh.geometry.clone();
-    g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.getAttribute('position').count * 2).fill(0.5), 2));
-    mesh.geometry = g;
-  }
-  return Buffer.from(writeGlb(root, { image: { mimeType: 'image/ktx2', bytes: ktx2 } }));
-}
+const FIXTURE = path.join(__dirname, 'fixtures', 'ship_sloop_etc1s_meshopt.glb');
 
 // Estado de la vista del barco propio: geometría, mapa y LOD, y si sigue siendo 1 draw call (1 malla, 1 primitiva, 1 material)
 const ownView = (page: Page) =>
@@ -48,9 +29,11 @@ const ownView = (page: Page) =>
   });
 
 test.describe('Barcos en GLB (ASSET-SPEC §13)', () => {
-  test('AC-193 a y c: el barco propio entra con el procedural y cambia al GLB con su textura KTX2, en 1 draw call', async ({ page }) => {
-    const bytes = await glbBytes();
+  test('AC-193 a y c: el barco propio entra con el procedural y cambia al GLB con meshopt y textura ETC1S, en 1 draw call', async ({ page }) => {
+    const bytes = fs.readFileSync(FIXTURE);
     const requests: string[] = [];
+    const basis: string[] = []; // el transcodificador de ETC1S se pide a public/basis y llega entero
+    page.on('response', (r) => r.url().includes('/basis/') && basis.push(`${r.status()} ${r.url().split('/').pop()}`));
     const errors: string[] = [];
     page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
     await page.route(`**${URL_OK}`, (route) => {
@@ -70,6 +53,7 @@ test.describe('Barcos en GLB (ASSET-SPEC §13)', () => {
     expect(after.materialMap).toBe(true);
     expect(after.oneDrawCall).toBe(true);
     expect(requests).toHaveLength(1); // una descarga por clase, compartida
+    expect(basis.sort()).toEqual(['200 basis_transcoder.js', '200 basis_transcoder.wasm']);
     // La textura se ve: píxeles magenta (R y B altos, G bajo) alrededor del barco propio, que antes no había
     const magenta = await page.evaluate(async () => {
       const rt = window.__SEA_BATTLE__!.runtime() as unknown as { captureImage(type: string): string | null };

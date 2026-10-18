@@ -50,6 +50,16 @@ function extrasOf(root: THREE.Object3D, base: ShipModel): ShipExtras {
   return { ...extras, sb_lod_px: LOD_PX };
 }
 
+// Un atributo cuantizado o entrelazado (meshopt) como Float32 con sus valores reales
+function toFloat(geometry: THREE.BufferGeometry, name: string): void {
+  const a = geometry.getAttribute(name) as THREE.BufferAttribute | THREE.InterleavedBufferAttribute | undefined;
+  if (!a || (!(a as THREE.InterleavedBufferAttribute).isInterleavedBufferAttribute && a.array instanceof Float32Array)) return;
+  const get = [a.getX, a.getY, a.getZ, a.getW];
+  const out = new Float32Array(a.count * a.itemSize);
+  for (let i = 0; i < a.count; i++) for (let k = 0; k < a.itemSize; k++) out[i * a.itemSize + k] = get[k].call(a, i);
+  geometry.setAttribute(name, new THREE.BufferAttribute(out, a.itemSize));
+}
+
 function lodOf(root: THREE.Object3D, id: string, lod: 0 | 1, warn: string[]): { geometry: THREE.BufferGeometry; map: THREE.Texture | null } {
   const name = `${id}_lod${lod}`;
   const mesh = root.children.find((c) => c.name === name) as THREE.Mesh | undefined;
@@ -61,9 +71,14 @@ function lodOf(root: THREE.Object3D, id: string, lod: 0 | 1, warn: string[]): { 
   const material = mesh.material as THREE.MeshStandardMaterial;
   if (material.transparent || material.alphaTest > 0) throw new ShipGlbError(`${name} no es OPAQUE (§1)`);
   let geometry = mesh.geometry;
-  // Un nodo de LOD con transform (rotación de ejes o escala del exportador) se hornea en la geometría
+  // Un nodo de LOD con transform se hornea en la geometría: la rotación de ejes o la escala del exportador, y la
+  // descuantización de KHR_mesh_quantization (gltf-transform meshopt guarda la posición en enteros normalizados y deja en
+  // el nodo la escala y el desplazamiento). Antes, la posición y la normal pasan a float: en enteros se recortarían a ±1
   mesh.updateMatrix();
-  if (!isIdentity(mesh)) geometry.applyMatrix4(mesh.matrix);
+  if (!isIdentity(mesh)) {
+    for (const name of ['position', 'normal']) toFloat(geometry, name);
+    geometry.applyMatrix4(mesh.matrix);
+  }
   if (!geometry.getAttribute('normal')) {
     geometry = geometry.index ? geometry.toNonIndexed() : geometry;
     creaseNormals(geometry, CREASE);
