@@ -1,7 +1,7 @@
-// AC-157 con el apagado de verdad: un redeploy de la 1.0.3 llega como SIGTERM (AC-129) a un proceso hijo real, con el
-// mismo arranque y el mismo apagado que server/index.ts, y Postgres real. Con una fila v: 2 de la 1.1, lo que escribe el
-// apagado conserva la v, la XP y los barcos nuevos; si el jugador no cambió nada, no escribe. persistence-rollback.test.ts
-// prueba lo mismo en el proceso, sin señal.
+// Filas v: 2 con el apagado de verdad (AC-155 y AC-157): un redeploy llega como SIGTERM (AC-129) a un proceso hijo real,
+// con el mismo arranque y el mismo apagado que server/index.ts, y Postgres real. Con una fila v: 2, lo que escribe el
+// apagado lleva la XP ganada y conserva los barcos que la simulación todavía no juega; si el jugador no cambió nada, no
+// escribe. persistence-rollback.test.ts prueba lo mismo en el proceso, sin señal.
 // Lo que se aserta solo puede haberlo escrito el apagado, por dos cosas: el proceso no tiene guardado periódico (60 s en
 // vez de 2), y la BD va detrás de un proxy que retrasa 400 ms lo que le llega. La fila se lee cuando el cliente ve la
 // desconexión: el apagado escribe y solo después cierra las conexiones; sin él, la única otra escritura es la de la
@@ -72,19 +72,20 @@ async function rawRow(userId: string): Promise<string> {
   return JSON.stringify(rows);
 }
 
-describe('AC-157 con SIGTERM: el apagado de la 1.0.3 conserva lo que trae una fila v: 2', () => {
-  test('(a) con oro ganado, la fila queda antes de salir en v: 2 con la misma XP, los barcos nuevos en el orden de la tabla, el oro nuevo y la Fragata como activo; sale con 0', async () => {
+describe('SIGTERM con una fila v: 2: el apagado escribe la XP ganada y conserva los barcos nuevos', () => {
+  test('(a) con oro y XP ganados, la fila queda antes de salir en v: 2 con la XP y el oro nuevos, los barcos nuevos en el orden de la tabla y la Fragata como activo; sale con 0', async () => {
     await seed('test-nao', V2);
     const child = await start();
     const n = await joinGame(child.url, { testUser: 'nao' }, undefined, sockets);
     expect(n.me().activeShip).toBe('frigate');
     expect(await child.addGold('test-nao', 250)).toBe(true);
+    expect(await child.addXp('test-nao', 66)).toBe(true);
     expect(await rowOf('test-nao')).toEqual({ state: V2, revision: 1 }); // aún sin escribir
 
     proxy.delay(400); // cada escritura tarda ≥ 400 ms en llegar a la BD
     const atDisconnect = new Promise<{ state: Record<string, unknown>; revision: number }>((resolve) => n.c.once('disconnect', async () => resolve(await rowOf('test-nao'))));
     const exited = child.kill('SIGTERM');
-    const written = { state: { ...V2, gold: 4571, ownedShips: ['sloop', 'schooner', 'frigate', 'line'], activeShip: 'frigate' }, revision: 2 };
+    const written = { state: { ...V2, gold: 4571, ownedShips: ['sloop', 'schooner', 'frigate', 'line'], activeShip: 'frigate', xp: 1300 }, revision: 2 };
     expect(await atDisconnect).toEqual(written);
     expect(await exited).toEqual({ code: 0, signal: null });
     expect(child.output()).toContain('💾 Progreso guardado');
