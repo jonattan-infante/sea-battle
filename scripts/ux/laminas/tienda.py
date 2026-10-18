@@ -21,7 +21,8 @@ SHIPS = [dict(id='sloop', label='Balandra', hp=800, v='14', can=4, L=16, price=0
 ICONS = {  # src/components/hud/icons.tsx: 24 × 24, trazo de 2 y currentColor
     'coins': '<circle cx="9" cy="9" r="6"/><path d="M17.5 10.2A6 6 0 1 1 10.2 17.5"/><path d="M9 6.5v5"/>',
     'sailboat': '<path d="M11 3v13M11 3 4 14h7M13 6l6 8h-6"/><path d="M3 17h18l-2 3H5Z"/>',
-    'close': '<path d="M6 6l12 12M18 6 6 18"/>'}
+    'close': '<path d="M6 6l12 12M18 6 6 18"/>',
+    'compass': '<circle cx="12" cy="12" r="10"/><path d="m16 8-2.5 5.5L8 16l2.5-5.5Z"/>'}
 _cache = {}
 
 
