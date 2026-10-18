@@ -5,6 +5,8 @@ import fs from 'fs';
 import path from 'path';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import type { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js';
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { buildShipAsset, getShipModel, LOD_PX, ShipModel } from '../ship-geometry';
 import { BASIS_PATH, GlbLoader, setShipMap, ShipGlbError, ShipGlbStore, shipModelFromGlb } from '../ship-glb';
 import { writeGlb, GlbOptions } from './glb-writer';
@@ -241,5 +243,41 @@ describe('§1: el transcodificador de KTX2 servido en public/basis', () => {
     const three = fs.readFileSync(path.join(root, 'node_modules', 'three', 'examples', 'jsm', 'libs', 'basis', file));
     expect(served.equals(three)).toBe(true);
     expect(BASIS_PATH).toBe('/basis/');
+  });
+});
+
+describe('§1: el GLB comprimido como pide el contrato (meshopt, cuantización y KTX2 ETC1S)', () => {
+  // e2e/fixtures/ship_sloop_etc1s_meshopt.glb, de scripts/glb/make-ship-fixture.ts con gltf-transform y toktx. La
+  // cuantización deja en cada nodo de LOD una escala y un desplazamiento, que el loader hornea en la geometría
+  test('la Balandra comprimida da los mismos triángulos y sockets, la caja a menos de 1 cm y la textura del KTX2', async () => {
+    (globalThis as unknown as { self?: unknown }).self ??= globalThis; // GLTFLoader crea la URL de la imagen con self.URL
+    const texture = new THREE.CompressedTexture([], 16, 16);
+    // Sin navegador no hay transcodificador: un KTX2Loader falso entrega la textura (el e2e usa el de verdad)
+    const ktx2 = { load: (_url: string, onLoad: (t: THREE.Texture) => void) => onLoad(texture) } as unknown as KTX2Loader;
+    const file = fs.readFileSync(path.join(__dirname, '..', '..', '..', '..', 'e2e', 'fixtures', 'ship_sloop_etc1s_meshopt.glb'));
+    const scene = await new Promise<THREE.Object3D>((resolve, reject) =>
+      new GLTFLoader()
+        .setMeshoptDecoder(MeshoptDecoder)
+        .setKTX2Loader(ktx2)
+        .parse(file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) as ArrayBuffer, '', (g) => resolve(g.scene), reject)
+    );
+    const lod0 = scene.getObjectByName('ship_sloop_lod0')!;
+    expect(lod0.scale.x).not.toBe(1); // el fixture viene cuantizado: si no, el test no prueba el horneado
+    const proc = getShipModel('sloop');
+    const m = shipModelFromGlb(scene, 'sloop');
+    expect(m.triangles).toEqual(proc.triangles);
+    expect(m.sockets.cannonsPort.map((p) => p.toArray())).toEqual(proc.sockets.cannonsPort.map((p) => p.toArray()));
+    expect(m.map).toBe(texture);
+    expect(m.map!.colorSpace).toBe(THREE.SRGBColorSpace);
+    for (const lod of [0, 1] as const) {
+      const g = m.lods[lod];
+      expect(g.getAttribute('position').array).toBeInstanceOf(Float32Array);
+      g.computeBoundingBox();
+      proc.lods[lod].computeBoundingBox();
+      for (const k of ['min', 'max'] as const) {
+        const d = g.boundingBox![k].clone().sub(proc.lods[lod].boundingBox![k]);
+        expect(Math.max(Math.abs(d.x), Math.abs(d.y), Math.abs(d.z))).toBeLessThan(0.01);
+      }
+    }
   });
 });
