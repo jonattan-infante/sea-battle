@@ -4,7 +4,7 @@ import * as C from '../constants';
 import { PlayerShipClass } from '../constants';
 import { World } from '../types';
 import { createRng } from '../vec';
-import { addPlayer, attack, createWorld, drainEvents, moveTo, setRepair, shipOfPlayer, step } from '../world';
+import { addPlayer, attack, createWorld, drainEvents, moveTo, setRepair, shipOfPlayer, spawnCaptain, step } from '../world';
 import { DT, percentile } from './helpers';
 
 const GAME_DIR = path.join(__dirname, '..');
@@ -67,10 +67,13 @@ describe('E0 — Arquitectura de la simulación', () => {
     expect(serialize(scripted(78))).not.toBe(a);
   });
 
-  // p50 y p99 del tick en 2 000 ticks (tras 200 de calentamiento del JIT) con 20 jugadores con intenciones aleatorias y
-  // 20 NPC. Mismas semillas en cada llamada: la carga de la simulación es idéntica y solo cambia la de la máquina
+  // p50 y p99 del tick en 2 000 ticks (tras 200 de calentamiento del JIT) con 20 jugadores con intenciones aleatorias,
+  // 20 NPC y el jefe (H-305; con el I2 encendido, el peor caso). Mismas semillas en cada llamada: la carga de la simulación
+  // es idéntica y solo cambia la de la máquina
   function tickTimes(): { p50: number; p99: number } {
-    const world = createWorld({ seed: 3 });
+    const world = createWorld({ seed: 3, i2: true });
+    const boss = spawnCaptain(world);
+    expect(boss).not.toBeNull();
     const rng = createRng(5);
     for (let i = 0; i < 20; i++) addPlayer(world, `p${i}`, `P${i}`);
     for (const s of world.ships.values()) s.protectedUntil = 0;
@@ -98,7 +101,7 @@ describe('E0 — Arquitectura de la simulación', () => {
 
   // DT-05: la carga ajena de la máquina (otro Jest en paralelo) solo suma tiempo a un tick, nunca lo resta, así que el
   // menor de 3 p99 estima el coste de la simulación; un p99 suelto medía también la máquina
-  test('AC-03: con 20 jugadores con intenciones aleatorias y 20 NPC, el menor de 3 p99 del tick (2 000 ticks cada uno) es ≤ 4 ms', () => {
+  test('AC-03: con 20 jugadores con intenciones aleatorias, 20 NPC y el jefe, el menor de 3 p99 del tick (2 000 ticks cada uno) es ≤ 4 ms', () => {
     const runs = [tickTimes(), tickTimes(), tickTimes()];
     const best = Math.min(...runs.map((r) => r.p99));
     console.log(`AC-03: p99 ${runs.map((r) => r.p99.toFixed(3)).join(' · ')} ms (p50 ${runs.map((r) => r.p50.toFixed(3)).join(' · ')} ms) → menor ${best.toFixed(3)} ms`);
@@ -139,7 +142,29 @@ describe('E0 — Arquitectura de la simulación', () => {
     expect([m.maxHp, m.patrolSpeed, m.maxSpeed, Math.round((m.turnRate * 180) / Math.PI), m.cannonsPerSide, m.cannon, m.reward, m.wreck, m.respawnTime]).toEqual([
       300, 7, 9, 50, 0, null, 60, 15, 20
     ]);
+    // Capitán pirata (I2): eslora, radio, vida, patrulla/máx., giro, cañones, artillería, recompensa y restos; margen L/2 + 2 (§6)
+    const k = C.SHIP_CLASSES[C.CAPTAIN_CLASS];
+    expect([k.kind, k.label, k.length, k.radius, k.maxHp, k.patrolSpeed, k.maxSpeed, Math.round((k.turnRate * 180) / Math.PI), k.cannonsPerSide, k.cannon, k.reward, k.wreck]).toEqual([
+      'pirate', 'Capitán pirata', 30, 9, 1800, 6, 10, 60, 6, { damage: 28, accuracy: 0.65, range: 65, reload: 4.0 }, 600, 150
+    ]);
+    expect(C.navClearance(C.CAPTAIN_CLASS)).toBe(17);
+    expect([C.CAPTAIN_KILLS_TO_SPAWN, C.CAPTAIN_LAIR_RADIUS, C.CAPTAIN_SPAWN_MIN_PLAYER_DISTANCE]).toEqual([10, 440, 150]);
+    expect([C.HOSTILE_AI.captain.aggro, C.HOSTILE_AI.captain.orbitRadius, C.HOSTILE_AI.captain.leash]).toEqual([90, 50, 150]);
+    expect(C.HOSTILE_AI.pirate).toEqual({ aggro: 70, disengage: 110, leash: 200, orbitRadius: 45, orbitSpeed: 8, patrolRadius: 120 });
+    // Cañonera pirata (I2): eslora, radio, vida, patrulla/máx., acel./frenado, giro, cañones, artillería, recompensa, restos y
+    // reaparición; detección, órbita, velocidad de órbita y correa (§9)
+    const g = C.SHIP_CLASSES[C.GUNBOAT_CLASS];
+    expect([g.kind, g.label, g.length, g.radius, g.maxHp, g.patrolSpeed, g.maxSpeed, g.accel, g.brake, Math.round((g.turnRate * 180) / Math.PI), g.cannonsPerSide, g.cannon, g.reward, g.wreck, g.respawnTime]).toEqual([
+      'pirate', 'Cañonera pirata', 28, 8, 900, 5, 8, 2.5, 4, 50, 6, { damage: 20, accuracy: 0.55, range: 65, reload: 5.0 }, 210, 50, 45
+    ]);
+    // Detección, objetivo perdido (> 110 m, como el pirata), correa, órbita, patrulla y las bandas de mantener la distancia:
+    // se acerca por encima de 64 m y se aleja por debajo de 55 m
+    expect(C.HOSTILE_AI.gunboat).toEqual({ aggro: 80, disengage: 110, leash: 200, orbitRadius: 62, orbitSpeed: 6, patrolRadius: 120, keepAway: { approach: 64, flee: 55 } });
+    expect(C.navClearance(C.GUNBOAT_CLASS)).toBe(16);
+    // Población (AC-51): con el I2 apagado, la de la 1.0; encendido, 4 cañoneras (1 por sector, en el anillo de 400–470 m)
+    // sustituyen a 4 piratas
     expect([C.NPC_POPULATION.pirate, C.NPC_POPULATION.merchant, C.PIRATES_PER_SECTOR]).toEqual([12, 8, 3]);
+    expect([C.NPC_POPULATION_I2, C.PIRATES_PER_SECTOR_I2, C.GUNBOATS_PER_SECTOR, C.GUNBOAT_RING]).toEqual([{ pirate: 8, gunboat: 4, merchant: 8 }, 2, 1, { min: 400, max: 470 }]);
     expect([C.PIRATE_AGGRO_RADIUS, C.PIRATE_DISENGAGE_TARGET, C.PIRATE_LEASH, C.PIRATE_ORBIT_RADIUS, C.PIRATE_ORBIT_SPEED, C.PIRATE_PORT_EXCLUSION]).toEqual([70, 110, 200, 45, 8, 130]);
     expect([C.THREAT_WINDOW, C.MERCHANT_FLEE_TIME]).toEqual([10, 12]);
     // §10 Economía

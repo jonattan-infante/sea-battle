@@ -5,12 +5,22 @@ import {
   ATTACK_MAX_DISTANCE,
   CANNONBALL_SPEED,
   CANNON_LEVELS,
+  CAPTAIN_CLASS,
+  CAPTAIN_KILLS_TO_SPAWN,
+  CAPTAIN_LAIR_RADIUS,
+  CAPTAIN_SPAWN_MIN_PLAYER_DISTANCE,
   CannonStats,
   DEATH_COUNTDOWN,
   RESPAWN_CLOCK_TOLERANCE,
   DEATH_GOLD_PENALTY,
   DISCONNECT_GRACE,
   GOLD_CAP,
+  GUNBOATS_PER_SECTOR,
+  GUNBOAT_CLASS,
+  GUNBOAT_RING,
+  HOSTILE_AI,
+  ORBIT_LEAD,
+  HostileAiStats,
   ISLANDS,
   LOOT_DAMAGE_WINDOW,
   MAX_UPGRADE_LEVEL,
@@ -23,14 +33,10 @@ import {
   MERCHANT_ROUTE_POINTS,
   NAV_LIMIT,
   NPC_POPULATION,
+  NPC_POPULATION_I2,
   NPC_RESPAWN_MIN_PLAYER_DISTANCE,
   PIRATES_PER_SECTOR,
-  PIRATE_AGGRO_RADIUS,
-  PIRATE_DISENGAGE_TARGET,
-  PIRATE_LEASH,
-  PIRATE_ORBIT_RADIUS,
-  PIRATE_ORBIT_SPEED,
-  PIRATE_PATROL_RADIUS,
+  PIRATES_PER_SECTOR_I2,
   PIRATE_PATROL_WAIT,
   PIRATE_PORT_EXCLUSION,
   PIRATE_RETURN_ARRIVE,
@@ -39,6 +45,7 @@ import {
   PLAYER_SHIP_ORDER,
   PORT_POSITION,
   PVP_ENABLED,
+  PVP_XP,
   PlayerShipClass,
   REPAIR_MAX_SPEED,
   REPAIR_RATE,
@@ -63,6 +70,7 @@ import {
 import { Navigator } from './nav';
 import { NpcAi, Player, PlayerView, Ship, ShipSnapshot, World } from './types';
 import { Vec2, angleDelta, createRng, distance, forward, headingTo, normalizeAngle } from './vec';
+import { creditNpcXp, creditPvpXp, levelOf, npcXp } from './xp';
 
 export const navigator = new Navigator(ISLANDS);
 const EPS = 1e-6;
@@ -70,6 +78,7 @@ const EPS = 1e-6;
 export interface CreateWorldOptions {
   seed?: number;
   spawnNpcs?: boolean;
+  i2?: boolean; // AC-187: apagado por defecto, como en staging y prod
 }
 
 export function createWorld(options: CreateWorldOptions = {}): World {
@@ -84,13 +93,24 @@ export function createWorld(options: CreateWorldOptions = {}): World {
     events: [],
     rng: createRng(options.seed ?? 1),
     nextId: 1,
-    killsSinceBoss: 0
+    killsSinceBoss: 0,
+    i2: options.i2 ?? false,
+    xpPairs: new Map(),
+    pvpLog: []
   };
   if (options.spawnNpcs !== false) {
+    // AC-51: con el I2 encendido, 1 cañonera por sector en lugar de 1 de sus piratas; apagado, la población de la 1.0
+    const pirates = world.i2 ? PIRATES_PER_SECTOR_I2 : PIRATES_PER_SECTOR;
     PIRATE_SECTORS.forEach((_, sector) => {
-      for (let i = 0; i < PIRATES_PER_SECTOR; i++) spawnPirate(world, sector);
+      for (let i = 0; i < pirates; i++) spawnPirate(world, sector);
     });
-    for (let i = 0; i < NPC_POPULATION.merchant; i++) spawnMerchant(world);
+    if (world.i2) {
+      PIRATE_SECTORS.forEach((_, sector) => {
+        for (let i = 0; i < GUNBOATS_PER_SECTOR; i++) spawnGunboat(world, sector);
+      });
+    }
+    const merchants = world.i2 ? NPC_POPULATION_I2.merchant : NPC_POPULATION.merchant;
+    for (let i = 0; i < merchants; i++) spawnMerchant(world);
   }
   return world;
 }
@@ -177,13 +197,15 @@ function navigableFor(pos: Vec2, clearance: number): boolean {
   return ISLANDS.every((i) => Math.hypot(pos.x - i.x, pos.z - i.z) >= i.radius + clearance);
 }
 
-function pirateSpot(world: World, sector: number, checkPlayers: boolean): Vec2 {
+// Punto de aparición de un hostil en su sector: el anillo pirata o, la cañonera, el suyo (§9)
+function pirateSpot(world: World, sector: number, checkPlayers: boolean, classId = 'pirate'): Vec2 {
   const { sx, sz } = PIRATE_SECTORS[sector];
-  const radius = navClearance('pirate');
+  const radius = navClearance(classId);
+  const ring = classId === GUNBOAT_CLASS ? GUNBOAT_RING : PIRATE_RING;
   let fallback: Vec2 | null = null;
   for (let attempt = 0; attempt < 120; attempt++) {
     const a = rand(world, 0.12, Math.PI / 2 - 0.12);
-    const r = rand(world, PIRATE_RING.min, PIRATE_RING.max);
+    const r = rand(world, ring.min, ring.max);
     const p = { x: Math.cos(a) * r * sx, z: Math.sin(a) * r * sz };
     if (!navigableFor(p, radius)) continue;
     fallback ??= p;
@@ -221,12 +243,86 @@ function newShip(world: World, classId: string, name: string, ownerId: string | 
   };
 }
 
-export function spawnPirate(world: World, sector: number): Ship {
-  const pos = pirateSpot(world, sector, true);
-  const ship = newShip(world, 'pirate', 'Pirata', null, pos, rand(world, 0, Math.PI * 2));
+function spawnHostile(world: World, classId: string, sector: number): Ship {
+  const pos = pirateSpot(world, sector, true, classId);
+  const ship = newShip(world, classId, SHIP_CLASSES[classId].label, null, pos, rand(world, 0, Math.PI * 2));
   ship.ai = { state: 'patrol', origin: { ...pos }, sector, wait: rand(world, 0, 2), targetId: null, route: [], routeIndex: 0, fleeUntil: 0, threatId: null };
   world.ships.set(ship.id, ship);
   return ship;
+}
+
+export function spawnPirate(world: World, sector: number): Ship {
+  return spawnHostile(world, 'pirate', sector);
+}
+
+// Cañonera pirata (§9, I2) en su anillo del sector. null con el I2 apagado (AC-187: nada del I2 en el mundo, como el Capitán)
+export function spawnGunboat(world: World, sector: number): Ship | null {
+  return world.i2 ? spawnHostile(world, GUNBOAT_CLASS, sector) : null;
+}
+
+// ---------- Capitán pirata (§9, I2) ----------
+
+function isCaptain(ship: Ship): boolean {
+  return ship.classId === CAPTAIN_CLASS;
+}
+
+// Capitán en el mundo (vivo o hundiéndose): nunca hay más de uno. Al terminar de hundirse sale del mundo
+function captainOf(world: World): Ship | undefined {
+  for (const s of world.ships.values()) if (isCaptain(s)) return s;
+  return undefined;
+}
+
+// Sector pirata de un punto (§4): NE = (x+, z−), NO = (x−, z−), SO = (x−, z+), SE = (x+, z+)
+function sectorAt(p: Vec2): number {
+  return p.x > 0 ? (p.z < 0 ? 0 : 3) : p.z < 0 ? 1 : 2;
+}
+
+// Puntos del arco exterior (440 m) de un sector: primero el centro y luego hacia los lados, a pasos de 2,5°, sin salir del
+// abanico de pirateSpot (0,12 rad de margen con los ejes)
+const LAIR_OFFSETS = (() => {
+  const step = (2.5 * Math.PI) / 180;
+  const out = [0];
+  for (let k = 1; k * step <= Math.PI / 4 - 0.12; k++) out.push(k * step, -k * step);
+  return out;
+})();
+
+// Guarida (§9): sector pirata con menos jugadores (empate al azar, con la semilla), su punto exterior y, si está a menos
+// de 150 m de un jugador, el punto libre más cercano del mismo arco; si el arco entero está ocupado, el siguiente sector
+function captainLair(world: World): { pos: Vec2; sector: number } | null {
+  const players = [...world.ships.values()].filter((s) => s.kind === 'player' && s.state !== 'dead');
+  const counts = [0, 0, 0, 0];
+  for (const p of players) counts[sectorAt(p.pos)]++;
+  const order = counts.map((n, i) => ({ i, n, r: world.rng() })).sort((a, b) => a.n - b.n || a.r - b.r);
+  const clearance = navClearance(CAPTAIN_CLASS);
+  for (const { i } of order) {
+    const { sx, sz } = PIRATE_SECTORS[i];
+    for (const offset of LAIR_OFFSETS) {
+      const a = Math.PI / 4 + offset;
+      const pos = { x: Math.cos(a) * CAPTAIN_LAIR_RADIUS * sx, z: Math.sin(a) * CAPTAIN_LAIR_RADIUS * sz };
+      if (!navigableFor(pos, clearance)) continue;
+      if (players.every((p) => distance(p.pos, pos) >= CAPTAIN_SPAWN_MIN_PLAYER_DISTANCE)) return { pos, sector: i };
+    }
+  }
+  return null;
+}
+
+// Hace aparecer al capitán en su guarida (o en `at`, solo escenarios y tests) y avisa a todos (AC-111). null con el I2
+// apagado (AC-187: es la única compuerta, también para los escenarios), si ya hay uno o si ningún punto del arco exterior
+// está a ≥ 150 m de todos los jugadores (se reintenta en el siguiente tick)
+export function spawnCaptain(world: World, at?: Vec2): Ship | null {
+  if (!world.i2 || captainOf(world)) return null;
+  const lair = at ? { pos: { ...at }, sector: sectorAt(at) } : captainLair(world);
+  if (!lair) return null;
+  const ship = newShip(world, CAPTAIN_CLASS, SHIP_CLASSES[CAPTAIN_CLASS].label, null, lair.pos, rand(world, 0, Math.PI * 2));
+  ship.ai = { state: 'patrol', origin: { ...lair.pos }, sector: lair.sector, wait: rand(world, 0, 2), targetId: null, route: [], routeIndex: 0, fleeUntil: 0, threatId: null };
+  world.ships.set(ship.id, ship);
+  world.events.push({ type: 'captain', shipId: ship.id, sector: PIRATE_SECTORS[lair.sector].id, pos: { ...lair.pos } });
+  return ship;
+}
+
+// Aparición (AC-54): con 10 piratas o cañoneras hundidos desde su última muerte, si no hay ninguno
+function updateCaptain(world: World): void {
+  if (world.killsSinceBoss >= CAPTAIN_KILLS_TO_SPAWN) spawnCaptain(world);
 }
 
 function merchantRoute(world: World): Vec2[] {
@@ -269,8 +365,9 @@ function respawnPoint(world: World, clearance: number): { pos: Vec2; heading: nu
   return { pos: { x: 0, z: 75 }, heading: 0 };
 }
 
-// initial: el progreso guardado de un usuario de Clerk (server/persistence.ts); sin él, el inicial (100 de oro y Balandra)
-export function addPlayer(world: World, id: string, name: string, initial?: Pick<Player, 'gold' | 'upgrades' | 'ownedShips' | 'activeShip'>): Player {
+// initial: el progreso guardado de un usuario de Clerk (server/persistence.ts); sin él, el inicial (100 de oro, Balandra y
+// 0 de XP)
+export function addPlayer(world: World, id: string, name: string, initial?: Pick<Player, 'gold' | 'upgrades' | 'ownedShips' | 'activeShip'> & { xp?: number }): Player {
   const existing = world.players.get(id);
   if (existing) {
     const ship = world.ships.get(existing.shipId);
@@ -291,7 +388,8 @@ export function addPlayer(world: World, id: string, name: string, initial?: Pick
     activeShip: initial?.activeShip ?? STARTING_SHIP,
     kills: 0,
     deaths: 0,
-    death: null
+    death: null,
+    xp: initial?.xp ?? 0
   };
   player.name = name;
   player.death = null;
@@ -546,6 +644,7 @@ export function step(world: World, dt: number): void {
   updateProjectiles(world, dt);
   updateLifecycle(world, dt);
   updateWrecks(world);
+  updateCaptain(world);
 }
 
 export function drainEvents(world: World) {
@@ -570,16 +669,15 @@ function speedCapOf(world: World, ship: Ship): number {
     case 'patrol':
     case 'route':
       return stats.patrolSpeed;
-    case 'combat':
-      return ship.attackTargetId && distanceToTarget(world, ship) <= PIRATE_ORBIT_RADIUS + 6 ? PIRATE_ORBIT_SPEED : max;
+    case 'combat': {
+      // Orbita a su velocidad de órbita; para acercarse o, la cañonera, para alejarse, va a la máxima (§9)
+      const hostile = hostileAiOf(ship);
+      const target = ship.attackTargetId ? world.ships.get(ship.attackTargetId) : undefined;
+      return target && distance(ship.pos, target.pos) <= approachDistance(hostile) && !fleePoint(ship, target, hostile) ? hostile.orbitSpeed : max;
+    }
     default:
       return max;
   }
-}
-
-function distanceToTarget(world: World, ship: Ship): number {
-  const t = ship.attackTargetId ? world.ships.get(ship.attackTargetId) : undefined;
-  return t ? distance(ship.pos, t.pos) : Infinity;
 }
 
 function moveShip(world: World, ship: Ship, dt: number): void {
@@ -794,18 +892,32 @@ function sinkShip(world: World, ship: Ship, killer: Ship | null): void {
   if (ship.kind !== 'player') {
     const stats = classOf(ship);
     const recent = ship.damage.filter((d) => world.time - d.at <= LOOT_DAMAGE_WINDOW);
+    const paid = new Set<string>();
     for (const [playerId, gold] of splitReward(recent, stats.reward)) {
       const p = world.players.get(playerId);
       if (!p || gold <= 0) continue;
       addGold(p, gold);
+      paid.add(playerId);
       world.events.push({ type: 'loot', playerId, gold, pos: { ...ship.pos }, source: 'kill' });
     }
+    creditNpcXp(world, splitReward(recent, npcXp(ship.classId)), ship.pos); // la XP, con el reparto del oro (§10b)
     if (stats.wreck > 0) {
       const wreck = { id: `wreck-${world.nextId++}`, pos: { ...ship.pos }, gold: stats.wreck, expiresAt: world.time + WRECK_LIFETIME };
       world.wrecks.push(wreck);
       world.events.push({ type: 'wreck', wreckId: wreck.id, pos: wreck.pos, gold: wreck.gold, expiresAt: wreck.expiresAt });
     }
-    if (ship.kind === 'pirate') world.killsSinceBoss += 1;
+    if (isCaptain(ship)) {
+      // Su muerte reinicia la cuenta y no suma (§9). Feed para todos: hasta 3 nombres por daño y "y N más", y solo los de
+      // quienes cobran del reparto de arriba (AC-111)
+      world.killsSinceBoss = 0;
+      const names = recent
+        .filter((d) => paid.has(d.playerId))
+        .sort((a, b) => b.amount - a.amount || a.firstAt - b.firstAt)
+        .map((d) => world.players.get(d.playerId)!.name);
+      world.events.push({ type: 'captainDown', shipId: ship.id, names: names.slice(0, 3), more: Math.max(0, names.length - 3), pos: { ...ship.pos } });
+    } else if (ship.kind === 'pirate') {
+      world.killsSinceBoss += 1; // piratas y cañoneras; los mercantes no cuentan
+    }
     return;
   }
 
@@ -819,6 +931,9 @@ function sinkShip(world: World, ship: Ship, killer: Ship | null): void {
       addGold(killerPlayer, goldLost); // PvP: la penalización la recibe quien hundió (§10)
       world.events.push({ type: 'loot', playerId: killerPlayer.id, gold: goldLost, pos: { ...ship.pos }, source: 'pvp' });
     }
+    // La XP, en cambio, se reparte por daño, con el mismo filtro que el oro de un NPC (§10b)
+    const recent = ship.damage.filter((d) => world.time - d.at <= LOOT_DAMAGE_WINDOW);
+    creditPvpXp(world, victim, splitReward(recent, PVP_XP), ship.pos);
   }
 }
 
@@ -831,6 +946,10 @@ function updateLifecycle(world: World, dt: number): void {
     if (ship.state === 'alive') continue;
     ship.stateTimer -= dt;
     if (ship.state === 'sinking' && ship.stateTimer <= EPS) {
+      if (isCaptain(ship)) {
+        removeShip(world, ship); // no reaparece por tiempo: el siguiente nace tras otros 10 hundidos (§9)
+        continue;
+      }
       ship.state = 'dead';
       // NPC: el temporizador de reaparición cuenta desde el hundimiento (§9)
       ship.stateTimer = ship.kind === 'player' ? 0 : classOf(ship).respawnTime - SINKING_TIME;
@@ -847,7 +966,7 @@ function respawnNpc(world: World, ship: Ship): void {
     ship.pos = { ...ship.respawnPos };
   } else if (ship.kind === 'pirate') {
     const sector = ship.ai?.sector ?? 0;
-    const pos = pirateSpot(world, sector, true);
+    const pos = pirateSpot(world, sector, true, ship.classId);
     ship.pos = pos;
     ai = { state: 'patrol', origin: { ...pos }, sector, wait: 0, targetId: null, route: [], routeIndex: 0, fleeUntil: 0, threatId: null };
   } else {
@@ -923,6 +1042,11 @@ function updateWrecks(world: World): void {
 
 // ---------- IA de NPC (§9) ----------
 
+// Perfil de IA hostil de la clase: el capitán detecta, orbita y se ata a su guarida con sus propios radios (§9)
+function hostileAiOf(ship: Ship): HostileAiStats {
+  return HOSTILE_AI[ship.classId] ?? HOSTILE_AI.pirate;
+}
+
 function updateAi(world: World, ship: Ship, dt: number): void {
   if (ship.kind === 'pirate') updatePirate(world, ship, dt);
   else updateMerchant(world, ship);
@@ -947,7 +1071,7 @@ function pickPirateTarget(world: World, ship: Ship): Ship | null {
   const current = ship.ai!.targetId ? world.ships.get(ship.ai!.targetId) : undefined;
   if (current && isAttackablePlayer(world, current)) return current;
   let best: Ship | null = null;
-  let bestD = PIRATE_AGGRO_RADIUS;
+  let bestD = hostileAiOf(ship).aggro;
   for (const s of world.ships.values()) {
     if (!isAttackablePlayer(world, s)) continue;
     const d = distance(s.pos, ship.pos);
@@ -966,13 +1090,30 @@ function steerTo(ship: Ship, p: Vec2): void {
   ship.path = navigator.findPath(ship.pos, dest, clearance);
 }
 
+// Por encima de esta distancia al objetivo, el hostil se acerca a velocidad máxima (§9)
+function approachDistance(hostile: HostileAiStats): number {
+  return hostile.keepAway?.approach ?? hostile.orbitRadius + 6;
+}
+
+// Cañonera por debajo de su banda (§9): punto al que se aleja, en línea recta desde el objetivo y a la distancia del punto
+// de órbita. null si no le toca alejarse o si ese punto no es navegable (acorralada contra una isla o el borde): entonces
+// orbita, como dice el GDD
+function fleePoint(ship: Ship, target: Ship, hostile: HostileAiStats): Vec2 | null {
+  if (!hostile.keepAway || distance(ship.pos, target.pos) >= hostile.keepAway.flee) return null;
+  const away = forward(headingTo(target.pos, ship.pos));
+  const reach = hostile.orbitRadius / Math.cos(ORBIT_LEAD);
+  const p = pirateDestination({ x: target.pos.x + away.x * reach, z: target.pos.z + away.z * reach });
+  return navigableFor(p, navClearance(ship.classId)) ? p : null;
+}
+
 function updatePirate(world: World, ship: Ship, dt: number): void {
   const ai = ship.ai!;
+  const hostile = hostileAiOf(ship);
 
   if (ai.state === 'combat') {
     const target = pickPirateTarget(world, ship);
-    const tooFar = target ? distance(ship.pos, target.pos) > PIRATE_DISENGAGE_TARGET : true;
-    if (!target || tooFar || distance(ship.pos, ai.origin) > PIRATE_LEASH) {
+    const tooFar = target ? distance(ship.pos, target.pos) > hostile.disengage : true;
+    if (!target || tooFar || distance(ship.pos, ai.origin) > hostile.leash) {
       ai.state = 'return';
       ai.targetId = null;
       ship.attackTargetId = null;
@@ -982,14 +1123,21 @@ function updatePirate(world: World, ship: Ship, dt: number): void {
     ai.targetId = target.id;
     ship.attackTargetId = target.id;
     const d = distance(ship.pos, target.pos);
-    if (d > PIRATE_ORBIT_RADIUS + 6) {
+    const orbit = hostile.orbitRadius;
+    const away = fleePoint(ship, target, hostile);
+    if (d > approachDistance(hostile)) {
       const back = forward(headingTo(target.pos, ship.pos));
-      steerTo(ship, pirateDestination({ x: target.pos.x + back.x * PIRATE_ORBIT_RADIUS, z: target.pos.z + back.z * PIRATE_ORBIT_RADIUS }));
+      steerTo(ship, pirateDestination({ x: target.pos.x + back.x * orbit, z: target.pos.z + back.z * orbit }));
+    } else if (away) {
+      steerTo(ship, away); // la cañonera se aleja sin dejar de disparar: updateCombat sigue con su objetivo (§9)
     } else {
-      // Órbita a 45 m: apunta a un punto adelantado sobre el círculo alrededor del objetivo
-      const around = headingTo(target.pos, ship.pos) + 0.45;
+      // Órbita (pirata 45 m, capitán 50 m, cañonera 62 m): apunta a un punto adelantado ORBIT_LEAD sobre un círculo de radio
+      // orbit / cos(ORBIT_LEAD). Sobre el círculo nominal, la cuerda hasta ese punto deja la órbita en orbit · cos(ORBIT_LEAD),
+      // un 10 % por dentro (40,7 m para 45); con el radio compensado, la órbita real es la nominal (AC-188)
+      const around = headingTo(target.pos, ship.pos) + ORBIT_LEAD;
       const o = forward(around);
-      steerTo(ship, pirateDestination({ x: target.pos.x + o.x * PIRATE_ORBIT_RADIUS, z: target.pos.z + o.z * PIRATE_ORBIT_RADIUS }));
+      const aim = orbit / Math.cos(ORBIT_LEAD);
+      steerTo(ship, pirateDestination({ x: target.pos.x + o.x * aim, z: target.pos.z + o.z * aim }));
     }
     return;
   }
@@ -1009,7 +1157,7 @@ function updatePirate(world: World, ship: Ship, dt: number): void {
 
   // Patrulla
   const spotted = pickPirateTarget(world, ship);
-  if (spotted && distance(spotted.pos, ship.pos) <= PIRATE_AGGRO_RADIUS) {
+  if (spotted && distance(spotted.pos, ship.pos) <= hostile.aggro) {
     ai.state = 'combat';
     ai.targetId = spotted.id;
     ship.attackTargetId = spotted.id;
@@ -1022,7 +1170,7 @@ function updatePirate(world: World, ship: Ship, dt: number): void {
     if (ai.wait <= 0) {
       for (let i = 0; i < 12; i++) {
         const a = rand(world, 0, Math.PI * 2);
-        const r = rand(world, 15, PIRATE_PATROL_RADIUS);
+        const r = rand(world, 15, hostile.patrolRadius);
         const p = pirateDestination({ x: ai.origin.x + Math.cos(a) * r, z: ai.origin.z + Math.sin(a) * r });
         if (navigableFor(p, navClearance(ship.classId))) {
           steerTo(ship, p);
@@ -1066,7 +1214,8 @@ function updateMerchant(world: World, ship: Ship): void {
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
 export function shipSnapshot(world: World, s: Ship): ShipSnapshot {
-  return {
+  const player = playerOf(world, s);
+  const snap: ShipSnapshot = {
     id: s.id,
     k: s.kind,
     c: s.classId,
@@ -1083,6 +1232,8 @@ export function shipSnapshot(world: World, s: Ship): ShipSnapshot {
     r: s.repairing,
     pu: s.protectedUntil
   };
+  if (player) snap.lv = levelOf(player.xp); // la placa lleva la insignia del jugador; los NPC no (§10b, §14)
+  return snap;
 }
 
 export function playerView(world: World, playerId: string): PlayerView | null {
@@ -1098,6 +1249,7 @@ export function playerView(world: World, playerId: string): PlayerView | null {
     activeShip: p.activeShip,
     kills: p.kills,
     deaths: p.deaths,
-    death: p.death ? { by: p.death.by, goldLost: p.death.goldLost, respawnAt: p.death.at + DEATH_COUNTDOWN } : null
+    death: p.death ? { by: p.death.by, goldLost: p.death.goldLost, respawnAt: p.death.at + DEATH_COUNTDOWN } : null,
+    xp: p.xp
   };
 }
