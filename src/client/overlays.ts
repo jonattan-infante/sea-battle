@@ -2,7 +2,7 @@
 // Se posicionan por frame con transform, por ref y sin estado de React (CLAUDE.md, regla 3; AC-83). El
 // contenido y el declutter se recalculan a 10 Hz y solo se escribe en el DOM lo que cambia. Los estilos
 // estáticos (clases wo-*) viven en src/styles/world-overlays.css.
-import { CAPTAIN_CLASS } from '../game/constants';
+import { CAPTAIN_CLASS, GUNBOAT_CLASS } from '../game/constants';
 import { rankOf } from '../game/xp';
 import { DAMAGE_TEXT, DamageTextKind, LABEL, Relation, RELATIONS, relationOf } from './art';
 import { rankBadgeSvg } from './badges';
@@ -15,7 +15,8 @@ export type { Relation };
 // las cajas de los bloques y oculta ya las placas que quedan debajo, sin esperar a la siguiente pasada a 10 Hz
 export const HUD_BLOCKS_EVENT = 'sea-battle:hud-blocks';
 
-// Iconos de línea de Lucide (ISC), 24×24, trazo 2 px, currentColor (ART-DIRECTION §13). La corona del capitán es propia
+// Iconos de línea de Lucide (ISC), 24×24, trazo 2 px, currentColor (ART-DIRECTION §13). La corona del capitán es propia;
+// la bomba de la cañonera, la de lucide-static 0.469.0
 const ICONS = {
   star: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',
   anchor: '<circle cx="12" cy="5" r="3"/><line x1="12" y1="22" x2="12" y2="8"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/>',
@@ -25,18 +26,23 @@ const ICONS = {
   wrench: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
   swords: '<polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/><line x1="13" y1="19" x2="19" y2="13"/><line x1="16" y1="16" x2="20" y2="20"/><line x1="19" y1="21" x2="21" y2="19"/><polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5"/><line x1="5" y1="14" x2="9" y2="18"/><line x1="7" y1="17" x2="4" y2="20"/><line x1="3" y1="19" x2="5" y2="21"/>',
   alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
-  crown: '<path d="M4 18 2 7l5 5 5-8 5 8 5-5-2 11Z"/><path d="M5 21h14"/>'
+  crown: '<path d="M4 18 2 7l5 5 5-8 5 8 5-5-2 11Z"/><path d="M5 21h14"/>',
+  bomb: '<circle cx="11" cy="13" r="9"/><path d="M14.35 4.65 16.3 2.7a2.41 2.41 0 0 1 3.4 0l1.6 1.6a2.4 2.4 0 0 1 0 3.4l-1.95 1.95"/><path d="m22 2-1.5 1.5"/>'
 } as const;
 
 export type IconName = keyof typeof ICONS;
 
-// Iconos de la placa y del panel: los de la relación. El Capitán pirata (I2) es hostil y lleva 2 de 12 px, calavera y
-// corona (ART-DIRECTION §4.3, §10 y §11.1)
+// Iconos de la placa y del panel: los de la relación. El Capitán pirata y la Cañonera pirata (I2) son hostiles y llevan
+// 2 de 12 px: calavera y corona, y calavera y bomba (ART-DIRECTION §4.3, §10 y §11.1; O-39)
 const CAPTAIN_ICONS: readonly IconName[] = ['skull', 'crown'];
+const GUNBOAT_ICONS: readonly IconName[] = ['skull', 'bomb'];
 export function relationIcons(relation: Relation, classId: string): readonly IconName[] {
-  return relation === 'pirate' && classId === CAPTAIN_CLASS ? CAPTAIN_ICONS : [RELATIONS[relation].icon];
+  if (relation === 'pirate' && classId === CAPTAIN_CLASS) return CAPTAIN_ICONS;
+  if (relation === 'pirate' && classId === GUNBOAT_CLASS) return GUNBOAT_ICONS;
+  return [RELATIONS[relation].icon];
 }
-// D43: las placas de 2 iconos llevan un nombre fijo («Capitán pirata») que nunca se trunca; su ancho máximo sube 14 px
+// D43: las placas de 2 iconos llevan un nombre fijo («Capitán pirata», «Cañonera pirata») que nunca se trunca; su ancho
+// máximo sube 14 px
 const TWO_ICONS_EXTRA_W = 14;
 
 export function iconSvg(name: IconName, size: number): string {
@@ -264,7 +270,7 @@ export class LabelLayer {
         this.ensureReload(plate, relation === 'self');
         plate.sizeDirty = true;
       }
-      // Icono de la relación; el capitán lleva calavera y corona (ART-DIRECTION §10)
+      // Icono de la relación; el capitán lleva calavera y corona (ART-DIRECTION §10), y la cañonera, calavera y bomba (O-39)
       const icons = relationIcons(relation, ship.classId);
       const iconKey = icons.join('+');
       if (iconKey !== plate.iconKey) {
