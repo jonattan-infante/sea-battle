@@ -733,7 +733,13 @@ Reportes (el último manda):
 - **AC-50** — Dado un mercante dañado por un atacante quieto, cuando pasan los 12 s siguientes, entonces su distancia al atacante crece de forma monótona a 9 ±0,2 m/s. Al terminar, vuelve a su ruta por el *waypoint* más cercano. Verificación: unitario.
 
 ### H-303 Población y reaparición (§9) · P0
-- **AC-51** — Dado un servidor recién arrancado, cuando se inspecciona el mundo, entonces hay 8 piratas (2 por sector), 4 cañoneras (1 por sector, en el anillo de 400–470 m) y 8 mercantes en sus zonas. **Hasta que entre H-306 vale la población anterior a I2:** 12 piratas (3 por sector) y 8 mercantes. Es lo que hay hoy en el código y en el test (`constants.ts:136-137`; `npc.test.ts:176`; AC-04 en `architecture.test.ts:142`), y con lo que QA aprobó AC-51. El cambio de población entra **en el mismo commit que la cañonera**, nunca antes: quitar 4 piratas sin poner 4 cañoneras dejaría menos hostiles y movería la curva de AC-60. Verificación: unitario.
+- **AC-51** — Dado un servidor recién arrancado, cuando se inspecciona el mundo, entonces hay 8 piratas (2 por sector), 4 cañoneras (1 por sector, en el anillo de 400–470 m) y 8 mercantes en sus zonas. **Hasta que entre H-306 vale la población anterior a I2:** 12 piratas (3 por sector) y 8 mercantes. Es lo que hay hoy en el código y en el test (`constants.ts:136-137`; `npc.test.ts:176`; AC-04 en `architecture.test.ts:142`), y con lo que QA aprobó AC-51. El cambio de población entra **en el mismo commit que la cañonera**, nunca antes: quitar 4 piratas sin poner 4 cañoneras dejaría menos hostiles y movería la curva de AC-60. **Con el interruptor del I2** (AC-187 c; decidido por producto el 2026-10-17, a propuesta de dev-npc):
+  - **Encendido:** 8 piratas, 4 cañoneras y 8 mercantes.
+  - **Apagado:** sigue la población de la 1.0, 12 piratas y 8 mercantes, también después de H-306. Así no cambian AC-137 (que no haya ninguna cañonera y la población de la 1.0) ni AC-187 (a) (el juego de la 1.0.3).
+  - **Por qué:** es la regla del interruptor. Apagado no hay nada del I2, y quitar 4 piratas sin poner las cañoneras dejaría el mundo con menos hostiles que la 1.0.
+  - **AC-60 apagado** se sigue midiendo con 12 piratas, y el encendido con la población de I2, hasta que el I2 se encienda en prod (AC-187 e). El contador del Capitán (AC-54) solo cuenta cañoneras con el I2 encendido, que es cuando existen.
+
+  Verificación: unitario en los dos modos, y AC-137 con el I2 apagado.
 - **AC-52** — Dado un NPC hundido, cuando pasan 30 s (pirata), 45 s (cañonera) o 20 s (mercante) ±1 tick, entonces reaparece en su zona, a ≥ 100 m de cualquier jugador y fuera de las islas. Verificación: unitario.
 
 ### H-304 Balance de duelos (§9) · P0
