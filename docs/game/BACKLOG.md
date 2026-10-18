@@ -1454,7 +1454,14 @@ Si A tumba el proceso o pierde progreso, el fallo es P0, y con la 1.0 ya en prod
 - **AC-193 — Barco piloto** — Dada la cadena de arte que proponga game-ux (su diagnóstico técnico; la recomendación del lead es GLB hecho en Blender por script, con textura), cuando dev-render pone en el juego el **Navío de línea en las 2 familias**, que es la clase más grande y la de más detalle, y el peor caso para los presupuestos, entonces:
   - (a) cumple ASSET-SPEC (ejes, escala, pivote, presupuesto por clase y LOD) y entra **sin tocar el código de juego** (`CLAUDE.md`, regla 5);
   - (b) con el peor caso extrapolado del piloto (los 20 jugadores en Navío, mitad de cada familia, más los 20 NPC y las islas), da ≤ 250 000 triángulos y ≤ 100 draw calls (AC-89), y AC-90 sigue en verde en el M4 Pro (GDD §16);
-  - (c) game-ux y dev-render miden la descarga del piloto (bytes transferidos de modelos y texturas, con compresión y caché) y la extrapolan a las 10 combinaciones. **Producto fija con ese dato el presupuesto de descarga antes de pasar a las demás clases** (AC-197 d). La entrada al juego no puede quedar esperando a modelos que no están a la vista;
+  - (c) game-ux y dev-render miden la descarga del piloto (bytes transferidos de modelos y texturas, con compresión y caché) y la extrapolan a las 10 combinaciones. **Producto fija con ese dato el presupuesto de descarga antes de pasar a las demás clases** (AC-197 d). La entrada al juego no puede quedar esperando a modelos que no están a la vista.
+
+    **Presupuesto PROVISIONAL** (fijado por producto el 2026-10-18 con los bytes de ux, sin la medida en el juego; ASSET-SPEC §13, en `05d2f02`). Con meshopt y KTX2 ETC1S, el Navío pesa 88 580 B el británico y 98 208 B el español, y 59 y 67 KB con gzip. ux extrapola ≤ 0,98 MB a las 10 combinaciones, que es HIPÓTESIS suya: el Navío es la clase más grande. La cota:
+    - **barcos, las 10 combinaciones:** ≤ 1,0 MB transferidos en la primera visita, con la compresión con la que sirva el servidor, y 0 B en las siguientes (URL con hash, caché). Si el servidor no manda gzip, la cota sigue en 1,0 MB: cabe con los bytes del archivo (0,98 MB), aunque justa;
+    - **la entrada solo espera al modelo del barco propio** (≤ 120 KB), y no tarda más de 0,5 s más que hoy, en el p95 y por la red del hotspot de AC-136;
+    - **los demás modelos se descargan en segundo plano en cuanto se entra**, no solo cuando un barco entra en el área de interés. Así, el cambio del procedural al modelo nuevo (la estrategia de ux, ASSET-SPEC §13) solo se ve en los primeros segundos de la primera visita. Con el hotspot, las 10 combinaciones quedan en caché en ≤ 10 s desde la entrada.
+
+    La cota definitiva se fija con la medida del piloto en el juego (dev-render, con turno de máquina), y puede bajar o subir con ella;
   - (d) la clase y la familia se leen como pide AC-194 (b) y (c), y AC-72 sigue en verde con los 2 Navíos como «otro jugador»;
   - (e) Jonattan da su visto bueno a la lámina del Navío de cada familia (D80; AC-192), con el formato de la lámina de barcos. Las otras 4 clases de cada familia llevan sus propias láminas, que se aprueban antes de construirlas (AC-192 a).
 
@@ -1486,7 +1493,7 @@ Si A tumba el proceso o pierde progreso, el fallo es P0, y con la 1.0 ya en prod
   - (a) ≤ 250 000 triángulos y ≤ 100 draw calls (AC-89);
   - (b) AC-90 sigue en verde;
   - (c) en la corrida de 10 min de AC-91, la memoria no crece por los modelos: cada modelo y cada textura se cargan una vez;
-  - (d) la descarga queda dentro del presupuesto que fije producto tras el piloto (AC-193 c).
+  - (d) la descarga queda dentro del presupuesto que fije producto tras el piloto (AC-193 c; hoy, provisional: ≤ 1,0 MB de barcos en la primera visita, la entrada sin esperar más que al barco propio, y las 10 combinaciones en caché en ≤ 10 s).
 
   Verificación: perf + soak + la medida de red del navegador al entrar.
 
