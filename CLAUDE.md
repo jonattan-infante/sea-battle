@@ -8,18 +8,19 @@ Objetivo: una versión visualmente agradable, funcional y optimizada, a la altur
 | Agente | Rol | Escribe | Nunca hace |
 |---|---|---|---|
 | `game-product` | Definiciones del juego y la experiencia | `docs/game/REFERENCE-SEAFIGHT.md`, `GDD.md`, `BACKLOG.md` | Escribir código, definir el arte |
-| `game-ux` | Dirección de arte, barcos, NPC, VFX, HUD, formato de assets | `docs/game/ART-DIRECTION.md`, `ASSET-SPEC.md`, `VFX-SPEC.md` | Implementar lógica de juego |
+| `game-ux` | Dirección de arte, barcos, NPC, VFX, HUD, formato de assets | `docs/game/ART-DIRECTION.md`, `ASSET-SPEC.md`, `VFX-SPEC.md` y las imágenes de cada diseño en `docs/game/art/` | Implementar lógica de juego |
 | `game-developer` | Implementación, tests y deploy | `src/`, `server/`, `e2e/`, `docs/game/TECH-ARCHITECTURE.md` | Aprobar su propio trabajo |
 | `game-qa` | Evaluación del juego (funcional, visual, rendimiento) | `docs/game/qa/QA-REPORT-*.md` | Arreglar código |
 
 ### Ciclo (maker → checker)
 
 ```
-game-product (GDD + criterios AC-xx) ──► game-ux (arte + specs) ──► game-developer (implementa + verify)
+game-product (GDD + criterios AC-xx) ──► game-ux (imágenes + specs) ──► game-developer (implementa + verify)
         ▲                                                                      │
         └──────────── game-qa (reporte con evidencia, veredicto por AC) ◄──────┘
 ```
 
+- **Todo diseño de `game-ux` sale con al menos una imagen** (PNG en `docs/game/art/`, citada desde su spec): `game-developer` implementa contra la imagen y los números, y `game-qa` compara su captura con ella. Un diseño sin imagen no está listo para desarrollo (Jonattan, 2026-10-18).
 - Un ítem del backlog está **hecho** solo cuando `game-qa` lo marca APROBADO con evidencia y `game-product` lo acepta.
 - **Qué entra y qué sale lo deciden `game-product` (alcance y mecánicas) y `game-ux` (arte)**, sin esperar la aprobación de Jonattan (delegación de Jonattan del 2026-10-17). Lo único que sigue siendo suyo es el deploy a prod (ver «Deploys a producción»).
 - Cada hallazgo de QA vuelve al backlog con severidad (P0–P3) y criterio de aceptación.
