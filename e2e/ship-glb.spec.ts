@@ -6,6 +6,7 @@
 import fs from 'fs';
 import path from 'path';
 import { expect, Page, test } from '@playwright/test';
+import { externalKtx2Fixture } from '../scripts/glb/e2e-models';
 import { addFallback, solidPng } from '../scripts/glb/glb-fallback';
 import { enterGame, entryOf, glbBeforeEntry } from './helpers';
 
@@ -17,6 +18,8 @@ const FIXTURE = path.join(__dirname, 'fixtures', 'ship_sloop_etc1s_meshopt.glb')
 // Con el respaldo el barco se ve verde y con la KTX2, magenta; el verde puro no lo tiene el agua (B alto)
 const URL_FALLBACK = '/models/test/ship_sloop_fallback.glb';
 const withFallback = () => Buffer.from(addFallback(new Uint8Array(fs.readFileSync(FIXTURE)), solidPng([0, 255, 0], 16)));
+// Paso 4c de §13: el mismo respaldo, con la KTX2 en su .ktx2 aparte, al lado del GLB (scripts/glb/e2e-models.ts)
+const URL_EXT = '/models/test/ship_sloop_ext.glb';
 
 // Estado de la vista del barco propio: geometría, mapa y LOD, y si sigue siendo 1 draw call (1 malla, 1 primitiva, 1 material)
 const ownView = (page: Page) =>
@@ -289,6 +292,53 @@ test.describe('Barcos en GLB (ASSET-SPEC §13)', () => {
     const after = { ...(await ownMap(page)), ...(await ownPixels(page)) };
     console.log(`AC-193 c salida 1, con la KTX2: ${JSON.stringify(after)}`);
     // Mismo programa del material y mismo número de programas: el cambio de mapa no compila otro
+    expect([after.program, after.programs]).toEqual([before.program, before.programs]);
+    expect([after.flipY, after.colorSpace, after.materialMap, after.oneDrawCall]).toEqual([before.flipY, before.colorSpace, true, true]);
+    expect(after.magenta).toBeGreaterThan(50);
+    expect(before.green - after.green).toBeGreaterThan(50);
+    expect(errors).toEqual([]);
+  });
+
+  // Paso 4c de §13: con la KTX2 en su .ktx2 aparte, la entrada no la espera (la HIPÓTESIS de ASSET-SPEC :792), y el
+  // transcodificador se pide mientras baja, no al tenerla (KTX2Loader.load solo lo pide después). Se retiene el .ktx2
+  test('AC-193 c, paso 4c: con el .ktx2 aparte retenido, el barco propio entra con el respaldo y el transcodificador se pide sin esperarlo; al llegar, cambia a la KTX2 con el mismo programa', async ({ page }) => {
+    test.setTimeout(120_000);
+    const ext = externalKtx2Fixture(new Uint8Array(fs.readFileSync(FIXTURE)));
+    const ktx2Url = `/models/test/${ext.ktx2File}`;
+    const errors: string[] = [];
+    page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+    const ktx2At: number[] = [];
+    const basisAt: number[] = [];
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    await page.route(`**${URL_EXT}`, (route) => route.fulfill({ body: Buffer.from(ext.glb), contentType: 'model/gltf-binary' }));
+    await page.route(`**${ktx2Url}`, async (route) => {
+      ktx2At.push(Date.now());
+      await held;
+      await route.fulfill({ body: Buffer.from(ext.ktx2), contentType: 'image/ktx2' });
+    });
+    await page.route('**/basis/**', (route) => {
+      basisAt.push(Date.now());
+      return route.continue();
+    });
+    await glbBeforeEntry(page, URL_EXT, 60_000); // un tope que SwiftShader no alcance: si la entrada esperase al .ktx2, no se abriría
+    await page.goto('/game');
+    await expect.poll(() => page.evaluate(() => window.__SEA_BATTLE__?.ready() === true), { timeout: 30_000 }).toBe(true);
+    const entry = await entryOf(page);
+    // Con el .ktx2 aún retenido: el plugin pide el transcodificador en el parse
+    await expect.poll(() => basisAt.length, { timeout: 15_000 }).toBeGreaterThan(0);
+    await page.waitForTimeout(1_000);
+    const before = { ...(await ownMap(page)), ...(await ownPixels(page)) };
+    console.log(`AC-193 c paso 4c, con el .ktx2 retenido: ${JSON.stringify({ entry, before, ktx2At, basisAt })}`);
+    expect(entry).toMatchObject({ withGlb: true, capped: false, coverHidden: true });
+    expect(before).toMatchObject({ compressed: false, flipY: false, colorSpace: 'srgb', materialMap: true, oneDrawCall: true });
+    expect(before.green).toBeGreaterThan(50);
+    expect(ktx2At.length).toBe(1);
+    release();
+    await expect.poll(async () => (await ownMap(page)).compressed, { timeout: 30_000 }).toBe(true);
+    await page.waitForTimeout(500);
+    const after = { ...(await ownMap(page)), ...(await ownPixels(page)) };
+    console.log(`AC-193 c paso 4c, con la KTX2: ${JSON.stringify(after)}`);
     expect([after.program, after.programs]).toEqual([before.program, before.programs]);
     expect([after.flipY, after.colorSpace, after.materialMap, after.oneDrawCall]).toEqual([before.flipY, before.colorSpace, true, true]);
     expect(after.magenta).toBeGreaterThan(50);
