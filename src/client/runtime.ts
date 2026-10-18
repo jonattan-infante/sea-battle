@@ -1090,10 +1090,11 @@ export class GameRuntime implements OverlayHost, ChipHost {
     return PVP_ENABLED && !safe(target) && !safe(me) && target.protectedUntil <= now && me.protectedUntil <= now;
   }
 
-  // La portada de la entrada: la oculta el frame en que se abre la entrada (o al conectarla, si ya se abrió)
+  // La portada de la entrada. Sin manifiesto no hay nada que esperar y se oculta al conectarla, como hoy: sin WebGL no hay
+  // frames que la quiten. Con él, la oculta el frame en que se abre la entrada (o al conectarla, si ya se abrió)
   attachEntryCover(el: HTMLElement | null): void {
     this.entryCover = el;
-    if (el && this.entry.shownAt) el.hidden = true;
+    if (el && (this.entry.shownAt || !this.shipGlb.waiting(null))) el.hidden = true;
   }
 
   attachOverlays(labels: HTMLElement, floating: HTMLElement, chips: HTMLElement): void {
