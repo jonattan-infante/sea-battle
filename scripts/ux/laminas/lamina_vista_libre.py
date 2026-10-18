@@ -174,7 +174,7 @@ def place(vw, vh, frame, blocks, origin, target, kind, size, dist, gap=8):
     l, t, r, b = frame; h = half(kind, size); L = max(h, label_w(dist) / 2)
     dx, dy = target[0] - origin[0], target[1] - origin[1]
     side = 'above' if 45 <= math.degrees(math.atan2(dy, dx)) <= 135 else 'below'
-    for _ in range(3):
+    for i in range(3):
         top, bot = h + (18 if side == 'above' else 0), h + (18 if side == 'below' else 0)
         x0, y0, x1, y1 = l + L, t + top, vw - r - L, vh - b - bot; W, H = x1 - x0, y1 - y0; P = 2 * (W + H)
         tm = min((x1 - origin[0]) / dx if dx > 0 else (x0 - origin[0]) / dx if dx < 0 else math.inf,
@@ -199,7 +199,7 @@ def place(vw, vh, frame, blocks, origin, target, kind, size, dist, gap=8):
         p, d, sg = hit
         ang = math.atan2(target[1] - p[1], target[0] - p[0])
         new = 'above' if 45 <= math.degrees(ang) <= 135 else 'below'
-        if new == side: break
+        if new == side or i == 2: break  # sin asentarse en 3 vueltas, el lado de la última caja: la distancia va donde reservó sitio
         side = new
     box = (p[0] - L, p[1] - top, p[0] + L, p[1] + bot)
     near = min(((max(B[0] - box[2], box[0] - B[2], B[1] - box[3], box[1] - B[3]), n) for n, B in blocks.items()), key=lambda v: v[0])
