@@ -3,8 +3,8 @@
 // jugador un ○ de 8, con la banda de su color de radio 2 a 3,5 px y el contorno de 1 a 4,5 (el centro, vacío). Se graba lo
 // que dibuja drawShipMarker con un contexto falso: el trazado entre beginPath y fill, y el relleno y cada trazo (color y
 // grosor) en el momento de fill y stroke
-import { GUNBOAT_CLASS } from '../../game/constants';
-import { AnchorContext, drawPortAnchor, drawShipMarker, MarkerContext, PORT_ANCHOR_SCALE } from '../minimap-markers';
+import { GUNBOAT_CLASS, ISLANDS, MAP_HALF_SIZE } from '../../game/constants';
+import { AnchorContext, drawIslands, drawPortAnchor, drawShipMarker, MarkerContext, MinimapIsland, PORT_ANCHOR_SCALE } from '../minimap-markers';
 
 interface Drawn {
   path: unknown[][];
@@ -159,6 +159,54 @@ describe('⚓ del puerto en el minimapa (D73, D87)', () => {
         [OUTLINE, 3.5, 'round', 'round'],
         [SAND, 1.5, 'round', 'round']
       ]);
+    });
+  }
+});
+
+// Islas del minimapa (§4.3, D87): un disco de arena por círculo, de radio max(1,5 px, r), sin el del puerto. Con el mapa
+// de esta rama (el de la 1.0) y, para las reglas que ese mapa no toca (el mínimo de 1,5 px y el puerto de varios
+// círculos), con círculos de prueba. PENDIENTE: la prueba con los 43 círculos de MAP_1_1, al juntar el #20 y el #23
+function recordIslands(islands: readonly MinimapIsland[], cssSize: number, dpr: number): unknown[][] {
+  const calls: unknown[][] = [];
+  const state = { fillStyle: '' };
+  const ctx = {
+    get fillStyle() { return state.fillStyle; },
+    set fillStyle(v: string) { state.fillStyle = v; },
+    beginPath: () => calls.push(['beginPath']),
+    arc: (...a: number[]) => calls.push(['arc', ...a]),
+    fill: () => calls.push(['fill', state.fillStyle])
+  } as unknown as MarkerContext;
+  const s = (cssSize * dpr) / (MAP_HALF_SIZE * 2);
+  drawIslands(ctx, islands, (x) => (x + MAP_HALF_SIZE) * s, (z) => (z + MAP_HALF_SIZE) * s, s, dpr, SAND);
+  return calls;
+}
+
+// Lo esperado: por cada círculo, beginPath, el arco entero y el relleno de arena
+function discs(islands: readonly MinimapIsland[], cssSize: number, dpr: number): unknown[][] {
+  const s = (cssSize * dpr) / (MAP_HALF_SIZE * 2);
+  return islands.flatMap((i) => [['beginPath'], ['arc', (i.x + MAP_HALF_SIZE) * s, (i.z + MAP_HALF_SIZE) * s, Math.max(1.5 * dpr, i.radius * s), 0, Math.PI * 2], ['fill', SAND]]);
+}
+
+describe('Islas del minimapa, círculo a círculo (D87)', () => {
+  for (const dpr of [1, 2]) {
+    for (const cssSize of [182, 86, 70]) {
+      test(`a DPR ${dpr} y ${cssSize} px: un disco de arena por círculo del mapa, sin el del puerto`, () => {
+        expect(recordIslands(ISLANDS, cssSize, dpr)).toEqual(discs(ISLANDS.filter((i) => i.id !== 'PORT'), cssSize, dpr));
+      });
+    }
+
+    test(`a DPR ${dpr}: un islote más pequeño que 1,5 px sale como un punto de 3 px`, () => {
+      // Un escollo de 7 m en el canvas de 70 px: 7 × 0,07 = 0,49 px a DPR 1
+      const reef = { id: 'E1a', x: 140, z: 260, radius: 7 };
+      const [, arc] = recordIslands([reef], 70, dpr);
+      expect(arc[3]).toBe(1.5 * dpr);
+    });
+
+    test(`a DPR ${dpr}: un puerto de varios círculos no sale en el minimapa, ninguno de ellos («PORT.k»)`, () => {
+      const port = [0, 1, 2].map((k) => ({ id: `PORT.${k}`, x: 10 * k, z: 0, radius: 12 }));
+      // No es del puerto: solo empieza igual. De 12 m (2,2 px a DPR 1), para que este test no dependa del mínimo de 1,5 px
+      const near = { id: 'PORTX', x: 0, z: 40, radius: 12 };
+      expect(recordIslands([...port, near], 182, dpr)).toEqual(discs([near], 182, dpr));
     });
   }
 });

@@ -86,3 +86,23 @@ export function drawPortAnchor(ctx: AnchorContext, x: number, y: number, dpr: nu
   ctx.stroke();
   ctx.restore();
 }
+
+// Islas del minimapa (§4.3, D87): un disco del color de la arena por cada círculo del mapa, de radio max(1,5 px, r), así
+// que las islas con lóbulos salen con su forma y los islotes como puntos de 3 px. Sin el puerto, que lo representa su ⚓
+// (D73): su círculo se llama «PORT» o, si el puerto tiene varios, «PORT.0», «PORT.1»… (así nombra los círculos el mapa
+// de la 1.1)
+export type MinimapIsland = { id: string; x: number; z: number; radius: number };
+
+export function isPortCircle(id: string): boolean {
+  return id === 'PORT' || id.startsWith('PORT.');
+}
+
+export function drawIslands(ctx: MarkerContext, islands: readonly MinimapIsland[], px: (x: number) => number, py: (z: number) => number, s: number, dpr: number, fill: string): void {
+  for (const isl of islands) {
+    if (isPortCircle(isl.id)) continue;
+    ctx.beginPath();
+    ctx.arc(px(isl.x), py(isl.z), Math.max(1.5 * dpr, isl.radius * s), 0, Math.PI * 2);
+    ctx.fillStyle = fill;
+    ctx.fill();
+  }
+}
