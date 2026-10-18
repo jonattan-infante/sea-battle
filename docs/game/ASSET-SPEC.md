@@ -440,7 +440,8 @@ Notación: vela cuadra = `w × h @ y_b` (ancho × alto en la altura de su borde 
 | Colores | Los del mercante (casco, cubierta, velas a franjas y bandera) con la ranura `band` de la librea (D66) en oro `#D9A93F`, sin portas |
 | Cañones por banda | 0 (sin sockets de cañón) |
 | `extras` | `sb_radius` 19,0 · `sb_mast_height` 27,0 · `sb_pick` [7,0, 27,0, 18,0] · `sb_livery_slots` |
-| Tris estimados | HIPÓTESIS: LOD0 ≈ 2 500 (el mercante, 1 645, con un palo más, una cuadra más en el mayor, la popa de 2 pisos y los cofres) · LOD1 ≈ 600. Presupuesto ≤ 2 800 / 900 (§5) |
+| Tris estimados | ~~HIPÓTESIS: LOD0 ≈ 2 500 · LOD1 ≈ 600~~. **Medido en parte** con el generador del juego y esta receta (`scripts/ux/laminas/code/export-rig-galeon.ts`, D88): **2 337 / 461** sin las cajas (castillos, faroles y cofres), porque el export deja `boxes` vacío. Presupuesto ≤ 2 800 / 900 (§5) |
+| Con las familias (E17; D88) | Misma receta con la cadena de §13: casco, popa, galerías de 2 pisos y carga con textura (`scripts/ux/barcos/galeon.py`; ART-DIRECTION §10.1). Cofres en `#6A2E17` con flejes y canto `#D9A93F` en lugar de `cargo` y `#F2C14E` (con la cámara a 55°, el `cargo` se confundía con la cubierta), y 1 cofre abierto con oro. **2 922 / 740** triángulos, dentro del presupuesto de §13 (≤ 5 000 / 1 200) |
 
 #### `npc_pirate` — Pirata (perfil fino, caída 8°)
 | Parámetro | Valor |
