@@ -39,6 +39,7 @@ import {
   PLAYER_SHIP_ORDER,
   PORT_POSITION,
   PVP_ENABLED,
+  PVP_XP,
   PlayerShipClass,
   REPAIR_MAX_SPEED,
   REPAIR_RATE,
@@ -63,6 +64,7 @@ import {
 import { Navigator } from './nav';
 import { NpcAi, Player, PlayerView, Ship, ShipSnapshot, World } from './types';
 import { Vec2, angleDelta, createRng, distance, forward, headingTo, normalizeAngle } from './vec';
+import { creditNpcXp, creditPvpXp, levelOf, npcXp } from './xp';
 
 export const navigator = new Navigator(ISLANDS);
 const EPS = 1e-6;
@@ -86,7 +88,9 @@ export function createWorld(options: CreateWorldOptions = {}): World {
     rng: createRng(options.seed ?? 1),
     nextId: 1,
     killsSinceBoss: 0,
-    i2: options.i2 ?? false
+    i2: options.i2 ?? false,
+    xpPairs: new Map(),
+    pvpLog: []
   };
   if (options.spawnNpcs !== false) {
     PIRATE_SECTORS.forEach((_, sector) => {
@@ -336,8 +340,9 @@ function respawnPoint(world: World, clearance: number): { pos: Vec2; heading: nu
   return { pos: { x: 0, z: 75 }, heading: 0 };
 }
 
-// initial: el progreso guardado de un usuario de Clerk (server/persistence.ts); sin él, el inicial (100 de oro y Balandra)
-export function addPlayer(world: World, id: string, name: string, initial?: Pick<Player, 'gold' | 'upgrades' | 'ownedShips' | 'activeShip'>): Player {
+// initial: el progreso guardado de un usuario de Clerk (server/persistence.ts); sin él, el inicial (100 de oro, Balandra y
+// 0 de XP)
+export function addPlayer(world: World, id: string, name: string, initial?: Pick<Player, 'gold' | 'upgrades' | 'ownedShips' | 'activeShip'> & { xp?: number }): Player {
   const existing = world.players.get(id);
   if (existing) {
     const ship = world.ships.get(existing.shipId);
@@ -358,7 +363,8 @@ export function addPlayer(world: World, id: string, name: string, initial?: Pick
     activeShip: initial?.activeShip ?? STARTING_SHIP,
     kills: 0,
     deaths: 0,
-    death: null
+    death: null,
+    xp: initial?.xp ?? 0
   };
   player.name = name;
   player.death = null;
@@ -872,6 +878,7 @@ function sinkShip(world: World, ship: Ship, killer: Ship | null): void {
       paid.add(playerId);
       world.events.push({ type: 'loot', playerId, gold, pos: { ...ship.pos }, source: 'kill' });
     }
+    creditNpcXp(world, splitReward(recent, npcXp(ship.classId)), ship.pos); // la XP, con el reparto del oro (§10b)
     if (stats.wreck > 0) {
       const wreck = { id: `wreck-${world.nextId++}`, pos: { ...ship.pos }, gold: stats.wreck, expiresAt: world.time + WRECK_LIFETIME };
       world.wrecks.push(wreck);
@@ -902,6 +909,9 @@ function sinkShip(world: World, ship: Ship, killer: Ship | null): void {
       addGold(killerPlayer, goldLost); // PvP: la penalización la recibe quien hundió (§10)
       world.events.push({ type: 'loot', playerId: killerPlayer.id, gold: goldLost, pos: { ...ship.pos }, source: 'pvp' });
     }
+    // La XP, en cambio, se reparte por daño, con el mismo filtro que el oro de un NPC (§10b)
+    const recent = ship.damage.filter((d) => world.time - d.at <= LOOT_DAMAGE_WINDOW);
+    creditPvpXp(world, victim, splitReward(recent, PVP_XP), ship.pos);
   }
 }
 
@@ -1160,7 +1170,8 @@ function updateMerchant(world: World, ship: Ship): void {
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
 export function shipSnapshot(world: World, s: Ship): ShipSnapshot {
-  return {
+  const player = playerOf(world, s);
+  const snap: ShipSnapshot = {
     id: s.id,
     k: s.kind,
     c: s.classId,
@@ -1177,6 +1188,8 @@ export function shipSnapshot(world: World, s: Ship): ShipSnapshot {
     r: s.repairing,
     pu: s.protectedUntil
   };
+  if (player) snap.lv = levelOf(player.xp); // la placa lleva la insignia del jugador; los NPC no (§10b, §14)
+  return snap;
 }
 
 export function playerView(world: World, playerId: string): PlayerView | null {
@@ -1192,6 +1205,7 @@ export function playerView(world: World, playerId: string): PlayerView | null {
     activeShip: p.activeShip,
     kills: p.kills,
     deaths: p.deaths,
-    death: p.death ? { by: p.death.by, goldLost: p.death.goldLost, respawnAt: p.death.at + DEATH_COUNTDOWN } : null
+    death: p.death ? { by: p.death.by, goldLost: p.death.goldLost, respawnAt: p.death.at + DEATH_COUNTDOWN } : null,
+    xp: p.xp
   };
 }
