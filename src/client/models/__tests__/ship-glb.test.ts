@@ -158,6 +158,25 @@ describe('AC-193 c: el procedural mientras carga, el propio primero y de uno en 
     expect(calls.map((c) => c.url)).toEqual(['/models/ship_sloop.glb', '/models/ship_brig.glb', '/models/ship_frigate.glb']);
   });
 
+  // AC-193 c (producto, 2026-10-18): los modelos que no son el propio se descargan en segundo plano nada más entrar, no al
+  // entrar un barco en el área de interés, para que las 10 combinaciones queden en caché en ≤ 10 s
+  test('al entrar se encolan todas las clases del manifiesto una vez, detrás del barco propio', async () => {
+    const { calls, loader } = fakeLoader();
+    const store = new ShipGlbStore(manifest, () => loader);
+    store.request('brig', true);
+    store.prefetchAll();
+    store.prefetchAll(); // repetido: no duplica
+    const classOf = (url: string) => Object.entries(manifest).find(([, u]) => u === url)![0];
+    for (let i = 0; i < 3; i++) {
+      store.pump(gl);
+      calls[i].resolve(await glb(classOf(calls[i].url)));
+      await settle();
+    }
+    store.pump(gl);
+    expect(calls.map((c) => c.url)).toEqual(['/models/ship_brig.glb', '/models/ship_sloop.glb', '/models/ship_frigate.glb']);
+    expect(['sloop', 'brig', 'frigate'].map((c) => store.model(c) !== getShipModel(c))).toEqual([true, true, true]);
+  });
+
   test('una clase sin GLB en el manifiesto no descarga nada', () => {
     const { calls, loader } = fakeLoader();
     const store = new ShipGlbStore(manifest, () => loader);
