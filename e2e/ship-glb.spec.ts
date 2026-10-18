@@ -138,6 +138,24 @@ test.describe('Barcos en GLB (ASSET-SPEC §13)', () => {
     expect(entry.shownAt).toBe(entry.firstFrameAt);
   });
 
+  // Sin WebGL no hay frames. Hoy se ve el canvas vacío con el HUD: R3F crea el renderer dentro de una promesa (configure,
+  // react-three-fiber.esm.js:68-69), así que el error de three no desmonta el árbol. Con el manifiesto vacío, la portada no
+  // espera al primer frame y eso no cambia (con manifiesto, sin WebGL se quedaría: pendiente de producto y ux)
+  test('AC-193 c (B): sin WebGL y sin GLB en el manifiesto, la portada no se queda: se ve el HUD, como hoy', async ({ page }) => {
+    await page.addInitScript(() => {
+      const getContext = HTMLCanvasElement.prototype.getContext as (this: HTMLCanvasElement, type: string, ...rest: unknown[]) => unknown;
+      (HTMLCanvasElement.prototype as unknown as { getContext: typeof getContext }).getContext = function (type, ...rest) {
+        return /webgl/i.test(type) ? null : getContext.call(this, type, ...rest);
+      };
+    });
+    await page.goto('/game');
+    await expect(page.getByTestId('player-frame')).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('.game-root > [data-testid="loading"]')).toBeHidden();
+    const entry = await entryOf(page);
+    console.log(`AC-193 c entrada sin WebGL: ${JSON.stringify(entry)}`);
+    expect(entry.firstFrameAt).toBe(0); // de verdad no hubo ningún frame
+  });
+
   test('AC-193 c (B): con el GLB propio a tiempo, el barco propio entra ya con él', async ({ page }) => {
     const bytes = fs.readFileSync(FIXTURE);
     const requests: string[] = [];
