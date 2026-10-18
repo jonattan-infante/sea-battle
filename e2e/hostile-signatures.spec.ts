@@ -2,7 +2,8 @@
 // Escena sintética 'gallery' con el cañón N1 (2,82 px/m): el Pirata (LOD1 a esa escala), el Capitán y la Cañonera (LOD0),
 // quietos y de uno en uno en el foco, a los rumbos 45, 135, 225 y 315°. Por pose, el mismo frame con el barco y sin él
 // (captureImage del lienzo, a su resolución): máscara = píxeles con ΔE76 ≥ 3 entre las dos capturas. Firmas: área (px),
-// L* medio de la máscara y fracción clara (L* ≥ 65). Además, los cañones de la Cañonera en 1440×900 con N3 (D48)
+// L* medio de la máscara, fracción clara (L* ≥ 65) y fracción media (45 ≤ L* < 65, la cubierta clara de la Cañonera; D51).
+// Además, los cañones de la Cañonera en 1440×900 con N3 (D48)
 import fs from 'fs';
 import path from 'path';
 import { expect, Page, test } from '@playwright/test';
@@ -12,14 +13,18 @@ import { enterGame } from './helpers';
 
 const HOSTILES = ['pirate', 'captain', 'gunboat'] as const;
 const HEADINGS = [45, 135, 225, 315];
-const PAIR_DIFF = 0.3; // al menos una firma difiere ≥ 30 % (|x − y| / máx)
+// D51: en cada rumbo, cada par difiere en al menos 2 firmas. Una firma difiere si |x − y| / máx ≥ 30 % y, en las fracciones,
+// además |x − y| ≥ 1 punto, para que dos fracciones casi nulas (0,02 % frente a 0 %) no cuenten como distintas
+const PAIR_DIFF = 0.3;
+const FRACTION_POINTS = 0.01;
+const PAIR_SIGNATURES = 2;
 const STANDARD_PX = 20; // el estandarte del Capitán: ≥ 20 px CSS de área con L* ≥ 80 en cada rumbo (D47: px de lienzo ÷ DPR²)
 // AD-28 (D48): cañones de la Cañonera en 1440×900. Parámetros del conteo, por si ux cambia la definición: nivel de cañón
 // (N3 = 5,04 px/m), rumbos, en qué pasadas se oculta el mortero, largo mínimo de la mancha (Feret) y mínimo de cañones
 const GUN_COUNT = { cannonLevel: 3, headings: HEADINGS, hideMortar: { capture: true, region: true }, minFeret: 4, minGuns: 8 };
 const OUT = process.env.AD28_OUT;
 
-interface Signature { classId: string; deg: number; lod: number; dpr: number; area: number; meanL: number; light: number; bright: number }
+interface Signature { classId: string; deg: number; lod: number; dpr: number; area: number; meanL: number; light: number; mid: number; bright: number }
 
 // En la página: captura con y sin el barco, máscara y firmas
 async function signature([id, keep]: [string, boolean]): Promise<Signature & { crops?: string[] }> {
@@ -53,19 +58,20 @@ async function signature([id, keep]: [string, boolean]): Promise<Signature & { c
     const fx = f((0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047), fy = f(0.2126 * r + 0.7152 * g + 0.0722 * b), fz = f((0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883);
     return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
   };
-  let area = 0, sumL = 0, light = 0, bright = 0;
+  let area = 0, sumL = 0, light = 0, mid = 0, bright = 0;
   for (let i = 0; i < N; i++) {
     const p = lab(A.data, i), q = lab(B.data, i);
     if (Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]) < 3) continue;
     area++;
     sumL += p[0];
     if (p[0] >= 65) light++;
+    else if (p[0] >= 45) mid++;
     if (p[0] >= 80) bright++;
   }
   const canvas = document.querySelector('canvas')!;
   return {
     classId: id, deg: 0, lod: view.lod, dpr: canvas.width / canvas.clientWidth,
-    area, meanL: area ? sumL / area : 0, light: area ? light / area : 0, bright, crops: keep ? [con, sin] : undefined
+    area, meanL: area ? sumL / area : 0, light: area ? light / area : 0, mid: area ? mid / area : 0, bright, crops: keep ? [con, sin] : undefined
   };
 }
 
@@ -93,7 +99,7 @@ async function startGallery(page: Page, cannonLevel = 1) {
 test.describe('Firmas de los hostiles @mobile', () => {
   test.setTimeout(180_000);
 
-  test('AD-28 @mobile: en cada rumbo, cada par de Pirata, Capitán y Cañonera difiere ≥ 30 % en alguna firma; estandarte ≥ 20 px CSS con L* ≥ 80', async ({ page }) => {
+  test('AD-28 @mobile (D51): en cada rumbo, cada par de Pirata, Capitán y Cañonera difiere en al menos 2 firmas; estandarte ≥ 20 px CSS con L* ≥ 80', async ({ page }) => {
     if (OUT) fs.mkdirSync(OUT, { recursive: true });
     const { pose, ...setup } = await startGallery(page);
     const rows: Signature[] = [];
@@ -113,22 +119,31 @@ test.describe('Firmas de los hostiles @mobile', () => {
 
     const diff = (x: number, y: number) => (Math.max(x, y) > 0 ? Math.abs(x - y) / Math.max(x, y) : 0);
     console.log(`AD-28: ppm ${setup.ppm.toFixed(3)} · lienzo a DPR ${rows[0].dpr}`);
-    for (const r of rows) console.log(`AD-28 ${r.classId.padEnd(8)} ${String(r.deg).padStart(3)}° LOD${r.lod}: área ${r.area} px · L* medio ${r.meanL.toFixed(1)} · clara ${(100 * r.light).toFixed(1)} % · L* ≥ 80: ${r.bright} px de lienzo = ${(r.bright / r.dpr ** 2).toFixed(1)} px CSS`);
-    const pairs: { deg: number; a: string; b: string; area: number; meanL: number; light: number }[] = [];
+    for (const r of rows) console.log(`AD-28 ${r.classId.padEnd(8)} ${String(r.deg).padStart(3)}° LOD${r.lod}: área ${r.area} px · L* medio ${r.meanL.toFixed(1)} · clara ${(100 * r.light).toFixed(1)} % · media ${(100 * r.mid).toFixed(1)} % · L* ≥ 80: ${r.bright} px de lienzo = ${(r.bright / r.dpr ** 2).toFixed(1)} px CSS`);
+    type Key = 'area' | 'meanL' | 'light' | 'mid';
+    const KEYS: [Key, string][] = [['area', 'área'], ['meanL', 'L* medio'], ['light', 'clara'], ['mid', 'media']];
+    const pairs: ({ deg: number; a: string; b: string; signatures: number; differs: Record<Key, boolean> } & Record<Key, number>)[] = [];
     for (const deg of HEADINGS) {
       for (let i = 0; i < HOSTILES.length; i++) {
         for (let j = i + 1; j < HOSTILES.length; j++) {
           const [a, b] = [HOSTILES[i], HOSTILES[j]].map((c) => rows.find((r) => r.classId === c && r.deg === deg)!);
-          const p = { deg, a: a.classId, b: b.classId, area: diff(a.area, b.area), meanL: diff(a.meanL, b.meanL), light: diff(a.light, b.light) };
+          const rel = { area: diff(a.area, b.area), meanL: diff(a.meanL, b.meanL), light: diff(a.light, b.light), mid: diff(a.mid, b.mid) };
+          const differs = {
+            area: rel.area >= PAIR_DIFF,
+            meanL: rel.meanL >= PAIR_DIFF,
+            light: rel.light >= PAIR_DIFF && Math.abs(a.light - b.light) >= FRACTION_POINTS,
+            mid: rel.mid >= PAIR_DIFF && Math.abs(a.mid - b.mid) >= FRACTION_POINTS
+          };
+          const p = { deg, a: a.classId, b: b.classId, ...rel, differs, signatures: KEYS.filter(([k]) => differs[k]).length };
           pairs.push(p);
-          console.log(`AD-28 ${String(deg).padStart(3)}° ${p.a}–${p.b}: área ${(100 * p.area).toFixed(0)} % · L* medio ${(100 * p.meanL).toFixed(0)} % · clara ${(100 * p.light).toFixed(0)} %`);
+          console.log(`AD-28 ${String(deg).padStart(3)}° ${p.a}–${p.b}: ${KEYS.map(([k, label]) => `${label} ${(100 * p[k]).toFixed(0)} %${differs[k] ? ' ✓' : ''}`).join(' · ')} → ${p.signatures} firmas`);
         }
       }
     }
     if (OUT) fs.writeFileSync(path.join(OUT, 'ad28.json'), JSON.stringify({ ppm: setup.ppm, rows, pairs }, null, 1));
 
     expect(rows.every((r) => r.area > 0), 'cada barco deja máscara').toBe(true);
-    for (const p of pairs) expect.soft(Math.max(p.area, p.meanL, p.light), `AD-28 ${p.deg}° ${p.a}–${p.b}: la firma que más difiere`).toBeGreaterThanOrEqual(PAIR_DIFF);
+    for (const p of pairs) expect.soft(p.signatures, `AD-28 ${p.deg}° ${p.a}–${p.b}: firmas que difieren (D51)`).toBeGreaterThanOrEqual(PAIR_SIGNATURES);
     for (const r of rows.filter((q) => q.classId === 'captain')) expect.soft(r.bright / r.dpr ** 2, `AD-28 estandarte ${r.deg}°: px CSS con L* ≥ 80`).toBeGreaterThanOrEqual(STANDARD_PX);
   });
 });
