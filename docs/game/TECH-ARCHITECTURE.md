@@ -153,7 +153,7 @@ Tests: `src/game/__tests__/gunboat.test.ts` (AC-51 encendido, AC-52, AC-113 y AC
 
 | Comando | Qué cubre |
 |---|---|
-| `npm test` | Simulación por AC (navegación, combate, NPC, economía, arquitectura), protocolo y servidor con sockets reales y reloj inyectable (`autoStart: false` + `tick()`). La persistencia, contra Postgres real (§2.1): sin `TEST_DATABASE_URL` ni Postgres instalado, esos tests fallan con instrucciones, no se saltan |
+| `npm test` | Simulación por AC (navegación, combate, NPC, economía, arquitectura), protocolo y servidor con sockets reales y reloj inyectable (`autoStart: false` + `tick()`). La persistencia, contra Postgres real (§2.1): sin `TEST_DATABASE_URL` ni Postgres instalado, esos tests fallan con instrucciones, no se saltan. ts-jest compila también los `.tsx` (`jsx: 'react-jsx'`), para que los unitarios de componentes rendericen el marcado con `renderToStaticMarkup` (p. ej., las insignias de AD-40 c); los archivos de test siguen siendo `**/__tests__/**/*.test.ts` |
 | `npm run build` | `next build` + `tsc -p tsconfig.server.json` → `dist/server/index.js` |
 | `npm run test:e2e` | Playwright contra el build de producción, con 3 servidores: invitado (3100), invitado sin NPC (3101) y sin invitado (3102) |
 | `npm run test:perf` | Commits de React (hook de DevTools inyectado), frames de WebSocket y `renderInfo` |
