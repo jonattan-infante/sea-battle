@@ -4,6 +4,7 @@
 // orden, y llevan la revisión que leyeron: si otro proceso escribió algo más nuevo, no se pisa. Si una escritura falla,
 // la persistencia pasa a «degradada» (AC-132): la tienda se cierra y los jugadores ven el aviso. Mientras dura el corte
 // no se reintenta ninguna escritura: solo un SELECT 1 por segundo, y cuando responde se escribe todo lo pendiente
+import { createHash } from 'crypto';
 import { Pool } from 'pg';
 import { NEW_ROW, parseProgress, progressKey, RowCarry, SavedProgress, serializeProgress } from './progress';
 
@@ -64,6 +65,18 @@ export interface PersistenceOptions {
   log?: (msg: string) => void;
 }
 
+// O-42: cada escritura acaba guardada, fallida (la BD no respondió en su plazo: se puede reintentar) o en conflicto (otro
+// proceso escribió antes: ni se reintenta ni se pisa la fila)
+export type SaveResult = 'saved' | 'failed' | 'conflict';
+
+export interface FlushResult {
+  failed: number; // escrituras fallidas: se pueden reintentar
+  conflicts: number; // jugadores soltados porque otro proceso escribió antes
+}
+
+// Huella corta del progreso de un intento fallido (O-42 b): basta para reconocerlo en la fila, sin guardar el estado entero
+const fingerprint = (progress: SavedProgress): string => createHash('sha256').update(progressKey(progress)).digest('base64url').slice(0, 16);
+
 export interface Persistence {
   load: (userId: string) => Promise<StoredProgress | null>;
   track: (userId: string, stored: StoredProgress | null) => void; // tras entrar al mundo con lo cargado
@@ -73,7 +86,8 @@ export interface Persistence {
   commit: (userId: string, next: SavedProgress, apply: () => void) => Promise<boolean>;
   saveNow: (userId: string) => void; // al desconectarse (AC-130 c)
   saveState: (userId: string) => 'saved' | 'pending' | 'dirty'; // ¿lo que hay en memoria ya está escrito?
-  flush: () => Promise<boolean>; // escribe todo lo que cambió y espera a la cola entera; false si alguna escritura falló
+  flush: () => Promise<FlushResult>; // escribe todo lo que cambió y espera a la cola entera
+  unsaved: () => number; // jugadores con progreso aún sin confirmar en la BD (los soltados por un conflicto no cuentan)
   isDegraded: () => boolean; // la BD no responde: tienda cerrada y aviso (AC-132)
   close: () => void;
 }
@@ -85,6 +99,8 @@ interface Tracked {
   queue: Promise<void>;
   pending: number;
   lost: boolean; // otro proceso ganó: este ya no escribe
+  failed: Set<string>; // huellas de los intentos fallidos desde la última escritura confirmada, todos con `revision`: pudieron llegar a la BD
+  unverified: boolean; // un intento falló y la fila no se ha comprobado desde entonces (c4): el jugador no sale de la memoria
 }
 
 export function createPersistence(options: PersistenceOptions): Persistence {
@@ -103,17 +119,57 @@ export function createPersistence(options: PersistenceOptions): Persistence {
     return run;
   };
 
+  // Un intento con la revisión conocida. Si falla, se apunta su huella: el plazo vence en el cliente, pero la escritura
+  // pudo llegar a la BD y aplicarse
+  async function save(userId: string, t: Tracked, progress: SavedProgress): Promise<number | null> {
+    try {
+      return await store.save(userId, progress, t.revision, t.carry);
+    } catch (err) {
+      t.failed.add(fingerprint(progress));
+      t.unverified = true;
+      throw err;
+    }
+  }
+
+  // O-42 (b): tras un intento fallido, una revisión que no cuadra puede ser la de ese intento, que llegó a la BD aunque el
+  // plazo venciera en el cliente. Se lee la fila: si está en r+1 y su estado tiene la huella de uno de esos intentos, el
+  // cambio fue de este proceso, y se adopta. Solo uno pudo aplicarse: el primero que llegó subió la revisión y los demás
+  // ya no encontraron fila. En cualquier otro caso, y siempre que no haya fallado nada antes, es otro proceso
+  async function adoptOwnWrite(userId: string, t: Tracked): Promise<boolean> {
+    if (t.failed.size === 0) return false;
+    let stored: StoredProgress | null;
+    try {
+      stored = await store.load(userId);
+    } catch (err) {
+      if (err instanceof InvalidProgressError) return false; // una fila que no es la nuestra
+      throw err;
+    }
+    if (!stored || stored.revision !== t.revision + 1 || !t.failed.has(fingerprint(stored.progress))) return false;
+    t.revision = stored.revision;
+    t.savedKey = progressKey(stored.progress);
+    t.failed.clear();
+    t.unverified = false;
+    return true;
+  }
+
+  // Otro proceso escribió un progreso más nuevo: este suelta al jugador y no vuelve a escribir su fila
+  function lose(userId: string, t: Tracked): false {
+    t.lost = true;
+    log(`⚠️  El progreso de ${userId} cambió en otro proceso: no se sobrescribe`);
+    onConflict(userId);
+    return false;
+  }
+
   async function write(userId: string, t: Tracked, progress: SavedProgress): Promise<boolean> {
     if (t.lost) return false;
-    const revision = await store.save(userId, progress, t.revision, t.carry);
-    if (revision === null) {
-      t.lost = true;
-      log(`⚠️  El progreso de ${userId} cambió en otro proceso: no se sobrescribe`);
-      onConflict(userId);
-      return false;
-    }
+    const key = progressKey(progress);
+    let revision = await save(userId, t, progress);
+    if (revision === null && (await adoptOwnWrite(userId, t))) revision = t.savedKey === key ? t.revision : await save(userId, t, progress);
+    if (revision === null) return lose(userId, t);
     t.revision = revision;
-    t.savedKey = progressKey(progress);
+    t.savedKey = key;
+    t.failed.clear();
+    t.unverified = false;
     return true;
   }
 
@@ -139,7 +195,7 @@ export function createPersistence(options: PersistenceOptions): Persistence {
     try {
       await store.ping();
       const results = await Promise.all([...users].map(([userId, t]) => saveCurrent(userId, t)));
-      if (results.includes(false)) throw new Error('escritura fallida');
+      if (results.includes('failed')) throw new Error('escritura fallida');
       degraded = false;
       log('✅ La BD responde de nuevo: progreso guardado');
     } catch {
@@ -149,19 +205,54 @@ export function createPersistence(options: PersistenceOptions): Persistence {
     }
   }
 
-  // Escribe el progreso vivo si cambió desde la última escritura (lo lee al ejecutarse, no al encolarse). false: falló
-  const saveCurrent = (userId: string, t: Tracked): Promise<boolean> => {
-    let ok = true;
+  // O-42 (c4): la memoria no cambió desde lo último confirmado (r), pero un intento falló después y pudo llegar a la BD (una
+  // compra que el jugador vio rechazada). Se lee la fila: si sigue en r, no se escribe (la fila queda igual byte a byte,
+  // H-24); si no, se escribe la memoria, y write decide si el intento era nuestro (r+1 con su huella) o de otro proceso.
+  // (c5) Las huellas no se borran al leer r: el intento vencido aún puede aplicarse, y la siguiente escritura lo adopta
+  async function reconcile(userId: string, t: Tracked, progress: SavedProgress): Promise<boolean> {
+    let stored: StoredProgress | null;
+    try {
+      stored = await store.load(userId);
+    } catch (err) {
+      if (err instanceof InvalidProgressError) return lose(userId, t); // una fila que no es la nuestra
+      throw err;
+    }
+    if (stored ? stored.revision === t.revision : t.revision === 0) {
+      t.unverified = false;
+      return true;
+    }
+    return write(userId, t, progress);
+  }
+
+  // Escribe el progreso vivo si cambió desde la última escritura (lo lee al ejecutarse, no al encolarse), o si no cambió
+  // pero un intento falló y la fila no se ha comprobado (c4). Un conflicto ya no cuenta como guardado (O-42 a): la fila es la del otro
+  const saveCurrent = (userId: string, t: Tracked): Promise<SaveResult> => {
+    let result: SaveResult = 'saved';
     return enqueue(t, async () => {
       const progress = read(userId);
-      if (!progress || t.lost || progressKey(progress) === t.savedKey) return;
+      if (!progress) return;
+      const unchanged = progressKey(progress) === t.savedKey;
+      if (unchanged && !t.unverified) return;
+      if (t.lost) {
+        result = 'conflict';
+        return;
+      }
       try {
-        await write(userId, t, progress);
+        if (!(await (unchanged ? reconcile(userId, t, progress) : write(userId, t, progress)))) result = 'conflict';
       } catch (err) {
-        ok = false;
+        result = 'failed';
         markFailed(err as Error);
       }
-    }).then(() => ok);
+    }).then(() => result);
+  };
+
+  const saveState = (userId: string): 'saved' | 'pending' | 'dirty' => {
+    const t = users.get(userId);
+    if (!t) return 'saved';
+    if (t.pending > 0) return 'pending';
+    if (t.unverified) return 'dirty'; // c4: la fila puede tener un intento fallido; sigue en memoria hasta comprobarla
+    const progress = read(userId);
+    return !progress || progressKey(progress) === t.savedKey ? 'saved' : 'dirty';
   };
 
   // Guardado periódico: solo quien cambió y no tiene ya una escritura en cola. Con la BD caída, lo hace el reintento
@@ -187,7 +278,7 @@ export function createPersistence(options: PersistenceOptions): Persistence {
       return stored;
     },
     track: (userId, stored) => {
-      users.set(userId, { revision: stored?.revision ?? 0, carry: stored?.carry ?? NEW_ROW, savedKey: stored ? progressKey(stored.progress) : null, queue: Promise.resolve(), pending: 0, lost: false });
+      users.set(userId, { revision: stored?.revision ?? 0, carry: stored?.carry ?? NEW_ROW, savedKey: stored ? progressKey(stored.progress) : null, queue: Promise.resolve(), pending: 0, lost: false, failed: new Set(), unverified: false });
     },
     isTracked: (userId) => users.has(userId),
     forget: (userId) => {
@@ -211,17 +302,12 @@ export function createPersistence(options: PersistenceOptions): Persistence {
       const t = users.get(userId);
       if (t && !degraded) void saveCurrent(userId, t);
     },
-    saveState: (userId) => {
-      const t = users.get(userId);
-      if (!t) return 'saved';
-      if (t.pending > 0) return 'pending';
-      const progress = read(userId);
-      return !progress || progressKey(progress) === t.savedKey ? 'saved' : 'dirty';
-    },
+    saveState,
     flush: async () => {
       const results = await Promise.all([...users].map(([userId, t]) => saveCurrent(userId, t)));
-      return !results.includes(false);
+      return { failed: results.filter((r) => r === 'failed').length, conflicts: results.filter((r) => r === 'conflict').length };
     },
+    unsaved: () => [...users].filter(([userId, t]) => !t.lost && saveState(userId) !== 'saved').length,
     isDegraded: () => degraded,
     close: () => {
       closed = true;

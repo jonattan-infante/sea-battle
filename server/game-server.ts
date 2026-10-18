@@ -52,7 +52,7 @@ import {
 import { drainPvpLog } from '../src/game/xp';
 import type { Identity } from './auth';
 import { createServerMetrics } from './metrics';
-import { createPersistence, ProgressStore, StoredProgress } from './persistence';
+import { createPersistence, FlushResult, ProgressStore, StoredProgress } from './persistence';
 import { progressOf, SavedProgress } from './progress';
 
 export interface GameServerOptions {
@@ -78,7 +78,8 @@ export interface GameServer {
   onlinePlayers: () => number;
   tick: () => void;
   stop: () => void;
-  flushProgress: () => Promise<boolean>; // escribe ya todo el progreso que cambió y espera; false si algo no se pudo escribir
+  flushProgress: () => Promise<FlushResult>; // escribe ya todo el progreso que cambió y espera: cuántas fallaron y cuántas chocaron
+  unsavedProgress: () => number; // jugadores con cuenta cuyo progreso aún no está confirmado en la BD
 }
 
 const KICKED_TEXT = 'Has abierto el juego en otra pestaña'; // AC-133
@@ -488,7 +489,8 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
       metrics?.stop();
       persistence?.close();
     },
-    flushProgress: () => persistence?.flush() ?? Promise.resolve(true)
+    flushProgress: () => persistence?.flush() ?? Promise.resolve({ failed: 0, conflicts: 0 }),
+    unsavedProgress: () => persistence?.unsaved() ?? 0
   };
 }
 
