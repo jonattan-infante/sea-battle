@@ -9,7 +9,9 @@ const BOOT_TIMEOUT_MS = 30_000;
 
 export interface GameChild {
   url: string;
+  pid: number;
   output: () => string;
+  closeOutput: () => void; // cierra el lado del test de stdout y stderr, como si desapareciera quien lee los logs (AC-203)
   addGold: (userId: string, amount: number) => Promise<boolean>;
   addXp: (userId: string, amount: number) => Promise<boolean>;
   kill: (signal: 'SIGKILL' | 'SIGTERM') => Promise<{ code: number | null; signal: string | null }>;
@@ -72,7 +74,12 @@ export async function startGameChild(env: Record<string, string>): Promise<GameC
     });
   return {
     url: `http://127.0.0.1:${port}`,
+    pid: child.pid!,
     output: () => out,
+    closeOutput: () => {
+      child.stdout!.destroy();
+      child.stderr!.destroy();
+    },
     addGold: (userId, amount) => send('addGold', userId, amount),
     addXp: (userId, amount) => send('addXp', userId, amount),
     kill: async (signal) => {
