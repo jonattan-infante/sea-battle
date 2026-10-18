@@ -275,6 +275,7 @@ body {
   .hud-player__name strong { font-size: 13px; } /* D76: con «Nivel 12» en la fila caben 16 caracteres corrientes */
   .hud-player .bar { width: 180px; height: 10px; }
   .hud-target { left: 12px; top: 64px; transform: none; width: 252px; height: 48px; padding: 4px 8px; }
+  .hud-target__icon { width: 28px; height: 28px; } /* D81: como en 390×844; deja 196 px a la línea del rango */
   .hud-target__meta { display: none; }
   .hud-target.is-player, .hud-target.is-danger { height: 70px; }
   .hud-target__meta.is-player, .hud-target__meta.is-danger { display: flex; order: 1; font-size: 11px; }
