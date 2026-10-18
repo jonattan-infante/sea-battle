@@ -297,54 +297,80 @@ describe('métricas con el bucle real del servidor (AC-142)', () => {
 // AC-142: la medida va activa por defecto (también en prod) solo si apenas cuesta. Condición: el p99 del tick con la medida
 // encendida no pasa en más de 0,2 ms (el 5 % de los 4 ms de GDD §16) del p99 con la medida apagada, con el método de AC-03:
 // 2 000 ticks tras 200 de calentamiento, 20 jugadores con ~1 intención/s y 20 NPC, mismas semillas, el menor de 3 p99.
-// Las corridas se alternan (apagada, encendida, …) para que la carga de la máquina y el JIT repartan igual
+// AC-184: los dos brazos se miden intercalados, tick a tick, sobre dos mundos idénticos (misma semilla y las mismas
+// intenciones), alternando cuál va primero. Así la carga de la máquina, el GC y el JIT de cada instante les caen a los dos.
+// Medidos en corridas separadas, dentro de la pasada paralela de Jest, una prueba A/A llegó a 0,26 ms: más que la cota,
+// para un coste de nanosegundos (dos performance.now() y un push por tick, server/metrics.ts)
+// AC184_AA=1 apaga la medida también en el brazo B: la prueba A/A que mide el ruido del método (AC-184 a)
 describe('coste de la medida (AC-142)', () => {
-  function tickP99(metrics: boolean): { p50: number; p99: number } {
-    const io = new Server(createServer());
-    const game = createGameServer(io, { authenticate: async () => ({ userId: 'x', guest: true }), seed: 3, autoStart: false, metrics });
-    try {
-      const rng = createRng(5);
+  const AA = process.env.AC184_AA === '1';
+  type Arm = { p50: number; p99: number };
+
+  function pairedRound(metricsB: boolean): { off: Arm; on: Arm } {
+    const make = (metrics: boolean) => {
+      const io = new Server(createServer());
+      const game = createGameServer(io, { authenticate: async () => ({ userId: 'x', guest: true }), seed: 3, autoStart: false, metrics });
       for (let i = 0; i < 20; i++) addPlayer(game.world, `p${i}`, `P${i}`);
       for (const ship of game.world.ships.values()) ship.protectedUntil = 0;
-      const times: number[] = [];
+      return { io, game };
+    };
+    const a = make(false);
+    const b = make(metricsB);
+    try {
+      const rng = createRng(5);
+      const times: [number[], number[]] = [[], []];
+      const timed = (side: 0 | 1, record: boolean) => {
+        const t0 = performance.now();
+        (side === 0 ? a : b).game.tick();
+        if (record) times[side].push(performance.now() - t0);
+      };
       for (let t = 0; t < 2200; t++) {
+        // Las intenciones se deciden con el mundo A y se aplican igual a los dos: los mundos siguen idénticos
         for (let i = 0; i < 20; i++) {
           if (rng() > 1 / 20) continue;
           const id = `p${i}`;
-          const ship = shipOfPlayer(game.world, id);
+          const ship = shipOfPlayer(a.game.world, id);
           if (!ship || ship.state !== 'alive') continue;
-          if (rng() < 0.6) moveTo(game.world, id, { x: (rng() * 2 - 1) * 480, z: (rng() * 2 - 1) * 480 });
-          else {
-            const near = [...game.world.ships.values()].find((s) => s.id !== ship.id && s.state === 'alive' && Math.hypot(s.pos.x - ship.pos.x, s.pos.z - ship.pos.z) < 150);
-            if (near) attack(game.world, id, near.id);
+          if (rng() < 0.6) {
+            const target = { x: (rng() * 2 - 1) * 480, z: (rng() * 2 - 1) * 480 };
+            for (const { game } of [a, b]) moveTo(game.world, id, target);
+          } else {
+            const near = [...a.game.world.ships.values()].find((s) => s.id !== ship.id && s.state === 'alive' && Math.hypot(s.pos.x - ship.pos.x, s.pos.z - ship.pos.z) < 150);
+            if (near) for (const { game } of [a, b]) attack(game.world, id, near.id);
           }
         }
-        const t0 = performance.now();
-        game.tick();
-        if (t >= 200) times.push(performance.now() - t0);
+        const first = (t % 2) as 0 | 1;
+        timed(first, t >= 200);
+        timed((1 - first) as 0 | 1, t >= 200);
       }
-      times.sort((a, b) => a - b);
-      return { p50: times[Math.ceil(0.5 * times.length) - 1], p99: times[Math.ceil(0.99 * times.length) - 1] };
+      // El emparejamiento solo vale si los dos mundos hicieron lo mismo
+      const state = (w: typeof a.game.world) => [...w.ships.values()].map((s) => [s.id, s.state, Math.round(s.pos.x * 1000), Math.round(s.pos.z * 1000), s.hp]);
+      expect(state(b.game.world)).toEqual(state(a.game.world));
+      const stats = (ts: number[]): Arm => {
+        const s = [...ts].sort((x, y) => x - y);
+        return { p50: s[Math.ceil(0.5 * s.length) - 1], p99: s[Math.ceil(0.99 * s.length) - 1] };
+      };
+      return { off: stats(times[0]), on: stats(times[1]) };
     } finally {
-      game.stop();
-      io.close();
+      for (const { game, io } of [a, b]) {
+        game.stop();
+        io.close();
+      }
     }
   }
 
   test('el menor de 3 p99 del tick con la medida no pasa en más de 0,2 ms del menor de 3 sin ella', () => {
-    const off: { p50: number; p99: number }[] = [];
-    const on: { p50: number; p99: number }[] = [];
+    const rounds: { off: Arm; on: Arm }[] = [];
     const load = [os.loadavg()[0]];
-    for (let i = 0; i < 3; i++) {
-      off.push(tickP99(false));
-      on.push(tickP99(true));
-    }
+    for (let i = 0; i < 3; i++) rounds.push(pairedRound(!AA));
     load.push(os.loadavg()[0]);
+    const off = rounds.map((r) => r.off);
+    const on = rounds.map((r) => r.on);
     const bestOff = Math.min(...off.map((r) => r.p99));
     const bestOn = Math.min(...on.map((r) => r.p99));
-    const fmt = (rs: { p50: number; p99: number }[]) => `p99 ${rs.map((r) => r.p99.toFixed(3)).join(' · ')} (p50 ${rs.map((r) => r.p50.toFixed(3)).join(' · ')})`;
+    const fmt = (rs: Arm[]) => `p99 ${rs.map((r) => r.p99.toFixed(3)).join(' · ')} (p50 ${rs.map((r) => r.p50.toFixed(3)).join(' · ')})`;
     console.log(
-      `AC-142 coste de la medida: apagada ${fmt(off)} → menor ${bestOff.toFixed(3)} ms; encendida ${fmt(on)} → menor ${bestOn.toFixed(3)} ms; ` +
+      `AC-142 coste de la medida${AA ? ' (A/A, AC-184)' : ''}: apagada ${fmt(off)} → menor ${bestOff.toFixed(3)} ms; ${AA ? 'apagada (B)' : 'encendida'} ${fmt(on)} → menor ${bestOn.toFixed(3)} ms; ` +
         `diferencia ${(bestOn - bestOff).toFixed(3)} ms; carga ${load.map((l) => l.toFixed(2)).join(' → ')}`
     );
     expect(bestOn - bestOff).toBeLessThanOrEqual(0.2);
