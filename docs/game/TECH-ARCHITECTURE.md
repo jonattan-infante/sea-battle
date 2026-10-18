@@ -34,7 +34,7 @@ Dueño: `game-developer`. Fuentes de verdad: `GDD.md` y `BACKLOG.md` (qué se co
 - **Un mensaje por envío**: `frame` (`ServerFrame` en `src/game/types.ts`) lleva los deltas de barcos (`s`), las salidas (`r`), los eventos visibles (`e`), la vista privada si cambió (`me`) y los avisos (`n`). Así se cumple ≤ 10 mensajes/s (AC-88).
 - **Deltas**: al entrar en el área de interés (300 m) un barco se envía completo; después, solo los campos que cambiaron. Si no cambia nada, no se envía nada (AC-87).
 - **Campos sin reloj**: la protección viaja como instante de fin (`pu`) y la muerte como `respawnAt`, ambos en tiempo de servidor. Así no hay deltas solo porque pasa el tiempo.
-- **Eventos**: se filtran por distancia (300 m + 60). El botín (`loot`) solo lo recibe su dueño, y los restos van a todos, igual que el aviso (`captain`) y el feed (`captainDown`) del Capitán pirata.
+- **Eventos**: se filtran por distancia (300 m + 60). El botín (`loot`) y la XP (`xp`, 1.1) solo los recibe su dueño, y los restos van a todos, igual que el aviso (`captain`) y el feed (`captainDown`) del Capitán pirata.
 - **Área de interés** (`inInterest` en `server/game-server.ts`): 300 m alrededor de cada centro de una lista (hoy, el barco propio; la vista libre de E13 añade el centro de la vista sin cambiar la regla) más lo que se envía siempre: el barco propio y el Capitán pirata vivo o hundiéndose, para su marcador del minimapa (GDD §13, AC-111). Solo hay un capitán, así que suma como mucho una entidad por cliente. Medido con él (AC-88): 10,00 msg/s y 9,88 KB/s en el peor cliente.
 - **Límite de intenciones**: cubeta de 20 fichas con recarga de 10/s por socket (AC-06). `join` no gasta fichas: solo se procesa una vez.
 - **Desconexión**: el barco queda 10 s en el mundo y se puede atacar. Si el jugador reconecta, recupera el mismo barco (AC-96).
@@ -107,6 +107,22 @@ Si la BD falla:
 - **Limitación conocida (P3):** entre validar una compra y aplicarla pasa la escritura (~20 ms). Si en ese rato el jugador pierde oro (muerte), el precio se descuenta con suelo 0 (`applyPurchase` en `src/game/world.ts`, con su test).
 - El cliente de estos estados es el de D50 (`ConnectionOverlay`, `syncUnsaved`; ver arriba). `e2e/persistence-db.spec.ts` lo prueba de punta a punta con la BD real detrás de un proxy TCP (`server/__tests__/fixtures/pg-proxy.ts`: `cut` = parada, `hang` = colgada), que también usan los tests de Jest.
 - Tests: Postgres real. El `globalSetup` de Jest usa `TEST_DATABASE_URL` (la CI la da con un service container `postgres:16`) o levanta un clúster temporal con `initdb` en un puerto libre, que un vigía para y borra aunque Jest muera. Cada archivo usa su propio schema (`search_path`). Los tests de `kill -9` y de `SIGTERM` lanzan el servidor en un proceso hijo (`server/__tests__/fixtures/game-process.ts`), con el mismo arranque y el mismo apagado que `index.ts`; el proxy de la BD puede retrasar lo que le llega (`delay`) para ver que se escribe antes de desconectar.
+
+### 2.2 Experiencia y niveles (GDD §10b, 1.1; AC-144 a AC-150)
+
+La XP la decide la simulación (`src/game/xp.ts`, TypeScript puro); el cliente solo la muestra. Las constantes van al final de `src/game/constants.ts` («Experiencia, niveles e insignias»).
+
+| Pieza | Qué hace |
+|---|---|
+| XP de un NPC | `NPC_XP` por id de clase (`merchant` 10, `pirate` 30, `gunboat` 60, `captain` 240, `galleon` 160). `sinkShip` la reparte con `splitReward` y el mismo filtro de 60 s que el oro, y `creditNpcXp` la acredita en el tick del oro. Un test exige que toda clase NPC de `SHIP_CLASSES` tenga su fila del GDD y siga la regla por vida (vida / 15 si es hostil, / 30 si es pasiva, ×2 si es de evento) |
+| XP de un jugador | `PVP_XP` (100), repartida por daño igual que la de un NPC. `creditPvpXp` aplica a la parte de cada atacante su factor de nivel y el de repetición, con un solo `floor` en enteros (`pvpXp`; 100 × 1,1 × 0,5 da 55, sin restos de coma flotante). Los niveles son los de antes de acreditar. La víctima no pierde nada, y el oro de la penalización sigue yendo al último golpe |
+| Parejas (repetición) | `world.xpPairs`: atacante → víctima, por id de jugador, con la hora del 1.º hundimiento con XP y cuántos lleva. La ventana es `[1.º, 1.º + 30 min)`. Solo un hundimiento que da más de 0 XP abre o avanza la ventana (lectura de dev; la confirma producto). Reconectar no las borra y un reinicio sí. Las vencidas se borran en cada hundimiento PvP. `openPairs(world, id)` las da para el panel del objetivo (AC-160) |
+| Nivel e insignia | `levelOf(xp)` y `rankOf(level)` (1 Grumete a 5 Almirante). El nivel no se guarda en ningún sitio: se calcula de la XP (AC-150). La XP tiene un tope de 9 999 999 (`XP_CAP`) |
+| Red | Evento `{ type: 'xp', playerId, xp, pos, source: 'kill' \| 'pvp' }`, solo para el dueño y nunca con 0. `PlayerView.xp` lleva el total y, como toda la vista privada, viaja solo al cambiar. Cada barco de jugador lleva su nivel en `ShipSnapshot.lv` (los NPC, no), que viaja al entrar en el área y después solo al subir de nivel: suma 7 bytes por barco de jugador en un snapshot completo (`,"lv":9`; 8 desde el nivel 10) |
+| Log (AC-148) | Cada hundimiento entre jugadores deja `⚔️  PvP {"victim":10,"attackers":[{"level":10,"xp":70},{"level":12,"xp":15}]}`: niveles y XP, sin nombres ni userId. Se busca con `PvP \{`. `world.pvpLog` lo vacía el servidor en cada tick (`drainPvpLog`) |
+| Persistencia | `Player.xp` y `addPlayer(..., initial.xp)` (0 por defecto). La fila v2 la escribe y la lee `server/progress.ts` (AC-155 a AC-157) |
+
+Tests: `src/game/__tests__/xp.test.ts` (unitarios; AC-149 con dos bots en el mundo real durante 60 min simulados) y `server/__tests__/xp-server.test.ts` (socket.io real: el evento en el frame, `lv` en los deltas y la línea del log).
 
 ## 3. Capitán pirata (H-305, GDD §9)
 
