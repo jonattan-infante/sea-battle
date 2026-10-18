@@ -6,8 +6,11 @@ import {
   levelUpText,
   mobileLevelText,
   pushGoldReward,
+  pushKillReward,
   pushXpReward,
+  rewardLines,
   rewardText,
+  shortClassLabel,
   targetTypeLine,
   xpFill,
   xpNumbers,
@@ -87,53 +90,88 @@ describe('Aviso de subida de nivel (AC-151)', () => {
   });
 });
 
-describe('XP en el feed (AC-152; GDD §14: con 0 XP no sale nada de XP)', () => {
+describe('XP en el feed (AC-152; GDD §14, «XP ganada»: cada tramo solo si es > 0)', () => {
   const at = { x: 12.5, z: -40 };
-  const lines = (batch: RewardDraft[]) => batch.map(rewardText);
+  const lines = (batch: RewardDraft[]) => rewardLines(batch).map(rewardText);
 
-  test('hundir un pirata: «Hundiste a Pirata +105 oro · +30 XP», una sola línea con el oro y la XP', () => {
+  // En el mismo frame llegan, por este orden, el hundimiento, el oro y la XP (world.ts, sinkShip)
+  test('(a) NPC, quien lo hunde: «Hundiste a Pirata +105 oro · +30 XP», una sola línea', () => {
     const batch: RewardDraft[] = [];
-    pushGoldReward(batch, 'kill', 105, at, 'Pirata');
-    pushXpReward(batch, 'kill', 30, at, 'Pirata');
+    pushKillReward(batch, 'kill', 'Pirata', at);
+    pushGoldReward(batch, 'kill', 105, at);
+    pushXpReward(batch, 'kill', 30, at);
     expect(lines(batch)).toEqual(['Hundiste a Pirata +105 oro · +30 XP']);
-    expect(batch[0]).toMatchObject({ lead: 'Hundiste a', name: 'Pirata', gold: 105, xp: 30 });
+    expect(rewardLines(batch)).toEqual([{ lead: 'Hundiste a', name: 'Pirata', gold: 105, xp: 30 }]);
   });
 
-  test('sin XP, la línea de la 1.0 tal cual: ni «· +0 XP» ni tramo de XP', () => {
+  test('(b) NPC, quien ayudó: «Botín +5 oro · +3 XP», y en el mercante, «Botín +5 oro» (AC-145)', () => {
     const batch: RewardDraft[] = [];
-    pushGoldReward(batch, 'kill', 60, at, 'Mercante');
-    expect(lines(batch)).toEqual(['Hundiste a Mercante +60 oro']);
-    pushGoldReward(batch, 'kill', 5, { x: 0, z: 0 }, null); // mercante con < 10 % del daño: oro y 0 XP (AC-145)
-    pushGoldReward(batch, 'wreck', 30, { x: 1, z: 1 }, null);
-    expect(lines(batch)).toEqual(['Hundiste a Mercante +60 oro', 'Botín +5 oro', 'Restos +30 oro']);
+    pushGoldReward(batch, 'kill', 5, at);
+    pushXpReward(batch, 'kill', 3, at);
+    pushGoldReward(batch, 'kill', 5, { x: 0, z: 0 });
+    expect(lines(batch)).toEqual(['Botín +5 oro · +3 XP', 'Botín +5 oro']);
   });
 
-  test('la XP va con el oro de su mismo hundimiento: dos hundimientos en el mismo frame no se cruzan', () => {
+  test('sin XP, la línea de la 1.0: ni «· +0 XP» ni tramo de XP; restos, «Restos +30 oro»', () => {
+    const batch: RewardDraft[] = [];
+    pushKillReward(batch, 'kill', 'Mercante', at);
+    pushGoldReward(batch, 'kill', 60, at);
+    pushGoldReward(batch, 'wreck', 30, { x: 1, z: 1 });
+    expect(lines(batch)).toEqual(['Hundiste a Mercante +60 oro', 'Restos +30 oro']);
+  });
+
+  test('un NPC hundido sin botín para ti no tiene línea, como en la 1.0', () => {
+    const batch: RewardDraft[] = [];
+    pushKillReward(batch, 'kill', 'Pirata', at);
+    expect(lines(batch)).toEqual([]);
+  });
+
+  test('el oro y la XP van con su mismo hundimiento: dos hundimientos en el mismo frame no se cruzan', () => {
     const other = { x: 80, z: 15 };
     const batch: RewardDraft[] = [];
-    pushGoldReward(batch, 'kill', 105, at, 'Pirata');
-    pushXpReward(batch, 'kill', 30, at, 'Pirata');
-    pushGoldReward(batch, 'kill', 12, other, 'Pirata');
-    pushXpReward(batch, 'kill', 4, other, 'Pirata');
-    expect(lines(batch)).toEqual(['Hundiste a Pirata +105 oro · +30 XP', 'Hundiste a Pirata +12 oro · +4 XP']);
+    pushKillReward(batch, 'kill', 'Pirata', at);
+    pushGoldReward(batch, 'kill', 105, at);
+    pushXpReward(batch, 'kill', 30, at);
+    pushKillReward(batch, 'kill', 'Mercante', other);
+    pushGoldReward(batch, 'kill', 60, other);
+    pushXpReward(batch, 'kill', 10, other);
+    expect(lines(batch)).toEqual(['Hundiste a Pirata +105 oro · +30 XP', 'Hundiste a Mercante +60 oro · +10 XP']);
   });
 
-  test('en PvP: el oro de quien da el último golpe con su XP, y la XP sin oro de quien ayudó (propuesta, pendiente de producto)', () => {
-    const killer: RewardDraft[] = [];
-    pushGoldReward(killer, 'pvp', 50, at, 'Barbarroja');
-    pushXpReward(killer, 'pvp', 100, at, 'Barbarroja');
-    expect(lines(killer)).toEqual(['Botín de combate +50 oro · +100 XP']);
+  test('(c) PvP, quien da el último golpe: «Hundiste a Barbarroja» con el oro y la XP que haya, también sin ninguno', () => {
+    const both: RewardDraft[] = [];
+    pushKillReward(both, 'pvp', 'Barbarroja', at);
+    pushGoldReward(both, 'pvp', 50, at);
+    pushXpReward(both, 'pvp', 100, at);
+    expect(lines(both)).toEqual(['Hundiste a Barbarroja +50 oro · +100 XP']);
+    const noGold: RewardDraft[] = [];
+    pushKillReward(noGold, 'pvp', 'Barbarroja', at);
+    pushXpReward(noGold, 'pvp', 100, at);
+    expect(lines(noGold)).toEqual(['Hundiste a Barbarroja +100 XP']);
+    const nothing: RewardDraft[] = [];
+    pushKillReward(nothing, 'pvp', 'Barbarroja', at);
+    expect(lines(nothing)).toEqual(['Hundiste a Barbarroja']);
+  });
+
+  test('(d) PvP, quien ayudó: «Ayudaste en un hundimiento +40 XP», sin nombre; con 0 XP no hay evento ni línea', () => {
     const helper: RewardDraft[] = [];
-    pushXpReward(helper, 'pvp', 40, at, null);
-    expect(lines(helper)).toEqual(['Botín de combate +40 XP']);
+    pushXpReward(helper, 'pvp', 40, at);
+    expect(lines(helper)).toEqual(['Ayudaste en un hundimiento +40 XP']);
+    expect(lines([])).toEqual([]);
   });
 });
 
-describe('Panel del objetivo jugador (AC-153)', () => {
-  test('«Jugador · Nivel 13 · Teniente», y el rango más largo, «Jugador · Nivel 12 · Contramaestre»', () => {
-    expect(targetTypeLine(13)).toBe('Jugador · Nivel 13 · Teniente');
-    expect(targetTypeLine(12)).toBe('Jugador · Nivel 12 · Contramaestre');
-    expect(targetTypeLine(1)).toBe('Jugador · Nivel 1 · Grumete');
-    expect(targetTypeLine(20)).toBe('Jugador · Nivel 20 · Almirante');
+describe('Panel del objetivo jugador (AC-153; GDD §14, «Panel de objetivo»)', () => {
+  test('clase corta, nivel e insignia: «Balandra · Nivel 13 · Teniente»; el caso más largo, «Bergantín · Nivel 12 · Contramaestre»', () => {
+    expect(targetTypeLine('sloop', 13)).toBe('Balandra · Nivel 13 · Teniente');
+    expect(targetTypeLine('brig', 12)).toBe('Bergantín · Nivel 12 · Contramaestre');
+    expect(targetTypeLine('frigate', 1)).toBe('Fragata · Nivel 1 · Grumete');
+    expect(targetTypeLine('sloop', 20)).toBe('Balandra · Nivel 20 · Almirante');
+  });
+
+  test('el Navío de línea va en su forma corta, «Navío»', () => {
+    expect(shortClassLabel('line')).toBe('Navío');
+    expect(targetTypeLine('line', 17)).toBe('Navío · Nivel 17 · Almirante');
+    expect(shortClassLabel('sloop')).toBe('Balandra');
   });
 });

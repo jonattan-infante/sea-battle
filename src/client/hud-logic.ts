@@ -114,13 +114,21 @@ export function levelUpText(up: LevelUp): string {
   return up.rankChanged ? `¡Nivel ${up.level}! Ahora eres ${rankLabel(up.rank)}` : `¡Nivel ${up.level}!`;
 }
 
-// Línea de tipo del panel del objetivo cuando es un jugador (AC-153)
-export function targetTypeLine(level: number): string {
-  return `Jugador · Nivel ${level} · ${rankLabel(rankOf(level))}`;
+// Línea de tipo del panel del objetivo cuando es otro jugador (AC-153; GDD §14, «Panel de objetivo»): clase corta, nivel
+// e insignia. La insignia ya dice que es un jugador (los NPC no llevan), y si se le puede atacar va en la fila de la
+// distancia («✕ No atacable»)
+const SHORT_CLASS: Record<string, string> = { line: 'Navío' }; // el Navío de línea
+
+export function shortClassLabel(classId: string): string {
+  return SHORT_CLASS[classId] ?? classLabel(classId);
 }
 
-// Línea de recompensa del feed (AC-152): «Hundiste a Pirata +105 oro · +30 XP». El nombre va aparte porque es lo único que
-// se trunca (ART-DIRECTION §12.9). Con 0 XP no lleva tramo de XP, y con 0 de oro, tampoco de oro (GDD §14)
+export function targetTypeLine(classId: string, level: number): string {
+  return `${shortClassLabel(classId)} · Nivel ${level} · ${rankLabel(rankOf(level))}`;
+}
+
+// Línea de recompensa del feed (AC-152; GDD §14, «XP ganada»): «Hundiste a Pirata +105 oro · +30 XP». El nombre va
+// aparte porque es lo único que se trunca (ART-DIRECTION §12.9). Cada tramo sale solo si es > 0
 export interface Reward {
   lead: string;
   name: string | null;
@@ -130,31 +138,43 @@ export interface Reward {
 
 export type RewardSource = 'kill' | 'wreck' | 'pvp';
 
-// Recompensas de una pasada de eventos, con el punto y la fuente para juntar el oro y la XP del mismo hundimiento
+// Recompensas de una pasada de eventos, con el punto y la fuente para juntar el hundimiento, el oro y la XP del mismo
+// barco. En un frame llegan por ese orden (world.ts, sinkShip), con el mismo punto: el del barco hundido
 export interface RewardDraft extends Reward {
   source: RewardSource;
   x: number;
   z: number;
 }
 
-const REWARD_LEAD: Record<RewardSource, string> = { kill: 'Botín', wreck: 'Restos', pvp: 'Botín de combate' };
+// Sin hundimiento propio: quien ayudó a hundir un NPC cobra «Botín» (b), unos restos son «Restos» y quien ayudó en un PvP
+// solo cobra XP, «Ayudaste en un hundimiento» (d)
+const REWARD_LEAD: Record<RewardSource, string> = { kill: 'Botín', wreck: 'Restos', pvp: 'Ayudaste en un hundimiento' };
 
-function rewardDraft(source: RewardSource, pos: Vec2, killName: string | null): RewardDraft {
-  const name = source === 'kill' ? killName : null;
-  return { source, x: pos.x, z: pos.z, lead: name ? 'Hundiste a' : REWARD_LEAD[source], name, gold: 0, xp: 0 };
+const draft = (source: RewardSource, pos: Vec2, lead: string, name: string | null): RewardDraft => ({ source, x: pos.x, z: pos.z, lead, name, gold: 0, xp: 0 });
+const samePlace = (d: RewardDraft, pos: Vec2) => d.source !== 'wreck' && d.x === pos.x && d.z === pos.z;
+
+// El barco que hundiste tú (el `sunk` con tu barco como autor): «Hundiste a <nombre>», (a) y (c)
+export function pushKillReward(batch: RewardDraft[], source: 'kill' | 'pvp', name: string, pos: Vec2): void {
+  batch.push(draft(source, pos, 'Hundiste a', name));
 }
 
-// killName: el barco que acabas de hundir tú en esta pasada, si lo hay
-export function pushGoldReward(batch: RewardDraft[], source: RewardSource, gold: number, pos: Vec2, killName: string | null): void {
-  batch.push({ ...rewardDraft(source, pos, killName), gold });
+export function pushGoldReward(batch: RewardDraft[], source: RewardSource, gold: number, pos: Vec2): void {
+  const same = source === 'wreck' ? undefined : batch.find((d) => samePlace(d, pos) && d.gold === 0);
+  if (same) same.gold += gold;
+  // El oro de un PvP solo lo cobra quien lo hundió, que siempre recibe su `sunk`: si faltara, se nombra «un barco»
+  else batch.push({ ...(source === 'pvp' ? draft(source, pos, 'Hundiste a', 'un barco') : draft(source, pos, REWARD_LEAD[source], null)), gold });
 }
 
-// La XP llega en el mismo tick que el oro de su hundimiento, justo después (world.ts, sinkShip): se suma a esa línea, la
-// del mismo punto y la misma fuente. Si no la hay (en PvP, quien solo ayudó o una víctima sin oro), sale una propia
-export function pushXpReward(batch: RewardDraft[], source: 'kill' | 'pvp', xp: number, pos: Vec2, killName: string | null): void {
-  const same = batch.find((d) => d.source === source && d.x === pos.x && d.z === pos.z && d.xp === 0);
+export function pushXpReward(batch: RewardDraft[], source: 'kill' | 'pvp', xp: number, pos: Vec2): void {
+  const same = batch.find((d) => samePlace(d, pos) && d.xp === 0);
   if (same) same.xp += xp;
-  else batch.push({ ...rewardDraft(source, pos, killName), xp });
+  else batch.push({ ...draft(source, pos, REWARD_LEAD[source], null), xp });
+}
+
+// Las líneas que salen. Un NPC hundido sin oro ni XP para ti no tiene línea, como en la 1.0; hundir a un jugador siempre
+// se cuenta, también sin tramos: «Hundiste a Barbarroja» (c)
+export function rewardLines(batch: readonly RewardDraft[]): Reward[] {
+  return batch.filter((d) => d.source === 'pvp' || d.gold > 0 || d.xp > 0).map(({ lead, name, gold, xp }) => ({ lead, name, gold, xp }));
 }
 
 export function rewardParts(r: Reward): { gold: string; xp: string } {

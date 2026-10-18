@@ -199,17 +199,20 @@ function TargetPanel({ actions }: { actions: HudActions }) {
   const layout = useHudLayout();
   if (!target) return null;
   const color = RELATION_COLOR[target.relation];
-  // Otro jugador (1.1, AC-153): su insignia delante de «Jugador · Nivel 13 · Teniente», también en móvil (2.ª línea)
+  // Otro jugador (1.1, AC-153; GDD §14, «Panel de objetivo»): su insignia delante de «Balandra · Nivel 13 · Teniente».
+  // En móvil esa línea va la última, bajo la distancia, y el panel crece a 70 de alto (CSS, D75)
   const player = target.relation === 'player' && target.level !== null;
+  // Si no se le puede atacar, «En alcance» o «Fuera de alcance» no significan nada: «✕ No atacable»
+  const range = target.relation === 'player' && !target.attackable ? '✕ No atacable' : target.inRange ? '✓ En alcance' : '✕ Fuera de alcance';
   return (
-    <section className="panel hud-target" data-testid="target-frame" data-target-id={target.id} data-hud-block="">
+    <section className={`panel hud-target ${player ? 'is-player' : ''}`} data-testid="target-frame" data-target-id={target.id} data-hud-block="">
       <div className="hud-target__icon" style={{ color }}><RelationIcon relation={target.relation} classId={target.classId} /></div>
       <div className="hud-target__body">
         <div className="hud-target__name" style={{ color }} data-testid="target-name">{target.name}</div>
         {player ? (
           <div className="hud-target__meta is-player" data-testid="target-type">
             <RankBadge rank={rankOf(target.level!)} size={layout === 'desktop' ? 16 : 12} />
-            <span>{targetTypeLine(target.level!)}</span>
+            <span>{targetTypeLine(target.classId, target.level!)}</span>
           </div>
         ) : (
           <div className="hud-target__meta" data-testid="target-type">{target.classLabel} · {attitudeOf(target)}</div>
@@ -222,8 +225,8 @@ function TargetPanel({ actions }: { actions: HudActions }) {
             <>
               <span data-testid="target-distance">{target.distance} m</span>
               {target.relation !== 'self' && (
-                <span className={target.inRange ? 'in-range' : 'out-range'} data-testid="target-range">
-                  · {target.inRange ? '✓ En alcance' : '✕ Fuera de alcance'}
+                <span className={range === '✓ En alcance' ? 'in-range' : 'out-range'} data-testid="target-range">
+                  · {range}
                 </span>
               )}
             </>
