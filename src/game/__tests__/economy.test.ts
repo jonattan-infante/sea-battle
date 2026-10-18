@@ -1,4 +1,4 @@
-import { CAPTAIN_CLASS, DEATH_COUNTDOWN, DISCONNECT_GRACE, PORT_POSITION, RESPAWN_CLOCK_TOLERANCE, RESPAWN_RING, SHIP_CLASSES, SINKING_TIME, SPAWN_PROTECTION, TICK_RATE, WRECK_LIFETIME } from '../constants';
+import { CAPTAIN_CLASS, DEATH_COUNTDOWN, GUNBOAT_CLASS, DISCONNECT_GRACE, PORT_POSITION, RESPAWN_CLOCK_TOLERANCE, RESPAWN_RING, SHIP_CLASSES, SINKING_TIME, SPAWN_PROTECTION, TICK_RATE, WRECK_LIFETIME } from '../constants';
 import { GameEvent, Player, Ship, World } from '../types';
 import { distance } from '../vec';
 import {
@@ -341,7 +341,8 @@ describe('E5 — PvP y conexión (§12, §13)', () => {
 describe('E4 — Curva económica (§10)', () => {
   // Bot "barco primero" (AC-60): ataca al NPC más cercano, repara bajo el 40 %, no compra nada hasta poder
   // pagar el Bergantín y, desde ahí, compra siempre lo más barato disponible (Fragata incluida). Con el Capitán pirata
-  // (H-305): no lo ataca, no entra a menos de 200 m de su guarida y, si el capitán lo elige, navega al puerto
+  // (H-305): no lo ataca, no entra a menos de 200 m de su guarida y, si el capitán lo elige, navega al puerto. Con la
+  // Cañonera (H-306): no la ataca mientras su cañón tenga menos alcance que ella (65 m), es decir, hasta Cañones N2
   const LAIR_AVOID = 200;
   const DUEL_DISTANCE = 40; // el bot se mantiene a ≤ 40 m de su objetivo
   const CATALOG: ShopItem[] = [
@@ -408,6 +409,7 @@ describe('E4 — Curva económica (§10)', () => {
             let best: Ship | null = null;
             for (const o of world.ships.values()) {
               if (o.kind === 'player' || o.state !== 'alive' || o.classId === CAPTAIN_CLASS) continue;
+              if (o.classId === GUNBOAT_CLASS && cannonOf(world, s)!.range < cannonOf(world, o)!.range) continue;
               // Para dispararle tendría que acercarse a ≤ 40 m: nada a menos de 240 m de la guarida
               if (lair && distance(o.pos, lair) < LAIR_AVOID + DUEL_DISTANCE) continue;
               if (!best || distance(o.pos, s.pos) < distance(best.pos, s.pos)) best = o;

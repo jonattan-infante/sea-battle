@@ -132,11 +132,23 @@ Tests: `src/game/__tests__/xp.test.ts` (unitarios; AC-149 con dos bots en el mun
 | Identidad | `SHIP_CLASSES.captain`, `CAPTAIN_CLASS` (`constants.ts`) | `kind: 'pirate'` (facción hostil: misma regla de ataque, exclusión de 130 m del puerto y relación coral) y `classId: 'captain'` para todo lo propio del jefe. El render elige el modelo por `classId`: `SHIP_RECIPES.captain` es la receta `npc_pirate_captain` (dev-render, `264363e`) |
 | IA | `HOSTILE_AI` (`constants.ts`), `updatePirate` (`world.ts`) | La misma máquina de estados del pirata con el perfil de su clase: detecta a 90 m, orbita a 50 m, correa de 150 m alrededor de su guarida. Objetivo perdido (110 m), velocidad de órbita (8 m/s) y patrulla (120 m) son "como el pirata" |
 | Aparición | `updateCaptain` → `spawnCaptain` (`world.ts`) | Al final de `step`: con `killsSinceBoss ≥ 10` y ningún capitán en el mundo. Guarida = sector con menos jugadores (empate con `world.rng`), punto del arco de 440 m más cercano a su centro que esté a ≥ 150 m de todos los jugadores y fuera del margen de las islas; si no hay, el siguiente sector; si ninguno, se reintenta en el siguiente tick |
-| Cuenta | `sinkShip` | Suman los `kind: 'pirate'` que no son el capitán (piratas y, con H-306, cañoneras). La muerte del capitán la pone a 0 y no suma |
+| Cuenta | `sinkShip` | Suman los `kind: 'pirate'` que no son el capitán: piratas y cañoneras, que solo existen con el I2 encendido (§3.1). La muerte del capitán la pone a 0 y no suma |
 | Muerte | `sinkShip`, `updateLifecycle` | Reparto y restos como cualquier NPC (600 + 150). Evento `captainDown` con hasta 3 nombres por daño (ventana de 60 s del reparto) y `more`. Los nombres son exactamente los de quienes cobran del reparto (AC-111): no sale quien ya no está en el mundo ni quien tiene una parte que redondea a 0. Al terminar de hundirse sale del mundo: no reaparece por tiempo |
 | Cliente | `GameApp.tsx`, `hud-logic.ts`, `Minimap.tsx`, `overlays.ts` | Aviso (toast `warn`) y línea de feed con los textos de `captainSpawnText` / `captainDownText`. El aviso solo sale del evento `captain`, que no viaja en el snapshot completo: quien entra con el capitán ya vivo ve su marcador, no el aviso (AC-111). El aviso es el de D49, «¡Capitán pirata en el noroeste, sector B2!»: la región sale del cuadrante del evento `captain` (`sector`, tipado como `PirateSectorId`) y la celda, de su `pos` (la guarida) con `sectorOf`, la función del pie del minimapa, que vive en `hud-logic.ts` para que los dos textos no puedan divergir. Minimapa (D43): ★ de radio 5,5 / 2,2 px en el canvas (≤ 2 Hz), encima de piratas y mercantes y debajo del ▲ propio, que desaparece en el redibujado del hundimiento; el halo es un `<svg>` sobre el canvas con animación CSS de 1 s y trazo de 1,5 px que no escala. Placa: calavera + corona (2 iconos de 12 px) y ancho máximo +14 px para que «Capitán pirata» no se trunque; panel del objetivo: corona sobre la calavera |
 | Escenarios | `server/scenarios.ts` | `captain` (9 hundidos y un cebo con 1 de vida) y `captain-down` (capitán quieto con 1 de vida que no acierta), para `e2e/captain.spec.ts` |
 
+
+### 3.1 Cañonera pirata (H-306, GDD §9) y órbita compartida (AC-188)
+
+| Pieza | Dónde | Regla |
+|---|---|---|
+| Identidad | `SHIP_CLASSES.gunboat`, `GUNBOAT_CLASS` (`constants.ts`) | `kind: 'pirate'` (facción hostil, como el Capitán) y `classId: 'gunboat'`. El render elige el modelo por `classId` (`npc_pirate_gunboat`) |
+| Población (AC-51) | `createWorld`, `spawnGunboat` (`world.ts`); `NPC_POPULATION_I2`, `PIRATES_PER_SECTOR_I2`, `GUNBOATS_PER_SECTOR`, `GUNBOAT_RING` | Con el I2 encendido: 2 piratas y 1 cañonera por sector, y 8 mercantes (20 NPC, como en la 1.0). Apagado, la población de la 1.0 (12 + 8), con las mismas tiradas de `world.rng`. `spawnGunboat` devuelve `null` con el I2 apagado, como `spawnCaptain` |
+| Aparición y reaparición (AC-52) | `pirateSpot(world, sector, checkPlayers, classId)`, `respawnNpc` | El mismo abanico del sector que el pirata, en su anillo de 400–470 m, con su margen de navegación (16 m) y a ≥ 100 m de los jugadores. Reaparece a los 45 s en su sector |
+| IA (AC-113) | `HOSTILE_AI.gunboat.keepAway`, `approachDistance`, `fleePoint`, `updatePirate`, `speedCapOf` | La máquina de estados del pirata (patrulla, represalia, regreso, correa de 200 m, objetivo perdido a > 110 m) con su banda de combate: por encima de 64 m se acerca a la máxima (8 m/s); entre 55 y 64 m orbita a 62 m a 6 m/s; por debajo de 55 m se aleja a la máxima hacia el punto del objetivo en línea recta a la distancia del punto de órbita, sin soltar `attackTargetId` (sigue disparando a ≤ 65 m). Si ese punto no es navegable (isla o borde), orbita: GDD «acorralada». Sin `keepAway` (pirata, Capitán), se acerca por encima de órbita + 6 m y orbita, como en la 1.0 |
+| Órbita (AC-188) | `updatePirate`, `ORBIT_LEAD` | El punto de órbita va `ORBIT_LEAD` (0,45 rad) por delante sobre un círculo de radio `orbitRadius / cos(ORBIT_LEAD)`. Sin la compensación, perseguir ese punto deja la órbita real en `orbitRadius · cos(ORBIT_LEAD)`, un 10 % por dentro. Vale para todos los hostiles, también para el pirata con el I2 apagado |
+
+Tests: `src/game/__tests__/gunboat.test.ts` (AC-51 encendido, AC-52, AC-113 y AC-114 con 1 000 duelos), `orbit.test.ts` (AC-188), `captain.test.ts` (AC-54 con cañoneras) y `npc.test.ts` (AC-51 apagado). El bot de AC-60 (`economy.test.ts`) no ataca una cañonera mientras su cañón tenga menos alcance que ella, es decir, hasta Cañones N2 (decisión de producto: no es presa para N1).
 ## 4. Harnesses
 
 | Comando | Qué cubre |
@@ -191,5 +203,4 @@ Las variables de `test:remote` van en `.env.remote.local` (lo ignora `.env*` en 
 
 - Persistencia por `userId` (AC-97 y AC-129 a AC-133): Postgres en Railway (GDD Q2, §2.1). Falta validarla en staging tras un redeploy (AC-135).
 - El ping del HUD (solo si es > 200 ms) necesita medir la latencia sin enviar mensajes en reposo (AC-86); está pendiente de diseño.
-- Cañonera (I2, H-306): falta su IA y la población de I2 (AC-51, AC-113 y AC-114). El modelo (`npc_pirate_gunboat`) existe, pero nada lo instancia.
 - Munición especial y sonido: P2.

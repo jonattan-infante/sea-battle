@@ -22,6 +22,7 @@ export const SAFE_ZONE_RADIUS = 110;
 export const RESPAWN_RING = { min: 60, max: 90 };
 export const MERCHANT_RING = { min: 150, max: 330 };
 export const PIRATE_RING = { min: 300, max: 460 };
+export const GUNBOAT_RING = { min: 400, max: 470 }; // cañoneras de I2 (§9)
 export const PIRATE_PORT_EXCLUSION = 130; // un pirata nunca entra en este radio (§9)
 
 export interface IslandDef {
@@ -131,7 +132,7 @@ export const SHIP_CLASSES: Record<string, ShipClassStats> = {
     patrolSpeed: 6, maxSpeed: 10, accel: 2.5, brake: 4, turnRate: 60 * deg, cannonsPerSide: 6, price: 0,
     cannon: { damage: 28, accuracy: 0.65, range: 65, reload: 4.0 }, reward: 600, wreck: 150, respawnTime: 0
   },
-  // Cañonera pirata de I2 (§9): facción pirata; su IA propia (mantener la distancia) y su población llegan con H-306
+  // Cañonera pirata de I2 (§9): facción pirata, con su IA propia (mantener la distancia, HOSTILE_AI.gunboat.keepAway)
   gunboat: {
     id: 'gunboat', label: 'Cañonera pirata', kind: 'pirate', length: 28, radius: 8, maxHp: 900,
     patrolSpeed: 5, maxSpeed: 8, accel: 2.5, brake: 4, turnRate: 50 * deg, cannonsPerSide: 6, price: 0,
@@ -153,6 +154,10 @@ export const STARTING_SHIP: PlayerShipClass = 'sloop';
 
 export const NPC_POPULATION = { pirate: 12, merchant: 8 } as const;
 export const PIRATES_PER_SECTOR = 3;
+// Con el I2 encendido (AC-51), 4 cañoneras sustituyen a 4 piratas y la población sigue en 20. Apagado, la de arriba
+export const NPC_POPULATION_I2 = { pirate: 8, gunboat: 4, merchant: 8 } as const;
+export const PIRATES_PER_SECTOR_I2 = 2;
+export const GUNBOATS_PER_SECTOR = 1;
 
 // ---- Combate (§7) ----
 export const CANNONBALL_SPEED = 120; // m/s
@@ -199,13 +204,20 @@ export interface HostileAiStats {
   orbitRadius: number;
   orbitSpeed: number;
   patrolRadius: number;
+  // Mantener la distancia (cañonera): por encima de `approach` se acerca a velocidad máxima, por debajo de `flee` se aleja a
+  // velocidad máxima sin dejar de disparar y entre los dos orbita. Sin él, se acerca por encima de orbitRadius + 6 y orbita
+  keepAway?: { approach: number; flee: number };
 }
 export const HOSTILE_AI: Record<string, HostileAiStats> = {
   pirate: { aggro: PIRATE_AGGRO_RADIUS, disengage: PIRATE_DISENGAGE_TARGET, leash: PIRATE_LEASH, orbitRadius: PIRATE_ORBIT_RADIUS, orbitSpeed: PIRATE_ORBIT_SPEED, patrolRadius: PIRATE_PATROL_RADIUS },
   // El GDD fija detección, órbita y correa; objetivo perdido, velocidad de órbita y patrulla son "como el pirata"
   captain: { aggro: 90, disengage: PIRATE_DISENGAGE_TARGET, leash: 150, orbitRadius: 50, orbitSpeed: PIRATE_ORBIT_SPEED, patrolRadius: PIRATE_PATROL_RADIUS },
-  // Detección (80 m), órbita (62 m a 6 m/s) y correa (200 m) del GDD; objetivo perdido y patrulla, "igual que el pirata"
-  gunboat: { aggro: 80, disengage: PIRATE_DISENGAGE_TARGET, leash: PIRATE_LEASH, orbitRadius: 62, orbitSpeed: 6, patrolRadius: PIRATE_PATROL_RADIUS }
+  // Detección (80 m), órbita (62 m a 6 m/s), correa (200 m) y bandas (64 / 55 m) del GDD; objetivo perdido (110 m) y
+  // patrulla, "igual que el pirata"
+  gunboat: {
+    aggro: 80, disengage: PIRATE_DISENGAGE_TARGET, leash: PIRATE_LEASH, orbitRadius: 62, orbitSpeed: 6, patrolRadius: PIRATE_PATROL_RADIUS,
+    keepAway: { approach: 64, flee: 55 }
+  }
 };
 
 // ---- Capitán pirata (§9, I2) ----
