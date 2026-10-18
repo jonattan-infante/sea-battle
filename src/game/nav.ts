@@ -30,17 +30,47 @@ export function segmentPointDistance(a: Vec2, b: Vec2, c: Vec2): number {
   return Math.hypot(a.x + abx * t - c.x, a.z + abz * t - c.z);
 }
 
+// Una forma del mapa con el círculo que envuelve los suyos (O-43): centro en la media de sus centros y radio hasta su
+// borde más lejano. Los círculos de una forma son los «id.k» de mapOf (constants.ts); con uno solo, el id de la forma
+interface Shape {
+  x: number;
+  z: number;
+  radius: number;
+  circles: IslandDef[];
+}
+
+function shapesOf(islands: IslandDef[]): Shape[] {
+  const byShape = new Map<string, IslandDef[]>();
+  for (const island of islands) {
+    const id = island.id.split('.')[0];
+    byShape.set(id, [...(byShape.get(id) ?? []), island]);
+  }
+  return [...byShape.values()].map((circles) => {
+    const x = circles.reduce((sum, c) => sum + c.x, 0) / circles.length;
+    const z = circles.reduce((sum, c) => sum + c.z, 0) / circles.length;
+    return { x, z, radius: Math.max(...circles.map((c) => Math.hypot(c.x - x, c.z - z) + c.radius)), circles };
+  });
+}
+
 export class Navigator {
   private readonly graphs = new Map<number, Graph>();
   private readonly crossings = new Map<string, Vec2[]>();
+  private readonly shapes: Shape[];
   private builds = 0;
 
-  constructor(private readonly islands: IslandDef[]) {}
+  constructor(private readonly islands: IslandDef[]) {
+    this.shapes = shapesOf(islands);
+  }
 
-  // Libre si el segmento no entra en ninguna isla inflada por `clearance`
+  // Libre si el segmento no entra en ninguna isla inflada por `clearance`. Una forma de varios círculos se prueba antes por
+  // su círculo envolvente (O-43): si el tramo pasa a radio + margen o más de su centro, pasa a más del margen de cada uno
+  // de sus círculos (desigualdad triangular), con el EPS de sobra, y la forma entera se salta con una sola cuenta
   segmentClear(a: Vec2, b: Vec2, clearance: number): boolean {
-    for (const island of this.islands) {
-      if (segmentPointDistance(a, b, { x: island.x, z: island.z }) < island.radius + clearance - EPS) return false;
+    for (const shape of this.shapes) {
+      if (shape.circles.length > 1 && segmentPointDistance(a, b, shape) >= shape.radius + clearance) continue;
+      for (const island of shape.circles) {
+        if (segmentPointDistance(a, b, { x: island.x, z: island.z }) < island.radius + clearance - EPS) return false;
+      }
     }
     return true;
   }
