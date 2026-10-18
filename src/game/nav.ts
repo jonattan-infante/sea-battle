@@ -13,6 +13,13 @@ interface Graph {
   edges: number[][]; // adyacencia entre nodos (índices)
 }
 
+// El punto de la lista más cercano a q (null si la lista está vacía)
+function closest(q: Vec2, points: Vec2[]): Vec2 | null {
+  let best: Vec2 | null = null;
+  for (const p of points) if (!best || distance(q, p) < distance(q, best)) best = p;
+  return best;
+}
+
 // Distancia mínima entre el segmento ab y el punto c
 export function segmentPointDistance(a: Vec2, b: Vec2, c: Vec2): number {
   const abx = b.x - a.x;
@@ -25,7 +32,7 @@ export function segmentPointDistance(a: Vec2, b: Vec2, c: Vec2): number {
 
 export class Navigator {
   private readonly graphs = new Map<number, Graph>();
-  private readonly crossings = new Map<number, Vec2[]>();
+  private readonly crossings = new Map<string, Vec2[]>();
 
   constructor(private readonly islands: IslandDef[]) {}
 
@@ -44,51 +51,72 @@ export class Navigator {
     return min;
   }
 
+  // Fuera de todas las islas infladas por `extra` (con la tolerancia del redondeo, para los puntos justo en el borde)
+  private outside(p: Vec2, extra: number): boolean {
+    return this.islands.every((island) => Math.hypot(p.x - island.x, p.z - island.z) >= island.radius + extra - 1e-9);
+  }
+
   // Fuera de todas las islas infladas por `clearance` y dentro del límite
-  private navigable(p: Vec2, clearance: number): boolean {
-    if (Math.abs(p.x) > NAV_LIMIT || Math.abs(p.z) > NAV_LIMIT) return false;
-    return this.islands.every((island) => Math.hypot(p.x - island.x, p.z - island.z) >= island.radius + clearance);
+  navigable(p: Vec2, clearance: number): boolean {
+    return Math.abs(p.x) <= NAV_LIMIT && Math.abs(p.z) <= NAV_LIMIT && this.outside(p, clearance);
   }
 
   // Punto navegable más cercano: fuera de las islas infladas y dentro del límite (§4, AC-18, AC-21). Está en el borde de
   // la unión de las islas infladas: es la proyección sobre una de ellas o, donde dos se solapan (las rocas de los
-  // escollos, AC-172), uno de sus cruces. Empujar fuera de cada isla por turnos rebotaba entre las que se solapan y podía
-  // dejar el punto dentro. Supone que ninguna isla inflada pasa del límite, así que ningún tramo del borde es el del mapa
+  // escollos, o los círculos de una isla, AC-172 y AC-199), uno de sus cruces. Empujar fuera de cada isla por turnos
+  // rebotaba entre las que se solapan y podía dejar el punto dentro. Supone que ninguna isla inflada pasa del límite, así
+  // que ningún tramo del borde es el del mapa
   nearestNavigable(p: Vec2, clearance: number): Vec2 {
     const q = { x: Math.max(-NAV_LIMIT, Math.min(NAV_LIMIT, p.x)), z: Math.max(-NAV_LIMIT, Math.min(NAV_LIMIT, p.z)) };
     if (this.navigable(q, clearance)) return q;
-    let best = q;
-    let bestD = Infinity;
-    const consider = (c: Vec2) => {
-      const d = distance(q, c);
-      if (d < bestD && this.navigable(c, clearance)) {
-        best = c;
-        bestD = d;
-      }
-    };
+    return closest(q, this.edgePoints(q, clearance, PUSH_OUT, true)) ?? q;
+  }
+
+  // Contacto con la costa (el tope físico de último recurso, §6): el punto más cercano a p fuera de todas las islas
+  // infladas por el radio de colisión `radius`, en el borde exacto de su unión; null si p no toca ninguna
+  pushOut(p: Vec2, radius: number): Vec2 | null {
+    if (this.outside(p, radius)) return null;
+    return closest(p, this.edgePoints(p, radius, 0, false));
+  }
+
+  // Prepara al arrancar los grafos y los cruces de cada margen, para que la primera ruta no los construya dentro de un
+  // tick (AC-171)
+  prepare(clearances: number[]): void {
+    for (const clearance of clearances) {
+      this.graphFor(clearance);
+      this.crossingsFor(clearance, PUSH_OUT, true);
+    }
+  }
+
+  // Candidatos a punto más cercano a q del borde de la unión de las islas infladas por `extra`, a `pad` por fuera: la
+  // proyección de q sobre cada isla y los cruces de las que se solapan, solo los que quedan fuera de todas (y dentro del
+  // límite, con `bounded`)
+  private edgePoints(q: Vec2, extra: number, pad: number, bounded: boolean): Vec2[] {
+    const points: Vec2[] = [];
     for (const island of this.islands) {
-      const r = island.radius + clearance + PUSH_OUT;
+      const r = island.radius + extra + pad;
       const d = Math.hypot(q.x - island.x, q.z - island.z);
       const nx = d > EPS ? (q.x - island.x) / d : 1;
       const nz = d > EPS ? (q.z - island.z) / d : 0;
-      consider({ x: island.x + nx * r, z: island.z + nz * r });
+      const c = { x: island.x + nx * r, z: island.z + nz * r };
+      if (bounded ? this.navigable(c, extra) : this.outside(c, extra)) points.push(c);
     }
-    for (const c of this.crossingsFor(clearance)) consider(c);
-    return best;
+    return points.concat(this.crossingsFor(extra, pad, bounded));
   }
 
   // Cruces de cada par de islas infladas que se solapan, sin los que caen dentro de una tercera: los vértices del borde
   // de la unión. No dependen del punto, así que se calculan una vez por margen, como los grafos
-  private crossingsFor(clearance: number): Vec2[] {
-    let points = this.crossings.get(clearance);
+  private crossingsFor(extra: number, pad: number, bounded: boolean): Vec2[] {
+    const key = `${extra}|${pad}|${bounded}`;
+    let points = this.crossings.get(key);
     if (points) return points;
     points = [];
     for (let i = 0; i < this.islands.length; i++) {
       for (let j = i + 1; j < this.islands.length; j++) {
         const a = this.islands[i];
         const b = this.islands[j];
-        const ra = a.radius + clearance + PUSH_OUT;
-        const rb = b.radius + clearance + PUSH_OUT;
+        const ra = a.radius + extra + pad;
+        const rb = b.radius + extra + pad;
         const d = Math.hypot(b.x - a.x, b.z - a.z);
         if (d >= ra + rb || d <= Math.abs(ra - rb)) continue; // no se tocan, o una contiene a la otra
         const along = (d * d + ra * ra - rb * rb) / (2 * d); // de a al pie de la cuerda común
@@ -100,8 +128,8 @@ export class Navigator {
         points.push({ x: mx - uz * half, z: mz + ux * half }, { x: mx + uz * half, z: mz - ux * half });
       }
     }
-    points = points.filter((c) => this.navigable(c, clearance));
-    this.crossings.set(clearance, points);
+    points = points.filter((c) => (bounded ? this.navigable(c, extra) : this.outside(c, extra)));
+    this.crossings.set(key, points);
     return points;
   }
 
@@ -134,7 +162,8 @@ export class Navigator {
     return graph;
   }
 
-  // Waypoints desde `from` (excluido) hasta `to` (incluido)
+  // Waypoints desde `from` (excluido) hasta `to` (incluido) o, si `to` no se alcanza, hasta el punto alcanzable más
+  // cercano a `to`: el último waypoint es siempre el destino real
   findPath(from: Vec2, to: Vec2, clearance: number): Vec2[] {
     // Si el barco ya está dentro de la zona inflada (p. ej., tras un empuje físico), los tramos desde el
     // origen solo pueden mantener o aumentar su distancia actual a la isla, nunca acercarse más
@@ -184,9 +213,25 @@ export class Navigator {
       if (cur !== START && goalLinks.has(cur)) relax(GOAL);
     }
 
-    if (came[GOAL] === -1) return [to];
-    const path: Vec2[] = [];
-    for (let cur = GOAL; cur !== START && cur !== -1; cur = came[cur]) path.push(pos(cur));
-    return path.reverse();
+    const route = (end: number) => {
+      const path: Vec2[] = [];
+      for (let cur = end; cur !== START && cur !== -1; cur = came[cur]) path.push(pos(cur));
+      return path.reverse();
+    };
+    if (came[GOAL] !== -1) return route(GOAL);
+
+    // Destino inalcanzable (§6, punto 1b; AC-172): sin él, el barco iría en línea recta contra la costa. El A* ya ha
+    // cerrado todo lo alcanzable, así que el destino pasa al punto alcanzable más cercano: está en el borde de las islas
+    // infladas (proyección o cruce, como en nearestNavigable) y se ve desde el origen o desde un nodo alcanzado. Si no
+    // hay ninguno, el nodo alcanzado más cercano (o quedarse donde está)
+    const reached = [START];
+    for (let i = 0; i < n; i++) if (closed[i]) reached.push(i);
+    const candidates = this.edgePoints(to, clearance, PUSH_OUT, true).sort((a, b) => distance(a, to) - distance(b, to));
+    for (const c of candidates) {
+      const via = reached.find((i) => this.segmentClear(pos(i), c, i === START ? startClear : clearance));
+      if (via !== undefined) return [...route(via), c];
+    }
+    const nearest = reached.reduce((best, i) => (distance(pos(i), to) < distance(pos(best), to) ? i : best));
+    return nearest === START ? [from] : route(nearest);
   }
 }
