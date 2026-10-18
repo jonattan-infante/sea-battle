@@ -21,8 +21,11 @@ def face_normals(P):
     return np.repeat(n, 3, axis=0)
 
 
-def render(P, UV, C, atlas_lin, ppm, W, H, ox, oy, th_deg, SS=3, N=None, heading_deg=0.0):
-    """P, UV, C: vértices por triángulo (3·T). atlas_lin: textura en lineal (h, w, 3). Devuelve (rgb sRGB [0,1], cobertura)."""
+def render(P, UV, C, atlas_lin, ppm, W, H, ox, oy, th_deg, SS=3, N=None, heading_deg=0.0, S=None, kh=1.0, ks=1.0):
+    """P, UV, C: vértices por triángulo (3·T). atlas_lin: textura en lineal (h, w, 3). Devuelve (rgb sRGB [0,1], cobertura).
+    S, kh, ks: «luz de forma» de la lámina de la cadena de arte: donde S = 1 (el _RIM_MASK del casco), la hemisférica se
+    multiplica por kh y el sol por ks; con los valores por defecto la luz es la del juego, sin cambios."""
+    S = np.zeros(len(P)) if S is None else np.asarray(S, float)
     TH = math.radians(th_deg)
     P = np.asarray(P, float); UV = np.asarray(UV, float); C = np.asarray(C, float)
     N = face_normals(P) if N is None else np.asarray(N, float)
@@ -67,7 +70,8 @@ def render(P, UV, C, atlas_lin, ppm, W, H, ox, oy, th_deg, SS=3, N=None, heading
         alb = tex * (w0[..., None] * C[i] + w1[..., None] * C[i + 1] + w2[..., None] * C[i + 2])
         hemi = M.GROUND + (M.SKY - M.GROUND) * (0.5 * n[..., 1:2] + 0.5)
         ndl = np.clip(n @ M.LD, 0, None)[..., None]
-        rgb = alb / math.pi * (M.IH * hemi + M.IS * M.SUN * ndl)
+        sw = (w0 * S[i] + w1 * S[i + 1] + w2 * S[i + 2])[..., None]; fh, fs = 1 + sw * (kh - 1), 1 + sw * (ks - 1)
+        rgb = alb / math.pi * (M.IH * hemi * fh + M.IS * M.SUN * ndl * fs)
         if M.GGX:
             Hh = M.LD + V; Hh /= np.linalg.norm(Hh)
             nv = np.clip(n @ V, 1e-4, 1)[..., None]; nl = np.clip(n @ M.LD, 0, 1)[..., None]; nh = np.clip(n @ Hh, 0, 1)[..., None]
@@ -75,7 +79,7 @@ def render(P, UV, C, atlas_lin, ppm, W, H, ox, oy, th_deg, SS=3, N=None, heading
             D = a2 / (math.pi * (nh * nh * (a2 - 1) + 1) ** 2)
             Vis = 0.5 / (nl * np.sqrt(a2 + (1 - a2) * nv * nv) + nv * np.sqrt(a2 + (1 - a2) * nl * nl) + 1e-6)
             F = 0.04 + 0.96 * (1 - vh) ** 5
-            rgb = rgb + M.IS * M.SUN * nl * F * Vis * D
+            rgb = rgb + M.IS * M.SUN * nl * F * Vis * D * fs
         zb[upd] = d[upd]
         col[by0:by1 + 1, bx0:bx1 + 1][upd] = M.lin2srgb(rgb[upd])
         cov[by0:by1 + 1, bx0:bx1 + 1][upd] = True
