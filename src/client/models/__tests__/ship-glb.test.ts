@@ -2,13 +2,15 @@
 // procedural sin cambiar el juego, y uno que lo incumple se rechaza y deja el procedural. Los GLB se escriben aquí desde
 // el procedural (glb-writer.ts) y los lee el GLTFLoader de three, como en el navegador
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { buildShipAsset, getShipModel, LOD_PX, ShipModel } from '../ship-geometry';
-import { BASIS_PATH, createGlbLoader, EntryGate, GlbLoader, OWN_GLB_WAIT_MS, setShipMap, ShipGlbError, ShipGlbStore, shipModelFromGlb } from '../ship-glb';
+import { BASIS_PATH, createGlbLoader, EntryGate, GlbLoader, OWN_GLB_WAIT_MS, setShipMap, SHIP_GLB, ShipGlbError, ShipGlbStore, shipModelFromGlb } from '../ship-glb';
+import { contentHash, E2E_PREFIX, HASHED_GLB, unhashedModels } from '../../../../scripts/glb/content-hash';
 import { writeGlb, GlbOptions } from './glb-writer';
 
 type Json = Record<string, unknown>;
@@ -420,13 +422,50 @@ describe('§6: la textura del GLB en el material del barco', () => {
   });
 });
 
+const ROOT = path.join(__dirname, '..', '..', '..', '..');
+
 describe('§1: el transcodificador de KTX2 servido en public/basis', () => {
+  const three = (file: string) => fs.readFileSync(path.join(ROOT, 'node_modules', 'three', 'examples', 'jsm', 'libs', 'basis', file));
+
+  // Se sirve con caché de un año (next.config.ts, AC-193 c): la carpeta lleva el hash de los dos archivos, así que un
+  // transcodificador nuevo (al subir three) cambia de URL. Si este test falla, copia los de three a public/basis/<hash>/
+  test('BASIS_PATH es /basis/<hash del js y el wasm de three>/', () => {
+    expect(BASIS_PATH).toBe(`/basis/${contentHash(three('basis_transcoder.js'), three('basis_transcoder.wasm'))}/`);
+  });
+
   test.each(['basis_transcoder.js', 'basis_transcoder.wasm'])('%s es el de three instalado (BASIS_PATH)', (file) => {
-    const root = path.join(__dirname, '..', '..', '..', '..');
-    const served = fs.readFileSync(path.join(root, 'public', 'basis', file));
-    const three = fs.readFileSync(path.join(root, 'node_modules', 'three', 'examples', 'jsm', 'libs', 'basis', file));
-    expect(served.equals(three)).toBe(true);
-    expect(BASIS_PATH).toBe('/basis/');
+    const served = fs.readFileSync(path.join(ROOT, 'public', BASIS_PATH, file));
+    expect(served.equals(three(file))).toBe(true);
+  });
+
+  test('public/basis solo tiene la carpeta de BASIS_PATH y el README: nada se sirve sin hash', () => {
+    expect(fs.readdirSync(path.join(ROOT, 'public', 'basis')).sort()).toEqual([path.basename(BASIS_PATH), 'README.md'].sort());
+  });
+});
+
+describe('§13: los GLB de public/models llevan el hash de su contenido', () => {
+  // Con caché de un año, un GLB con nombre fijo no se actualizaría en el navegador de quien ya lo bajó
+  test('se detectan el nombre sin hash, el hash que no es el del contenido y las carpetas', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'models-'));
+    try {
+      const bytes = Buffer.from('glTF');
+      fs.writeFileSync(path.join(dir, `ship_sloop.${contentHash(bytes)}.glb`), bytes);
+      fs.writeFileSync(path.join(dir, `${E2E_PREFIX}ship_sloop.00000000.glb`), bytes); // fixture de build:e2e, fuera de git
+      fs.writeFileSync(path.join(dir, 'ship_brig.glb'), bytes);
+      fs.writeFileSync(path.join(dir, 'ship_frigate.00000000.glb'), bytes);
+      fs.mkdirSync(path.join(dir, 'navio'));
+      expect(unhashedModels(dir)).toEqual(['navio', 'ship_brig.glb', 'ship_frigate.00000000.glb']);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('public/models no tiene GLB sin hash, y SHIP_GLB solo apunta a GLB con hash que existen', () => {
+    expect(unhashedModels(path.join(ROOT, 'public', 'models'))).toEqual([]);
+    const bad = Object.values(SHIP_GLB).filter(
+      (url) => !url || !/^\/models\/[^/]+$/.test(url) || !HASHED_GLB.test(path.basename(url)) || path.basename(url).startsWith(E2E_PREFIX) || !fs.existsSync(path.join(ROOT, 'public', url))
+    );
+    expect(bad).toEqual([]);
   });
 });
 

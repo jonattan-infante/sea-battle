@@ -67,6 +67,41 @@ export async function enterGame(page: Page, base = ''): Promise<void> {
   await page.waitForFunction(() => window.__SEA_BATTLE__?.ready() === true, null, { timeout: 30_000 });
 }
 
+// El GLB de la Balandra en el manifiesto antes de entrar (AC-193). GameApp asigna window.__SEA_BATTLE__ en el efecto que
+// sigue a crear el runtime, antes de que llegue la bienvenida y del primer frame: la trampa pone ahí la URL, como si
+// viniera en SHIP_GLB. El barco del invitado es la Balandra
+// waitMs alarga el tope cuando lo que se prueba es la espera: en SwiftShader, el primer frame (que compila los shaders)
+// puede durar más de 0,5 s y abriría la entrada por el tope aunque el GLB llegase a tiempo en una GPU
+export const glbBeforeEntry = (page: Page, url: string, waitMs?: number) =>
+  page.addInitScript(
+    ([u, ms]) => {
+      let debug: unknown;
+      Object.defineProperty(window, '__SEA_BATTLE__', {
+        configurable: true,
+        get: () => debug,
+        set: (v: { runtime(): unknown }) => {
+          if (!debug) {
+            const rt = v.runtime() as { useShipGlb(c: string, url: string): void; entry: { waitMs: number } };
+            rt.useShipGlb('sloop', u);
+            if (ms) rt.entry.waitMs = ms;
+          }
+          debug = v;
+        }
+      });
+    },
+    [url, waitMs ?? 0] as const
+  );
+
+// La entrada (EntryGate): primer frame, último frame que esperó, frame en que se mostró, con qué modelo y si fue por el
+// tope; y si la portada «Izando velas…» ya no tapa el juego
+export const entryOf = (page: Page) =>
+  page.evaluate(() => {
+    type Entry = { firstFrameAt: number; lastWaitAt: number; shownAt: number; withGlb: boolean; capped: boolean };
+    const e = (window.__SEA_BATTLE__!.runtime() as unknown as { entry: Entry }).entry;
+    const cover = document.querySelector<HTMLElement>('.game-root > [data-testid="loading"]');
+    return { firstFrameAt: e.firstFrameAt, lastWaitAt: e.lastWaitAt, shownAt: e.shownAt, withGlb: e.withGlb, capped: e.capped, coverHidden: !!cover && cover.hidden };
+  });
+
 export const dialogsOf = (page: Page): string[] => (page as unknown as { __dialogs?: string[] }).__dialogs ?? [];
 
 export const me = (page: Page) => page.evaluate(() => window.__SEA_BATTLE__!.me() as DebugShip | null);
