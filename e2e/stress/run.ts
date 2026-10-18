@@ -305,8 +305,8 @@ async function compareProgress(url: string, lastMe: Map<string, PlayerView | nul
     let matched = 0;
     for (const [userId, me] of lastMe) {
       const row = byUser.get(userId);
-      const want = me && { gold: me.gold, upgrades: me.upgrades, ownedShips: me.ownedShips, activeShip: me.activeShip };
-      if (row && want && JSON.stringify(row) === JSON.stringify({ gold: want.gold, upgrades: { ...want.upgrades }, ownedShips: [...want.ownedShips], activeShip: want.activeShip })) matched++;
+      const want = me && { gold: me.gold, upgrades: me.upgrades, ownedShips: me.ownedShips, activeShip: me.activeShip, xp: me.xp };
+      if (row && want && JSON.stringify(row) === JSON.stringify({ gold: want.gold, upgrades: { ...want.upgrades }, ownedShips: [...want.ownedShips], activeShip: want.activeShip, xp: want.xp })) matched++;
       else mismatches.push(`${userId}: BD ${row ? `${row.gold} de oro, ${row.activeShip}` : 'sin fila'} frente a frame ${want ? `${want.gold} de oro, ${want.activeShip}` : 'sin frame'}`);
     }
     return { matched, total: lastMe.size, mismatches };

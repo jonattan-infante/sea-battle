@@ -16,6 +16,7 @@ import { createPersistence, createPgStore, ProgressStore } from '../persistence'
 import { SavedProgress } from '../progress';
 import { PgProxy, startPgProxy } from './fixtures/pg-proxy';
 import { connectGame, joinGame, Joined, sleep, waitFor } from './fixtures/game-socket';
+import { rowV1 } from './fixtures/progress-rows';
 import { createTestDb, TestDb } from './pg/test-db';
 
 jest.setTimeout(30_000);
@@ -77,9 +78,9 @@ async function startServer(opts: Partial<GameServerOptions> = {}): Promise<void>
 
 const world = () => game!.world;
 const join = (userId: string): Promise<Joined> => joinGame(url, { token: userId }, userId, sockets);
-const SLOOP_ONLY: SavedProgress = { gold: 100, upgrades: { cannons: 1, hull: 1, sails: 1 }, ownedShips: ['sloop'], activeShip: 'sloop' };
-const FRIGATE: SavedProgress = { gold: 1234, upgrades: { cannons: 2, hull: 3, sails: 1 }, ownedShips: ['sloop', 'brig', 'frigate'], activeShip: 'frigate' };
-const fields = (v: PlayerView): SavedProgress => ({ gold: v.gold, upgrades: v.upgrades, ownedShips: v.ownedShips, activeShip: v.activeShip });
+const SLOOP_ONLY: SavedProgress = { gold: 100, upgrades: { cannons: 1, hull: 1, sails: 1 }, ownedShips: ['sloop'], activeShip: 'sloop', xp: 0 };
+const FRIGATE: SavedProgress = { gold: 1234, upgrades: { cannons: 2, hull: 3, sails: 1 }, ownedShips: ['sloop', 'brig', 'frigate'], activeShip: 'frigate', xp: 0 };
+const fields = (v: PlayerView): SavedProgress => ({ gold: v.gold, upgrades: v.upgrades, ownedShips: v.ownedShips, activeShip: v.activeShip, xp: v.xp });
 const texts = (j: Joined) => j.notices().map((n: Notice) => n.text);
 
 async function seed(userId: string, state: unknown): Promise<void> {
@@ -131,7 +132,7 @@ const lastView = (c: ClientSocket) => {
 
 describe('AC-131: si no se puede cargar el progreso, no se entra con un estado por defecto', () => {
   test('BD parada: «No podemos cargar tu progreso ahora mismo», no entra y la fila queda igual byte a byte; al volver la BD, Reintentar entra con su progreso', async () => {
-    await seed('u-ana', { v: 1, ...FRIGATE });
+    await seed('u-ana', rowV1(FRIGATE));
     const before = await rawRow('u-ana');
     await startServer();
     proxy.cut();
@@ -152,7 +153,7 @@ describe('AC-131: si no se puede cargar el progreso, no se entra con un estado p
   });
 
   test('BD colgada: tras 3 s sin respuesta sale el mismo aviso; la fila queda igual; al volver, Reintentar entra', async () => {
-    await seed('u-bea', { v: 1, ...FRIGATE });
+    await seed('u-bea', rowV1(FRIGATE));
     const before = await rawRow('u-bea');
     await startServer();
     proxy.hang();
@@ -173,9 +174,9 @@ describe('AC-131: si no se puede cargar el progreso, no se entra con un estado p
   });
 
   test.each([
-    ['oro negativo', { v: 1, ...FRIGATE, gold: -5 }],
-    ['nivel 4', { v: 1, ...FRIGATE, upgrades: { cannons: 4, hull: 1, sails: 1 } }],
-    ['barco activo que no posee', { v: 1, ...FRIGATE, ownedShips: ['sloop'], activeShip: 'frigate' }]
+    ['oro negativo', rowV1({ ...FRIGATE, gold: -5 })],
+    ['nivel 4', rowV1({ ...FRIGATE, upgrades: { cannons: 4, hull: 1, sails: 1 } })],
+    ['barco activo que no posee', rowV1({ ...FRIGATE, ownedShips: ['sloop'], activeShip: 'frigate' })]
   ])('registro corrupto (%s): el aviso, la fila intacta aunque reintente; reparada la fila, entra con ella', async (_label, corrupt) => {
     await seed('u-cai', corrupt);
     const before = await rawRow('u-cai');
@@ -187,7 +188,7 @@ describe('AC-131: si no se puede cargar el progreso, no se entra con un estado p
     expect(await rawRow('u-cai')).toBe(before);
     expect(world().players.has('u-cai')).toBe(false);
 
-    await db.admin.query('UPDATE player_progress SET state = $2 WHERE user_id = $1', ['u-cai', { v: 1, ...FRIGATE }]);
+    await db.admin.query('UPDATE player_progress SET state = $2 WHERE user_id = $1', ['u-cai', rowV1(FRIGATE)]);
     const view = lastView(c);
     expect((await tryJoin(c)).welcome).toBeDefined();
     await waitFor(() => view() !== null, 3000, 'la vista privada');
@@ -195,7 +196,7 @@ describe('AC-131: si no se puede cargar el progreso, no se entra con un estado p
   });
 
   test('los reintentos gastan fichas: un cliente que martillea «Reintentar» no pasa del límite de intenciones (ráfaga de 20 y 10/s)', async () => {
-    await seed('u-dan', { v: 1, ...SLOOP_ONLY, gold: -1 });
+    await seed('u-dan', rowV1({ ...SLOOP_ONLY, gold: -1 }));
     let loads = 0;
     const inner = createPgStore(pool);
     const store: ProgressStore = { ...inner, load: (id) => (loads++, inner.load(id)) };
@@ -254,8 +255,8 @@ describe('AC-132: con la BD caída en partida se sigue jugando, con aviso y sin 
   test.each([5, 60])(
     'corte de %i s: aviso para los dos jugadores con cuenta (con y sin cambios) y no para el invitado; 0 escrituras y ≤ 1 consulta ligera/s durante el corte; tienda cerrada; al volver la BD, el aviso se va en ≤ 5 s y el oro está escrito',
     async (seconds) => {
-      await seed('u-ana', { v: 1, ...SLOOP_ONLY });
-      await seed('u-bea', { v: 1, ...SLOOP_ONLY, gold: 5000, ownedShips: ['sloop', 'brig'] });
+      await seed('u-ana', rowV1(SLOOP_ONLY));
+      await seed('u-bea', rowV1({ ...SLOOP_ONLY, gold: 5000, ownedShips: ['sloop', 'brig'] }));
       const counter = countingStore(createPgStore(pool));
       await startServer({ store: counter.store }); // tiempos reales: guardado cada 2 s y sondeo cada 1 s
       const a = await join('u-ana');
@@ -310,8 +311,8 @@ describe('AC-132: con la BD caída en partida se sigue jugando, con aviso y sin 
 
   // H-24 (decisión de game-product): en reposo no se consulta la BD, así que el corte se detecta con la primera escritura
   test('H-24: con todos en reposo, 15 s de corte sin ninguna consulta ni aviso; la primera compra se rechaza sin cambiar nada y desde ahí los dos jugadores con cuenta ven el aviso; al volver la BD, se va en ≤ 5 s y la fila sigue igual', async () => {
-    await seed('u-ana', { v: 1, ...SLOOP_ONLY });
-    await seed('u-bea', { v: 1, ...SLOOP_ONLY, gold: 5000, ownedShips: ['sloop', 'brig'] });
+    await seed('u-ana', rowV1(SLOOP_ONLY));
+    await seed('u-bea', rowV1({ ...SLOOP_ONLY, gold: 5000, ownedShips: ['sloop', 'brig'] }));
     const queries = countQueries(pool);
     await startServer(); // tiempos reales: guardado cada 2 s y sondeo cada 1 s
     const a = await join('u-ana');
@@ -351,7 +352,7 @@ describe('AC-132: con la BD caída en partida se sigue jugando, con aviso y sin 
   }, 60_000);
 
   test('BD colgada (no contesta): también sale el aviso y la partida sigue', async () => {
-    await seed('u-fer', { v: 1, ...SLOOP_ONLY });
+    await seed('u-fer', rowV1(SLOOP_ONLY));
     await startServer({ saveIntervalMs: 200, probeIntervalMs: 200 });
     const f = await join('u-fer');
     proxy.hang();
@@ -363,7 +364,7 @@ describe('AC-132: con la BD caída en partida se sigue jugando, con aviso y sin 
   });
 
   test('AC-129: con la BD caída al desconectar, al volver con la BD ya disponible el oro está intacto', async () => {
-    await seed('u-gil', { v: 1, ...SLOOP_ONLY });
+    await seed('u-gil', rowV1(SLOOP_ONLY));
     await startServer({ autoStart: false, saveIntervalMs: 200, probeIntervalMs: 200 });
     const gil = await join('u-gil');
     world().players.get('u-gil')!.gold = 777;
@@ -385,7 +386,7 @@ describe('AC-132: con la BD caída en partida se sigue jugando, con aviso y sin 
   });
 
   test('AC-129: con la confirmación de la escritura lenta, el jugador sigue en memoria hasta que llega', async () => {
-    await seed('u-gil', { v: 1, ...SLOOP_ONLY });
+    await seed('u-gil', rowV1(SLOOP_ONLY));
     // La confirmación de cada escritura llega 300 ms después de que la fila ya está en la BD (un runner lento)
     const inner = createPgStore(pool);
     const slow: ProgressStore = {
@@ -435,7 +436,7 @@ describe('AC-132: con la BD caída no se insiste con escrituras', () => {
     };
     let gold = 100;
     const p = createPersistence({ store, read: () => ({ ...SLOOP_ONLY, gold }), onConflict: () => {}, saveIntervalMs: 20, probeIntervalMs: 100 });
-    p.track('u', { progress: SLOOP_ONLY, carry: { v: 1 }, revision: 1 });
+    p.track('u', { progress: SLOOP_ONLY, carry: { newShips: [] }, revision: 1 });
     gold = 150;
     await waitFor(() => p.isDegraded(), 1000, 'el estado degradado');
     const t0 = Date.now();
