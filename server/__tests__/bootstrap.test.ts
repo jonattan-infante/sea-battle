@@ -5,8 +5,8 @@ import { AddressInfo } from 'net';
 import { Server } from 'socket.io';
 import { io as ioClient } from 'socket.io-client';
 import { C2S, S2C } from '../../src/game/protocol';
-import { databaseConfigError, startGame } from '../bootstrap';
-import { createTestDb } from './pg/test-db';
+import { databaseConfigError, GameStack, startGame } from '../bootstrap';
+import { createTestDb, TestDb } from './pg/test-db';
 
 describe('DATABASE_URL', () => {
   test.each(['RAILWAY_ENVIRONMENT', 'RAILWAY_ENVIRONMENT_NAME', 'RAILWAY_PROJECT_ID', 'RAILWAY_SERVICE_ID'])('en Railway es obligatoria (%s presente)', (marker) => {
@@ -33,40 +33,47 @@ describe('DATABASE_URL', () => {
 });
 
 describe('startGame', () => {
-  const io = () => new Server(createServer());
+  // Lo que arranca cada test se para en afterEach, también si falla un expect o si arranca lo que debía fallar: con el
+  // bucle del juego o el pool vivos, Jest no termina (O-34)
+  const stacks: GameStack[] = [];
+  const servers: Server[] = [];
+  const dbs: TestDb[] = [];
+  afterEach(async () => {
+    for (const { game, pool } of stacks.splice(0)) {
+      game.stop();
+      await pool?.end();
+    }
+    servers.splice(0).forEach((s) => s.close());
+    for (const db of dbs.splice(0)) await db.drop();
+  });
+  const io = () => {
+    const server = new Server(createServer());
+    servers.push(server);
+    return server;
+  };
+  async function boot(...args: Parameters<typeof startGame>): Promise<GameStack> {
+    const stack = await startGame(...args);
+    stacks.push(stack);
+    return stack;
+  }
 
   test('sin DATABASE_URL (fuera de Railway) arranca sin BD y lo avisa', async () => {
     const logs: string[] = [];
-    const server = io();
-    const { game, pool } = await startGame(server, { SEA_BATTLE_NPCS: '0' }, (m) => logs.push(m));
+    const { pool } = await boot(io(), { SEA_BATTLE_NPCS: '0' }, (m) => logs.push(m));
     expect(pool).toBeNull();
     expect(logs.join('\n')).toMatch(/Sin DATABASE_URL/);
-    game.stop();
-    server.close();
   });
 
   test('con DATABASE_URL migra antes de devolver el servidor', async () => {
     const db = await createTestDb();
-    const server = io();
-    try {
-      const { game, pool } = await startGame(server, { SEA_BATTLE_NPCS: '0', DATABASE_URL: db.url });
-      const { rows } = await db.admin.query("SELECT to_regclass('player_progress') IS NOT NULL AS ok");
-      expect(rows[0].ok).toBe(true);
-      game.stop();
-      await pool!.end();
-    } finally {
-      server.close();
-      await db.drop();
-    }
+    dbs.push(db);
+    await boot(io(), { SEA_BATTLE_NPCS: '0', DATABASE_URL: db.url });
+    const { rows } = await db.admin.query("SELECT to_regclass('player_progress') IS NOT NULL AS ok");
+    expect(rows[0].ok).toBe(true);
   });
 
   test('si la BD no responde, falla (y el proceso no abre el puerto)', async () => {
-    const server = io();
-    try {
-      await expect(startGame(server, { SEA_BATTLE_NPCS: '0', DATABASE_URL: 'postgres://postgres@127.0.0.1:1/none' })).rejects.toThrow();
-    } finally {
-      server.close();
-    }
+    await expect(boot(io(), { SEA_BATTLE_NPCS: '0', DATABASE_URL: 'postgres://postgres@127.0.0.1:1/none' })).rejects.toThrow();
   });
 });
 
