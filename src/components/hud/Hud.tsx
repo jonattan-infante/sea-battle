@@ -2,7 +2,7 @@
 // HUD (ART-DIRECTION §12). React solo pinta cuando cambian los datos del store; lo que avanza con el reloj
 // (recarga, protección, cuenta atrás) se actualiza por ref desde un único requestAnimationFrame.
 import React, { useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react';
-import { CAPTAIN_CLASS, REPAIR_RATE, REPAIR_RATE_UNDER_FIRE } from '../../game/constants';
+import { REPAIR_RATE, REPAIR_RATE_UNDER_FIRE } from '../../game/constants';
 import { rankLabel, rankOf } from '../../game/xp';
 import type { GameClient } from '../../client/game-client';
 import { HINTS } from '../../client/hints';
@@ -24,8 +24,9 @@ import { MeHud, Relation, TargetHud, useHud } from '../../client/hud-store';
 import { HUD_BLOCKS_EVENT } from '../../client/overlays';
 import { RankBadge } from './badges';
 import FeedText from './FeedText';
-import { Alert, Anchor, Close, CloudOff, Coins, Crosshair, Crown, Sailboat, Shield, Skull, Star, Stop, Store, Swords, Target, Wrench } from './icons';
+import { Alert, Close, CloudOff, Coins, Crosshair, Sailboat, Shield, Stop, Store, Swords, Target, Wrench } from './icons';
 import Minimap, { ViewRect } from './Minimap';
+import RelationIcon from './RelationIcon';
 import Shop from './Shop';
 import { DeathOverlay } from './Overlays';
 
@@ -74,15 +75,6 @@ function subscribeLayout(onChange: () => void): () => void {
 
 function useHudLayout(): HudLayout {
   return useSyncExternalStore(subscribeLayout, readLayout, () => 'desktop');
-}
-
-function RelationIcon({ relation, classId, size = 22 }: { relation: Relation; classId?: string; size?: number }) {
-  // Capitán pirata: calavera y corona (ART-DIRECTION §10)
-  if (relation === 'pirate' && classId === CAPTAIN_CLASS) return <span className="hud-icon-pair"><Crown size={Math.round(size * 0.55)} /><Skull size={Math.round(size * 0.75)} /></span>;
-  if (relation === 'pirate') return <Skull size={size} />;
-  if (relation === 'merchant') return <Coins size={size} />;
-  if (relation === 'self') return <Star size={size} />;
-  return <Anchor size={size} />;
 }
 
 // ---------- Panel del jugador ----------

@@ -45,7 +45,7 @@
 }
 
 .wo-plate__icon { display: inline-flex; flex: none; width: 12px; height: 12px; }
-.wo-plate__icon[data-icons="2"] { width: 26px; gap: 2px; } /* Capitán pirata: calavera y corona */
+.wo-plate__icon[data-icons="2"] { width: 26px; gap: 2px; } /* Capitán pirata: calavera y corona; Cañonera pirata: calavera y bomba */
 .wo-plate__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 /* 2.ª fila: barra + iconos de estado a la derecha (§11.1). Alto fijo de 12 px para que la placa no salte */
 .wo-plate__meter {
