@@ -778,7 +778,7 @@ El layout, la paleta y la forma los define `game-ux`. Aquí solo se fija qué de
 
 ## 17. Preguntas para Jonattan y decisiones de producto
 
-> **Desde el 2026-10-17, en la 1.1.0, el alcance lo deciden producto y UX** (delegación de Jonattan: «No necesitas de mi aprobación, es producto y ux quien determina que sal[e]»; cita que trajo el lead). Por eso Q27 a Q30 ya no son preguntas, sino decisiones de producto registradas con la alternativa descartada y su motivo. Lo visual lo decide `game-ux`. Ninguno de los 5 hallazgos de ux del 2026-10-17 (§4, §6 y §10b) cambia estas cuatro decisiones. **Sigue siendo de Jonattan** aprobar cada deploy a prod con el botón del environment `production` de GitHub (`CLAUDE.md`, «Deploys a producción»): es un paso del flujo de publicación, no una pregunta.
+> **Desde el 2026-10-17, en la 1.1.0, el alcance lo deciden producto y UX** (delegación de Jonattan: «No necesitas de mi aprobación, es producto y ux quien determina que sal[e]»; cita que trajo el lead). Por eso Q27 a Q30 ya no son preguntas, sino decisiones de producto registradas con la alternativa descartada y su motivo. Lo visual lo decide `game-ux`, y **desde el 2026-10-18 Jonattan aprueba cada diseño antes de construirlo** («A partir de ahora siempre debe aprobar los diseños»; `CLAUDE.md`; BACKLOG AC-192). Ninguno de los 5 hallazgos de ux del 2026-10-17 (§4, §6 y §10b) cambia estas cuatro decisiones. **Sigue siendo de Jonattan** aprobar cada deploy a prod con el botón del environment `production` de GitHub (`CLAUDE.md`, «Deploys a producción»): es un paso del flujo de publicación, no una pregunta.
 
 | # | Pregunta | Propuesta por defecto |
 |---|---|---|
