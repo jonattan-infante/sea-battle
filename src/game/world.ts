@@ -70,6 +70,7 @@ const EPS = 1e-6;
 export interface CreateWorldOptions {
   seed?: number;
   spawnNpcs?: boolean;
+  i2?: boolean; // AC-187: apagado por defecto, como en staging y prod
 }
 
 export function createWorld(options: CreateWorldOptions = {}): World {
@@ -84,7 +85,8 @@ export function createWorld(options: CreateWorldOptions = {}): World {
     events: [],
     rng: createRng(options.seed ?? 1),
     nextId: 1,
-    killsSinceBoss: 0
+    killsSinceBoss: 0,
+    i2: options.i2 ?? false
   };
   if (options.spawnNpcs !== false) {
     PIRATE_SECTORS.forEach((_, sector) => {
@@ -275,10 +277,11 @@ function captainLair(world: World): { pos: Vec2; sector: number } | null {
   return null;
 }
 
-// Hace aparecer al capitán en su guarida (o en `at`, solo escenarios y tests) y avisa a todos (AC-111). null si ya hay
-// uno o si ningún punto del arco exterior está a ≥ 150 m de todos los jugadores (se reintenta en el siguiente tick)
+// Hace aparecer al capitán en su guarida (o en `at`, solo escenarios y tests) y avisa a todos (AC-111). null con el I2
+// apagado (AC-187: es la única compuerta, también para los escenarios), si ya hay uno o si ningún punto del arco exterior
+// está a ≥ 150 m de todos los jugadores (se reintenta en el siguiente tick)
 export function spawnCaptain(world: World, at?: Vec2): Ship | null {
-  if (captainOf(world)) return null;
+  if (!world.i2 || captainOf(world)) return null;
   const lair = at ? { pos: { ...at }, sector: sectorAt(at) } : captainLair(world);
   if (!lair) return null;
   const ship = newShip(world, CAPTAIN_CLASS, SHIP_CLASSES[CAPTAIN_CLASS].label, null, lair.pos, rand(world, 0, Math.PI * 2));

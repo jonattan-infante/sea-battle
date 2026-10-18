@@ -8,6 +8,11 @@ export function emptyWorld(seed = 42): World {
   return createWorld({ seed, spawnNpcs: false });
 }
 
+// Mundo vacío con el I2 encendido (AC-187): el Capitán pirata solo aparece con él
+export function i2World(seed = 42): World {
+  return createWorld({ seed, spawnNpcs: false, i2: true });
+}
+
 export function run(world: World, seconds: number, onTick?: (w: World) => void): GameEvent[] {
   const events: GameEvent[] = [];
   const ticks = Math.round(seconds * TICK_RATE);

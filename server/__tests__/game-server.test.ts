@@ -311,8 +311,8 @@ describe('Servidor — red y conexión', () => {
   });
 
   test('AC-88: con 20 clientes, 20 NPC y el jefe en combate, cada cliente recibe ≤ 10 mensajes/s y ≤ 12 KB/s (30 s)', async () => {
-    await start({ spawnNpcs: true });
-    expect(spawnCaptain(game.world)).not.toBeNull(); // GDD §13: 20 + 20 + 1 jefe, que se envía a todos
+    await start({ spawnNpcs: true, i2: true });
+    expect(spawnCaptain(game.world)).not.toBeNull(); // GDD §13: 20 + 20 + 1 jefe, que se envía a todos (con el I2 encendido)
     const bots: Joined[] = [];
     for (let i = 0; i < MAX_PLAYERS; i++) bots.push(await join(`bot${i}`, `Bot ${i}`));
     const baseline = bots.map((b) => ({ frames: b.frames.length, bytes: b.bytes() }));
@@ -350,9 +350,9 @@ describe('Servidor — red y conexión', () => {
   }, 60_000);
 });
 
-describe('Servidor — Capitán pirata (AC-111)', () => {
+describe('Servidor — Capitán pirata (AC-111), con el I2 encendido (AC-187)', () => {
   test('AC-111: al aparecer, todos reciben en el siguiente snapshot el aviso con el sector y el barco del capitán aunque esté fuera de su área de interés, y lo siguen recibiendo; al hundirse, todos reciben los 3 primeros por daño y "y N más"', async () => {
-    await start();
+    await start({ i2: true });
     const a = await join('a', 'Ana');
     const b = await join('b', 'Bea');
     const c = await join('c', 'Caro');
@@ -437,7 +437,7 @@ describe('Servidor — Capitán pirata (AC-111)', () => {
     ['SO', '¡Capitán pirata en el suroeste, sector B9!'],
     ['SE', '¡Capitán pirata en el sureste, sector I9!']
   ] as const)('AC-111 (D49): con la guarida en el %s, todos reciben el evento y el aviso dice «%s»', async (quadrant, text) => {
-    await start();
+    await start({ i2: true });
     const others = PIRATE_SECTORS.filter((s) => s.id !== quadrant);
     const joined: Joined[] = [];
     for (const s of others) {

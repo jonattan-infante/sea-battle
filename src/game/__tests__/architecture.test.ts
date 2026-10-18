@@ -68,9 +68,10 @@ describe('E0 — Arquitectura de la simulación', () => {
   });
 
   // p50 y p99 del tick en 2 000 ticks (tras 200 de calentamiento del JIT) con 20 jugadores con intenciones aleatorias,
-  // 20 NPC y el jefe (H-305). Mismas semillas en cada llamada: la carga de la simulación es idéntica y solo cambia la de la máquina
+  // 20 NPC y el jefe (H-305; con el I2 encendido, el peor caso). Mismas semillas en cada llamada: la carga de la simulación
+  // es idéntica y solo cambia la de la máquina
   function tickTimes(): { p50: number; p99: number } {
-    const world = createWorld({ seed: 3 });
+    const world = createWorld({ seed: 3, i2: true });
     const boss = spawnCaptain(world);
     expect(boss).not.toBeNull();
     const rng = createRng(5);

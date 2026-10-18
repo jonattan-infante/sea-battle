@@ -69,6 +69,7 @@ export interface GameServerOptions {
   probeIntervalMs?: number; // con la BD caída, cada cuánto se comprueba si volvió (por defecto 1 s)
   metrics?: boolean; // AC-142: el proceso registra sus métricas cada minuto con jugadores (server/metrics.ts)
   metricsIntervalMs?: number; // por defecto 60 s (los tests lo acortan)
+  i2?: boolean; // AC-187: I2 encendido (SEA_BATTLE_I2=1, server/features.ts); apagado por defecto
 }
 
 export interface GameServer {
@@ -104,7 +105,7 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
   const snapshotEvery = Math.max(1, Math.round(tickRate / (options.snapshotRate ?? SNAPSHOT_RATE)));
   const log = options.log ?? (() => {});
   const now = options.now ?? Date.now;
-  const world = createWorld({ seed: options.seed, spawnNpcs: options.spawnNpcs });
+  const world = createWorld({ seed: options.seed, spawnNpcs: options.spawnNpcs, i2: options.i2 });
   options.setup?.(world);
   const clients = new Map<string, ClientState>(); // por userId: una sola pestaña por usuario
   let ticks = 0;

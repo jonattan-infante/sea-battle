@@ -26,6 +26,7 @@ import {
   ENDURANCE_MERCHANTS,
   ENDURANCE_PIRATE_OFFSET,
   ENDURANCE_POINT,
+  I2_SCENARIOS,
   LEGIBILITY,
   parseScenario,
   REPAIR_START_HULL,
@@ -76,7 +77,7 @@ describe('escenario "showcase" para capturas', () => {
 // a ≤ 120 m (world.ts sobrescribía su espera de 1e9), así que el estado del servidor dependía de lo que pasó antes
 describe('piratas fijos de los escenarios (DT-04)', () => {
   test.each(SCENARIOS)('en "%s", todos los piratas esperan en su puesto (holdPosition)', (name) => {
-    const world = createWorld({ seed: 1, spawnNpcs: false });
+    const world = createWorld({ seed: 1, spawnNpcs: false, i2: I2_SCENARIOS.includes(name) });
     applyScenario(world, name);
     const roaming = [...world.ships.values()].filter((s) => s.kind === 'pirate' && s.holdPosition !== true);
     expect(roaming.map((s) => `${s.id} en (${s.pos.x.toFixed(0)}, ${s.pos.z.toFixed(0)})`)).toEqual([]);
@@ -314,9 +315,9 @@ describe('escenario "endurance" (AC-91)', () => {
   });
 });
 
-describe('escenarios del Capitán pirata (AC-111)', () => {
+describe('escenarios del Capitán pirata (AC-111), con el I2 encendido (AC-187)', () => {
   test('"captain": 9 piratas ya hundidos y un cebo quieto con 1 de vida a tiro desde el borde de la zona; al hundirlo aparece el capitán fuera del radio de interés del puerto', () => {
-    const world = createWorld({ seed: 1, spawnNpcs: false });
+    const world = createWorld({ seed: 1, spawnNpcs: false, i2: true });
     applyScenario(world, 'captain');
     const [bait] = [...world.ships.values()];
     expect(world.ships.size).toBe(1);
@@ -342,7 +343,7 @@ describe('escenarios del Capitán pirata (AC-111)', () => {
   });
 
   test('"captain-down": un capitán quieto, con 1 de vida y que nunca acierta, a tiro desde el borde de la zona y fuera de la exclusión del puerto', () => {
-    const world = createWorld({ seed: 1, spawnNpcs: false });
+    const world = createWorld({ seed: 1, spawnNpcs: false, i2: true });
     applyScenario(world, 'captain-down');
     const ships = [...world.ships.values()];
     expect(ships).toHaveLength(1);
