@@ -1,6 +1,6 @@
 // E14 — Experiencia, niveles e insignias (GDD §10b): AC-144 a AC-150 y las constantes de §10b (AC-04)
 import * as C from '../constants';
-import { LEVEL_XP, SHIP_CLASSES, TICK_RATE, XP_REPEAT_WINDOW } from '../constants';
+import { LEVEL_XP, SHIP_CLASSES, TICK_RATE } from '../constants';
 import { GameEvent, Ship, World } from '../types';
 import { createRng } from '../vec';
 import { addPlayer, attack, buy, canAttack, cancelAttack, drainEvents, moveTo, playerView, removePlayer, respawn, setRepair, shipOfPlayer, shipSnapshot, splitReward, step } from '../world';
@@ -41,6 +41,7 @@ function npcOf(world: World, classId: string, x: number, z: number): Ship {
   return ship;
 }
 
+const GDD_REPEAT_WINDOW = 30 * 60; // s (§10b): el test de AC-147 no depende de la constante que comprueba
 const xpOfPlayer = (world: World, id: string) => world.players.get(id)!.xp;
 const setLevel = (world: World, id: string, level: number) => (world.players.get(id)!.xp = LEVEL_XP[level - 1]);
 
@@ -286,7 +287,7 @@ describe('E14 — H-1402 XP por hundir jugadores (§10b)', () => {
     const got: number[] = [];
     const first = pvpSink(world, 'A', 'B');
     got.push(first.gained.A);
-    const expiresAt = first.sunkAt + XP_REPEAT_WINDOW;
+    const expiresAt = first.sunkAt + GDD_REPEAT_WINDOW;
     expect(openPairs(world, 'A')).toEqual([{ victimId: 'B', kills: 1, expiresAt }]);
     run(world, 60);
     expect(pvpSink(world, 'B', 'A').gained.B).toBe(100); // B en medio: su pareja es otra
@@ -314,7 +315,7 @@ describe('E14 — H-1402 XP por hundir jugadores (§10b)', () => {
     got.push(fourth.gained.A);
     expect(fourth.sunkAt - expiresAt).toBeLessThan(1);
     expect(got).toEqual([100, 50, 0, 100]);
-    expect(openPairs(world, 'A')).toEqual([{ victimId: 'B', kills: 1, expiresAt: fourth.sunkAt + XP_REPEAT_WINDOW }]);
+    expect(openPairs(world, 'A')).toEqual([{ victimId: 'B', kills: 1, expiresAt: fourth.sunkAt + GDD_REPEAT_WINDOW }]);
     expect(openPairs(world, 'B')).toEqual([{ victimId: 'A', kills: 1, expiresAt: expect.any(Number) }]);
   });
 
