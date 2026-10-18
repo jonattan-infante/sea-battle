@@ -9,8 +9,22 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { buildShipAsset, getShipModel, LOD_PX, ShipModel } from '../ship-geometry';
-import { BASIS_PATH, createGlbLoader, EntryGate, GlbLoader, OWN_GLB_WAIT_MS, setShipMap, SHIP_GLB, ShipGlbError, ShipGlbStore, shipModelFromGlb } from '../ship-glb';
+import {
+  BASIS_PATH,
+  createGlbLoader,
+  EntryGate,
+  GlbLoader,
+  OWN_GLB_WAIT_MS,
+  setShipMap,
+  SHIP_GLB,
+  ShipGlbError,
+  ShipGlbStore,
+  shipModelFromGlb,
+  TextureUpgrade
+} from '../ship-glb';
 import { contentHash, E2E_PREFIX, HASHED_GLB, unhashedModels } from '../../../../scripts/glb/content-hash';
+import { addFallback, fallbackProblems, readGlb, solidPng } from '../../../../scripts/glb/glb-fallback';
+import { basisuWithFallback } from '../basisu-fallback';
 import { writeGlb, GlbOptions } from './glb-writer';
 
 type Json = Record<string, unknown>;
@@ -114,17 +128,18 @@ describe('ASSET-SPEC §13: GLB de un barco con el contrato de §1–§4', () => 
 
 // Una red y un cargador falsos: cada descarga queda pendiente hasta que el test la resuelve con la escena que dará el
 // parse, o la rechaza. `make` cuenta los cargadores creados y `renderers` guarda el renderer que recibe cada parse
+// La descarga y el parse falsos: resolve() entrega la escena del GLB y, si lleva respaldo (D90), la promesa de sus KTX2
 function fakeLoader() {
-  const calls: { url: string; resolve: (o: THREE.Object3D) => void; reject: (e: Error) => void }[] = [];
-  const scenes = new Map<ArrayBuffer, THREE.Object3D>();
+  const calls: { url: string; resolve: (o: THREE.Object3D, upgrades?: Promise<TextureUpgrade[]>) => void; reject: (e: Error) => void }[] = [];
+  const parsed = new Map<ArrayBuffer, { scene: THREE.Object3D; upgrades: Promise<TextureUpgrade[]> }>();
   const renderers: THREE.WebGLRenderer[] = [];
   const fetchGlb = (url: string) =>
     new Promise<ArrayBuffer>((resolve, reject) =>
       calls.push({
         url,
-        resolve: (scene) => {
+        resolve: (scene, upgrades = Promise.resolve([])) => {
           const bytes = new ArrayBuffer(0);
-          scenes.set(bytes, scene);
+          parsed.set(bytes, { scene, upgrades });
           resolve(bytes);
         },
         reject
@@ -133,7 +148,7 @@ function fakeLoader() {
   const loader: GlbLoader = {
     parse: (bytes, _url, renderer) => {
       renderers.push(renderer);
-      return Promise.resolve(scenes.get(bytes)!);
+      return Promise.resolve(parsed.get(bytes)!);
     },
     dispose: jest.fn()
   };
@@ -260,8 +275,8 @@ describe('AC-193 c: el procedural mientras carga, el propio primero y de uno en 
 });
 
 // AC-193 c, opción B (producto, 2026-10-18): la entrada espera al GLB propio con un tope. Para que la espera sea corta, su
-// descarga empieza en cuanto se conoce la clase, sin esperar al renderer, y el cargador (sus módulos y el transcodificador
-// de KTX2) en cuanto hay manifiesto
+// descarga empieza en cuanto se conoce la clase, sin esperar al renderer, y el cargador (sus módulos) en cuanto hay
+// manifiesto. El transcodificador de KTX2 no: con el respaldo (D90) baja después del GLB propio
 describe('AC-193 c, opción B: el GLB propio se empieza a bajar antes del primer frame', () => {
   const manifest = { sloop: '/models/ship_sloop.glb', brig: '/models/ship_brig.glb' };
 
@@ -373,22 +388,24 @@ describe('AC-193 c, opción B: la entrada espera al GLB propio con un tope de 0,
   });
 });
 
-describe('§1: el cargador empieza a bajar el transcodificador al crearse, sin renderer', () => {
-  // KTX2Loader.init() baja basis_transcoder.js y .wasm (≈ 585 KB) y solo crea los workers al transcodificar; el renderer
-  // hace falta para elegir el formato de GPU (detectSupport), antes del primer parse
-  test('init() del KTX2Loader al crearlo y detectSupport con el renderer del primer parse, una sola vez', async () => {
+describe('§1: el transcodificador de KTX2 no baja al crear el cargador (salida 1 de AC-193 c)', () => {
+  // KTX2Loader.init() baja basis_transcoder.js y .wasm (≈ 585 KB) y solo crea los workers al transcodificar. Con el respaldo
+  // (D90) la entrada no lo necesita, así que no se pide al crear el cargador, donde competiría con el GLB propio: lo pide la
+  // primera KTX2 (KTX2Loader.load lo inicia). El renderer hace falta para elegir el formato de GPU (detectSupport), antes
+  // del primer parse
+  test('init() del KTX2Loader no se llama al crearlo ni con un GLB sin KTX2; detectSupport, con el renderer del primer parse y una sola vez', async () => {
     const init = jest.spyOn(KTX2Loader.prototype, 'init').mockResolvedValue(undefined);
     const detect = jest.spyOn(KTX2Loader.prototype, 'detectSupport').mockImplementation(function (this: KTX2Loader) {
       return this;
     });
     const loader = createGlbLoader();
     await settle();
-    expect([init.mock.calls.length, detect.mock.calls.length]).toEqual([1, 0]);
+    expect([init.mock.calls.length, detect.mock.calls.length]).toEqual([0, 0]);
     const bytes = writeGlb(buildShipAsset('sloop'));
     const buffer = () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-    const scene = await loader.parse(buffer(), '/models/ship_sloop.glb', gl);
+    const { scene } = await loader.parse(buffer(), '/models/ship_sloop.glb', gl);
     await loader.parse(buffer(), '/models/ship_sloop.glb', gl);
-    expect(detect.mock.calls).toEqual([[gl]]);
+    expect([init.mock.calls.length, detect.mock.calls]).toEqual([0, [[gl]]]);
     expect(shipModelFromGlb(scene, 'sloop').triangles).toEqual(getShipModel('sloop').triangles);
     loader.dispose();
     init.mockRestore();
@@ -502,5 +519,167 @@ describe('§1: el GLB comprimido como pide el contrato (meshopt, cuantización y
         expect(Math.max(Math.abs(d.x), Math.abs(d.y), Math.abs(d.z))).toBeLessThan(0.01);
       }
     }
+  });
+});
+
+// D90 (ASSET-SPEC §1 y §13, paso 4b; salida 1 de AC-193 c): la textura KTX2 lleva un respaldo PNG en texture.source. El
+// fixture comprimido (KTX2 magenta de 16 × 16) recibe en memoria un respaldo cian, así que no hace falta otro binario
+const FIXTURE = path.join(ROOT, 'e2e', 'fixtures', 'ship_sloop_etc1s_meshopt.glb');
+const CYAN = [0, 255, 255] as const;
+const fixture = () => new Uint8Array(fs.readFileSync(FIXTURE));
+const readGltf = (bytes: Uint8Array, loader: GLTFLoader) =>
+  loader.setMeshoptDecoder(MeshoptDecoder).parseAsync(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer, '');
+
+// Sin navegador no hay transcodificador ni descodificador de imágenes: un KTX2Loader falso, que entrega su textura al
+// soltarlo, y un cargador de imágenes falso, que la entrega en el acto
+function fakeTextureLoaders() {
+  const ktx2Texture = new THREE.CompressedTexture([], 16, 16);
+  const imageTexture = new THREE.Texture();
+  const calls = { ktx2: 0, image: 0 };
+  let release!: () => void;
+  const released = new Promise<void>((r) => (release = r));
+  const ktx2 = {
+    load: (_url: string, onLoad: (t: THREE.Texture) => void) => {
+      calls.ktx2++;
+      void released.then(() => onLoad(ktx2Texture));
+    }
+  } as unknown as THREE.Loader;
+  const images = {
+    load: (_url: string, onLoad: (t: THREE.Texture) => void) => {
+      calls.image++;
+      onLoad(imageTexture);
+    }
+  } as unknown as THREE.Loader;
+  return { ktx2, images, ktx2Texture, imageTexture, calls, release };
+}
+
+describe('D90: KHR_texture_basisu con respaldo, sin esperar al transcodificador (salida 1 de AC-193 c)', () => {
+  beforeAll(() => {
+    (globalThis as unknown as { self?: unknown }).self ??= globalThis; // GLTFLoader crea la URL de la imagen con self.URL
+  });
+
+  // GLTFLoader guarda los plugins por nombre y gana el registrado después: el de three va en el constructor (GLTFLoader.js
+  // :151 de r180), register() pone los nuestros detrás (:379-381) y `plugins[ plugin.name ] = plugin` (:483) deja el
+  // nuestro. Sin setKTX2Loader, el de three no lee un GLB con la extensión requerida (:1552-1554)
+  test('el plugin sustituye al de three: sin setKTX2Loader, un GLB sin respaldo y con la extensión requerida solo se lee con él', async () => {
+    await expect(readGltf(fixture(), new GLTFLoader())).rejects.toThrow('setKTX2Loader must be called before loading KTX2 textures');
+    const t = fakeTextureLoaders();
+    t.release();
+    const basisu = basisuWithFallback(t.ktx2, t.images);
+    const read = readGltf(fixture(), new GLTFLoader().register(basisu.register));
+    await expect(read).resolves.toBeTruthy();
+    const m = shipModelFromGlb((await read).scene, 'sloop');
+    // Sin respaldo, como hoy: la KTX2 en el parse y nada que cambiar después
+    expect([m.map === t.ktx2Texture, t.calls]).toEqual([true, { ktx2: 1, image: 0 }]);
+    expect(await basisu.upgrades()).toEqual([]);
+  });
+
+  test('con respaldo, el GLB se lee con él sin esperar a la KTX2, que se pide en el parse y llega aparte, con flipY false en las dos', async () => {
+    const t = fakeTextureLoaders(); // la KTX2, retenida hasta release()
+    const basisu = basisuWithFallback(t.ktx2, t.images);
+    const read = readGltf(addFallback(fixture(), solidPng(CYAN, 16)), new GLTFLoader().register(basisu.register));
+    // Si el parse esperase a la KTX2 retenida no acabaría nunca: se compara con un plazo para que el rojo sea por aserción
+    const first = await Promise.race([read.then(() => 'leído', () => 'falló'), new Promise((r) => setTimeout(() => r('esperando a la KTX2'), 2000))]);
+    expect(first).toBe('leído');
+    const m = shipModelFromGlb((await read).scene, 'sloop');
+    expect([m.map === t.imageTexture, t.calls]).toEqual([true, { ktx2: 1, image: 1 }]);
+    const got: { pairs?: TextureUpgrade[] } = {};
+    void basisu.upgrades().then((pairs) => (got.pairs = pairs));
+    await settle();
+    expect(got.pairs).toBeUndefined(); // espera a la KTX2
+    t.release();
+    await settle();
+    expect(got.pairs?.map(([fallback, ktx2]) => [fallback === t.imageTexture, ktx2 === t.ktx2Texture])).toEqual([[true, true]]);
+    // GLTFLoader pone flipY false a toda textura de un glTF (GLTFLoader.js:3328); el respaldo nace con true
+    expect([t.imageTexture.flipY, t.ktx2Texture.flipY, t.imageTexture.colorSpace]).toEqual([false, false, THREE.SRGBColorSpace]);
+  });
+
+  const manifest = { sloop: '/models/ship_sloop.glb' };
+  // Un GLB leído con respaldo: la escena con el respaldo en el material y la promesa de su KTX2, que se entrega a mano
+  const withFallback = () => {
+    const fallback = new THREE.Texture();
+    fallback.flipY = false;
+    fallback.colorSpace = THREE.SRGBColorSpace;
+    const ktx2 = new THREE.CompressedTexture([], 16, 16); // sin colorSpace: el respaldo manda, no el DFD de la KTX2
+    let deliver!: (pairs: TextureUpgrade[]) => void;
+    const upgrades = new Promise<TextureUpgrade[]>((r) => (deliver = r));
+    return { scene: buildShipAsset('sloop', new THREE.MeshStandardMaterial({ map: fallback })), fallback, ktx2, upgrades, deliver };
+  };
+
+  test('la clase cuenta como cargada con el respaldo; al llegar la KTX2, model() da un objeto nuevo con ella y el colorSpace del respaldo, y el respaldo se libera', async () => {
+    const { calls, loader, fetchGlb } = fakeLoader();
+    const store = new ShipGlbStore(manifest, () => loader, fetchGlb);
+    const g = withFallback();
+    const released = jest.spyOn(g.fallback, 'dispose');
+    store.request('sloop', true);
+    store.pump(gl);
+    calls[0].resolve(g.scene, g.upgrades);
+    await settle();
+    const first = store.model('sloop');
+    expect([store.loaded('sloop'), store.waiting('sloop'), first.map === g.fallback]).toEqual([true, false, true]);
+    g.deliver([[g.fallback, g.ktx2]]);
+    await settle();
+    const second = store.model('sloop');
+    // Un objeto nuevo: updateShips (runtime.ts) cambia la vista cuando cambia el modelo, por identidad
+    expect([second !== first, second.map === g.ktx2, second.lods === first.lods, store.model('sloop') === second]).toEqual([true, true, true, true]);
+    expect([g.ktx2.colorSpace, g.ktx2.flipY, released.mock.calls.length]).toEqual([THREE.SRGBColorSpace, false, 1]);
+  });
+
+  test('si la KTX2 no llega, se queda el respaldo con un aviso; con otro GLB, el store liberado o el contrato incumplido, la KTX2 se libera sin ponerla', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const a = fakeLoader();
+    const failed = new ShipGlbStore(manifest, () => a.loader, a.fetchGlb);
+    const g = withFallback();
+    failed.request('sloop', true);
+    failed.pump(gl);
+    a.calls[0].resolve(g.scene, g.upgrades);
+    await settle();
+    const kept = failed.model('sloop');
+    g.deliver([[g.fallback, null]]); // la KTX2 falló: GLTFLoader resuelve null (GLTFLoader.js:3351-3353)
+    await settle();
+    expect([failed.model('sloop') === kept, kept.map === g.fallback]).toEqual([true, true]);
+    expect(warn.mock.calls.map((c) => c[0])).toEqual(['[ship-glb] sloop (/models/ship_sloop.glb): la KTX2 no llegó; se queda el respaldo']);
+    for (const late of ['setUrl', 'dispose', 'contrato'] as const) {
+      const b = fakeLoader();
+      const store = new ShipGlbStore(manifest, () => b.loader, b.fetchGlb);
+      const h = withFallback();
+      if (late === 'contrato') h.scene.remove(h.scene.getObjectByName('socket_bow')!);
+      const ktx2Dispose = jest.spyOn(h.ktx2, 'dispose');
+      store.request('sloop', true);
+      store.pump(gl);
+      b.calls[0].resolve(h.scene, h.upgrades);
+      await settle();
+      if (late === 'setUrl') store.setUrl('sloop', '/models/ship_sloop-2.glb');
+      if (late === 'dispose') store.dispose();
+      h.deliver([[h.fallback, h.ktx2]]);
+      await settle();
+      expect([late, ktx2Dispose.mock.calls.length, store.model('sloop') === getShipModel('sloop')]).toEqual([late, 1, true]);
+    }
+    warn.mockRestore();
+  });
+});
+
+describe('AS-V10 (D90): cada textura KTX2 de un GLB lleva su respaldo', () => {
+  test('el fixture sin respaldo no pasa; con un PNG de 16² sí; uno mayor que la KTX2 o que no es potencia de 2, tampoco', () => {
+    expect(fallbackProblems(fixture())).toEqual(['textura 0: sin respaldo en texture.source', 'KHR_texture_basisu está en extensionsRequired']);
+    expect(fallbackProblems(addFallback(fixture(), solidPng(CYAN, 16)))).toEqual([]);
+    expect(fallbackProblems(addFallback(fixture(), solidPng(CYAN, 32)))).toEqual(['textura 0: respaldo de 32 × 32, mayor que la KTX2 de 16 × 16']);
+    expect(fallbackProblems(addFallback(fixture(), solidPng(CYAN, 12)))).toEqual(['textura 0: respaldo de 12 × 12, no es potencia de 2']);
+  });
+
+  test('addFallback deja la KTX2 en la extensión, el PNG en texture.source y la extensión solo en extensionsUsed', () => {
+    const { json } = readGlb(addFallback(fixture(), solidPng(CYAN, 16)));
+    expect(json.textures).toEqual([{ sampler: 0, source: 1, extensions: { KHR_texture_basisu: { source: 0 } } }]);
+    expect((json.images as Json[]).map((i) => i.mimeType)).toEqual(['image/ktx2', 'image/png']);
+    expect([json.extensionsUsed, json.extensionsRequired]).toEqual([
+      ['EXT_meshopt_compression', 'KHR_mesh_quantization', 'KHR_texture_basisu'],
+      ['EXT_meshopt_compression', 'KHR_mesh_quantization']
+    ]);
+  });
+
+  test('public/models: cada GLB (sin los e2e_ de build:e2e) lleva su respaldo', () => {
+    const dir = path.join(ROOT, 'public', 'models');
+    const glbs = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith('.glb') && !f.startsWith(E2E_PREFIX)) : [];
+    expect(glbs.map((f) => [f, fallbackProblems(new Uint8Array(fs.readFileSync(path.join(dir, f))))] as const).filter(([, p]) => p.length > 0)).toEqual([]);
   });
 });

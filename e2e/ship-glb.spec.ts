@@ -6,12 +6,17 @@
 import fs from 'fs';
 import path from 'path';
 import { expect, Page, test } from '@playwright/test';
+import { addFallback, solidPng } from '../scripts/glb/glb-fallback';
 import { enterGame, entryOf, glbBeforeEntry } from './helpers';
 
 const URL_OK = '/models/test/ship_sloop.glb';
 const URL_404 = '/models/test/missing.glb';
 const OWN_GLB_WAIT_MS = 500; // src/client/models/ship-glb.ts (AC-193 c, opción B)
 const FIXTURE = path.join(__dirname, 'fixtures', 'ship_sloop_etc1s_meshopt.glb');
+// Salida 1 de AC-193 c (D90): el fixture con un respaldo verde de 16 × 16 añadido en memoria (scripts/glb/glb-fallback.ts).
+// Con el respaldo el barco se ve verde y con la KTX2, magenta; el verde puro no lo tiene el agua (B alto)
+const URL_FALLBACK = '/models/test/ship_sloop_fallback.glb';
+const withFallback = () => Buffer.from(addFallback(new Uint8Array(fs.readFileSync(FIXTURE)), solidPng([0, 255, 0], 16)));
 
 // Estado de la vista del barco propio: geometría, mapa y LOD, y si sigue siendo 1 draw call (1 malla, 1 primitiva, 1 material)
 const ownView = (page: Page) =>
@@ -29,6 +34,50 @@ const ownView = (page: Page) =>
     };
   });
 
+// El mapa del material del barco propio (si es la KTX2, su flipY y su colorSpace) y su programa de shader, con el número de
+// programas del renderer (D90: el cambio del respaldo a la KTX2 no debe compilar otro)
+const ownMap = (page: Page) =>
+  page.evaluate(() => {
+    type Tex = { isCompressedTexture?: boolean; flipY: boolean; colorSpace: string };
+    type View = { model: { map?: Tex | null }; mesh: { geometry: { groups: unknown[] }; material: { map: Tex | null } } };
+    type Renderer = { info: { programs: unknown[] | null }; properties: { get(o: object): { currentProgram?: { id: number } } } };
+    const rt = window.__SEA_BATTLE__!.runtime() as unknown as { views: Map<string, View>; src: { myShipId: string }; gl: Renderer };
+    const v = rt.views.get(rt.src.myShipId)!;
+    const map = v.mesh.material.map;
+    return {
+      compressed: !!map?.isCompressedTexture,
+      flipY: map ? map.flipY : null,
+      colorSpace: map ? map.colorSpace : null,
+      materialMap: map === (v.model.map ?? null),
+      program: rt.gl.properties.get(v.mesh.material).currentProgram?.id ?? null,
+      programs: rt.gl.info.programs?.length ?? null,
+      oneDrawCall: v.mesh.geometry.groups.length <= 1 && !Array.isArray(v.mesh.material)
+    };
+  });
+
+// Píxeles magenta (la KTX2 del fixture) y verdes (su respaldo) en un cuadro de 120 px alrededor del barco propio
+const ownPixels = (page: Page) =>
+  page.evaluate(async () => {
+    const rt = window.__SEA_BATTLE__!.runtime() as unknown as { captureImage(type: string): string | null };
+    const me = window.__SEA_BATTLE__!.me() as { screen: { sx: number; sy: number } };
+    const img = new Image();
+    img.src = rt.captureImage('image/png')!;
+    await img.decode();
+    const canvas = document.createElement('canvas');
+    canvas.width = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext('2d')!;
+    ctx.drawImage(img, 0, 0);
+    const k = img.width / window.innerWidth;
+    const box = ctx.getImageData(Math.round((me.screen.sx - 60) * k), Math.round((me.screen.sy - 60) * k), Math.round(120 * k), Math.round(120 * k)).data;
+    let magenta = 0;
+    let green = 0;
+    for (let i = 0; i < box.length; i += 4) {
+      if (box[i] > 150 && box[i + 2] > 150 && box[i + 1] < 90) magenta++;
+      if (box[i + 1] > 150 && box[i] < 90 && box[i + 2] < 90) green++;
+    }
+    return { magenta, green };
+  });
 
 test.describe('Barcos en GLB (ASSET-SPEC §13)', () => {
   test('AC-193 a y c: el barco propio entra con el procedural y cambia al GLB con meshopt y textura ETC1S, en 1 draw call', async ({ page }) => {
@@ -199,5 +248,75 @@ test.describe('Barcos en GLB (ASSET-SPEC §13)', () => {
     expect(before.modelMap).toBeNull();
     release();
     await expect.poll(async () => (await ownView(page)).modelMap, { timeout: 15_000 }).toBe(16);
+  });
+
+  // Salida 1 de AC-193 c (D90): con el respaldo en el GLB, la entrada no espera al transcodificador de KTX2, que ya no baja
+  // al crear el cargador sino después del GLB propio. Aquí se retiene /basis/ hasta comprobar la entrada y el respaldo
+  test('AC-193 c, salida 1 (D90): con el transcodificador retenido, el barco propio entra ya con el respaldo; al llegar, cambia a la KTX2 con el mismo programa', async ({ page }) => {
+    test.setTimeout(120_000);
+    const bytes = withFallback();
+    const errors: string[] = [];
+    page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+    let glbDone = 0;
+    const basisAt: number[] = [];
+    page.on('requestfinished', (r) => r.url().endsWith(URL_FALLBACK) && (glbDone ||= Date.now()));
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    await page.route(`**${URL_FALLBACK}`, (route) => route.fulfill({ body: bytes, contentType: 'model/gltf-binary' }));
+    await page.route('**/basis/**', async (route) => {
+      basisAt.push(Date.now());
+      await held;
+      await route.continue();
+    });
+    await glbBeforeEntry(page, URL_FALLBACK, 60_000); // un tope que SwiftShader no alcance: si la entrada esperase a /basis/, no se abriría
+    await page.goto('/game');
+    // Como enterGame, pero con expect.poll: si la entrada esperase al transcodificador, el rojo sería por aserción
+    await expect.poll(() => page.evaluate(() => window.__SEA_BATTLE__?.ready() === true), { timeout: 30_000 }).toBe(true);
+    const entry = await entryOf(page);
+    await page.waitForTimeout(1_000);
+    const before = { ...(await ownMap(page)), ...(await ownPixels(page)) };
+    console.log(`AC-193 c salida 1, con /basis/ retenido: ${JSON.stringify({ entry, before, glbDone, basisAt })}`);
+    expect(entry).toMatchObject({ withGlb: true, capped: false, coverHidden: true });
+    expect(before).toMatchObject({ compressed: false, flipY: false, colorSpace: 'srgb', materialMap: true, oneDrawCall: true });
+    expect(before.green).toBeGreaterThan(50);
+    // El transcodificador se pidió (lo pide la KTX2 del GLB propio), y después de que el GLB terminase de bajar
+    expect(basisAt.length).toBeGreaterThan(0);
+    expect(glbDone).toBeGreaterThan(0);
+    expect(basisAt[0]).toBeGreaterThanOrEqual(glbDone);
+    release();
+    await expect.poll(async () => (await ownMap(page)).compressed, { timeout: 30_000 }).toBe(true);
+    await page.waitForTimeout(500);
+    const after = { ...(await ownMap(page)), ...(await ownPixels(page)) };
+    console.log(`AC-193 c salida 1, con la KTX2: ${JSON.stringify(after)}`);
+    // Mismo programa del material y mismo número de programas: el cambio de mapa no compila otro
+    expect([after.program, after.programs]).toEqual([before.program, before.programs]);
+    expect([after.flipY, after.colorSpace, after.materialMap, after.oneDrawCall]).toEqual([before.flipY, before.colorSpace, true, true]);
+    expect(after.magenta).toBeGreaterThan(50);
+    expect(before.green - after.green).toBeGreaterThan(50);
+    expect(errors).toEqual([]);
+  });
+
+  test('AC-193 c, salida 1 (D90): si el transcodificador no llega, se queda el respaldo, con un aviso', async ({ page }) => {
+    test.setTimeout(120_000);
+    const bytes = withFallback();
+    const warnings: string[] = [];
+    const errors: string[] = [];
+    page.on('console', (m) => (m.type() === 'warning' ? warnings : m.type() === 'error' ? errors : []).push(m.text()));
+    await page.route(`**${URL_FALLBACK}`, (route) => route.fulfill({ body: bytes, contentType: 'model/gltf-binary' }));
+    await page.route('**/basis/**', (route) => route.fulfill({ status: 404, body: 'no' }));
+    await glbBeforeEntry(page, URL_FALLBACK, 60_000);
+    await enterGame(page);
+    const entry = await entryOf(page);
+    await expect.poll(() => warnings.filter((w) => w.startsWith('[ship-glb] sloop')), { timeout: 30_000 }).toEqual([
+      `[ship-glb] sloop (${URL_FALLBACK}): la KTX2 no llegó; se queda el respaldo`
+    ]);
+    const view = { ...(await ownMap(page)), ...(await ownPixels(page)) };
+    console.log(`AC-193 c salida 1 sin transcodificador: ${JSON.stringify({ entry, view, errors })}`);
+    expect(entry).toMatchObject({ withGlb: true, capped: false, coverHidden: true });
+    expect(view).toMatchObject({ compressed: false, materialMap: true, oneDrawCall: true });
+    expect(view.green).toBeGreaterThan(50);
+    // Los 404 los cuenta el navegador como errores de red, y GLTFLoader avisa de la textura que no pudo leer
+    // (GLTFLoader.js:3442); el juego no añade ninguno
+    expect(errors.filter((e) => !e.includes('404') && !e.startsWith("THREE.GLTFLoader: Couldn't load texture"))).toEqual([]);
   });
 });
