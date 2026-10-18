@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
+import * as THREE from 'three';
 import { CAMERA, LIGHTING, PALETTE } from '../../client/art';
 import { GameRuntime } from '../../client/runtime';
 import World from './World';
@@ -216,12 +217,21 @@ export default function GameCanvas({ runtime, onWaterClick, onShipClick, onShipD
     >
       {/* flat = sin tone mapping (D2). alpha: false solo fija el alfa de borrado en 1: three r180 crea el contexto
           siempre con alfa (WebGLRenderer.js:345); lo que deja el alfa del framebuffer en 1 son blendSrcAlpha y
-          blendDstAlpha de las capas con CustomBlending (VFX §0.2) */}
+          blendDstAlpha de las capas con CustomBlending (VFX §0.2). El renderer es el mismo que R3F crea con el objeto
+          de props (new WebGLRenderer({ ...defaults, ...gl })); se crea aquí para avisar al runtime si no hay WebGL:
+          sin frames, la entrada no se abriría nunca y la portada debe irse, como en la 1.0.3 (AC-193 c) */}
       <Canvas
         orthographic
         flat
         dpr={runtime.mobile ? LIGHTING.dprMobile : LIGHTING.dprDesktop}
-        gl={{ antialias: true, alpha: false, powerPreference: 'high-performance' }}
+        gl={(defaults) => {
+          try {
+            return new THREE.WebGLRenderer({ ...defaults, antialias: true, alpha: false, powerPreference: 'high-performance' });
+          } catch (e) {
+            runtime.rendererFailed();
+            throw e;
+          }
+        }}
         camera={{ near: CAMERA.near, far: CAMERA.far, zoom: 5, position: [0, CAMERA.distance * Math.sin(CAMERA.elevation), CAMERA.distance * Math.cos(CAMERA.elevation)] }}
         onCreated={({ gl }) => {
           gl.shadowMap.enabled = false;
