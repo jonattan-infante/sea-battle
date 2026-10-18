@@ -377,8 +377,8 @@ test.describe('Capturas @capture', () => {
 
   // AC-189 (ART-DIRECTION §12.10, D77): la cañonera seleccionada con la Balandra N1 y la marca «Demasiado fuerte para tu
   // barco» en el panel del objetivo, con el escenario "danger" en un servidor propio con el I2 encendido. El e2e de AC-189
-  // (e2e/danger-mark.spec.ts) mide los 3 tamaños; esto es la imagen para ux
-  for (const vp of VIEWPORTS) {
+  // (e2e/danger-mark.spec.ts) mide los 3 tamaños; esto es la imagen para ux, también en 844×390
+  for (const vp of [...VIEWPORTS, { name: 'landscape', width: 844, height: 390, mobile: true }]) {
     test(`marca de peligro en ${vp.name} (AC-189)`, async ({ browser }) => {
       test.setTimeout(120_000);
       const server = await startOwnServer({ SEA_BATTLE_NPCS: '0', SEA_BATTLE_I2: '1', SEA_BATTLE_SCENARIO: 'danger' });

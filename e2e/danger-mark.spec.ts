@@ -141,4 +141,84 @@ test.describe('Marca de peligro en el objetivo (AC-189)', () => {
       }
     });
   }
+
+  // D77: la marca se quita al empezar el hundimiento, en el mismo commit en que la distancia pasa a «Hundido». Los 3 tamaños
+  // en el mismo servidor, con la cañonera seleccionada y atacada desde los 3 (≈ 14 s en vez de 43 con uno solo)
+  test('AC-189 al hundirse: en el commit en que la fila dice «Hundido», la marca ya no está; en escritorio vuelve «Cañonera pirata · hostil» y en móvil el panel vuelve a 48', async ({ browser }) => {
+    test.setTimeout(180_000);
+    const server = await startOwnServer({ SEA_BATTLE_NPCS: '0', SEA_BATTLE_I2: '1', SEA_BATTLE_SCENARIO: 'danger' });
+    // Dentro de la zona segura, a 20 m entre sí y a ≤ 54 m de la cañonera
+    const posts: Record<Size, { x: number; z: number }> = { desktop: POST, portrait: { x: -20, z: 100 }, landscape: { x: -40, z: 98 } };
+    const contexts = await Promise.all((['desktop', 'portrait', 'landscape'] as const).map((size) => browser.newContext(SIZES[size])));
+    try {
+      const pages: [Size, Page][] = [];
+      for (const [i, size] of (['desktop', 'portrait', 'landscape'] as const).entries()) {
+        const page = await contexts[i].newPage();
+        await enterGame(page, server.url);
+        pages.push([size, page]);
+      }
+      for (const [size, page] of pages) await sailTo(page, posts[size].x, posts[size].z);
+      for (const [size, page] of pages) {
+        const post = posts[size];
+        await waitFor(() => me(page), (s) => !!s && Math.hypot(s.x - post.x, s.z - post.z) < 4, 45_000, 200);
+      }
+      let gunboatId = '';
+      for (const [size, page] of pages) {
+        await page.waitForTimeout(300);
+        const at = async () => (await ships(page)).find((s) => Math.hypot(s.x - DANGER.gunboat.x, s.z - DANGER.gunboat.z) < 1);
+        const gunboat = (await waitFor(at, (s) => !!s?.screen, 10_000, 100))!;
+        gunboatId = gunboat.id;
+        await select(page, gunboat.id, size !== 'desktop');
+        await expect(page.locator('[data-testid="target-frame"].is-danger')).toHaveCount(1);
+        // Cada commit del HUD (MutationObserver): si la fila dice «Hundido», si está la marca, la línea de tipo y el alto
+        await page.evaluate(() => {
+          type Rec = { sunk: boolean; danger: boolean; type: string | null; shown: boolean; h: number };
+          const w = window as unknown as { __sink: { before: Rec | null; first: Rec | null } };
+          w.__sink = { before: null, first: null };
+          const read = (): Rec | null => {
+            const frame = document.querySelector('[data-testid="target-frame"]');
+            if (!frame) return null;
+            const type = frame.querySelector<HTMLElement>('[data-testid="target-type"]');
+            return {
+              sunk: (frame.querySelector('.hud-target__row')?.textContent ?? '').includes('Hundido'),
+              danger: frame.classList.contains('is-danger') || !!frame.querySelector('.is-danger'),
+              type: type?.textContent ?? null,
+              shown: !!type && type.offsetWidth > 0,
+              h: frame.getBoundingClientRect().height
+            };
+          };
+          new MutationObserver(() => {
+            if (w.__sink.first) return;
+            const r = read();
+            if (!r) return;
+            if (r.sunk) w.__sink.first = r;
+            else w.__sink.before = r;
+          }).observe(document.querySelector('[data-testid="hud"]')!, { childList: true, subtree: true, attributes: true, characterData: true });
+        });
+      }
+      for (const [size, page] of pages) {
+        if (size === 'desktop') await page.keyboard.press('Space');
+        else await page.getByTestId('m-attack').tap();
+      }
+      for (const [size, page] of pages) {
+        const sink = await waitFor(
+          () => page.evaluate(() => (window as unknown as { __sink: { before: unknown; first: unknown } }).__sink),
+          (r) => !!r.first,
+          120_000,
+          250
+        );
+        console.log(`AC-189 al hundirse ${size}: ${JSON.stringify(sink)}`);
+        const first = sink.first as { danger: boolean; type: string | null; shown: boolean; h: number };
+        const before = sink.before as { danger: boolean } | null;
+        expect(before?.danger, `${size}: con la cañonera a flote, la marca estaba`).toBe(true);
+        expect(first.danger, `${size}: en el commit de «Hundido», sin marca`).toBe(false);
+        if (size === 'desktop') expect(first).toMatchObject({ type: 'Cañonera pirata · hostil', shown: true, h: FRAME.desktop.plain });
+        else expect(first).toMatchObject({ shown: false, h: FRAME[size].plain });
+      }
+      expect((await ships(pages[0][1])).find((s) => s.id === gunboatId)?.state ?? 'dead').not.toBe('alive');
+    } finally {
+      for (const ctx of contexts) await ctx.close();
+      await server.kill();
+    }
+  });
 });

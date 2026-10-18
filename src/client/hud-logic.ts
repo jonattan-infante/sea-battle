@@ -14,7 +14,7 @@ import {
   TAB_TARGET_RADIUS
 } from '../game/constants';
 import { tooStrong } from '../game/stats';
-import { PlayerView } from '../game/types';
+import { PlayerView, ShipState } from '../game/types';
 import { Vec2 } from '../game/vec';
 import { levelOf, Rank, rankLabel, rankOf } from '../game/xp';
 import type { GameClient, RenderShip } from './game-client';
@@ -209,11 +209,12 @@ export function rangeText(target: Pick<TargetHud, 'relation' | 'attackable' | 'i
 }
 
 // Marca de peligro (AC-189, D77): «este barco es demasiado fuerte para ti ahora», con el coste de hundirlo en solitario de
-// src/game/stats.ts. Solo los NPC: el cliente no conoce las mejoras de los demás jugadores. El mercante no dispara
+// src/game/stats.ts. Solo los NPC a flote: el cliente no conoce las mejoras de los demás jugadores, el mercante no
+// dispara, y al empezar el hundimiento ya no hay nada que costar (se quita en el mismo commit que «Hundido»)
 export const DANGER_TEXT = 'Demasiado fuerte para tu barco';
 
-export function targetDanger(target: { kind: ShipKind; classId: string }, player: PlayerView | null): boolean {
-  return target.kind !== 'player' && !!player && tooStrong(target.classId, player);
+export function targetDanger(target: { kind: ShipKind; classId: string; state: ShipState }, player: PlayerView | null): boolean {
+  return target.kind !== 'player' && target.state === 'alive' && !!player && tooStrong(target.classId, player);
 }
 
 // Vida baja (< 30 %, AC-41): el panel propio avisa y el botón Reparar pulsa
