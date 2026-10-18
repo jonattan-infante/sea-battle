@@ -95,6 +95,11 @@ export class Navigator {
     return this.builds;
   }
 
+  // Márgenes con su grafo ya construido, de menor a mayor (AC-171)
+  get graphMargins(): number[] {
+    return [...this.graphs.keys()].sort((a, b) => a - b);
+  }
+
   // Candidatos a punto más cercano a q del borde de la unión de las islas infladas por `extra`, a `pad` por fuera: la
   // proyección de q sobre cada isla y los cruces de las que se solapan, solo los que quedan fuera de todas (y dentro del
   // límite, con `bounded`)
