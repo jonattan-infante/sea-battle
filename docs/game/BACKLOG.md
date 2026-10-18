@@ -1454,7 +1454,26 @@ Si A tumba el proceso o pierde progreso, el fallo es P0, y con la 1.0 ya en prod
 
     AC-90 no se afloja en ningún caso.
 
-  **Qué pasa según el resultado** (decidido por producto el 2026-10-18, antes de tener ningún dato):
+    **Medido con D83** (dev-render, GPU real: Apple M4 Pro, ANGLE Metal, DPR 2, buffer de 2880×1800; 120 muestras por variante en 12 rondas intercaladas; `scratchpad/dev-render-agua-8292bd6.log:59-78`, AGUA EXIT 0 a las 17:12:35Z; producto leyó el log):
+
+    | Variante | Pasada del océano, mediana / p95 | Escena entera, mediana / p95 | Bucle normal de 5 s |
+    |---|---|---|---|
+    | Hoy (tope 16, 7 islas de la 1.0) | 3,04 / 3,1 ms | 3,9 / 4,3 ms | 120 fps; p95 10 ms; 0 frames > 12 ms |
+    | D83 (44 círculos) | 6,28 / 6,35 ms | 7,1 / 7,3 ms | 120 fps; p95 10 ms; máx. 17,1; 2 frames > 12 ms |
+    | 60 círculos | 7,69 / 7,83 ms | 8,6 / 8,8 ms | 113 fps; p95 15,5 ms; 36 frames > 12 ms |
+
+    **Decisión de producto (2026-10-18): se toma ya la salida 1, aunque D83 cabe en el M4 Pro.** Por qué:
+    - **El agua es casi todo el frame.** Con D83, la pasada del océano es 6,28 de los 7,1 ms de la escena, y pasa a costar el doble que hoy (+3,24 ms). Su coste crece con píxeles × círculos.
+    - **El M4 Pro no es un portátil común.** La regla del proyecto es 60 fps en un portátil común (`CLAUDE.md`). En una GPU integrada varias veces más lenta, ese doble podría pasar del presupuesto del frame (HIPÓTESIS de dev-render, sin medir). La medida en un equipo modesto depende de una sesión de Jonattan que no tiene fecha, y la 1.1 no debería salir apostando a ella.
+    - **Ya con 60 círculos el M4 Pro da señales:** 113 fps y 36 frames de más de 12 ms en 5 s.
+    - **La salida 1 separa el coste del diseño de las islas.** Si el agua deja de recorrer círculos, ux puede añadir lóbulos sin volver a medir el agua.
+
+    **Criterio de la salida 1:**
+    - con los 44 círculos de D83, y también con 60, la pasada del océano en el M4 Pro, a DPR 2 y medida igual que arriba, tiene una mediana **≤ 3,35 ms**, la de hoy (3,04) más un 10 %;
+    - la costa y la espuma se ven igual que con la lista de círculos: ux compara capturas en 1440×900 y en 390×844 a 1,0× con su regla;
+    - AC-90 en verde.
+
+    La técnica la elige dev-render: una textura con la distancia a la costa, una rejilla que solo recorra los círculos cercanos, o la que mejor cumpla. Si no llega a los 3,35 ms, trae la cifra a producto antes de pasar a la salida 2. La sesión en un equipo modesto, cuando la haga Jonattan, incluye el agua, pero no frena (e). (decidido por producto el 2026-10-18, antes de tener ningún dato):
   - Si pasa, el arte nuevo entra en la 1.1 como P0, con AC-174, AC-175, AC-178, AC-199 y AC-200.
   - Si, cuando lo demás de la 1.1 esté hecho (puestos 1 a 7 y 9 del «Orden de ataque»), el piloto no ha pasado, la 1.1 sale **con el mapa y el puerto de la 1.0**, y E16 entera, lógica y arte, pasa a la 1.2. Las curvas finales (AC-60 y AC-158) se miden entonces con el mapa de la 1.0.
   - No se publica el arte de D67 ni de D68, porque Jonattan pidió cambios. Tampoco el mapa nuevo con el arte de la 1.0, porque sus 9 formas nuevas saldrían sin una lámina aprobada.
