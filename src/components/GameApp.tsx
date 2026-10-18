@@ -20,9 +20,11 @@ import {
   levelUpText,
   portBlock,
   pushGoldReward,
+  pushKillReward,
   pushXpReward,
   relationOf,
   RewardDraft,
+  rewardLines,
   rewardText
 } from '../client/hud-logic';
 import { MeHud, resetSaveWarning, sameShallow, syncUnsaved, TargetHud, useHud } from '../client/hud-store';
@@ -133,17 +135,15 @@ export default function GameApp({ guest }: { guest: boolean }) {
     });
     const rt = createRuntime(client);
     const hud = useHud.getState();
-    let pendingKill: string | null = null;
-    // Recompensas de esta pasada de eventos (AC-152). El oro y la XP de un hundimiento llegan en el mismo frame y se
-    // reproducen en la misma llamada a update() (game-client.ts): se juntan aquí y salen como una sola línea del feed en
-    // una microtarea, al acabar la pasada. Ahí también caduca el nombre del barco hundido, que solo vale para su botín
+    // Recompensas de esta pasada de eventos (AC-152; GDD §14, «XP ganada»). El hundimiento, el oro y la XP de un barco
+    // llegan en el mismo frame y se reproducen en la misma llamada a update() (game-client.ts): se juntan aquí y salen
+    // como una sola línea del feed en una microtarea, al acabar la pasada
     let rewards: RewardDraft[] = [];
     let flushQueued = false;
     const flushRewards = () => {
       flushQueued = false;
-      for (const { lead, name, gold, xp } of rewards) hud.pushFeed('gold', rewardText({ lead, name, gold, xp }), { lead, name, gold, xp });
+      for (const r of rewardLines(rewards)) hud.pushFeed('gold', rewardText(r), r);
       rewards = [];
-      pendingKill = null;
     };
     const queueFlush = () => {
       if (flushQueued) return;
@@ -172,7 +172,7 @@ export default function GameApp({ guest }: { guest: boolean }) {
             useHud.setState({ killedBy: killerName ? { name: killerName, relation: killer ? relationOf(killer, myId) : 'player' } : null, shopOpen: false });
             hud.pushFeed('danger', killerName ? `${killerName} te hundió` : 'Tu barco se hundió');
           } else if (e.byShipId === myId) {
-            pendingKill = victim?.name ?? 'un barco';
+            pushKillReward(rewards, victim?.kind === 'player' ? 'pvp' : 'kill', victim?.name ?? 'un barco', e.pos);
             queueFlush();
           }
           break;
@@ -180,14 +180,14 @@ export default function GameApp({ guest }: { guest: boolean }) {
         case 'loot': {
           if (e.playerId !== myPlayer) break;
           useHud.setState({ goldGain: { id: now, amount: e.gold } });
-          pushGoldReward(rewards, e.source, e.gold, e.pos, pendingKill);
+          pushGoldReward(rewards, e.source, e.gold, e.pos);
           queueFlush();
           break;
         }
         // Solo llega al dueño y nunca con 0 (xp.ts): sin XP no sale nada de XP (GDD §14)
         case 'xp': {
           if (e.playerId !== myPlayer) break;
-          pushXpReward(rewards, e.source, e.xp, e.pos, pendingKill);
+          pushXpReward(rewards, e.source, e.xp, e.pos);
           queueFlush();
           break;
         }
