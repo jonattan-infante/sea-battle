@@ -1,5 +1,6 @@
 # Uso (desde la raíz del repo), tras islas.py y puerto_colonial.py: python3 -I scripts/ux/mapa/firmas.py
-#   →  imprime y escribe $UX_OUT/mapa/firmas-grises.json
+#   (con UX_PUERTO=puerto_isla, el puerto con forma de isla de D92: tras puerto_forma.py y puerto_isla.py)
+#   →  imprime y escribe $UX_OUT/mapa/firmas-grises.json (con UX_PUERTO=puerto_isla, firmas-grises-puerto_isla.json)
 # Firma en grises por arquetipo (ART-DIRECTION AD-39 c, AC-174) de las islas rediseñadas (D83), con el render por software
 # de render_tex.py a 6,2 px/m y 55° (N1 a 1,0× en 1440×900): en la máscara de la isla y sus props (cobertura ≥ 0,5, sin agua
 # ni espuma), las fracciones de píxeles claros (L* ≥ 75), medios (40 ≤ L* < 75) y oscuros (L* < 40). El centroide de un
@@ -19,6 +20,13 @@ MAPA = os.path.join(RT.OUT, 'mapa'); PPM = 6.2; TH = 55
 ARQ = {'PORT': 'puerto', 'I1': 'tropical', 'I5': 'tropical', 'I6': 'tropical', 'T1': 'tropical', 'T2': 'tropical',
        'I2': 'rocosa', 'I3': 'rocosa', 'I4': 'rocosa', 'E1a': 'escollos', 'E1b': 'escollos', 'E1c': 'escollos',
        'G1': 'cala', 'G2': 'cala', 'G3': 'cala', 'G4': 'cala'}   # los 5 arquetipos de D67 (el islote habitado es tropical)
+# el puerto: 'puerto' (D82, el círculo de 30 m) o 'puerto_isla' (D92: la malla y el atlas de puerto_isla.py y los círculos de
+# puerto_forma.py), como en presupuesto.py
+PUERTO = os.environ.get('UX_PUERTO', 'puerto')
+if PUERTO == 'puerto_isla':
+    import puerto_forma as PF
+    PF.use(os.environ.get('UX_PUERTO_VAR', 'v3'))
+    _v = list(CI.ISLAS['PORT']); _v[4] = [(x, z, r) for _, x, z, r in PF.CIRCLES]; CI.ISLAS['PORT'] = tuple(_v)
 
 
 def lstar(rgb):
@@ -29,7 +37,7 @@ def lstar(rgb):
 
 def firma(iid):
     if iid == 'PORT':
-        d = np.load(os.path.join(MAPA, 'puerto_lod0.npz')); at = 'atlas_puerto.png'
+        d = np.load(os.path.join(MAPA, f'{PUERTO}_lod0.npz')); at = 'atlas_puerto_isla.png' if PUERTO == 'puerto_isla' else 'atlas_puerto.png'
     else:
         d = np.load(os.path.join(MAPA, f'isla_{iid}_lod0.npz')); at = 'atlas_isla.png'
     atlas = RX.srgb2lin(np.asarray(Image.open(os.path.join(MAPA, at)).convert('RGB'), float))
@@ -60,5 +68,5 @@ if __name__ == '__main__':
             g = float(np.abs(cen[a] - cen[b]).max()); pares[f'{a}–{b}'] = round(g, 3)
             if g < 0.15: res['fallos'].append(f'centroides {a}–{b}: {g:.3f} < 0,15')
     res['pares_centroides_Linf'] = pares
-    json.dump(res, open(os.path.join(MAPA, 'firmas-grises.json'), 'w'), indent=1, ensure_ascii=False)
+    json.dump(res, open(os.path.join(MAPA, 'firmas-grises.json' if PUERTO == 'puerto' else f'firmas-grises-{PUERTO}.json'), 'w'), indent=1, ensure_ascii=False)
     print(json.dumps(res, ensure_ascii=False, indent=1))
