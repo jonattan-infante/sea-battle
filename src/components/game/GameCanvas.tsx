@@ -14,7 +14,6 @@ export interface GameCanvasProps {
 }
 
 const DOUBLE_CLICK_MS = 350;
-const TAP_SLOP_PX = 12;
 const WHEEL_STEP = 40; // px acumulados por nivel de zoom (trackpads emiten deltas pequeños)
 const WHEEL_COOLDOWN_MS = 220;
 const PINCH_IN = 1.25;
@@ -82,26 +81,45 @@ export default function GameCanvas({ runtime, onWaterClick, onShipClick, onShipD
       return Math.hypot(a.x - b.x, a.y - b.y);
     };
 
+    // Vista libre (E13, GDD §5): pulsar y arrastrar más de 12 px desplaza la vista; soltar antes es un clic, que navega o
+    // selecciona al soltar (con ratón, antes se hacía al pulsar). Dos dedos son zoom, nunca desplazamiento
+    const view = runtime.freeView;
+    const toWorld = (dx: number, dy: number) => runtime.screenDeltaToWorld(dx, dy);
+    let mouseDown = false;
+    // Un PointerEvent sintético (los e2e de AC-14 y AC-136) no es un puntero activo y setPointerCapture lanzaría
+    const capture = (e: PointerEvent) => {
+      try {
+        el.setPointerCapture?.(e.pointerId);
+      } catch {
+        // sin captura: el arrastre funciona igual mientras el puntero siga sobre el lienzo
+      }
+    };
     const onPointerDown = (e: PointerEvent) => {
       const p = local(e);
       if (e.pointerType === 'mouse') {
-        if (e.button === 0) act(p.x, p.y, false);
+        if (e.button !== 0) return;
+        mouseDown = true;
+        view.pointerDown(p.x, p.y);
+        capture(e);
         return;
       }
       touches.set(e.pointerId, p);
-      el.setPointerCapture?.(e.pointerId);
+      capture(e);
       if (touches.size === 1) {
         tap = p;
         pinched = false;
+        view.pointerDown(p.x, p.y);
       } else if (touches.size === 2) {
         pinchBase = pinchDistance();
         pinched = true;
         tap = null;
+        view.cancelPress();
       }
     };
     const onPointerMove = (e: PointerEvent) => {
       const p = local(e);
       if (e.pointerType === 'mouse') {
+        if (mouseDown && view.pointerMove(p.x, p.y, toWorld, performance.now())) return;
         const now = performance.now();
         if (now - hoverAt < HOVER_MS) return;
         hoverAt = now;
@@ -111,7 +129,7 @@ export default function GameCanvas({ runtime, onWaterClick, onShipClick, onShipD
       }
       if (!touches.has(e.pointerId)) return;
       touches.set(e.pointerId, p);
-      if (tap && Math.hypot(p.x - tap.x, p.y - tap.y) > TAP_SLOP_PX) tap = null;
+      if (touches.size === 1 && !pinched && view.pointerMove(p.x, p.y, toWorld, performance.now())) tap = null;
       if (touches.size === 2 && pinchBase > 0) {
         const ratio = pinchDistance() / pinchBase;
         if (ratio > PINCH_IN) {
@@ -124,17 +142,24 @@ export default function GameCanvas({ runtime, onWaterClick, onShipClick, onShipD
       }
     };
     const onPointerUp = (e: PointerEvent) => {
-      if (e.pointerType === 'mouse') return;
       const p = local(e);
+      if (e.pointerType === 'mouse') {
+        if (e.button !== 0 || !mouseDown) return;
+        mouseDown = false;
+        if (view.pointerUp() === 'click') act(p.x, p.y, false);
+        return;
+      }
       touches.delete(e.pointerId);
       if (touches.size === 0) {
-        if (tap && !pinched) act(p.x, p.y, true);
+        if (view.pointerUp() === 'click' && tap && !pinched) act(p.x, p.y, true);
         tap = null;
         pinched = false;
         pinchBase = 0;
       }
     };
     const onPointerCancel = (e: PointerEvent) => {
+      if (e.pointerType === 'mouse') mouseDown = false;
+      view.cancelPress();
       touches.delete(e.pointerId);
       if (touches.size === 0) {
         tap = null;

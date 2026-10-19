@@ -7,6 +7,9 @@ import { CANNON_LEVELS, INTERPOLATION_DELAY_MS, MAX_CANNON_RANGE, ISLANDS, PORT_
 import { Navigator } from '../game/nav';
 import { GameEvent, PlayerView, Welcome, WreckView } from '../game/types';
 import { CAMERA, computePpm0, DAMAGE_TEXT, DamageTextKind, frameRangeM, LABEL, LIGHTING, MOBILE_MAX_WIDTH, RING_COLORS, ZOOM } from './art';
+import { ChipHost, EdgeChipLayer } from './edge-chip-layer';
+import { Attack, AttackerTracker } from './edge-chips';
+import { FreeView, OwnWatch, ViewMode } from './free-view';
 import type { GameClient, RenderShip } from './game-client';
 import { useHud } from './hud-store';
 import { buildBuoyGeometry, buildIslands, buildLootGeometry, buildPalmGeometry, buoyInstances, PropInstance } from './models/island-geometry';
@@ -658,7 +661,7 @@ export class VfxDirector {
 }
 
 // ---- GameRuntime ----
-export class GameRuntime implements OverlayHost {
+export class GameRuntime implements OverlayHost, ChipHost {
   readonly client: GameClient;
   src: RenderSource; // de dónde lee el render: el cliente real o una escena sintética
   readonly scene = new THREE.Group();
@@ -670,6 +673,8 @@ export class GameRuntime implements OverlayHost {
   clickMarker: ClickMarker | null = null;
   labels: LabelLayer | null = null;
   floating: FloatingTextLayer | null = null;
+  chips: EdgeChipLayer | null = null; // indicadores de borde (E13, §12.8)
+  private readonly attackTracker = new AttackerTracker(); // quién te dispara (AC-124)
   lowQuality = false;
 
   // Cámara
@@ -690,6 +695,8 @@ export class GameRuntime implements OverlayHost {
   private camReady = false;
   focusX: number = PORT_POSITION.x;
   focusZ: number = PORT_POSITION.z;
+  readonly freeView: FreeView; // vista libre (E13): el foco cuando la cámara no sigue al barco
+  private readonly stopViewReturn: () => void;
   private lookX = 0;
   private lookY = 0;
   private lookZ = 0;
@@ -743,6 +750,28 @@ export class GameRuntime implements OverlayHost {
   constructor(client: GameClient) {
     this.client = client;
     this.src = client;
+    // Los viewAt solo salen con el cliente real (no con las escenas sintéticas de QA); el botón Centrar lee el modo del store
+    this.freeView = new FreeView(
+      (center) => {
+        if (this.src === this.client) this.client.viewAt(center);
+      },
+      (free) => useHud.getState().setFreeView(free)
+    );
+    // AC-119: el daño propio, la muerte o la reaparición devuelven la cámara al barco. Se mira al recibir cada frame del
+    // servidor (fuera del bucle de render), con el último estado y sin el retraso de interpolación. Una andanada contra el
+    // barco propio también, aunque falle (producto, 2026-10-18): así el chip de atacante nunca sale en vista libre
+    const own = new OwnWatch();
+    own.next(client.ownSample());
+    const stopFrames = client.onFrame(() => {
+      if (own.next(client.ownSample())) this.freeView.returnToFollow(performance.now());
+    });
+    const stopVolleys = client.onEvent((e) => {
+      if (e.type === 'volley' && e.targetId === client.myShipId) this.freeView.returnToFollow(performance.now());
+    });
+    this.stopViewReturn = () => {
+      stopFrames();
+      stopVolleys();
+    };
     this.mobile = isMobileDevice();
     this.reducedMotionQuery = typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
     this.effects = new Effects(this.mobile);
@@ -772,7 +801,11 @@ export class GameRuntime implements OverlayHost {
     this.unsubscribe.push(
       src.onMembership((list) => this.syncShips(list)),
       src.onWrecks((list) => this.syncWrecks(list)),
-      src.onEvent((e) => this.director.onEvent(e))
+      src.onEvent((e) => {
+        this.director.onEvent(e);
+        if (e.type === 'volley') this.attackTracker.volley(e.shipId, e.targetId, src.myShipId, performance.now());
+        else if (e.type === 'impact') this.attackTracker.impact(e.shipId, e.byShipId, e.damage, src.myShipId, performance.now());
+      })
     );
   }
 
@@ -787,6 +820,7 @@ export class GameRuntime implements OverlayHost {
     this.views.clear();
     this.wrecks.clear();
     this.director.reset();
+    this.attackTracker.clear();
     this.clickMarker = null;
     this.hoverId = null;
     this.src = src;
@@ -846,6 +880,11 @@ export class GameRuntime implements OverlayHost {
     out.sy = this.viewH / 2 - (dy * this.cosT - dz * this.sinT) * this.ppm;
   }
 
+  // Un desplazamiento de pantalla (px CSS) en metros del agua: para arrastrar la vista libre
+  screenDeltaToWorld(dx: number, dy: number): { x: number; z: number } {
+    return { x: dx / this.ppm, z: dy / (this.ppm * this.sinT) };
+  }
+
   // Punto del agua (y = 0) bajo un punto de pantalla
   screenToWorld(sx: number, sy: number): { x: number; z: number } | null {
     if (!this.camReady) return null;
@@ -884,6 +923,23 @@ export class GameRuntime implements OverlayHost {
 
   serverTime(): number {
     return this.src.serverTime();
+  }
+
+  // Lo que necesitan los indicadores de borde (ChipHost)
+  ship(id: string): RenderShip | undefined {
+    return this.src.getShip(id);
+  }
+
+  viewCenter(): { x: number; z: number } {
+    return { x: this.focusX, z: this.focusZ };
+  }
+
+  viewMode(): ViewMode {
+    return this.freeView.mode;
+  }
+
+  attackers(now: number): readonly Attack[] {
+    return this.attackTracker.active(now);
   }
 
   reload(): ReloadState {
@@ -1026,18 +1082,25 @@ export class GameRuntime implements OverlayHost {
     return PVP_ENABLED && !safe(target) && !safe(me) && target.protectedUntil <= now && me.protectedUntil <= now;
   }
 
-  attachOverlays(labels: HTMLElement, floating: HTMLElement): void {
+  attachOverlays(labels: HTMLElement, floating: HTMLElement, chips: HTMLElement): void {
     this.detachOverlays();
     this.labels = new LabelLayer(labels, this);
     this.floating = new FloatingTextLayer(floating, this);
+    // El chip propio centra como C (AC-119) y el de atacante lo selecciona como Tab, sin mover la cámara (§12.8)
+    this.chips = new EdgeChipLayer(chips, this, {
+      onSelf: () => this.freeView.returnToFollow(performance.now()),
+      onAttacker: (id) => useHud.getState().select(id)
+    });
     this.labels.sync(this.views.values());
   }
 
   detachOverlays(): void {
     this.labels?.dispose();
     this.floating?.dispose();
+    this.chips?.dispose();
     this.labels = null;
     this.floating = null;
+    this.chips = null;
   }
 
   // Depuración/QA: partículas vivas por pool, placas y números visibles
@@ -1056,6 +1119,10 @@ export class GameRuntime implements OverlayHost {
 
   plateRects(): ReturnType<LabelLayer['visibleRects']> {
     return this.labels?.visibleRects() ?? [];
+  }
+
+  chipRects(): ReturnType<EdgeChipLayer['visibleRects']> {
+    return this.chips?.visibleRects() ?? [];
   }
 
   // ---- Cámara de presentación, escenas sintéticas y capturas (QA y landing) ----
@@ -1178,11 +1245,15 @@ export class GameRuntime implements OverlayHost {
     this.rootScene = state.scene;
     if (this.paused) {
       this.labels?.frame(now);
+      this.chips?.frame(now);
       return;
     }
     this.src.update(now);
     if (this.src !== this.client) this.client.update(now); // drena sus eventos aunque no se dibuje
     const step = Math.min(dt, 0.1);
+    // Flechas y envío del centro de la vista (≤ 2/s). Con el dt real hasta 0,5 s: con frames lentos (WebGL por software),
+    // el tope de 0,1 s de la simulación de efectos frenaría la vista y AC-118 pide 300 m en 2 s
+    this.freeView.update(now, Math.min(dt, 0.5));
     this.updateCamera(state, now);
     this.updateShips(now);
     this.director.updateFlights(now);
@@ -1195,6 +1266,7 @@ export class GameRuntime implements OverlayHost {
     this.updateReload(now);
     this.labels?.frame(now);
     this.floating?.frame(now);
+    this.chips?.frame(now);
     this.adaptQuality(state, dt, now);
   }
 
@@ -1253,14 +1325,17 @@ export class GameRuntime implements OverlayHost {
 
     // Seguimiento rígido del barco propio (AC-23); muerto, la cámara se queda sobre los restos y al
     // reaparecer salta sin transición
+    // En vista libre (E13) el foco es el centro de la vista, y al volver se mezcla con el barco durante 300 ms
     const me = this.src.getShip(this.src.myShipId);
     const fixed = this.src.focus;
     if (fixed) {
       this.focusX = fixed.x;
       this.focusZ = fixed.z;
-    } else if (me && me.state !== 'dead') {
-      this.focusX = me.x;
-      this.focusZ = me.z;
+    } else {
+      const ship = me && me.state !== 'dead' ? { x: me.x, z: me.z } : { x: this.focusX, z: this.focusZ };
+      const f = this.freeView.focus(ship, now)!;
+      this.focusX = f.x;
+      this.focusZ = f.z;
     }
     let ox = 0;
     let oy = 0;
@@ -1638,6 +1713,7 @@ export class GameRuntime implements OverlayHost {
 
   dispose(): void {
     this.unsubscribe.forEach((u) => u());
+    this.stopViewReturn();
     this.detachOverlays();
     for (const view of this.views.values()) view.mesh.material.dispose();
     for (const m of this.materialPool) m.dispose();
@@ -1672,8 +1748,8 @@ export function disposeRuntime(rt: GameRuntime): void {
   rt.dispose();
 }
 
-// Conecta las capas DOM de placas y números (las crea GameApp); devuelve la limpieza para un useEffect
-export function attachOverlays(rt: GameRuntime, labels: HTMLElement, floating: HTMLElement): () => void {
-  rt.attachOverlays(labels, floating);
+// Conecta las capas DOM de placas, números e indicadores de borde (las crea GameApp); devuelve la limpieza para un useEffect
+export function attachOverlays(rt: GameRuntime, labels: HTMLElement, floating: HTMLElement, chips: HTMLElement): () => void {
+  rt.attachOverlays(labels, floating, chips);
   return () => rt.detachOverlays();
 }

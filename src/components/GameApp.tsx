@@ -6,6 +6,7 @@ import { useAuth, useUser } from '@clerk/nextjs';
 import { PlayerShipClass } from '../game/constants';
 import { GameEvent, Welcome } from '../game/types';
 import { probeServerOnce } from '../client/exit-probe';
+import type { Arrow } from '../client/free-view';
 import { GameClient } from '../client/game-client';
 import {
   canAttackClient,
@@ -42,6 +43,8 @@ const HINT_COUNT = 3;
 const HUD_SYNC_MS = 100; // ≤ 10 Hz
 const UNDER_FIRE_MS = 3000; // GDD §8
 const DESELECT_SUNK_MS = 1200;
+// Vista libre (E13, GDD §5): las flechas mueven la vista mientras estén pulsadas (AC-118); no son intenciones
+const ARROW_KEYS: Record<string, Arrow> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
 
 function randomId(): string {
   return Math.random().toString(36).slice(2, 12).padEnd(10, '0');
@@ -116,6 +119,7 @@ export default function GameApp({ guest }: { guest: boolean }) {
   const [welcome, setWelcome] = useState<Welcome | null>(null);
   const labelsRef = useRef<HTMLDivElement>(null);
   const floatingRef = useRef<HTMLDivElement>(null);
+  const chipsRef = useRef<HTMLDivElement>(null);
   const getTokenRef = useRef(getToken);
   // Sincroniza el HUD en el acto tras una intención del jugador (AC-125: refleja la pulsación en ≤ 50 ms)
   const syncRef = useRef<() => void>(() => {});
@@ -315,10 +319,10 @@ export default function GameApp({ guest }: { guest: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [guest, identityReady]);
 
-  // Capas DOM de placas y números de daño (dueño: runtime)
+  // Capas DOM de placas, números de daño e indicadores de borde (dueño: runtime)
   useEffect(() => {
-    if (!runtime || !welcome || !labelsRef.current || !floatingRef.current) return;
-    return attachOverlays(runtime, labelsRef.current, floatingRef.current);
+    if (!runtime || !welcome || !labelsRef.current || !floatingRef.current || !chipsRef.current) return;
+    return attachOverlays(runtime, labelsRef.current, floatingRef.current, chipsRef.current);
   }, [runtime, welcome]);
 
   // ---- Acciones compartidas por teclado, HUD y botones táctiles ----
@@ -428,10 +432,15 @@ export default function GameApp({ guest }: { guest: boolean }) {
       if (connection === 'load-failed' || connection === 'kicked') return;
       // Una pulsación, como mucho una intención (GDD §5): la autorrepetición de una tecla mantenida no cuenta
       if (e.repeat) {
-        if (e.code === 'Space' || e.code === 'Tab') e.preventDefault();
+        if (e.code === 'Space' || e.code === 'Tab' || ARROW_KEYS[e.code]) e.preventDefault();
         return;
       }
       const st = useHud.getState();
+      if (ARROW_KEYS[e.code]) {
+        e.preventDefault();
+        runtime?.freeView.setArrow(ARROW_KEYS[e.code], true);
+        return;
+      }
       switch (e.code) {
         case 'Space':
           e.preventDefault();
@@ -460,10 +469,23 @@ export default function GameApp({ guest }: { guest: boolean }) {
         case 'KeyP':
           actions.togglePort();
           break;
+        case 'KeyC':
+          runtime?.freeView.returnToFollow(performance.now()); // vuelve al seguimiento (AC-119)
+          break;
       }
     };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (ARROW_KEYS[e.code]) runtime?.freeView.setArrow(ARROW_KEYS[e.code], false);
+    };
+    const onBlur = () => runtime?.freeView.clearArrows(); // una flecha soltada fuera de la ventana no deja la vista moviéndose
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
+    };
   }, [actions, runtime]);
 
   // ---- Puente de depuración de solo lectura para los harnesses e2e y de rendimiento ----
@@ -517,7 +539,15 @@ export default function GameApp({ guest }: { guest: boolean }) {
           <GameCanvas runtime={runtime} onWaterClick={onWaterClick} onShipClick={onShipClick} onShipDoubleClick={onShipDoubleClick} />
           <div ref={labelsRef} className="layer-labels" aria-hidden />
           <div ref={floatingRef} className="layer-floating" aria-hidden />
-          <Hud client={runtime.client} actions={actions} islands={welcome.islands} viewRect={() => runtime.viewRect()} />
+          <div ref={chipsRef} className="layer-chips" />
+          <Hud
+            client={runtime.client}
+            actions={actions}
+            islands={welcome.islands}
+            viewRect={() => runtime.viewRect()}
+            onMinimapView={(x, z) => runtime.freeView.centerOn({ x, z }, performance.now())}
+            onRecenter={() => runtime.freeView.returnToFollow(performance.now())}
+          />
         </>
       ) : (
         !loadFailed && <Connecting />

@@ -90,6 +90,7 @@ body {
 /* Capas (§12.6): canvas 0 · placas 10 · números 15 · HUD 20 · toasts 30 · modal 40 */
 .layer-labels { position: absolute; inset: 0; z-index: 10; pointer-events: none; overflow: hidden; }
 .layer-floating { position: absolute; inset: 0; z-index: 15; pointer-events: none; overflow: hidden; }
+.layer-chips { position: absolute; inset: 0; z-index: 18; pointer-events: none; overflow: hidden; } /* indicadores de borde (§12.8); los chips sí reciben el puntero */
 .hud { position: absolute; inset: 0; z-index: 20; pointer-events: none; }
 .hud > * { pointer-events: auto; }
 .hud.is-dead > *:not(.hud-toasts) { opacity: 0.4; pointer-events: none; }
@@ -164,6 +165,11 @@ body {
 /* D39: mapa de 184 × 184 (con el borde del panel) y debajo el pie del sector de 24 px, con su línea de 1 px, en el mismo panel */
 .hud-minimap { position: absolute; right: 16px; top: 64px; width: 184px; height: 208px; padding: 0; overflow: hidden; display: flex; flex-direction: column; }
 .hud-minimap canvas { display: block; flex: none; width: 100%; height: auto; aspect-ratio: 1; }
+/* Centrar (§12.8, D89): 8 px bajo el pie del minimapa, solo en vista libre; icono de 18 a 12 del borde y la tecla a la derecha */
+.hud-recenter { position: absolute; right: 16px; top: 280px; width: 184px; height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 12px; color: var(--ui-text); font-size: 14px; font-weight: 600; cursor: pointer; animation: fade-in 150ms ease both; }
+.hud-recenter svg { flex: none; width: 18px; height: 18px; }
+.hud-recenter:hover { border-color: var(--ui-gold); }
+.hud-recenter__key { margin-left: auto; box-sizing: border-box; width: 20px; height: 20px; border: 1px solid var(--ui-line); border-radius: 4px; font-family: inherit; font-size: 11px; font-weight: 600; line-height: 18px; text-align: center; color: var(--ui-text-dim); }
 /* Halo del Capitán pirata en el minimapa (ART-DIRECTION §4.3, D43): anillo coral de 1,5 px, r 7 → 12 px y α 0,6 → 0 a 1 Hz. Lo
    anima CSS: el canvas se redibuja a ≤ 2 Hz y solo mueve su posición (0 commits de React). El trazo no escala con el anillo */
 .hud-minimap__halo { position: absolute; left: 0; top: 0; width: 24px; height: 24px; margin: -12px 0 0 -12px; overflow: visible; pointer-events: none; display: none; }
@@ -233,6 +239,10 @@ body {
   .hud-mobile-btn.is-pulse { animation: danger-border 1s steps(2, jump-none) infinite; }
   .hud-mobile-btn--attack { width: 72px; height: 72px; border-radius: 50%; font-size: 12px; font-weight: 700; }
   .hud-mobile-btn .slot__reload { border-radius: inherit; }
+  /* Centrar en táctil: 52 × 52 como los demás botones, icono de 22, 2 px y «Centrar» a 10 px (D89) */
+  .hud-recenter { flex-direction: column; justify-content: center; gap: 2px; width: 52px; height: 52px; padding: 0; border-radius: 12px; font-size: 10px; font-weight: inherit; }
+  .hud-recenter svg { width: 22px; height: 22px; }
+  .hud-recenter__key { display: none; }
   .hud-player__badge { right: -6px; bottom: -6px; width: 18px; height: 18px; } /* §12.9: 18 px sobre la esquina del icono */
 }
 
@@ -264,6 +274,7 @@ body {
   .hud-mobile-btn--target { right: 104px; bottom: calc(env(safe-area-inset-bottom, 0px) + 16px); }
   .hud-mobile-btn--repair { right: 16px; bottom: calc(env(safe-area-inset-bottom, 0px) + 108px); }
   .hud-mobile-btn--port { left: 16px; bottom: calc(env(safe-area-inset-bottom, 0px) + 16px); }
+  .hud-recenter { top: auto; right: 16px; bottom: calc(env(safe-area-inset-bottom, 0px) + 176px); } /* 16 px sobre Reparar: 322, 616 en 390 × 844 */
   .hud-hint { bottom: 200px; width: calc(100% - 32px); }
   .hud-hint.is-alt { top: calc(env(safe-area-inset-top, 0px) + 200px); bottom: auto; } /* bajo el primer aviso (156 + 36 + 8) */
 }
@@ -286,6 +297,7 @@ body {
   .hud-mobile-btn--target { right: 108px; bottom: 12px; }
   .hud-mobile-btn--repair { right: 24px; bottom: 100px; }
   .hud-mobile-btn--port { left: 12px; bottom: 12px; }
+  .hud-recenter { top: auto; right: 88px; bottom: 100px; } /* a la izquierda de Reparar: 704, 238 en 844 × 390 */
   .hud-hint { bottom: 12px; } /* H-06: entre Puerto y Objetivo, lejos del barco centrado y de su placa */
   .hud-hint.is-alt { top: 64px; bottom: auto; } /* bajo el primer aviso (12 + 36 + 16) */
 }
