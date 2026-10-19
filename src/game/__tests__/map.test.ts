@@ -6,9 +6,7 @@ import {
   ISLANDS,
   ISLAND_SHAPES_1_1,
   MAP_1_1,
-  MOORINGS,
   PIRATE_SECTORS,
-  PORT_RADIUS,
   PlayerShipClass,
   RESPAWN_RING,
   SAFE_ZONE_RADIUS,
@@ -16,14 +14,14 @@ import {
   mapOf,
   navClearance
 } from '../constants';
-import { Navigator } from '../nav';
+import { Navigator, segmentPointDistance } from '../nav';
 import { Vec2, angleDelta, distance, forward } from '../vec';
 import { addPlayer, createWorld, moveTo, navigatorOf, respawn, shipOfPlayer, step } from '../world';
 import { DT, placeCaptain, placeGunboat, placePlayer, run, runUntil } from './helpers';
 
-// Mapa de la 1.1 (GDD §4; puesto 5). Las islas de MAP_1_1 son las de D83, aprobada por Jonattan el 2026-10-18; el puerto
-// sigue PROVISIONAL (constants.ts, PORT_SHAPE_1_1): si cambia, cambian sus datos y los tests de AC-170 y AC-177 se vuelven
-// a correr con él. La lógica (uniones de círculos, destino inalcanzable y amarres) no depende de la disposición
+// Mapa de la 1.1 (GDD §4; puesto 5). Las islas de MAP_1_1 son las de D83, aprobada por Jonattan el 2026-10-18, y el puerto,
+// el de D92, aprobado el 2026-10-19 (constants.ts, PORT_SHAPE_1_1 y MOORINGS_1_1). La lógica (uniones de círculos, destino
+// inalcanzable y amarres) no depende de la disposición
 const world11 = (seed = 1, i2 = false) => createWorld({ seed, spawnNpcs: false, i2, map: MAP_1_1 });
 const nav11 = () => navigatorOf(world11());
 const deg = (d: number) => (d * Math.PI) / 180;
@@ -56,11 +54,52 @@ const hullTouchesRock = (pos: Vec2, heading: number, length: number) => {
   });
 };
 
-describe('E16 — Mapa de la 1.1 (D83; el puerto, provisional)', () => {
-  // GDD §4, tabla de islas de D83 (scripts/ux/mapa/circulos.py, ASSET-SPEC §9.7): id, arquetipo y sus círculos [x, z, radio].
-  // El del puerto es provisional (constants.ts, PORT_SHAPE_1_1)
+// Amarres de D92 (GDD §4, «Amarres de D92»), fila a fila: Q (x, z), el punto del muelle, 2 cm por fuera del borde de la
+// unión en ψ (los de puerto-forma-v3.json, la variante de la lámina aprobada, movidos para que el redondeo de Q no meta
+// ningún barco en su margen); ψ en grados (0 = +Z, 90 = +X); el centro del Navío atracado (x, z); y la salida del Navío y
+// la de la Balandra: del centro del barco atracado al borde de la zona segura, en el rumbo ψ
+const GDD_MOORINGS: [number, number, number, number, number, number, number][] = [
+  [14.0, 30.02, 0, 14.0, 53.0, 56.1, 69.1],
+  [25.67, 26.68, 32, 37.9, 46.2, 50.5, 63.5],
+  [34.12, 16.96, 66, 55.1, 26.3, 48.9, 61.9],
+  [45.74, 2.51, 60, 65.7, 14.0, 44.2, 57.2],
+  [47.85, -8.37, 98, 70.6, -11.6, 38.4, 51.4],
+  [42.82, -18.24, 136, 58.8, -34.8, 42.6, 55.6],
+  [32.78, -22.93, 174, 35.2, -45.8, 56.5, 69.5],
+  [-45.89, -12.25, 241, -66.0, -23.4, 40.3, 53.3],
+  [-47.58, -0.18, 283, -70.0, 5.0, 40.1, 53.1],
+  [-39.77, 10.59, 329, -51.6, 30.3, 53.6, 66.6],
+  [-24.94, 25.82, 324, -38.5, 44.4, 51.3, 64.3],
+  [-12.0, 30.02, 0, -12.0, 53.0, 56.3, 69.3]
+];
+const D92 = GDD_MOORINGS.map(([x, z, psi]) => ({ q: { x, z }, psi }));
+// El punto a d m de Q en el rumbo ψ del amarre: el barco atracado tiene el centro a L/2 + 2 (su margen), y el eje del
+// amarre va de Q (d = 0) a Q + 46 m
+const along = (m: (typeof D92)[number], d: number) => ({ x: m.q.x + forward(deg(m.psi)).x * d, z: m.q.z + forward(deg(m.psi)).z * d });
+// Las 5 clases del jugador de la 1.1 (GDD §6): eslora y manga en m, las de scripts/ux/mapa/puerto_forma.py, con las que ux
+// sacó la tabla; el margen es L/2 + 2. La Goleta y el Navío aún no están en SHIP_CLASSES de esta rama
+const HULLS_1_1: [string, number, number][] = [['Balandra', 16, 4.4], ['Goleta', 22, 5.6], ['Bergantín', 24, 6.2], ['Fragata', 34, 8.6], ['Navío', 42, 11.2]];
+// Del centro c al borde de la zona segura en el rumbo ψ
+const exitLength = (c: Vec2, psi: number) => {
+  const d = forward(deg(psi));
+  const b = c.x * d.x + c.z * d.z;
+  return -b + Math.sqrt(b * b - (c.x * c.x + c.z * c.z - SAFE_ZONE_RADIUS * SAFE_ZONE_RADIUS));
+};
+
+// El casco (de proa a popa, sin bauprés) toca un círculo del puerto de MAP_1_1 (como AC-20)
+const PORT_CIRCLES = ISLAND_SHAPES_1_1.find((s) => s.id === 'PORT')!.circles;
+const hullTouchesPort = (pos: Vec2, heading: number, length: number) => {
+  const f = forward(heading);
+  const bow = { x: pos.x + (f.x * length) / 2, z: pos.z + (f.z * length) / 2 };
+  const stern = { x: pos.x - (f.x * length) / 2, z: pos.z - (f.z * length) / 2 };
+  return PORT_CIRCLES.some((c) => segmentPointDistance(stern, bow, c) < c.radius);
+};
+
+describe('E16 — Mapa de la 1.1 (D83 y el puerto de D92)', () => {
+  // GDD §4, tabla de círculos de D83 y D92 (scripts/ux/mapa/circulos.py, ASSET-SPEC §9.7): id, arquetipo y sus círculos
+  // [x, z, radio]. Los del puerto: ciudad este, ciudad oeste, fuerte, muelle este, palmar, roca e islote
   const GDD_TABLE: [string, string, [number, number, number][]][] = [
-    ['PORT', 'port', [[0, 0, 30]]],
+    ['PORT', 'port', [[14, 8, 22], [-12, 8, 22], [0, -22, 15], [31, -6, 17], [-31, -4, 17], [-16, -30, 9], [-39, -31, 4.5]]],
     ['I1', 'tropical', [[260, 200, 45], [212, 214, 30], [305, 182, 28], [225, 150, 8], [275, 255, 7]]],
     ['I2', 'rocky', [[-305, 160, 28], [-282, 188, 18], [-318, 186, 13], [-336, 138, 6]]],
     ['I3', 'rocky', [[-220, -280, 55], [-175, -250, 30], [-158, -312, 9]]],
@@ -97,11 +136,11 @@ describe('E16 — Mapa de la 1.1 (D83; el puerto, provisional)', () => {
   // Distancia de un punto al borde de la unión de una isla (negativa dentro)
   const unionEdge = (id: string, p: Vec2) => Math.min(...circles.filter((c) => c.shape.id === id).map((c) => Math.hypot(p.x - c.x, p.z - c.z) - c.radius));
 
-  test('AC-170: las 16 formas de GDD §4 (D83) con su arquetipo y sus 44 círculos, y la lista plana de círculos del mapa', () => {
+  test('AC-170: las 16 formas de GDD §4 (D83 y D92) con su arquetipo y sus 50 círculos, la lista plana de círculos del mapa y los 12 amarres de D92', () => {
     expect(ISLAND_SHAPES_1_1.map((s) => [s.id, s.archetype, s.circles.map((c) => [c.x, c.z, c.radius])])).toEqual(GDD_TABLE);
     expect(MAP_1_1.islands).toEqual(GDD_TABLE.flatMap(([id, , cs]) => cs.map(([x, z, radius], k) => ({ id: cs.length > 1 ? `${id}.${k}` : id, x, z, radius }))));
-    expect(MAP_1_1.islands).toHaveLength(44);
-    expect(MAP_1_1.moorings).toBe(true);
+    expect(MAP_1_1.islands).toHaveLength(50);
+    expect(MAP_1_1.moorings.map((m) => [m.x, m.z, m.psiDeg])).toEqual(GDD_MOORINGS.map(([x, z, psi]) => [x, z, psi]));
   });
 
   test('AC-170: entre los círculos de islas distintas hay ≥ 46 m de borde a borde, salvo entre los 3 escollos, a 31 ±0,5 m, y nada toca la zona segura salvo el puerto', () => {
@@ -182,16 +221,15 @@ describe('E16 — Mapa de la 1.1 (D83; el puerto, provisional)', () => {
   // otros tests. El tiempo de la primera ruta (preparada y sin preparar) solo se registra: depende de la máquina, y con una
   // cota absoluta de 2 ms la CI daba rojos de tiempo (2,06 ms en el run 39140547625)
   test('AC-171: el mundo prepara al crearse los grafos y los cruces de todas las clases: la primera ruta, el primer clic en una isla y el primer contacto con la costa de cada clase no construyen nada', () => {
-    const world = createWorld({ seed: 2, spawnNpcs: false, map: mapOf('1.1-arranque', ISLAND_SHAPES_1_1, true) });
+    const world = createWorld({ seed: 2, spawnNpcs: false, map: mapOf('1.1-arranque', ISLAND_SHAPES_1_1, MAP_1_1.moorings) });
     const nav = navigatorOf(world);
     const prepared = nav.buildCount;
     const graphsAtBoot = nav.graphMargins;
     const lair = { x: 311.1, z: -311.1 };
     const firstRoute = Object.keys(SHIP_CLASSES).map((classId) => {
       const m = navClearance(classId);
-      const f = forward(deg(195));
       const t0 = performance.now();
-      nav.findPath({ x: f.x * (PORT_RADIUS + m), z: f.z * (PORT_RADIUS + m) }, lair, m); // rodea el puerto: necesita el grafo
+      nav.findPath(along(D92[7], m), lair, m); // del amarre 8, al oeste, a la guarida NE: rodea el puerto, necesita el grafo
       const ms = performance.now() - t0;
       nav.nearestNavigable({ x: E1a.x, z: E1a.z + 1 }, m); // dentro de una roca: necesita los cruces
       nav.pushOut({ x: E1a.x, z: E1a.z + 1 }, SHIP_CLASSES[classId].radius);
@@ -322,7 +360,7 @@ describe('E16 — Escollos y destino inalcanzable (AC-172)', () => {
 describe('E16 — Islas de varios círculos (AC-199, opción B)', () => {
   // Una isla de 2 círculos que se solapan, con su entrante entre los dos en z = 180 (los bordes inflados por el radio de
   // colisión de la Balandra, 5 m, se cruzan en (15, 180) y (15, 220))
-  const UNION = mapOf('prueba', [{ id: 'U', archetype: 'rocky', circles: [{ x: 0, z: 200, radius: 20 }, { x: 30, z: 200, radius: 20 }] }], false);
+  const UNION = mapOf('prueba', [{ id: 'U', archetype: 'rocky', circles: [{ x: 0, z: 200, radius: 20 }, { x: 30, z: 200, radius: 20 }] }], []);
 
   test('la colisión saca el casco por el punto más cercano del borde de la unión, también en el entrante entre dos círculos', () => {
     const world = createWorld({ seed: 1, spawnNpcs: false, map: UNION });
@@ -346,26 +384,55 @@ describe('E16 — Islas de varios círculos (AC-199, opción B)', () => {
   });
 });
 
-describe('E16 — Amarres del puerto (AC-176)', () => {
-  const HEADINGS = Array.from({ length: MOORINGS.count }, (_, k) => deg(MOORINGS.firstDeg + k * MOORINGS.stepDeg));
-  const mooringOf = (p: Vec2) => HEADINGS.findIndex((h) => Math.abs(angleDelta(h, Math.atan2(p.x, p.z))) < deg(1));
-  // Barco vivo y sin IA con el centro en el amarre k, a r m del centro del puerto
-  const occupy = (world: ReturnType<typeof world11>, k: number, r: number) => {
-    const s = placePlayer(world, `o${k}-${world.ships.size}`, Math.sin(HEADINGS[k]) * r, Math.cos(HEADINGS[k]) * r, HEADINGS[k]);
-    s.pos = { x: Math.sin(HEADINGS[k]) * r, z: Math.cos(HEADINGS[k]) * r };
-    return s;
+describe('E16 — Amarres del puerto de D92 (AC-176, AC-199 d)', () => {
+  // El amarre cuyo eje (de Q a Q + 46 m en ψ) pasa a ≤ 0,5 m del punto; −1 si ninguno
+  const mooringOf = (p: Vec2) => D92.findIndex((m) => segmentPointDistance(along(m, 0), along(m, 46), p) <= 0.5);
+  // Barco vivo y sin IA con el centro a d m de Q en el amarre k
+  const occupy = (world: ReturnType<typeof world11>, k: number, d: number) => {
+    const at = along(D92[k], d);
+    return placePlayer(world, `o${k}-${world.ships.size}`, at.x, at.z, deg(D92[k].psi));
+  };
+  const asClass = (classId: string) => ({ gold: 0, upgrades: { cannons: 1, hull: 1, sails: 1 }, ownedShips: ['sloop', 'brig', 'frigate'] as PlayerShipClass[], activeShip: classId as PlayerShipClass });
+  // El casco atracado en planta: el rectángulo de L × B alineado con ψ y centrado en el centro del barco (puerto_forma.py, hull)
+  const hullOf = (m: (typeof D92)[number], length: number, beam: number) => {
+    const c = along(m, length / 2 + 2);
+    const d = forward(deg(m.psi));
+    return [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => ({ x: c.x + ((a * length) / 2) * d.x + ((b * beam) / 2) * d.z, z: c.z + ((a * length) / 2) * d.z - ((b * beam) / 2) * d.x }));
+  };
+  // Holgura entre dos rectángulos convexos: −1 si ningún eje de sus lados los separa (se solapan); si no, la menor
+  // distancia de un vértice de uno a un lado del otro
+  const hullGap = (A: Vec2[], B: Vec2[]) => {
+    const sides = (P: Vec2[]) => P.map((p, i) => ({ x: -(P[(i + 1) % 4].z - p.z), z: P[(i + 1) % 4].x - p.x }));
+    const separated = [...sides(A), ...sides(B)].some((n) => {
+      const pa = A.map((p) => p.x * n.x + p.z * n.z);
+      const pb = B.map((p) => p.x * n.x + p.z * n.z);
+      return Math.max(...pa) < Math.min(...pb) || Math.max(...pb) < Math.min(...pa);
+    });
+    if (!separated) return -1;
+    const toSides = (P: Vec2[], Q: Vec2[]) => Math.min(...P.flatMap((p) => Q.map((q, i) => segmentPointDistance(q, Q[(i + 1) % 4], p))));
+    return Math.min(toSides(A, B), toSides(B, A));
   };
 
-  test.each(['sloop', 'brig', 'frigate'])('%s: al entrar aparece atracado en un amarre, con el centro a 30 + L/2 + 2 ±0,5 m del puerto, la proa hacia fuera (±5°) y el casco sin tocar el puerto', (classId) => {
-    for (let seed = 1; seed <= 20; seed++) {
-      const world = world11(seed);
-      addPlayer(world, 'a', 'a', { gold: 0, upgrades: { cannons: 1, hull: 1, sails: 1 }, ownedShips: ['sloop', 'brig', 'frigate'] as PlayerShipClass[], activeShip: classId as PlayerShipClass });
+  test('AC-04: las 12 filas de GDD §4 cuadran entre sí: el centro del Navío a 23 m de Q en ψ y las salidas del Navío y la Balandra (±0,05 m)', () => {
+    const near = (a: number, b: number) => Math.abs(a - b) <= 0.05;
+    const wrong = GDD_MOORINGS.flatMap(([, , psi, lx, lz, exitLine, exitSloop], k) => {
+      const line = along(D92[k], 23);
+      const got = [near(line.x, lx) && near(line.z, lz), near(exitLength(line, psi), exitLine), near(exitLength(along(D92[k], 10), psi), exitSloop)];
+      return got.every(Boolean) ? [] : [`amarre ${k + 1}: ${got}`];
+    });
+    expect(wrong).toEqual([]);
+  });
+
+  test.each(['sloop', 'brig', 'frigate'])('%s: con los otros 11 amarres ocupados, aparece en el que queda, con el centro a L/2 + 2 ±0,5 m de Q en ψ y la proa en ψ ±5°', (classId) => {
+    for (const [k, m] of D92.entries()) {
+      const world = world11(k + 1);
+      D92.forEach((_, j) => {
+        if (j !== k) occupy(world, j, 23);
+      });
+      addPlayer(world, 'a', 'a', asClass(classId));
       const ship = shipOfPlayer(world, 'a')!;
-      const r = Math.hypot(ship.pos.x, ship.pos.z);
-      const k = mooringOf(ship.pos);
-      expect({ seed, k: k >= 0, r: Math.abs(r - (PORT_RADIUS + navClearance(classId))) <= 0.5 }).toEqual({ seed, k: true, r: true });
-      expect(Math.abs(angleDelta(ship.heading, HEADINGS[k]))).toBeLessThanOrEqual(deg(5));
-      expect(r - SHIP_CLASSES[classId].length / 2).toBeGreaterThanOrEqual(PORT_RADIUS);
+      const off = distance(ship.pos, along(m, navClearance(classId)));
+      expect({ k, off: off <= 0.5, heading: Math.abs(angleDelta(ship.heading, deg(m.psi))) <= deg(5) }).toEqual({ k, off: true, heading: true });
     }
   });
 
@@ -376,21 +443,23 @@ describe('E16 — Amarres del puerto (AC-176)', () => {
       addPlayer(world, 'a', 'a');
       used.add(mooringOf(shipOfPlayer(world, 'a')!.pos));
     }
+    expect(used.has(-1)).toBe(false);
     expect(used.size).toBeGreaterThanOrEqual(10);
   });
 
-  test('con un barco grande atracado en un amarre (centro a 53 m), una Balandra nunca toma ese amarre, aunque su punto (40 m) quede a 13 m de él', () => {
+  test('con un Navío atracado en un amarre (centro a 23 m de Q), una Balandra nunca toma ese amarre, aunque su punto (10 m) quede a 13 m de él', () => {
     for (let seed = 1; seed <= 40; seed++) {
       const world = world11(seed);
-      occupy(world, 3, 53);
+      occupy(world, 4, 23);
       addPlayer(world, 'a', 'a');
-      expect({ seed, k: mooringOf(shipOfPlayer(world, 'a')!.pos) }).not.toEqual({ seed, k: 3 });
+      const k = mooringOf(shipOfPlayer(world, 'a')!.pos);
+      expect({ seed, k: k >= 0 && k !== 4 }).toEqual({ seed, k: true });
     }
   });
 
-  test('con 11 amarres ocupados por barcos grandes, la Balandra toma el 12.º; con los 12 ocupados, aparece en el anillo de 60–90 m', () => {
+  test('con 11 amarres ocupados por Navíos, la Balandra toma el 12.º; con los 12 ocupados, aparece en el anillo de 60–90 m', () => {
     const world = world11(7);
-    for (let k = 0; k < 12; k++) if (k !== 8) occupy(world, k, 53);
+    for (let k = 0; k < 12; k++) if (k !== 8) occupy(world, k, 23);
     addPlayer(world, 'a', 'a');
     expect(mooringOf(shipOfPlayer(world, 'a')!.pos)).toBe(8);
     addPlayer(world, 'b', 'b');
@@ -401,14 +470,103 @@ describe('E16 — Amarres del puerto (AC-176)', () => {
 
   test('un barco hundido (no vivo) no ocupa su amarre, y al zarpar se vuelve a un amarre libre', () => {
     const world = world11(8);
-    const sunk = occupy(world, 0, 40);
+    const sunk = occupy(world, 0, 10);
     sunk.state = 'dead';
     const player = world.players.get(sunk.ownerId!)!;
     player.death = { by: null, goldLost: 0, at: world.time - DEATH_COUNTDOWN };
-    for (let k = 1; k < 12; k++) occupy(world, k, 40);
+    for (let k = 1; k < 12; k++) occupy(world, k, 10);
     expect(respawn(world, player.id).ok).toBe(true);
     expect(mooringOf(sunk.pos)).toBe(0);
-    expect(Math.abs(Math.hypot(sunk.pos.x, sunk.pos.z) - 40)).toBeLessThanOrEqual(0.5);
+    expect(distance(sunk.pos, along(D92[0], 10))).toBeLessThanOrEqual(0.5);
+  });
+
+  // (i) de AC-176: en cada amarre y en las 5 clases, el barco atracado es navegable para su clase frente a toda la unión, y
+  // su casco no se solapa con el de ningún barco de otro amarre (las 25 parejas de clases)
+  test('AC-176 (i): en cada amarre y con las 5 clases, el centro es navegable para su margen frente a toda la unión, y ningún casco se solapa con el de otro amarre', () => {
+    const nav = nav11();
+    const notNavigable: string[] = [];
+    let slack = Infinity;
+    for (const [k, m] of D92.entries()) {
+      for (const [name, length] of HULLS_1_1) {
+        const c = along(m, length / 2 + 2);
+        if (!nav.navigable(c, length / 2 + 2)) notNavigable.push(`${name} en el amarre ${k + 1}`);
+        slack = Math.min(slack, nav.edgeClearance(c) - (length / 2 + 2));
+      }
+    }
+    let worst = { gap: Infinity, pair: '' };
+    for (let j = 0; j < D92.length; j++) {
+      for (let k = j + 1; k < D92.length; k++) {
+        for (const [na, la, ba] of HULLS_1_1) {
+          for (const [nb, lb, bb] of HULLS_1_1) {
+            const gap = hullGap(hullOf(D92[j], la, ba), hullOf(D92[k], lb, bb));
+            if (gap < worst.gap) worst = { gap, pair: `${na} en ${j + 1} y ${nb} en ${k + 1}` };
+          }
+        }
+      }
+    }
+    console.log(`AC-176 (i): menor holgura de un centro atracado a su margen ${slack.toFixed(6)} m · cascos más juntos ${worst.gap.toFixed(2)} m (${worst.pair})`);
+    expect(notNavigable).toEqual([]);
+    expect(worst.gap).toBeGreaterThan(0);
+  });
+
+  test('AC-176 (ii): en cada amarre y con las 5 clases, la recta de salida en ψ hasta el borde de la zona segura es navegable y mide ≤ 80 m', () => {
+    const nav = nav11();
+    const wrong: string[] = [];
+    let longest = 0;
+    for (const [k, m] of D92.entries()) {
+      for (const [name, length] of HULLS_1_1) {
+        const margin = length / 2 + 2;
+        const c = along(m, margin);
+        const t = exitLength(c, m.psi);
+        longest = Math.max(longest, t);
+        if (t > 80 || !nav.segmentClear(c, along(m, margin + t), margin)) wrong.push(`${name} en el amarre ${k + 1}: ${t.toFixed(1)} m`);
+      }
+    }
+    console.log(`AC-176 (ii): la salida más larga mide ${longest.toFixed(1)} m`);
+    expect(wrong).toEqual([]);
+  });
+
+  test('AC-176 (iii): el anillo de 60–90 m es navegable para el Navío en ≥ 50 % de su área (rejilla de 1 m), y (0, 75) lo es para las 5 clases', () => {
+    const nav = nav11();
+    let total = 0;
+    let free = 0;
+    for (let x = -90; x <= 90; x++) {
+      for (let z = -90; z <= 90; z++) {
+        const r = Math.hypot(x, z);
+        if (r < RESPAWN_RING.min || r > RESPAWN_RING.max) continue;
+        total++;
+        if (nav.navigable({ x, z }, 23)) free++;
+      }
+    }
+    console.log(`AC-176 (iii): ${free} de ${total} puntos del anillo navegables para el Navío (${((100 * free) / total).toFixed(1)} %)`);
+    expect(free / total).toBeGreaterThanOrEqual(0.5);
+    expect(HULLS_1_1.filter(([, length]) => !nav.navigable({ x: 0, z: 75 }, length / 2 + 2))).toEqual([]);
+  });
+
+  // AC-199 (c) con la tabla de GDD §4, cuya Q va 2 cm por fuera de la lámina (que deja cada barco con 0,00 m de sobra): en
+  // el juego, el barco que aparece atracado no se mueve solo, y zarpa por su salida sin que el casco toque el puerto ni
+  // nearestNavigable lo desplace
+  test.each(['sloop', 'brig', 'frigate'])('AC-199: %s, desde cada amarre, quieto no se mueve en 2 s, y por su salida llega al borde de la zona segura sin tocar el puerto', (classId) => {
+    const length = SHIP_CLASSES[classId].length;
+    for (const [k, m] of D92.entries()) {
+      const world = world11(k + 1);
+      D92.forEach((_, j) => {
+        if (j !== k) occupy(world, j, 23);
+      });
+      addPlayer(world, 'a', 'a', asClass(classId));
+      const ship = shipOfPlayer(world, 'a')!;
+      const moored = { ...ship.pos };
+      run(world, 2);
+      expect({ k, moved: distance(ship.pos, moored) }).toEqual({ k, moved: 0 });
+      const target = along(m, navClearance(classId) + exitLength(moored, m.psi) - 1);
+      moveTo(world, 'a', target);
+      let touched = false;
+      runUntil(world, 30, () => {
+        touched ||= hullTouchesPort(ship.pos, ship.heading, length);
+        return distance(ship.pos, target) <= 2;
+      });
+      expect({ k, arrived: distance(ship.pos, target) <= 2, touched }).toEqual({ k, arrived: true, touched: false });
+    }
   });
 
   test('con el mapa de la 1.0 (sin amarres) sigue el anillo de 60–90 m (AC-63)', () => {
@@ -420,31 +578,31 @@ describe('E16 — Amarres del puerto (AC-176)', () => {
   });
 });
 
-describe('E16 — Rutas del puerto (AC-177, con las islas de D83 y el puerto provisional)', () => {
-  const HEADINGS = Array.from({ length: MOORINGS.count }, (_, k) => deg(MOORINGS.firstDeg + k * MOORINGS.stepDeg));
+describe('E16 — Rutas del puerto (AC-177, con las islas de D83 y el puerto de D92)', () => {
   const LAIRS = PIRATE_SECTORS.map(({ id, sx, sz }) => ({ id, x: 311.1 * sx, z: 311.1 * sz }));
   const ratio = (nav: Navigator, from: Vec2, to: Vec2, margin: number) => {
     const path = nav.findPath(from, to, margin);
     return pathLength(from, path) / distance(from, path[path.length - 1]);
   };
 
+  // El tope de (a) es 1,16 con D92 (producto, 2026-10-19; BACKLOG AC-177): la ruta del navegador, con sus nodos a margen + 1 m
+  // (NAV_NODE_SLACK), da 1,155 del amarre 10 a la guarida NE con el Navío, y la más corta que permite la geometría, 1,146
   test.each([
     ['Balandra', 10],
     ['Navío', 23]
-  ])('AC-177 (a): %s, de cada uno de los 12 amarres a la guarida de cada sector, la ruta mide ≤ 1,15 × la recta', (_, margin) => {
+  ])('AC-177 (a): %s, de cada uno de los 12 amarres a la guarida de cada sector, la ruta mide ≤ 1,16 × la recta', (_, margin) => {
     const nav = nav11();
     let worst = { r: 0, from: 0, to: '' };
-    for (const [k, h] of HEADINGS.entries()) {
-      const f = forward(h);
-      const moor = { x: f.x * (PORT_RADIUS + margin), z: f.z * (PORT_RADIUS + margin) };
+    for (const [k, m] of D92.entries()) {
+      const moor = along(m, margin);
       for (const lair of LAIRS) {
         expect(nav.navigable(lair, margin)).toBe(true);
         const r = ratio(nav, moor, lair, margin);
-        if (r > worst.r) worst = { r, from: MOORINGS.firstDeg + k * MOORINGS.stepDeg, to: lair.id };
+        if (r > worst.r) worst = { r, from: k + 1, to: lair.id };
       }
     }
-    console.log(`AC-177 (a) margen ${margin}: peor ${worst.r.toFixed(3)} (amarre de ${worst.from}° a la guarida ${worst.to})`);
-    expect(worst.r).toBeLessThanOrEqual(1.15);
+    console.log(`AC-177 (a) margen ${margin}: peor ${worst.r.toFixed(3)} (del amarre ${worst.from} a la guarida ${worst.to})`);
+    expect(worst.r).toBeLessThanOrEqual(1.16);
   });
 
   test.each([
@@ -452,7 +610,7 @@ describe('E16 — Rutas del puerto (AC-177, con las islas de D83 y el puerto pro
     ['Navío', 23]
   ])('AC-177 (b): %s, desde 8 puntos a 300 m del puerto hasta el amarre más cercano, la ruta mide ≤ 1,15 × la recta', (_, margin) => {
     const nav = nav11();
-    const moorings = HEADINGS.map((h) => ({ x: forward(h).x * (PORT_RADIUS + margin), z: forward(h).z * (PORT_RADIUS + margin) }));
+    const moorings = D92.map((m) => along(m, margin));
     const out: string[] = [];
     let worst = 0;
     for (let k = 0; k < 8; k++) {

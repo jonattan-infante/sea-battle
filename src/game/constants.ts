@@ -51,14 +51,22 @@ export interface IslandShape {
   archetype: IslandArchetype;
   circles: { x: number; z: number; radius: number }[];
 }
+// Un amarre del puerto (GDD §4; AC-176): Q = (x, z), el punto del muelle en el borde de la unión, y ψ, el rumbo hacia
+// fuera en grados (0 = +Z, 90 = +X). El barco atracado tiene el centro a L/2 + 2 m (su margen) de Q en el rumbo ψ, con la
+// popa hacia el muelle y la proa hacia fuera
+export interface Mooring {
+  x: number;
+  z: number;
+  psiDeg: number;
+}
 export interface MapDef {
   id: string;
   shapes: IslandShape[];
   islands: IslandDef[]; // los círculos de todas las formas: con uno, el id de la forma; con varios, «id.k»
-  moorings: boolean; // los jugadores aparecen en los amarres del puerto (AC-176); sin ellos, en el anillo de la 1.0
+  moorings: readonly Mooring[]; // los jugadores aparecen en un amarre libre del puerto (AC-176); sin amarres, en el anillo de la 1.0
 }
 
-export function mapOf(id: string, shapes: IslandShape[], moorings: boolean): MapDef {
+export function mapOf(id: string, shapes: IslandShape[], moorings: readonly Mooring[]): MapDef {
   const islands = shapes.flatMap((s) => s.circles.map((c, k) => ({ id: s.circles.length > 1 ? `${s.id}.${k}` : s.id, ...c })));
   return { id, shapes, islands, moorings };
 }
@@ -67,19 +75,30 @@ export function mapOf(id: string, shapes: IslandShape[], moorings: boolean): Map
 // ella el navegador y sus grafos (world.ts)
 const ARCHETYPES_1_0: Record<string, IslandArchetype> = { PORT: 'port', I1: 'tropical', I2: 'rocky', I3: 'rocky', I4: 'rocky', I5: 'tropical', I6: 'tropical' };
 export const MAP_1_0: MapDef = {
-  ...mapOf('1.0', ISLANDS.map((i) => ({ id: i.id, archetype: ARCHETYPES_1_0[i.id], circles: [{ x: i.x, z: i.z, radius: i.radius }] })), false),
+  ...mapOf('1.0', ISLANDS.map((i) => ({ id: i.id, archetype: ARCHETYPES_1_0[i.id], circles: [{ x: i.x, z: i.z, radius: i.radius }] })), []),
   islands: ISLANDS
 };
 
 // ---- Mapa de la 1.1 ----
-// Puerto · PROVISIONAL: el círculo de la 1.0. Jonattan pidió otro puerto («que no sea un círculo, más irregular como una
-// isla, con palmeras y plazas»; BACKLOG, decisiones del 2026-10-18, punto 5): cuando ux lo dibuje, cambiarlo es tocar
-// solo este bloque (y lo que dependa de PORT_RADIUS: amarres, zona segura y rutas del puerto, AC-176 a AC-178)
-export const PORT_SHAPE_1_1: IslandShape = { id: 'PORT', archetype: 'port', circles: [{ x: 0, z: 0, radius: 30 }] };
+// Puerto con forma de isla (D92, aprobado por Jonattan el 2026-10-19; GDD §4, tabla de círculos): 7 círculos, la ciudad
+// este, la ciudad oeste, el fuerte, el muelle este, el palmar, la roca y el islote. Sus 12 amarres, en MOORINGS_1_1
+export const PORT_SHAPE_1_1: IslandShape = {
+  id: 'PORT',
+  archetype: 'port',
+  circles: [
+    { x: 14, z: 8, radius: 22 },
+    { x: -12, z: 8, radius: 22 },
+    { x: 0, z: -22, radius: 15 },
+    { x: 31, z: -6, radius: 17 },
+    { x: -31, z: -4, radius: 17 },
+    { x: -16, z: -30, radius: 9 },
+    { x: -39, z: -31, radius: 4.5 }
+  ]
+};
 
 // Islas de la 1.1 (D83, aprobada por Jonattan el 2026-10-18; GDD §4, ASSET-SPEC §9.7): uniones de círculos (AC-199,
 // opción B). Las 6 islas de la 1.0 conservan su círculo o crecen alrededor de él, T1 y T2 son nuevas, E1 son los 3
-// escollos y G1–G4 las 4 calas: 43 círculos en 15 formas, la tabla de scripts/ux/mapa/circulos.py. Todavía no es el mapa
+// escollos y G1–G4 las 4 calas: con el puerto de D92, 50 círculos en 16 formas, la tabla de scripts/ux/mapa/circulos.py. Todavía no es el mapa
 // del juego: lo usan los tests de la lógica del mapa nuevo con createWorld({ map: MAP_1_1 })
 export const ISLAND_SHAPES_1_1: IslandShape[] = [
   PORT_SHAPE_1_1,
@@ -99,13 +118,29 @@ export const ISLAND_SHAPES_1_1: IslandShape[] = [
   { id: 'G3', archetype: 'cove', circles: [{ x: -373.66, z: 373.66, radius: 13 }, { x: -355.27, z: 375.07, radius: 9 }, { x: -375.07, z: 355.27, radius: 9 }] },
   { id: 'G4', archetype: 'cove', circles: [{ x: 373.66, z: 373.66, radius: 13 }, { x: 375.07, z: 355.27, radius: 9 }, { x: 355.27, z: 375.07, radius: 9 }] }
 ];
-export const MAP_1_1: MapDef = mapOf('1.1', ISLAND_SHAPES_1_1, true);
+// Los 12 amarres de D92 (GDD §4, «Amarres de D92»: los de puerto-forma-v3.json, la variante de la lámina aprobada), con Q
+// 2 cm más fuera en ψ que en la lámina y a 2 decimales. La lámina los pone a su margen con 0,00 m de sobra, y al redondear
+// Q a 2 decimales los amarres 4, 5 y 9 quedaban 2–5 mm dentro de su círculo; con los 2 cm, el centro atracado de cada
+// clase queda ≥ 14 mm fuera de su margen (dev-npc, 2026-10-19)
+export const MOORINGS_1_1: readonly Mooring[] = [
+  { x: 14.0, z: 30.02, psiDeg: 0 },
+  { x: 25.67, z: 26.68, psiDeg: 32 },
+  { x: 34.12, z: 16.96, psiDeg: 66 },
+  { x: 45.74, z: 2.51, psiDeg: 60 },
+  { x: 47.85, z: -8.37, psiDeg: 98 },
+  { x: 42.82, z: -18.24, psiDeg: 136 },
+  { x: 32.78, z: -22.93, psiDeg: 174 },
+  { x: -45.89, z: -12.25, psiDeg: 241 },
+  { x: -47.58, z: -0.18, psiDeg: 283 },
+  { x: -39.77, z: 10.59, psiDeg: 329 },
+  { x: -24.94, z: 25.82, psiDeg: 324 },
+  { x: -12.0, z: 30.02, psiDeg: 0 }
+];
+export const MAP_1_1: MapDef = mapOf('1.1', ISLAND_SHAPES_1_1, MOORINGS_1_1);
 
-// Amarres del puerto (§4, «El puerto»; AC-176): 12, uno cada 30° de rumbo ψ desde 15°. El barco atracado tiene el centro
-// a PORT_RADIUS + L/2 + 2 m del centro del puerto (su margen de navegación), la popa hacia el muelle y la proa hacia fuera.
-// Un amarre está libre si ningún barco vivo tiene el centro a < freeRadius m de su eje: el segmento de r axisFrom a r
-// axisTo en su rumbo (76 = 30 + 42 + 4: el Navío entero, con 2 m de holgura a cada lado)
-export const MOORINGS = { count: 12, firstDeg: 15, stepDeg: 30, axisFrom: 30, axisTo: 76, freeRadius: 12 } as const;
+// Un amarre está libre (AC-176) si ningún barco vivo, de cualquier clase, tiene el centro a < freeRadius m de su eje: el
+// segmento de Q a Q + length m en el rumbo ψ (46 = 2 + 42 + 2: el Navío entero, con 2 m de holgura a cada lado)
+export const MOORING_AXIS = { length: 46, freeRadius: 12 } as const;
 
 // Sectores piratas en pantalla: NE = (x+, z−), NO = (x−, z−), SO = (x−, z+), SE = (x+, z+)
 export const PIRATE_SECTORS = [

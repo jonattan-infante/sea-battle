@@ -23,8 +23,9 @@ import {
   HostileAiStats,
   IslandDef,
   MAP_1_0,
-  MOORINGS,
+  MOORING_AXIS,
   MapDef,
+  Mooring,
   LOOT_DAMAGE_WINDOW,
   MAX_UPGRADE_LEVEL,
   MERCHANT_FLEE_TIME,
@@ -47,7 +48,6 @@ import {
   PIRATE_SECTORS,
   PLAYER_SHIP_ORDER,
   PORT_POSITION,
-  PORT_RADIUS,
   PVP_ENABLED,
   PVP_XP,
   PlayerShipClass,
@@ -376,27 +376,25 @@ export function spawnMerchant(world: World): Ship {
 
 // ---------- Jugadores ----------
 
-// Amarres del puerto (AC-176): el rumbo de cada uno, desde 15° cada 30°
-const MOORING_HEADINGS = Array.from({ length: MOORINGS.count }, (_, k) => ((MOORINGS.firstDeg + k * MOORINGS.stepDeg) * Math.PI) / 180);
-
-// Un amarre libre (ningún barco vivo con el centro a < 12 m de su eje), al azar con la semilla entre los libres, con el
-// barco atracado de popa: el centro a PORT_RADIUS + su margen y la proa hacia fuera. null si los 12 están ocupados
+// Un amarre libre del mapa (ningún barco vivo con el centro a < 12 m de su eje), al azar con la semilla entre los libres,
+// con el barco atracado de popa: el centro a su margen de Q en el rumbo ψ y la proa hacia fuera (AC-176). null si están
+// todos ocupados o el mapa no tiene amarres
 function mooringSpot(world: World, classId: string): { pos: Vec2; heading: number } | null {
   const alive = [...world.ships.values()].filter((s) => s.state === 'alive');
-  const axis = (heading: number, r: number) => {
-    const f = forward(heading);
-    return { x: PORT_POSITION.x + f.x * r, z: PORT_POSITION.z + f.z * r };
+  const along = (m: Mooring, d: number) => {
+    const f = forward((m.psiDeg * Math.PI) / 180);
+    return { x: m.x + f.x * d, z: m.z + f.z * d };
   };
-  const free = MOORING_HEADINGS.filter((h) => alive.every((s) => segmentPointDistance(axis(h, MOORINGS.axisFrom), axis(h, MOORINGS.axisTo), s.pos) >= MOORINGS.freeRadius));
+  const free = world.moorings.filter((m) => alive.every((s) => segmentPointDistance(along(m, 0), along(m, MOORING_AXIS.length), s.pos) >= MOORING_AXIS.freeRadius));
   if (free.length === 0) return null;
-  const heading = free[Math.floor(world.rng() * free.length)];
-  return { pos: axis(heading, PORT_RADIUS + navClearance(classId)), heading };
+  const m = free[Math.floor(world.rng() * free.length)];
+  return { pos: along(m, navClearance(classId)), heading: (m.psiDeg * Math.PI) / 180 };
 }
 
-// Aparición de un jugador: en un amarre libre si el mapa los tiene (AC-176); si no, o con los 12 ocupados, en el anillo
+// Aparición de un jugador: en un amarre libre si el mapa los tiene (AC-176); si no, o con todos ocupados, en el anillo
 // del puerto (AC-63)
 function respawnPoint(world: World, classId: string): { pos: Vec2; heading: number } {
-  const moored = world.moorings ? mooringSpot(world, classId) : null;
+  const moored = mooringSpot(world, classId);
   if (moored) return moored;
   const clearance = navClearance(classId);
   for (let attempt = 0; attempt < 50; attempt++) {
