@@ -6,6 +6,7 @@
 import fs from 'fs';
 import path from 'path';
 import { expect, Page, test } from '@playwright/test';
+import { contentHash, E2E_PREFIX } from '../scripts/glb/content-hash';
 import { externalKtx2Fixture } from '../scripts/glb/e2e-models';
 import { addFallback, solidPng } from '../scripts/glb/glb-fallback';
 import { enterGame, entryOf, glbBeforeEntry } from './helpers';
@@ -20,6 +21,23 @@ const URL_FALLBACK = '/models/test/ship_sloop_fallback.glb';
 const withFallback = () => Buffer.from(addFallback(new Uint8Array(fs.readFileSync(FIXTURE)), solidPng([0, 255, 0], 16)));
 // Paso 4c de §13: el mismo respaldo, con la KTX2 en su .ktx2 aparte, al lado del GLB (scripts/glb/e2e-models.ts)
 const URL_EXT = '/models/test/ship_sloop_ext.glb';
+// Opción A de AC-193 c: el fixture servido por el servidor del juego (build:e2e lo copia a public/models), para que la red
+// limitada por CDP se aplique a su descarga; con page.route no pasaría por la red
+const SERVED_URL = `/models/${E2E_PREFIX}ship_sloop.${contentHash(fs.readFileSync(FIXTURE))}.glb`;
+const URL_FRIGATE = '/models/test/ship_frigate.glb';
+
+// La hora de la bienvenida (el primer instante en que el cliente conoce su barco), sondeada cada 5 ms, en __WELCOME_AT__
+const probeWelcome = (page: Page) =>
+  page.addInitScript(() => {
+    const w = window as unknown as { __WELCOME_AT__: number; __SEA_BATTLE__?: { runtime(): unknown } };
+    w.__WELCOME_AT__ = 0;
+    const id = setInterval(() => {
+      if ((w.__SEA_BATTLE__?.runtime() as { src: { myShipId: string | null } } | undefined)?.src.myShipId) {
+        w.__WELCOME_AT__ = performance.now();
+        clearInterval(id);
+      }
+    }, 5);
+  });
 
 // Estado de la vista del barco propio: geometría, mapa y LOD, y si sigue siendo 1 draw call (1 malla, 1 primitiva, 1 material)
 const ownView = (page: Page) =>
@@ -368,5 +386,103 @@ test.describe('Barcos en GLB (ASSET-SPEC §13)', () => {
     // Los 404 los cuenta el navegador como errores de red, y GLTFLoader avisa de la textura que no pudo leer
     // (GLTFLoader.js:3442); el juego no añade ninguno
     expect(errors.filter((e) => !e.includes('404') && !e.startsWith("THREE.GLTFLoader: Couldn't load texture"))).toEqual([]);
+  });
+
+  // Opción A de AC-193 c (producto, BACKLOG :1745): la clase propia se predice al crear el runtime, y un invitado nuevo
+  // sale con la Balandra. Con la red del hotspot malo (HIPÓTESIS: RTT 300 ms y 3/1 Mbps, por CDP), la petición de su GLB
+  // sale antes de la bienvenida; la cifra de la entrada, con el cargador compitiendo, va al log sin cota (es SwiftShader).
+  // La trampa pone el manifiesto al asignarse window.__SEA_BATTLE__, algo después de crear el runtime: la descarga
+  // predicha empieza ahí (setUrl), y en el juego, con SHIP_GLB, en el constructor
+  test('AC-193 c, opción A: un jugador nuevo en el hotspot malo pide el GLB de la Balandra antes de la bienvenida, una sola vez', async ({ page }) => {
+    test.setTimeout(120_000);
+    const errors: string[] = [];
+    page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Network.enable');
+    await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: 300, downloadThroughput: 3e6 / 8, uploadThroughput: 1e6 / 8 });
+    await probeWelcome(page);
+    await glbBeforeEntry(page, SERVED_URL);
+    await enterGame(page);
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __WELCOME_AT__: number }).__WELCOME_AT__), { timeout: 30_000 }).toBeGreaterThan(0);
+    const got = await page.evaluate((url) => {
+      const glb = (performance.getEntriesByType('resource') as PerformanceResourceTiming[]).filter((e) => new URL(e.name).pathname === url);
+      const e = (window.__SEA_BATTLE__!.runtime() as unknown as { entry: { firstFrameAt: number; shownAt: number; withGlb: boolean; capped: boolean } }).entry;
+      return {
+        requests: glb.length,
+        glbStart: Math.round(glb[0]?.startTime ?? -1),
+        glbEnd: Math.round(glb[0]?.responseEnd ?? -1),
+        welcomeAt: Math.round((window as unknown as { __WELCOME_AT__: number }).__WELCOME_AT__),
+        firstFrameAt: Math.round(e.firstFrameAt),
+        wait: Math.round(e.shownAt - e.firstFrameAt),
+        withGlb: e.withGlb,
+        capped: e.capped
+      };
+    }, SERVED_URL);
+    console.log(`AC-193 c opción A, jugador nuevo en el hotspot malo (HIPÓTESIS; SwiftShader, sin cota): ${JSON.stringify(got)}`);
+    expect(got.requests).toBe(1); // la predicha es la que usa el pump
+    expect(got.glbStart).toBeGreaterThan(0);
+    expect(got.glbStart).toBeLessThan(got.welcomeAt);
+    expect(errors).toEqual([]);
+  });
+
+  // Opción A de AC-193 c: con la Fragata guardada como última clase de este invitado, se predice la Fragata; la clase real
+  // es la Balandra (un invitado sale con ella), así que la predicha se aborta al llegar la instantánea y la buena se pide
+  // entonces. Con el tope a 10 s, como «con el GLB propio a tiempo»: un frame de SwiftShader puede pasar de 0,5 s
+  test('AC-193 c, opción A: con otra clase guardada, la predicha se aborta y el barco propio entra ya con su GLB, sin errores', async ({ page }) => {
+    test.setTimeout(120_000);
+    const guestId = `e2ea${Date.now().toString(36).slice(-6)}`;
+    await page.addInitScript((id) => {
+      localStorage.setItem('sea-battle-guest-id', id);
+      localStorage.setItem(`sea-battle-last-ship:guest:${id}`, 'frigate');
+    }, guestId);
+    const bytes = fs.readFileSync(FIXTURE);
+    const errors: string[] = [];
+    page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+    const sloop: string[] = [];
+    const frigate: string[] = [];
+    page.on('requestfailed', (r) => r.url().endsWith(URL_FRIGATE) && frigate.push(`fallida: ${r.failure()?.errorText}`));
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    await page.route(`**${URL_OK}`, (route) => {
+      sloop.push(route.request().url());
+      return route.fulfill({ body: bytes, contentType: 'model/gltf-binary' });
+    });
+    await page.route(`**${URL_FRIGATE}`, async (route) => {
+      frigate.push('pedida');
+      await held;
+      await route.fulfill({ body: bytes, contentType: 'model/gltf-binary' }).catch(() => undefined); // si ya se abortó
+    });
+    await page.addInitScript(
+      ([ok, fr]) => {
+        let debug: unknown;
+        Object.defineProperty(window, '__SEA_BATTLE__', {
+          configurable: true,
+          get: () => debug,
+          set: (v: { runtime(): unknown }) => {
+            if (!debug) {
+              const rt = v.runtime() as { useShipGlb(c: string, url: string): void; entry: { waitMs: number } };
+              rt.useShipGlb('sloop', ok);
+              rt.useShipGlb('frigate', fr);
+              rt.entry.waitMs = 10_000;
+            }
+            debug = v;
+          }
+        });
+      },
+      [URL_OK, URL_FRIGATE] as const
+    );
+    await enterGame(page);
+    const entry = await entryOf(page);
+    await expect.poll(async () => (await ownView(page)).modelMap, { timeout: 15_000 }).toBe(16);
+    const view = await ownView(page);
+    console.log(`AC-193 c opción A, con la Fragata guardada: ${JSON.stringify({ entry, view, sloop: sloop.length, frigate })}`);
+    expect(frigate.slice(0, 2)).toEqual(['pedida', 'fallida: net::ERR_ABORTED']); // la predicha, abortada
+    expect(entry).toMatchObject({ withGlb: true, capped: false, coverHidden: true });
+    expect(view).toMatchObject({ modelMap: 16, materialMap: true, oneDrawCall: true });
+    expect(sloop).toHaveLength(1);
+    expect(await page.evaluate((id) => localStorage.getItem(`sea-battle-last-ship:guest:${id}`), guestId)).toBe('sloop'); // la real, para la próxima
+    release();
+    // La petición abortada la puede contar el navegador como error de red; el juego no añade ninguno
+    expect(errors.filter((e) => !e.includes('ERR_ABORTED'))).toEqual([]);
   });
 });

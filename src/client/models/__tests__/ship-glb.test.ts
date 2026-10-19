@@ -130,21 +130,24 @@ describe('ASSET-SPEC §13: GLB de un barco con el contrato de §1–§4', () => 
 // parse, o la rechaza. `make` cuenta los cargadores creados y `renderers` guarda el renderer que recibe cada parse
 // La descarga y el parse falsos: resolve() entrega la escena del GLB y, si lleva respaldo (D90), la promesa de sus KTX2
 function fakeLoader() {
-  const calls: { url: string; resolve: (o: THREE.Object3D, upgrades?: Promise<TextureUpgrade[]>) => void; reject: (e: Error) => void }[] = [];
+  const calls: { url: string; signal?: AbortSignal; resolve: (o: THREE.Object3D, upgrades?: Promise<TextureUpgrade[]>) => void; reject: (e: Error) => void }[] = [];
   const parsed = new Map<ArrayBuffer, { scene: THREE.Object3D; upgrades: Promise<TextureUpgrade[]> }>();
   const renderers: THREE.WebGLRenderer[] = [];
-  const fetchGlb = (url: string) =>
-    new Promise<ArrayBuffer>((resolve, reject) =>
+  // Como fetch, una descarga abortada rechaza
+  const fetchGlb = (url: string, signal?: AbortSignal) =>
+    new Promise<ArrayBuffer>((resolve, reject) => {
+      signal?.addEventListener('abort', () => reject(new Error('AbortError')));
       calls.push({
         url,
+        signal,
         resolve: (scene, upgrades = Promise.resolve([])) => {
           const bytes = new ArrayBuffer(0);
           parsed.set(bytes, { scene, upgrades });
           resolve(bytes);
         },
         reject
-      })
-    );
+      });
+    });
   const loader: GlbLoader = {
     parse: (bytes, _url, renderer) => {
       renderers.push(renderer);
@@ -352,6 +355,79 @@ describe('AC-193 c, opción B: el GLB propio se empieza a bajar antes del primer
     await settle();
     expect([store.waiting('brig'), store.loaded('brig')]).toEqual([false, false]);
     warn.mockRestore();
+  });
+});
+
+// Opción A de AC-193 c (producto, BACKLOG :1745): la clase del barco propio se predice al crear el runtime (la última del
+// jugador en el navegador o la de salida, own-ship-memory.ts) y su GLB empieza a bajar antes de la bienvenida, delante del
+// cargador. Si la clase real es otra, la predicha se aborta y la buena se pide al llegar
+describe('AC-193 c, opción A: el GLB de la clase propia predicha, antes de la bienvenida', () => {
+  const manifest = { sloop: '/models/ship_sloop.glb', frigate: '/models/ship_frigate.glb' };
+
+  test('si acierta, la descarga empieza al predecir y antes que el cargador; la clase real no pide otra y el pump la usa', async () => {
+    const f = fakeLoader();
+    const order: string[] = [];
+    const store = new ShipGlbStore(
+      manifest,
+      () => (order.push('cargador'), f.make()),
+      (url, signal) => (order.push(url), f.fetchGlb(url, signal))
+    );
+    store.predictOwn('sloop');
+    expect(order).toEqual(['/models/ship_sloop.glb', 'cargador']);
+    store.request('sloop', true);
+    store.prefetchAll();
+    expect(f.calls.map((c) => c.url)).toEqual(['/models/ship_sloop.glb']);
+    f.calls[0].resolve(await glb('sloop'));
+    store.pump(gl);
+    await settle();
+    expect([store.loaded('sloop'), f.calls[0].signal?.aborted, f.calls.length]).toEqual([true, false, 1]);
+  });
+
+  test('si falla, la predicha se aborta al llegar la clase real, que se pide en el acto; prefetchAll vuelve a bajar la predicha desde cero', async () => {
+    const f = fakeLoader();
+    const store = new ShipGlbStore(manifest, f.make, f.fetchGlb);
+    store.predictOwn('frigate');
+    expect(f.calls.map((c) => [c.url, c.signal?.aborted])).toEqual([['/models/ship_frigate.glb', false]]);
+    store.request('sloop', true);
+    expect(f.calls.map((c) => [c.url, c.signal?.aborted])).toEqual([
+      ['/models/ship_frigate.glb', true],
+      ['/models/ship_sloop.glb', undefined]
+    ]);
+    store.prefetchAll();
+    f.calls[1].resolve(await glb('sloop'));
+    store.pump(gl);
+    await settle();
+    store.pump(gl);
+    expect([store.loaded('sloop'), f.calls.map((c) => c.url)]).toEqual([true, ['/models/ship_frigate.glb', '/models/ship_sloop.glb', '/models/ship_frigate.glb']]);
+    f.calls[2].resolve(await glb('frigate'));
+    await settle();
+    expect(store.loaded('frigate')).toBe(true);
+  });
+
+  test('solo GLB del manifiesto: sin URL no se pide nada ni se crea el cargador; si la URL llega antes que la clase real, la descarga empieza entonces, y después ya no', () => {
+    const f = fakeLoader();
+    new ShipGlbStore({}, f.make, f.fetchGlb).predictOwn('sloop');
+    expect([f.calls.length, f.make.mock.calls.length]).toEqual([0, 0]);
+    const late = new ShipGlbStore({}, f.make, f.fetchGlb);
+    late.predictOwn('sloop');
+    late.setUrl('frigate', '/models/ship_frigate.glb'); // otra clase
+    expect(f.calls.length).toBe(0);
+    late.setUrl('sloop', '/models/ship_sloop.glb'); // un manifiesto que llega tarde, como la trampa de los e2e
+    expect([f.calls.map((c) => c.url), f.make.mock.calls.length]).toEqual([['/models/ship_sloop.glb'], 1]);
+    const known = new ShipGlbStore({}, f.make, f.fetchGlb);
+    known.predictOwn('sloop');
+    known.request('frigate', true); // la clase real, sin URL todavía
+    known.setUrl('sloop', '/models/ship_sloop.glb');
+    known.predictOwn('sloop');
+    expect(f.calls.length).toBe(1);
+  });
+
+  test('dispose aborta la descarga predicha', () => {
+    const f = fakeLoader();
+    const store = new ShipGlbStore(manifest, f.make, f.fetchGlb);
+    store.predictOwn('frigate');
+    store.dispose();
+    expect(f.calls.map((c) => c.signal?.aborted)).toEqual([true]);
   });
 });
 

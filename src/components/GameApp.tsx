@@ -9,6 +9,7 @@ import { probeServerOnce } from '../client/exit-probe';
 import { GameClient } from '../client/game-client';
 import { canAttackClient, cannonFor, classLabel, cycleTarget, hudSignals, inSafeZone, portBlock, relationOf } from '../client/hud-logic';
 import { MeHud, resetSaveWarning, sameShallow, syncUnsaved, TargetHud, useHud } from '../client/hud-store';
+import { predictedShip, rememberShip } from '../client/own-ship-memory';
 import { attachOverlays, createRuntime, disposeRuntime, GameRuntime } from '../client/runtime';
 import GameCanvas from './game/GameCanvas';
 import Hud, { HudActions } from './hud/Hud';
@@ -115,7 +116,10 @@ export default function GameApp({ guest }: { guest: boolean }) {
       name,
       auth: async () => (testUser ? { testUser } : guest ? { guest: true, guestId: id } : { token: (await getTokenRef.current()) ?? undefined })
     });
-    const rt = createRuntime(client);
+    // Opción A de AC-193 c: el GLB propio se pide antes de la bienvenida, con la última clase de este jugador en el
+    // navegador o, si es nuevo, la de salida (own-ship-memory.ts)
+    const playerKey = testUser ? `test:${testUser}` : guest ? `guest:${id}` : `user:${user?.id ?? ''}`;
+    const rt = createRuntime(client, predictedShip(playerKey));
     const hud = useHud.getState();
     let pendingKill: string | null = null;
     const hints = readHints();
@@ -226,6 +230,7 @@ export default function GameApp({ guest }: { guest: boolean }) {
         if (connection === 'connected') useHud.setState({ reconnectAttempt: 0 });
         if (connection === 'full') router.replace('/?full=1');
       }),
+      client.onPlayer((p) => rememberShip(playerKey, p.activeShip)),
       client.onPlayer((player) => {
         useHud.setState({ player });
         // AC-132: el aviso llega en el mismo commit que el estado del servidor. Lo decide el servidor (autoritativo): a un

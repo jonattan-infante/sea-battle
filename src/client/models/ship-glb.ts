@@ -209,8 +209,8 @@ export function createGlbLoader(): GlbLoader {
 }
 
 // La descarga de un GLB, aparte del parse: así la del barco propio empieza antes de que haya renderer
-export function fetchGlb(url: string): Promise<ArrayBuffer> {
-  return fetch(url).then((r) => {
+export function fetchGlb(url: string, signal?: AbortSignal): Promise<ArrayBuffer> {
+  return fetch(url, signal ? { signal } : undefined).then((r) => {
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return r.arrayBuffer();
   });
@@ -225,6 +225,8 @@ export class ShipGlbStore {
   private readonly failed = new Set<string>();
   private readonly queue: string[] = [];
   private readonly early = new Map<string, Promise<ArrayBuffer>>(); // descargas del propio que el pump aún no tomó
+  private predicted: { classId: string; abort: AbortController | null } | null = null; // opción A: la clase propia predicha
+  private ownKnown = false; // ya llegó la clase real del barco propio
   private loading: string | null = null;
   private loader: GlbLoader | null = null;
   private disposed = false;
@@ -232,7 +234,7 @@ export class ShipGlbStore {
   constructor(
     manifest: Partial<Record<string, string>> = SHIP_GLB,
     private readonly makeLoader: () => GlbLoader = createGlbLoader,
-    private readonly fetchBytes: (url: string) => Promise<ArrayBuffer> = fetchGlb
+    private readonly fetchBytes: (url: string, signal?: AbortSignal) => Promise<ArrayBuffer> = fetchGlb
   ) {
     this.manifest = { ...manifest };
   }
@@ -259,9 +261,42 @@ export class ShipGlbStore {
     if (!this.disposed && !this.loader && Object.values(this.manifest).some(Boolean)) this.loader = this.makeLoader();
   }
 
+  // Opción A de AC-193 c (BACKLOG :1745): antes de la bienvenida, el GLB de la clase propia predicha (la última del
+  // jugador en este navegador o, si no hay, la de salida) empieza a bajar ya, y antes que el cargador, que también hace
+  // falta para el primer frame con el modelo. Solo GLB del manifiesto: si la clase aún no tiene URL, la descarga empieza
+  // al tenerla (setUrl), mientras no llegue la clase real. Si la real es otra, request() la aborta
+  predictOwn(classId: string): void {
+    if (this.disposed || this.ownKnown) return;
+    this.predicted = { classId, abort: null };
+    this.startPredicted();
+    this.warm();
+  }
+
+  private startPredicted(): void {
+    const p = this.predicted;
+    const url = p ? this.manifest[p.classId] : undefined;
+    if (!p || !url || p.abort || this.ready.has(p.classId) || this.failed.has(p.classId) || this.early.has(p.classId)) return;
+    p.abort = new AbortController();
+    const bytes = this.fetchBytes(url, p.abort.signal);
+    bytes.catch(() => undefined); // un fallo lo recoge el pump, con su aviso; un aborto, nadie
+    this.early.set(p.classId, bytes);
+  }
+
+  // Llega la clase real del barco propio: si la predicha era otra y ya bajaba, se aborta para que no compita con la buena.
+  // Su clase sigue en el manifiesto: prefetchAll la vuelve a pedir, desde cero
+  private settlePrediction(classId: string): void {
+    this.ownKnown = true;
+    const p = this.predicted;
+    this.predicted = null;
+    if (!p || p.classId === classId || !p.abort) return;
+    p.abort.abort();
+    this.early.delete(p.classId);
+  }
+
   // Sin GLB en el manifiesto, ya cargado, en carga o fallido: no hace nada. `first` (el barco propio) lo pone el primero
   // de la cola y empieza ya su descarga y el cargador, aunque aún no haya renderer
   request(classId: string, first = false): void {
+    if (first && !this.ownKnown) this.settlePrediction(classId);
     const url = this.manifest[classId];
     if (!url || this.ready.has(classId) || this.failed.has(classId) || this.loading === classId) return;
     if (first && !this.early.has(classId) && !this.disposed) {
@@ -291,6 +326,12 @@ export class ShipGlbStore {
     const old = this.ready.get(classId);
     if (old) this.release(old);
     this.ready.delete(classId);
+    if (this.predicted?.classId === classId) {
+      this.predicted.abort?.abort();
+      this.predicted.abort = null;
+      this.startPredicted();
+      this.warm();
+    }
   }
 
   // Lanza la siguiente carga si no hay otra en curso. Se llama en cada frame, que es cuando ya hay renderer
@@ -364,6 +405,8 @@ export class ShipGlbStore {
     for (const m of this.ready.values()) this.release(m);
     this.ready.clear();
     this.queue.length = 0;
+    this.predicted?.abort?.abort();
+    this.predicted = null;
     this.early.clear();
     this.loader?.dispose();
   }
