@@ -238,6 +238,13 @@ export class VfxDirector {
         if (e.playerId === myPlayer) rt.floating?.spawn('gold', `+${e.gold} ◉`, e.pos.x, 4, e.pos.z, `gold:${e.pos.x}:${e.pos.z}`, now);
         break;
       }
+      // «+30 XP» (VFX-SPEC §9, D70): sale con el oro de la misma recompensa, en la misma pasada y con su misma clave, así que
+      // empieza 18 px más arriba (la regla de los 250 ms). Solo llega a quien la recibe y nunca con 0 (xp.ts)
+      case 'xp': {
+        const myPlayer = rt.src.player?.id ?? rt.src.welcome?.playerId;
+        if (e.playerId === myPlayer) rt.floating?.spawn('xp', `+${e.xp} XP`, e.pos.x, 4, e.pos.z, `gold:${e.pos.x}:${e.pos.z}`, now);
+        break;
+      }
       default:
         break;
     }
@@ -516,8 +523,12 @@ export class VfxDirector {
         view.smokeAcc += dt * (dense ? DAMAGE_FX.denseSmokeRate : DAMAGE_FX.smokeRate);
         while (view.smokeAcc >= 1) {
           view.smokeAcc -= 1;
-          this.v.copy(view.model.sockets.smoke).applyMatrix4(view.mesh.matrix);
-          if (this.v.y > 0) fx.damageSmoke(this.v.x, this.v.y, this.v.z, dense, view.model.extras.sb_mast_height);
+          // La misma tasa en cada socket de humo: el segundo, solo en la Cañonera (VFX §6, D25)
+          for (const p of [view.model.sockets.smoke, view.model.sockets.smoke2]) {
+            if (!p) continue;
+            this.v.copy(p).applyMatrix4(view.mesh.matrix);
+            if (this.v.y > 0) fx.damageSmoke(this.v.x, this.v.y, this.v.z, dense, view.model.extras.sb_mast_height);
+          }
         }
       }
       if (view.fire && view.fireSlot && shown) {

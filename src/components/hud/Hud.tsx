@@ -1,14 +1,17 @@
 'use client';
 // HUD (ART-DIRECTION §12). React solo pinta cuando cambian los datos del store; lo que avanza con el reloj
 // (recarga, protección, cuenta atrás) se actualiza por ref desde un único requestAnimationFrame.
-import React, { useEffect, useLayoutEffect, useRef } from 'react';
-import { REPAIR_RATE, REPAIR_RATE_UNDER_FIRE } from '../../game/constants';
+import React, { useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react';
+import { CAPTAIN_CLASS, REPAIR_RATE, REPAIR_RATE_UNDER_FIRE } from '../../game/constants';
+import { rankLabel, rankOf } from '../../game/xp';
 import type { GameClient } from '../../client/game-client';
 import { HINTS } from '../../client/hints';
-import { addTicker, hudSignals, isLowHp, portBlock } from '../../client/hud-logic';
+import { addTicker, hudSignals, isLowHp, levelText, portBlock, rangeText, targetTypeLine, xpFill, XpProgress, xpNumbers, xpProgress } from '../../client/hud-logic';
 import { MeHud, Relation, TargetHud, useHud } from '../../client/hud-store';
 import { HUD_BLOCKS_EVENT } from '../../client/overlays';
-import { Alert, Anchor, Close, CloudOff, Coins, Crosshair, Sailboat, Shield, Skull, Star, Stop, Store, Swords, Target, Wrench } from './icons';
+import { RankBadge } from './badges';
+import FeedText from './FeedText';
+import { Alert, Anchor, Close, CloudOff, Coins, Crosshair, Crown, Sailboat, Shield, Skull, Star, Stop, Store, Swords, Target, Wrench } from './icons';
 import Minimap, { ViewRect } from './Minimap';
 import Shop from './Shop';
 import { DeathOverlay } from './Overlays';
@@ -39,7 +42,30 @@ const pct = (v: number, max: number) => `${Math.max(0, Math.min(100, (v / Math.m
 const fmt = (n: number) => n.toLocaleString('es-ES');
 const fmtRate = (r: number) => `${(r * 100).toLocaleString('es-ES', { maximumFractionDigits: 1 })} %/s`;
 
-function RelationIcon({ relation, size = 22 }: { relation: Relation; size?: number }) {
+// Disposición del HUD: los mismos cortes que globals.css (§12.1–12.3). Decide los tamaños de las insignias (24 o 18 px en
+// el panel, 16 o 12 en el objetivo) y dónde va el nivel. Solo cambia al girar o redimensionar la ventana
+type HudLayout = 'desktop' | 'portrait' | 'landscape';
+const PORTRAIT = '(max-width: 699.98px)';
+const LANDSCAPE = '(max-height: 499.98px) and (min-width: 700px)';
+
+function readLayout(): HudLayout {
+  if (window.matchMedia(PORTRAIT).matches) return 'portrait';
+  return window.matchMedia(LANDSCAPE).matches ? 'landscape' : 'desktop';
+}
+
+function subscribeLayout(onChange: () => void): () => void {
+  const lists = [PORTRAIT, LANDSCAPE].map((q) => window.matchMedia(q));
+  lists.forEach((l) => l.addEventListener('change', onChange));
+  return () => lists.forEach((l) => l.removeEventListener('change', onChange));
+}
+
+function useHudLayout(): HudLayout {
+  return useSyncExternalStore(subscribeLayout, readLayout, () => 'desktop');
+}
+
+function RelationIcon({ relation, classId, size = 22 }: { relation: Relation; classId?: string; size?: number }) {
+  // Capitán pirata: calavera y corona (ART-DIRECTION §10)
+  if (relation === 'pirate' && classId === CAPTAIN_CLASS) return <span className="hud-icon-pair"><Crown size={Math.round(size * 0.55)} /><Skull size={Math.round(size * 0.75)} /></span>;
   if (relation === 'pirate') return <Skull size={size} />;
   if (relation === 'merchant') return <Coins size={size} />;
   if (relation === 'self') return <Star size={size} />;
@@ -48,8 +74,40 @@ function RelationIcon({ relation, size = 22 }: { relation: Relation; size?: numb
 
 // ---------- Panel del jugador ----------
 
+// Barra de XP (§12.9): 200 × 4 bajo la vida en escritorio y franja en el borde inferior del bloque en móvil. Los números
+// («1240 / 2000 XP») no caben en el panel: van en el title y en el nombre accesible de la barra (D76). Al ganar XP el
+// relleno avanza en 400 ms (CSS) y brilla 300 ms (Web Animations, en el commit del cambio). Con una subida de nivel el
+// relleno se monta de nuevo (key): la barra del nivel nuevo empieza ahí y no retrocede animada desde el nivel anterior
+function XpBar({ progress, xp }: { progress: XpProgress; xp: number }) {
+  const fillRef = useRef<HTMLDivElement>(null);
+  const lastXp = useRef(xp);
+  useEffect(() => {
+    const gained = xp > lastXp.current;
+    lastXp.current = xp;
+    if (!gained || typeof fillRef.current?.animate !== 'function' || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    fillRef.current.animate([{ filter: 'brightness(1.4)' }, { filter: 'brightness(1)' }], { duration: 300, easing: 'ease-out' });
+  }, [xp]);
+  return (
+    <div
+      className="hud-xp"
+      data-testid="player-xp"
+      data-level={progress.level}
+      role="progressbar"
+      aria-valuemin={0}
+      aria-valuemax={progress.span ?? 1}
+      aria-valuenow={progress.span === null ? 1 : progress.into}
+      aria-label={xpNumbers(progress)}
+      title={xpNumbers(progress)}
+    >
+      <div key={progress.level} ref={fillRef} className="hud-xp__fill" style={{ width: `${(xpFill(progress) * 100).toFixed(2)}%` }} />
+    </div>
+  );
+}
+
 function PlayerPanel({ client }: { client: GameClient }) {
   const me = useHud((s) => s.me);
+  const xp = useHud((s) => s.player?.xp ?? 0);
+  const layout = useHudLayout();
   const shieldRef = useRef<HTMLSpanElement>(null);
   const baseRef = useRef<HTMLSpanElement>(null);
   const reloadRef = useRef<HTMLSpanElement>(null);
@@ -96,23 +154,44 @@ function PlayerPanel({ client }: { client: GameClient }) {
     base = <><Swords size={12} /> Atacando · <span ref={reloadRef}>0,0</span> s</>;
   } else if (me.action === 'armed') base = <><Swords size={12} /> Fuera de alcance</>;
 
+  // Nivel, insignia y XP (1.1; GDD §14, ART-DIRECTION §12.9, D76). «Nivel 12» («Nivel máximo» en el 20): en escritorio a
+  // la derecha de la línea de estado, con la fila del nombre como en la 1.0; en 390×844 junto a la vida, y en 844×390 en
+  // la fila del nombre
+  const progress = xpProgress(xp);
+  const desktop = layout === 'desktop';
+  const level = <span className="hud-player__level" data-testid="player-level">{levelText(progress)}</span>;
+  const xpBar = <XpBar progress={progress} xp={xp} />;
   return (
     <section className={`panel hud-player ${low ? 'is-low' : ''}`} data-testid="player-frame" data-hud-block="">
-      <div className="hud-class-icon"><Sailboat size={30} /></div>
+      <div className="hud-class-icon">
+        <Sailboat size={30} />
+        <span className="hud-player__badge" data-testid="player-badge" data-rank={progress.rank} aria-label={rankLabel(progress.rank)} role="img">
+          <RankBadge rank={progress.rank} size={desktop ? 24 : 18} />
+        </span>
+      </div>
       <div className="hud-player__body">
         <div className="hud-player__name">
           <strong data-testid="player-name">{me.name}</strong>
-          <span>{me.classLabel}</span>
+          {desktop && <span className="hud-player__class" data-testid="player-class">{me.classLabel}</span>}
+          {layout === 'landscape' && level}
         </div>
-        <div className="bar" data-testid="player-hp">
-          <div className="bar__fill" style={{ width: pct(me.hp, me.maxHp), background: 'var(--ui-ok)' }} />
-          <span className="bar__text" data-testid="player-hp-text">{fmt(me.hp)}/{fmt(me.maxHp)}</span>
+        <div className="hud-player__hp">
+          <div className="bar" data-testid="player-hp">
+            <div className="bar__fill" style={{ width: pct(me.hp, me.maxHp), background: 'var(--ui-ok)' }} />
+            <span className="bar__text" data-testid="player-hp-text">{fmt(me.hp)}/{fmt(me.maxHp)}</span>
+          </div>
+          {layout === 'portrait' && level}
         </div>
-        <div className={`hud-status ${tone}`} data-testid="action-state" data-state={me.action}>
-          <span ref={baseRef}>{base}</span>
-          <span ref={shieldRef} className="hud-status is-shield" style={{ display: 'none' }} data-testid="protection" />
+        {desktop && xpBar}
+        <div className="hud-player__foot">
+          <div className={`hud-status ${tone}`} data-testid="action-state" data-state={me.action}>
+            <span ref={baseRef}>{base}</span>
+            <span ref={shieldRef} className="hud-status is-shield" style={{ display: 'none' }} data-testid="protection" />
+          </div>
+          {desktop && level}
         </div>
       </div>
+      {!desktop && <div className="hud-xp-strip">{xpBar}</div>}
     </section>
   );
 }
@@ -129,14 +208,26 @@ function attitudeOf(target: TargetHud): string {
 
 function TargetPanel({ actions }: { actions: HudActions }) {
   const target = useHud((s) => s.target);
+  const layout = useHudLayout();
   if (!target) return null;
   const color = RELATION_COLOR[target.relation];
+  // Otro jugador (1.1, AC-153; GDD §14, «Panel de objetivo»): su insignia delante de «Balandra · Nivel 13 · Teniente».
+  // En móvil esa línea va la última, bajo la distancia, y el panel crece a 70 de alto (CSS, D75)
+  const player = target.relation === 'player' && target.level !== null;
+  const range = rangeText(target);
   return (
-    <section className="panel hud-target" data-testid="target-frame" data-target-id={target.id} data-hud-block="">
-      <div className="hud-target__icon" style={{ color }}><RelationIcon relation={target.relation} /></div>
+    <section className={`panel hud-target ${player ? 'is-player' : ''}`} data-testid="target-frame" data-target-id={target.id} data-hud-block="">
+      <div className="hud-target__icon" style={{ color }}><RelationIcon relation={target.relation} classId={target.classId} /></div>
       <div className="hud-target__body">
         <div className="hud-target__name" style={{ color }} data-testid="target-name">{target.name}</div>
-        <div className="hud-target__meta">{target.classLabel} · {attitudeOf(target)}</div>
+        {player ? (
+          <div className="hud-target__meta is-player" data-testid="target-type">
+            <RankBadge rank={rankOf(target.level!)} size={layout === 'desktop' ? 16 : 12} />
+            <span>{targetTypeLine(target.classId, target.level!)}</span>
+          </div>
+        ) : (
+          <div className="hud-target__meta" data-testid="target-type">{target.classLabel} · {attitudeOf(target)}</div>
+        )}
         <div className="bar bar--sm" data-testid="target-hp">
           <div className="bar__fill" style={{ width: pct(target.hp, target.maxHp), background: color }} />
         </div>
@@ -145,8 +236,8 @@ function TargetPanel({ actions }: { actions: HudActions }) {
             <>
               <span data-testid="target-distance">{target.distance} m</span>
               {target.relation !== 'self' && (
-                <span className={target.inRange ? 'in-range' : 'out-range'} data-testid="target-range">
-                  · {target.inRange ? '✓ En alcance' : '✕ Fuera de alcance'}
+                <span className={range === '✓ En alcance' ? 'in-range' : 'out-range'} data-testid="target-range">
+                  · {range}
                 </span>
               )}
             </>
@@ -194,12 +285,18 @@ function Toasts() {
     <div className="hud-toasts" role="status" aria-live="polite" data-testid="toasts">
       {unsaved && <div className="toast toast--warn toast--unsaved" data-testid="save-warning" data-hud-block=""><CloudOff size={16} /> Progreso sin guardar, reintentando…</div>}
       {inSafe && <div className="toast toast--zone" data-testid="safe-zone" data-hud-block=""><Shield size={16} /> Zona segura</div>}
+      {/* El aviso de subida de nivel (AC-151) lleva la insignia de 24 px en lugar del icono (§12.9) */}
       {toasts.map((t) => (
-        <div key={t.id} className={`toast toast--${t.kind}`} data-hud-block="">{t.text}</div>
+        <div key={t.id} className={`toast toast--${t.kind}`} data-hud-block="">
+          {t.rank && <RankBadge rank={t.rank} size={24} />}
+          {t.text}
+        </div>
       ))}
       {/* En móvil el feed no tiene caja propia: sus líneas van como toasts (§12.2). En escritorio miden 0 × 0 y no cuentan */}
       {feed.map((f) => (
-        <div key={`f${f.id}`} className={`toast feed-as-toast toast--${f.tone === 'danger' ? 'danger' : f.tone === 'gold' ? 'warn' : 'ok'}`} data-hud-block="">{f.text}</div>
+        <div key={`f${f.id}`} className={`toast feed-as-toast toast--${f.tone === 'danger' ? 'danger' : f.tone === 'gold' ? 'warn' : 'ok'}`} data-hud-block="">
+          <FeedText line={f} />
+        </div>
       ))}
     </div>
   );
@@ -210,7 +307,9 @@ function Feed() {
   return (
     <div className="hud-feed" data-testid="feed" aria-live="polite">
       {feed.map((f) => (
-        <div key={f.id} className={`feed-line feed-line--${f.tone}`} data-hud-block="">{f.text}</div>
+        <div key={f.id} className={`feed-line feed-line--${f.tone}`} data-hud-block="">
+          <FeedText line={f} />
+        </div>
       ))}
     </div>
   );

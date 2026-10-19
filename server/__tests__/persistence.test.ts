@@ -1,20 +1,23 @@
-// Progreso guardado en Postgres real (AC-97, AC-129, AC-130): servidor de juego en este proceso, socket.io real y un
-// schema propio para este archivo. «Reiniciar» es un servidor nuevo, con el mundo vacío, sobre la misma BD
+// Progreso guardado en Postgres real (AC-97, AC-129, AC-130 y, con la XP, AC-155): servidor de juego en este proceso,
+// socket.io real y un schema propio para este archivo. «Reiniciar» es un servidor nuevo, con el mundo vacío, sobre la
+// misma BD
 import { createServer, Server as HttpServer } from 'http';
 import { AddressInfo } from 'net';
 import { Pool } from 'pg';
 import { Server } from 'socket.io';
 import { Socket as ClientSocket } from 'socket.io-client';
-import { DISCONNECT_GRACE, SHIP_CLASSES, TICK_RATE, UPGRADE_LEVELS } from '../../src/game/constants';
+import { DISCONNECT_GRACE, GOLD_CAP, LEVEL_XP, NPC_XP, SHIP_CLASSES, TICK_RATE, UPGRADE_LEVELS } from '../../src/game/constants';
 import { C2S, S2C } from '../../src/game/protocol';
 import { Notice, PlayerView } from '../../src/game/types';
-import { isInSafeZone, shipOfPlayer } from '../../src/game/world';
+import { isInSafeZone, shipOfPlayer, spawnPirate } from '../../src/game/world';
+import { levelOf } from '../../src/game/xp';
 import { migrate } from '../db/migrate';
 import { createPool } from '../db/pool';
 import { createGameServer, GameServer, GameServerOptions } from '../game-server';
 import { createPgStore, ProgressStore } from '../persistence';
 import { SavedProgress } from '../progress';
 import { connectGame, joinGame, Joined, sleep, waitFor } from './fixtures/game-socket';
+import { rowV1, rowV2, v1Shapes } from './fixtures/progress-rows';
 import { createTestDb, TestDb } from './pg/test-db';
 
 // Identidad de prueba: el token es el userId; los que empiezan por guest- son invitados
@@ -85,11 +88,12 @@ async function restart(opts: Partial<GameServerOptions> = {}): Promise<void> {
 const join = (userId: string, name = userId): Promise<Joined> => joinGame(url, { token: userId }, name, sockets);
 const world = () => game!.world;
 
-const SLOOP_ONLY: SavedProgress = { gold: 100, upgrades: { cannons: 1, hull: 1, sails: 1 }, ownedShips: ['sloop'], activeShip: 'sloop' };
-const fields = (v: PlayerView): SavedProgress => ({ gold: v.gold, upgrades: v.upgrades, ownedShips: v.ownedShips, activeShip: v.activeShip });
+const SLOOP_ONLY: SavedProgress = { gold: 100, upgrades: { cannons: 1, hull: 1, sails: 1 }, ownedShips: ['sloop'], activeShip: 'sloop', xp: 0 };
+const fields = (v: PlayerView): SavedProgress => ({ gold: v.gold, upgrades: v.upgrades, ownedShips: v.ownedShips, activeShip: v.activeShip, xp: v.xp });
 
+// Siembra una fila de la 1.0 (v: 1) si no hay XP, y una de la 1.1 (v: 2) si la hay
 async function seed(userId: string, progress: SavedProgress): Promise<void> {
-  await db.admin.query('INSERT INTO player_progress (user_id, state) VALUES ($1, $2)', [userId, { v: 1, ...progress }]);
+  await db.admin.query('INSERT INTO player_progress (user_id, state) VALUES ($1, $2)', [userId, progress.xp === 0 ? rowV1(progress) : rowV2(progress)]);
 }
 
 async function rowOf(userId: string): Promise<{ state: Record<string, unknown>; revision: number; raw: string } | null> {
@@ -150,7 +154,7 @@ describe('AC-97: recargar devuelve el mismo oro, mejoras y barcos; el invitado v
     await waitFor(() => bought(a) === 1, 3000, 'la compra de Cañones N2');
     a.c.emit(C2S.buy, { itemId: 'ship:brig' });
     await waitFor(() => bought(a) === 2, 3000, 'la compra del Bergantín');
-    const expected: SavedProgress = { gold: 750, upgrades: { cannons: 2, hull: 1, sails: 1 }, ownedShips: ['sloop', 'brig'], activeShip: 'brig' };
+    const expected: SavedProgress = { gold: 750, upgrades: { cannons: 2, hull: 1, sails: 1 }, ownedShips: ['sloop', 'brig'], activeShip: 'brig', xp: 0 };
     await waitFor(() => JSON.stringify(fields(a.me())) === JSON.stringify(expected), 3000, 'la vista con las dos compras');
 
     await restart();
@@ -170,7 +174,7 @@ describe('AC-97: recargar devuelve el mismo oro, mejoras y barcos; el invitado v
 
 describe('AC-129: el progreso sobrevive a un reinicio', () => {
   test('recupera oro, mejoras, barcos y barco activo; aparece en el puerto con la vida llena (vida y posición no se guardan)', async () => {
-    const saved: SavedProgress = { gold: 1234, upgrades: { cannons: 3, hull: 2, sails: 1 }, ownedShips: ['sloop', 'brig', 'frigate'], activeShip: 'frigate' };
+    const saved: SavedProgress = { gold: 1234, upgrades: { cannons: 3, hull: 2, sails: 1 }, ownedShips: ['sloop', 'brig', 'frigate'], activeShip: 'frigate', xp: 0 };
     await seed('u-bea', saved);
     await startServer();
     const b = await join('u-bea');
@@ -197,7 +201,7 @@ describe('AC-129: el progreso sobrevive a un reinicio', () => {
     const n = await join('u-nuevo');
     expect(fields(n.me())).toEqual(SLOOP_ONLY);
     await game!.flushProgress();
-    expect((await rowOf('u-nuevo'))?.state).toEqual({ v: 1, ...SLOOP_ONLY });
+    expect((await rowOf('u-nuevo'))?.state).toEqual({ v: 2, ...SLOOP_ONLY });
   });
 
   test('un invitado no escribe nada en la BD (0 filas) aunque gane oro, compre y salga', async () => {
@@ -241,7 +245,7 @@ describe('AC-129: pasados más de 10 s desde la desconexión, el progreso se lee
     world().players.get('u-kai')!.gold = 300;
     k.c.disconnect();
     await waitFor(async () => (await rowOf('u-kai'))!.state.gold === 300, 1000, 'la escritura al desconectar');
-    await db.admin.query('UPDATE player_progress SET state = $2, revision = revision + 1 WHERE user_id = $1', ['u-kai', { v: 1, ...SLOOP_ONLY, gold: 4321 }]);
+    await db.admin.query('UPDATE player_progress SET state = $2, revision = revision + 1 WHERE user_id = $1', ['u-kai', rowV1({ ...SLOOP_ONLY, gold: 4321 })]);
     await advance(DISCONNECT_GRACE + 0.5);
     expect(world().players.has('u-kai')).toBe(false);
     const again = await join('u-kai');
@@ -326,8 +330,8 @@ describe('AC-130: cuándo se escribe', () => {
 
     spy.release();
     await waitFor(() => bought(d) === 1, 3000, 'la confirmación');
-    const brig: SavedProgress = { gold: 0, upgrades: SLOOP_ONLY.upgrades, ownedShips: ['sloop', 'brig'], activeShip: 'brig' };
-    expect((await rowOf('u-dani'))!.state).toEqual({ v: 1, ...brig });
+    const brig: SavedProgress = { gold: 0, upgrades: SLOOP_ONLY.upgrades, ownedShips: ['sloop', 'brig'], activeShip: 'brig', xp: 0 };
+    expect((await rowOf('u-dani'))!.state).toEqual({ v: 2, ...brig });
     await waitFor(() => d.me().activeShip === 'brig', 3000, 'la vista con el Bergantín');
     expect(fields(d.me())).toEqual(brig);
   });
@@ -410,6 +414,193 @@ describe('AC-130: cuándo se escribe', () => {
   });
 });
 
+describe('AC-155: la XP se guarda con las mismas reglas que el oro', () => {
+  const XP_1234: SavedProgress = { gold: 1234, upgrades: { cannons: 3, hull: 2, sails: 1 }, ownedShips: ['sloop', 'brig', 'frigate'], activeShip: 'frigate', xp: 1234 };
+  const advance = async (seconds: number) => {
+    for (let i = 0; i < Math.round(seconds * TICK_RATE); i++) game!.tick();
+    await sleep(20);
+  };
+
+  test('un usuario con 1 234 de XP (nivel 7) vuelve con 1 234 y nivel 7 tras reiniciar el servidor, junto con los 4 campos de AC-97', async () => {
+    await seed('u-xena', XP_1234);
+    await startServer();
+    const x = await join('u-xena');
+    expect(fields(x.me())).toEqual(XP_1234);
+    expect(levelOf(x.me().xp)).toBe(7);
+    world().players.get('u-xena')!.gold += 10;
+    await restart();
+    const again = await join('u-xena');
+    expect(fields(again.me())).toEqual({ ...XP_1234, gold: 1244 });
+    expect(levelOf(again.me().xp)).toBe(7);
+  });
+
+  test('al recargar pasados más de 10 s (sale de la memoria), vuelve con la XP ganada, leída de la BD', async () => {
+    await seed('u-yago', { ...XP_1234, xp: 1200 });
+    await startServer({ autoStart: false });
+    const y = await join('u-yago');
+    world().players.get('u-yago')!.xp += 34;
+    y.c.disconnect();
+    await waitFor(async () => (await rowOf('u-yago'))!.state.xp === 1234, 1000, 'la XP escrita al desconectar');
+    await advance(DISCONNECT_GRACE + 0.5);
+    expect(world().players.has('u-yago')).toBe(false);
+    const again = await join('u-yago');
+    expect(again.me().xp).toBe(1234);
+    expect(levelOf(again.me().xp)).toBe(7);
+  });
+
+  test('la XP ganada sin oro (el coatacante en PvP) queda escrita en ≤ 5 s sin que el jugador haga nada más', async () => {
+    await seed('u-zoe', XP_1234);
+    await startServer(); // guardado periódico por defecto, con su temporizador real
+    await join('u-zoe');
+    world().players.get('u-zoe')!.xp += 30;
+    const t0 = Date.now();
+    await waitFor(async () => (await rowOf('u-zoe'))!.state.xp === 1264, 5000, 'la XP en la BD');
+    expect(Date.now() - t0).toBeLessThanOrEqual(5000);
+    expect((await rowOf('u-zoe'))!.state.gold).toBe(1234);
+  }, 10_000);
+
+  test('al desconectarse, la XP se escribe en ese momento, sin esperar al guardado periódico', async () => {
+    await seed('u-abel', XP_1234);
+    await startServer({ saveIntervalMs: 60_000 });
+    const a = await join('u-abel');
+    world().players.get('u-abel')!.xp += 30;
+    await sleep(300);
+    expect((await rowOf('u-abel'))!.state.xp).toBe(1234); // el guardado periódico (60 s aquí) aún no pasó
+    const t0 = Date.now();
+    a.c.disconnect();
+    await waitFor(async () => (await rowOf('u-abel'))!.state.xp === 1264, 1000, 'la XP escrita al desconectar');
+    expect(Date.now() - t0).toBeLessThan(1000);
+  });
+
+  test('la XP ganada con la BD caída se escribe cuando vuelve (AC-132)', async () => {
+    await seed('u-bruno', XP_1234);
+    const spy = spyStore(createPgStore(pool));
+    await startServer({ store: spy.store, saveIntervalMs: 100, probeIntervalMs: 100 });
+    const b = await join('u-bruno');
+    spy.failSaves(true);
+    world().players.get('u-bruno')!.xp += 30;
+    await waitFor(() => b.me().unsaved === true, 3000, 'el aviso de progreso sin guardar');
+    expect((await rowOf('u-bruno'))!.state.xp).toBe(1234);
+    spy.failSaves(false);
+    await waitFor(async () => (await rowOf('u-bruno'))!.state.xp === 1264, 3000, 'la XP escrita al volver la BD');
+    await waitFor(() => !b.me().unsaved, 3000, 'el aviso fuera');
+  });
+
+  test('el invitado vuelve a 0 de XP y nivel 1, sin escribir nada en la BD', async () => {
+    const spy = spyStore(createPgStore(pool));
+    await startServer({ store: spy.store });
+    await join('guest-xp123456');
+    world().players.get('guest-xp123456')!.xp = 1234;
+    await restart({ store: spy.store });
+    const again = await join('guest-xp123456');
+    expect(again.me().xp).toBe(0);
+    expect(levelOf(again.me().xp)).toBe(1);
+    expect(spy.calls).toEqual({ load: 0, save: 0 });
+    expect((await db.admin.query('SELECT count(*)::int AS n FROM player_progress')).rows[0].n).toBe(0);
+  });
+});
+
+// La cadena que vive el jugador, sin sumar XP a mano: hunde un pirata con su cañón (la intención por el socket y el
+// combate de world.ts, con el reparto de la XP por daño), esa XP llega a la fila v: 2 con el guardado periódico, y tras
+// reiniciar el servidor vuelve con la misma XP y con el nivel que viaja en su barco (lv)
+describe('AC-155 de punta a punta: hundir un pirata → XP → fila v: 2 → reiniciar', () => {
+  const lastLevel = (j: Joined) =>
+    j.frames
+      .flatMap((f) => f.s ?? [])
+      .filter((s) => s.id === j.welcome.shipId && s.lv !== undefined)
+      .at(-1)?.lv;
+
+  test.each([
+    ['un jugador de la 1.0 (fila v: 1, 0 de XP)', SLOOP_ONLY, 1],
+    ['un jugador a 10 de XP del nivel 7 (fila v: 2), que sube con el hundimiento', { ...SLOOP_ONLY, xp: LEVEL_XP[6] - 10 }, 7]
+  ])('%s: la XP del hundimiento queda escrita en v: 2 en ≤ 5 s y vuelve tras reiniciar, con su nivel', async (_label, seeded, level) => {
+    await seed('u-caza', seeded);
+    await startServer(); // reloj y guardado periódico reales
+    const a = await join('u-caza');
+    const ship = world().ships.get(a.welcome.shipId)!;
+    ship.pos = { x: 300, z: 300 }; // fuera de la zona segura
+    ship.protectedUntil = 0;
+    const pirate = spawnPirate(world(), 0);
+    pirate.pos = { x: 300, z: 330 }; // a tiro de los cañones N1
+    pirate.ai = null;
+    pirate.hp = 1;
+    world().rng = () => 0; // todas las balas aciertan
+    a.c.emit(C2S.attack, { targetId: pirate.id });
+
+    const xp = seeded.xp + NPC_XP.pirate;
+    await waitFor(() => a.me().xp === xp, 10_000, 'la XP del hundimiento en la vista');
+    const t0 = Date.now();
+    const events = a.frames.flatMap((f) => f.e ?? []);
+    expect(events).toContainEqual(expect.objectContaining({ type: 'sunk', shipId: pirate.id, byShipId: ship.id }));
+    expect(events).toContainEqual(expect.objectContaining({ type: 'xp', playerId: 'u-caza', xp: NPC_XP.pirate, source: 'kill' }));
+    expect(levelOf(xp)).toBe(level);
+    await waitFor(() => lastLevel(a) === level, 2000, 'el nivel en el barco propio');
+    const played = fields(a.me());
+
+    await waitFor(async () => (await rowOf('u-caza'))!.state.xp === xp, 5000, 'la XP del hundimiento en la fila');
+    expect(Date.now() - t0).toBeLessThanOrEqual(5000);
+    expect((await rowOf('u-caza'))!.state).toEqual({ v: 2, ...played });
+
+    await restart();
+    const again = await join('u-caza');
+    expect(fields(again.me())).toEqual(played);
+    expect(again.me().xp).toBe(xp);
+    await waitFor(() => lastLevel(again) !== undefined, 2000, 'el barco propio tras reiniciar');
+    expect(lastLevel(again)).toBe(level);
+  }, 20_000);
+});
+
+describe('AC-156: las filas de la 1.0 entran intactas, con 0 de XP, y solo pasan a v: 2 cuando su jugador escribe', () => {
+  // Todas las filas a la vez, como estarían en la BD de prod: state, revision y updated_at, para compararlas byte a byte
+  const allRows = async () =>
+    (await db.admin.query("SELECT user_id, state::text AS s, revision::text AS r, updated_at::text AS u FROM player_progress WHERE user_id LIKE 'u-v1-%' ORDER BY user_id")).rows;
+
+  // Entra o recibe «No podemos cargar tu progreso»: un registro rechazado da un aviso, no un test colgado
+  async function enter(userId: string): Promise<{ error?: string; me?: PlayerView }> {
+    const c = connectGame(url, { token: userId });
+    sockets.push(c);
+    let me: PlayerView | undefined;
+    c.on(S2C.frame, (f: { me?: PlayerView }) => {
+      if (f.me) me = f.me;
+    });
+    await new Promise<void>((resolve) => c.once('connect', () => resolve()));
+    const r = await new Promise<{ error?: string }>((resolve) => {
+      c.once(S2C.welcome, () => resolve({}));
+      c.once(S2C.progressError, (n: Notice) => resolve({ error: n.text }));
+      c.emit(C2S.join, {});
+    });
+    if (r.error) return r;
+    await waitFor(() => me !== undefined, 3000, `la vista privada de ${userId}`);
+    return { me };
+  }
+
+  test('cada forma que acepta la 1.0.2 entra con su progreso y 0 de XP, sin escribir; la primera escritura de un jugador pasa su fila a v: 2', async () => {
+    const shapes = v1Shapes(GOLD_CAP);
+    for (const [i, p] of shapes.entries()) await seed(`u-v1-${i}`, p);
+    const before = await allRows();
+    expect(before.map((r) => JSON.parse(r.s).v)).toEqual(shapes.map(() => 1));
+    await startServer({ saveIntervalMs: 200 });
+
+    for (const [i, p] of shapes.entries()) {
+      const r = await enter(`u-v1-${i}`);
+      expect(r.error).toBeUndefined();
+      expect(fields(r.me!)).toEqual(p);
+    }
+    await sleep(600); // tres guardados periódicos: sin cambios, ninguno escribe
+    await game!.flushProgress();
+    expect(await allRows()).toEqual(before);
+
+    // Escribe un jugador: solo su fila cambia, a v: 2 con xp y una revisión más
+    world().players.get('u-v1-4')!.gold += 1;
+    await game!.flushProgress();
+    const after = await allRows();
+    expect(after.filter((r) => r.user_id !== 'u-v1-4')).toEqual(before.filter((r) => r.user_id !== 'u-v1-4'));
+    const written = (await rowOf('u-v1-4'))!;
+    expect(written.state).toEqual({ v: 2, ...shapes[4], gold: shapes[4].gold + 1 });
+    expect(written.revision).toBe(2);
+  });
+});
+
 describe('AC-133: una sola sesión por userId; la pestaña nueva manda', () => {
   test('la nueva toma el mismo barco con el mismo oro, vida y posición; la anterior sale con «Has abierto el juego en otra pestaña»; nunca hay dos barcos y el oro no se duplica', async () => {
     await seed('u-tab', { ...SLOOP_ONLY, gold: 500 });
@@ -421,7 +612,7 @@ describe('AC-133: una sola sesión por userId; la pestaña nueva manda', () => {
     ship.pos = { x: 40, z: 60 };
     world().players.get('u-tab')!.gold += 50;
     // Si la pestaña nueva releyera la BD, vería este valor en vez del de la memoria
-    await db.admin.query('UPDATE player_progress SET state = $2 WHERE user_id = $1', ['u-tab', { v: 1, ...SLOOP_ONLY, gold: 9999 }]);
+    await db.admin.query('UPDATE player_progress SET state = $2 WHERE user_id = $1', ['u-tab', rowV1({ ...SLOOP_ONLY, gold: 9999 })]);
     const kicked = new Promise<Notice>((resolve) => first.c.once(S2C.kicked, resolve));
     const disconnected = new Promise<string>((resolve) => first.c.once('disconnect', resolve));
 
@@ -504,7 +695,7 @@ describe('revisión: nunca se pisa un estado más nuevo escrito por otro proceso
     const j = await join('u-juan');
     const kicked = new Promise<Notice>((resolve) => j.c.once(S2C.kicked, resolve));
     const newer: SavedProgress = { ...SLOOP_ONLY, gold: 9999 };
-    await db.admin.query('UPDATE player_progress SET state = $2, revision = revision + 1 WHERE user_id = $1', ['u-juan', { v: 1, ...newer }]);
+    await db.admin.query('UPDATE player_progress SET state = $2, revision = revision + 1 WHERE user_id = $1', ['u-juan', rowV1(newer)]);
     world().players.get('u-juan')!.gold = 150;
     await game!.flushProgress();
     expect((await rowOf('u-juan'))!.state.gold).toBe(9999);

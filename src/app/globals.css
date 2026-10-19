@@ -32,6 +32,8 @@
   --rel-merchant: #6cc3f5;
   --ocean-deep: #0f3f5c;
   --ocean: #1a5f86;
+  /* 1.1 (D69, D70): experiencia e insignias. Las insignias llevan sus colores en el SVG exacto (src/client/badges.ts) */
+  --ui-xp: #b79cff;
 }
 
 @theme inline {
@@ -103,14 +105,26 @@ body {
 .hud-player { position: absolute; left: 16px; top: 16px; width: 296px; height: 88px; display: flex; gap: 12px; padding: 12px 12px 10px 12px; }
 .hud-player.is-low { animation: danger-border 1s steps(2, jump-none) infinite; }
 .hud-class-icon {
-  flex: none; width: 56px; height: 56px; border-radius: 50%;
+  position: relative; flex: none; width: 56px; height: 56px; border-radius: 50%;
   border: 2px solid var(--ui-gold); display: grid; place-items: center; color: var(--ui-gold-hi);
   background: rgba(242, 193, 78, 0.08);
 }
 .hud-player__body { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 3px; }
 .hud-player__name { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .hud-player__name strong { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.hud-player__name span { font-size: 13px; color: var(--ui-text-dim); }
+.hud-player__class { flex: none; font-size: 13px; color: var(--ui-text-dim); white-space: nowrap; }
+/* Nivel, insignia y XP (1.1; §12.9, D70 y D74). La insignia de 24 px va sobre la esquina inferior derecha del icono y asoma
+   2 px (18 px y 4 en móvil). right y bottom se miden desde dentro del borde de 2 px del icono, de ahí el −4 (y el −6) */
+.hud-player__badge { position: absolute; right: -4px; bottom: -4px; width: 24px; height: 24px; line-height: 0; }
+.hud-player__level { flex: none; font-size: 12px; line-height: 14px; color: var(--ui-text-dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.hud-player__hp { display: flex; align-items: center; gap: 8px; }
+.hud-xp { position: relative; flex: none; width: 200px; height: 4px; background: #0b1a24; overflow: hidden; }
+.hud-xp__fill { position: absolute; inset: 0 auto 0 0; background: var(--ui-xp); transition: width 400ms ease-out; }
+.hud-player__foot { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-width: 0; }
+.hud-player__foot .hud-status { min-width: 0; }
+/* En móvil, franja en el borde inferior del bloque (§12.9): la capa recorta con el radio del panel */
+.hud-xp-strip { position: absolute; inset: -1px; border-radius: inherit; overflow: hidden; pointer-events: none; }
+.hud-xp-strip .hud-xp { position: absolute; left: 0; right: 0; bottom: 0; width: auto; height: 2px; }
 .hud-status { font-size: 12px; color: var(--ui-text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hud-status svg { display: inline-block; vertical-align: -2px; }
 .hud-status.is-firing { color: var(--ui-text); }
@@ -126,9 +140,14 @@ body {
 
 .hud-target { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); width: 320px; height: 72px; display: flex; gap: 10px; align-items: center; padding: 5px 34px 5px 10px; }
 .hud-target__icon { flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; border: 2px solid currentColor; }
+.hud-icon-pair { display: flex; flex-direction: column; align-items: center; line-height: 0; } /* Capitán pirata: corona sobre la calavera */
 .hud-target__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; line-height: 1.15; }
 .hud-target__name { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hud-target__meta { font-size: 12px; color: var(--ui-text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Otro jugador (AC-153): insignia de 16 px y 4 de separación delante de «Balandra · Nivel 13 · Teniente» */
+.hud-target__meta.is-player { display: flex; align-items: center; gap: 4px; }
+.hud-target__meta.is-player svg { flex: none; }
+.hud-target__meta.is-player span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .hud-target__row { display: flex; align-items: center; gap: 4px; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .in-range { color: var(--ui-ok); }
 .out-range { color: var(--ui-text-dim); }
@@ -143,6 +162,12 @@ body {
 /* D39: mapa de 184 × 184 (con el borde del panel) y debajo el pie del sector de 24 px, con su línea de 1 px, en el mismo panel */
 .hud-minimap { position: absolute; right: 16px; top: 64px; width: 184px; height: 208px; padding: 0; overflow: hidden; display: flex; flex-direction: column; }
 .hud-minimap canvas { display: block; flex: none; width: 100%; height: auto; aspect-ratio: 1; }
+/* Halo del Capitán pirata en el minimapa (ART-DIRECTION §4.3, D43): anillo coral de 1,5 px, r 7 → 12 px y α 0,6 → 0 a 1 Hz. Lo
+   anima CSS: el canvas se redibuja a ≤ 2 Hz y solo mueve su posición (0 commits de React). El trazo no escala con el anillo */
+.hud-minimap__halo { position: absolute; left: 0; top: 0; width: 24px; height: 24px; margin: -12px 0 0 -12px; overflow: visible; pointer-events: none; display: none; }
+.hud-minimap__halo circle { fill: none; stroke: var(--rel-pirate); stroke-width: 1.5px; vector-effect: non-scaling-stroke; transform-origin: 12px 12px; animation: captain-halo 1s ease-out infinite; }
+@keyframes captain-halo { from { transform: scale(0.5833); opacity: 0.6; } to { transform: scale(1); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .hud-minimap__halo circle { animation: none; transform: scale(0.75); opacity: 0.4; } } /* fijo en r 9 px, α 0,4 */
 .hud-coords { flex: none; height: 24px; border-top: 1px solid var(--ui-line); font-size: 12px; line-height: 23px; color: var(--ui-text-dim); text-align: center; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; pointer-events: none; }
 
 .hud-toasts { position: absolute; top: 96px; left: 50%; transform: translateX(-50%); width: 360px; display: flex; flex-direction: column; gap: 8px; z-index: 30; pointer-events: none; }
@@ -152,6 +177,9 @@ body {
 .toast--danger { border-left-color: var(--ui-danger); }
 .toast--zone { border-left-color: var(--ui-info); color: var(--ui-info); }
 .toast--unsaved svg { flex: none; color: var(--ui-gold); } /* AC-132 (D50): cloud-off de 16 px en oro */
+/* Subida de nivel (AC-151, §12.9): logro con la insignia de 24 px en lugar del icono, 14 px / 600 */
+.toast--achievement { border-left-color: var(--ui-gold); color: var(--ui-gold-hi); font-weight: 600; }
+.toast--achievement svg { flex: none; }
 .feed-as-toast { display: none; }
 
 .hud-feed { position: absolute; left: 16px; bottom: 16px; width: 360px; height: 112px; display: flex; flex-direction: column; justify-content: flex-end; gap: 4px; pointer-events: none; }
@@ -159,6 +187,11 @@ body {
 .feed-line--ok { color: var(--ui-ok); }
 .feed-line--danger { color: var(--ui-danger); }
 .feed-line--gold { color: var(--ui-gold-hi); }
+/* Línea de botín (AC-152, §12.9): solo el nombre se trunca con «…»; la recompensa no encoge y la XP va en --ui-xp */
+.feed-text { display: flex; min-width: 0; white-space: pre; }
+.feed-text > span { flex: none; }
+.feed-text > .feed-text__name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.feed-text__xp { color: var(--ui-xp); }
 
 .hud-actions { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); width: 336px; height: 76px; display: flex; gap: 8px; padding: 9px 12px; }
 .slot {
@@ -198,20 +231,29 @@ body {
   .hud-mobile-btn.is-pulse { animation: danger-border 1s steps(2, jump-none) infinite; }
   .hud-mobile-btn--attack { width: 72px; height: 72px; border-radius: 50%; font-size: 12px; font-weight: 700; }
   .hud-mobile-btn .slot__reload { border-radius: inherit; }
+  .hud-player__badge { right: -6px; bottom: -6px; width: 18px; height: 18px; } /* §12.9: 18 px sobre la esquina del icono */
 }
 
 @media (max-width: 699.98px) {
   .hud-player { left: 0; top: env(safe-area-inset-top, 0); width: 100%; height: 52px; border-radius: 0; border-width: 0 0 1px 0; padding: 8px 64px 8px 8px; align-items: center; }
   .hud-class-icon { width: 36px; height: 36px; }
-  .hud-player__name span, .hud-status { display: none; }
+  .hud-player__foot { display: none; }
   .hud-player__name strong { font-size: 13px; }
+  .hud-xp-strip { inset: 0 0 -1px 0; } /* sin bordes laterales ni superior: la franja va de x 0 a 390 */
+  .hud-xp-strip .hud-xp { height: 3px; }
   .hud-player .bar { width: 150px; height: 10px; }
   .hud-player .bar__text { font-size: 10px; }
   .hud-gold { top: calc(env(safe-area-inset-top, 0px) + 6px); right: 8px; width: auto; height: 40px; border: 0; background: transparent; padding: 0 4px; }
   .hud-gold strong { font-size: 14px; }
   .hud-target { left: 16px; top: calc(env(safe-area-inset-top, 0px) + 60px); transform: none; width: 262px; height: 48px; padding: 4px 8px; }
   .hud-target__icon { width: 28px; height: 28px; }
+  .hud-icon-pair svg:first-child { width: 9px; height: 9px; }
+  .hud-icon-pair svg:last-child { width: 13px; height: 13px; }
   .hud-target__meta { display: none; }
+  /* Objetivo jugador (§12.9, D75): el panel crece a 70 y la línea del rango, de 11 px con la insignia de 12, va la última,
+     bajo la distancia, porque el botón de cerrar tapa la derecha de las dos primeras filas */
+  .hud-target.is-player { height: 70px; }
+  .hud-target__meta.is-player { display: flex; order: 1; font-size: 11px; }
   .hud-target .bar--sm { height: 8px; }
   .hud-minimap { right: 16px; top: calc(env(safe-area-inset-top, 0px) + 60px); width: 88px; height: 88px; }
   .hud-toasts { left: 16px; top: calc(env(safe-area-inset-top, 0px) + 156px); transform: none; width: calc(100% - 32px); max-width: 358px; } /* D10: debajo del minimapa */
@@ -226,10 +268,13 @@ body {
 @media (max-height: 499.98px) and (min-width: 700px) {
   .hud-player { left: 12px; top: 12px; width: 252px; height: 44px; padding: 4px 8px; align-items: center; }
   .hud-class-icon { width: 32px; height: 32px; }
-  .hud-player__name span, .hud-status { display: none; }
+  .hud-player__foot { display: none; }
+  .hud-player__name strong { font-size: 13px; } /* D76: con «Nivel 12» en la fila caben 16 caracteres corrientes */
   .hud-player .bar { width: 180px; height: 10px; }
   .hud-target { left: 12px; top: 64px; transform: none; width: 252px; height: 48px; padding: 4px 8px; }
   .hud-target__meta { display: none; }
+  .hud-target.is-player { height: 70px; }
+  .hud-target__meta.is-player { display: flex; order: 1; font-size: 11px; }
   .hud-target .bar--sm { height: 8px; }
   .hud-gold { right: 92px; top: 12px; width: auto; }
   .hud-minimap { right: 12px; top: 12px; width: 72px; height: 72px; }
@@ -370,6 +415,7 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .hud-player.is-low, .slot.is-pulse, .hud-mobile-btn.is-pulse { animation: none; border-color: var(--ui-danger); }
+  .hud-xp__fill { transition: none; }
   .btn-sail { animation: none; }
   .connecting svg { animation: none; }
 }

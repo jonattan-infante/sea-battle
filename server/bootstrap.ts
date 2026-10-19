@@ -8,7 +8,8 @@ import { migrate } from './db/migrate';
 import { createPool } from './db/pool';
 import { createGameServer, GameServer, GameServerOptions } from './game-server';
 import { createPgStore } from './persistence';
-import { applyScenario, parseScenario } from './scenarios';
+import { i2Enabled } from './features';
+import { applyScenario, I2_SCENARIOS, parseScenario } from './scenarios';
 
 type Env = Record<string, string | undefined>;
 
@@ -32,6 +33,10 @@ function metricsInterval(raw: string | undefined): number | undefined {
 export async function startGame(io: Server, env: Env = process.env, log: (msg: string) => void = () => {}, overrides: Partial<GameServerOptions> = {}): Promise<GameStack> {
   const configError = databaseConfigError(env);
   if (configError) throw new Error(configError);
+  // Escenarios de prueba: solo con el modo invitado permitido, que nunca se activa en Railway
+  const scenario = isAuthBypassAllowed(env) && parseScenario(env.SEA_BATTLE_SCENARIO);
+  const i2 = i2Enabled(env);
+  if (scenario && I2_SCENARIOS.includes(scenario) && !i2) throw new Error(`El escenario «${scenario}» necesita el I2 encendido (SEA_BATTLE_I2=1, AC-187)`);
   let pool: Pool | null = null;
   if (env.DATABASE_URL) {
     pool = createPool(env.DATABASE_URL, log);
@@ -44,15 +49,15 @@ export async function startGame(io: Server, env: Env = process.env, log: (msg: s
   } else {
     log('⚠️  Sin DATABASE_URL: el progreso vive solo en memoria (se pierde al reiniciar)');
   }
-  const scenario = parseScenario(env.SEA_BATTLE_SCENARIO);
+  log(i2 ? '🏴‍☠️ I2 encendido (SEA_BATTLE_I2=1): el Capitán pirata entra en partida' : 'I2 apagado: sin Capitán pirata (se enciende con SEA_BATTLE_I2=1)');
   const game = createGameServer(io, {
     authenticate: (auth) => authenticateHandshake(auth, env),
     spawnNpcs: env.SEA_BATTLE_NPCS !== '0', // servidor de prueba sin NPC (AC-83, AC-87)
-    // Escenarios de prueba: solo con el modo invitado permitido, que nunca se activa en Railway
-    setup: isAuthBypassAllowed(env) && scenario ? (world) => applyScenario(world, scenario) : undefined,
+    setup: scenario ? (world) => applyScenario(world, scenario) : undefined,
     store: pool ? createPgStore(pool) : undefined,
     metrics: env.SEA_BATTLE_METRICS !== '0', // AC-142 / AC-143: una línea por minuto con jugadores; 0 la apaga
     metricsIntervalMs: metricsInterval(env.SEA_BATTLE_METRICS_MS),
+    i2,
     log,
     ...overrides
   });

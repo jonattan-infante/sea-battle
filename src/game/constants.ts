@@ -48,6 +48,7 @@ export const PIRATE_SECTORS = [
   { id: 'SO', sx: -1, sz: 1 },
   { id: 'SE', sx: 1, sz: 1 }
 ] as const;
+export type PirateSectorId = (typeof PIRATE_SECTORS)[number]['id'];
 
 // ---- Navegación (§6) ----
 export const ARRIVE_DISTANCE = 2;
@@ -122,8 +123,18 @@ export const SHIP_CLASSES: Record<string, ShipClassStats> = {
     id: 'merchant', label: 'Mercante', kind: 'merchant', length: 22, radius: 7, maxHp: 300,
     patrolSpeed: 7, maxSpeed: 9, accel: 2.5, brake: 4, turnRate: 50 * deg, cannonsPerSide: 0, price: 0,
     cannon: null, reward: 60, wreck: 15, respawnTime: 20
+  },
+  // Jefe de I2 (§9): facción pirata (mismas reglas de hostilidad); no reaparece por tiempo, sino tras CAPTAIN_KILLS_TO_SPAWN.
+  // Aceleración y frenado no figuran en el GDD: los del Mercante, el otro NPC pesado
+  captain: {
+    id: 'captain', label: 'Capitán pirata', kind: 'pirate', length: 30, radius: 9, maxHp: 1800,
+    patrolSpeed: 6, maxSpeed: 10, accel: 2.5, brake: 4, turnRate: 60 * deg, cannonsPerSide: 6, price: 0,
+    cannon: { damage: 28, accuracy: 0.65, range: 65, reload: 4.0 }, reward: 600, wreck: 150, respawnTime: 0
   }
 };
+
+// El Capitán pirata se identifica por su clase: su kind es 'pirate' porque es de la facción hostil
+export const CAPTAIN_CLASS = 'captain';
 
 export function navClearance(classId: string): number {
   return SHIP_CLASSES[classId].length / 2 + NAV_CLEARANCE_EXTRA;
@@ -170,6 +181,26 @@ export const MERCHANT_FLEE_TIME = 12;
 export const MERCHANT_ROUTE_POINTS = { min: 4, max: 6 };
 export const NPC_RESPAWN_MIN_PLAYER_DISTANCE = 100;
 
+// IA de los hostiles por clase (§9): detección, objetivo perdido, correa alrededor del origen, órbita y patrulla
+export interface HostileAiStats {
+  aggro: number; // m: entra en combate con un jugador atacable a esta distancia
+  disengage: number; // m: objetivo perdido más allá
+  leash: number; // m alrededor del origen (la guarida del capitán)
+  orbitRadius: number;
+  orbitSpeed: number;
+  patrolRadius: number;
+}
+export const HOSTILE_AI: Record<string, HostileAiStats> = {
+  pirate: { aggro: PIRATE_AGGRO_RADIUS, disengage: PIRATE_DISENGAGE_TARGET, leash: PIRATE_LEASH, orbitRadius: PIRATE_ORBIT_RADIUS, orbitSpeed: PIRATE_ORBIT_SPEED, patrolRadius: PIRATE_PATROL_RADIUS },
+  // El GDD fija detección, órbita y correa; objetivo perdido, velocidad de órbita y patrulla son "como el pirata"
+  captain: { aggro: 90, disengage: PIRATE_DISENGAGE_TARGET, leash: 150, orbitRadius: 50, orbitSpeed: PIRATE_ORBIT_SPEED, patrolRadius: PIRATE_PATROL_RADIUS }
+};
+
+// ---- Capitán pirata (§9, I2) ----
+export const CAPTAIN_KILLS_TO_SPAWN = 10; // piratas o cañoneras hundidos desde su última muerte o desde el arranque
+export const CAPTAIN_LAIR_RADIUS = 440; // punto exterior del sector: su guarida
+export const CAPTAIN_SPAWN_MIN_PLAYER_DISTANCE = 150;
+
 // ---- Botín y economía (§10) ----
 export const STARTING_GOLD = 100;
 export const LOOT_DAMAGE_WINDOW = 60;
@@ -198,3 +229,28 @@ export const SPAWN_PROTECTION = 15;
 
 // ---- Validación de entradas ----
 export const MAX_NAME_LENGTH = 16;
+
+// ---- Experiencia, niveles e insignias (§10b, 1.1) ----
+// XP de cada NPC por id de clase: vida / 15 si es hostil y vida / 30 si es pasivo, ×2 si es de evento (Capitán, Galeón).
+// Toda clase NPC de SHIP_CLASSES necesita su fila (lo exige xp.test.ts)
+export const NPC_XP: Record<string, number> = { merchant: 10, pirate: 30, gunboat: 60, captain: 240, galleon: 160 };
+export const PVP_XP = 100; // por hundir a un jugador, repartida por daño como la de un NPC
+// Factor de nivel en % (Δ = nivel de la víctima − nivel del atacante): +10 por nivel de más hasta +5 niveles (×1,5);
+// −25 por nivel de menos, con suelo 0 (a −4 o menos no da nada)
+export const XP_LEVEL_FACTOR = { upPercentPerLevel: 10, upMaxLevels: 5, downPercentPerLevel: 25 };
+// Factor de repetición por pareja atacante → víctima: en los 30 min que siguen al primer hundimiento con XP, el 1.º al
+// 100 %, el 2.º al 50 % y los siguientes a 0; pasada la ventana, la pareja vuelve a empezar
+export const XP_REPEAT_WINDOW = 30 * 60; // s
+export const XP_REPEAT_PERCENT = [100, 50];
+export const XP_CAP = 9_999_999;
+// XP total para llegar a cada nivel: LEVEL_XP[n − 1] es la del nivel n (1 a 20)
+export const LEVEL_XP = [0, 60, 150, 300, 500, 800, 1200, 1700, 2400, 3300, 4500, 6000, 8000, 10500, 13500, 17000, 21000, 25500, 30500, 36000];
+export const MAX_LEVEL = LEVEL_XP.length;
+// Insignias en orden (rango 1 a 5) con el primer nivel de cada una
+export const RANKS = [
+  { label: 'Grumete', fromLevel: 1 },
+  { label: 'Marinero', fromLevel: 5 },
+  { label: 'Contramaestre', fromLevel: 9 },
+  { label: 'Teniente', fromLevel: 13 },
+  { label: 'Almirante', fromLevel: 17 }
+] as const;

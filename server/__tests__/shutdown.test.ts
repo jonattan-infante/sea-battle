@@ -10,6 +10,7 @@ import type { GameServer } from '../game-server';
 import { createShutdown, SHUTDOWN_FLUSH_MS } from '../shutdown';
 import { GameChild, startGameChild } from './fixtures/game-child';
 import { joinGame } from './fixtures/game-socket';
+import { rowV1 } from './fixtures/progress-rows';
 import { PgProxy, startPgProxy } from './fixtures/pg-proxy';
 import { createTestDb, TestDb } from './pg/test-db';
 
@@ -49,8 +50,8 @@ async function start(): Promise<GameChild> {
   return child;
 }
 
-const SLOOP_ONLY: SavedProgress = { gold: 100, upgrades: { cannons: 1, hull: 1, sails: 1 }, ownedShips: ['sloop'], activeShip: 'sloop' };
-const seed = (userId: string, progress: SavedProgress) => db.admin.query('INSERT INTO player_progress (user_id, state) VALUES ($1, $2)', [userId, { v: 1, ...progress }]);
+const SLOOP_ONLY: SavedProgress = { gold: 100, upgrades: { cannons: 1, hull: 1, sails: 1 }, ownedShips: ['sloop'], activeShip: 'sloop', xp: 0 };
+const seed = (userId: string, progress: SavedProgress) => db.admin.query('INSERT INTO player_progress (user_id, state) VALUES ($1, $2)', [userId, rowV1(progress)]);
 const goldOf = async (userId: string) => (await db.admin.query('SELECT state FROM player_progress WHERE user_id = $1', [userId])).rows[0]?.state.gold;
 
 test('SIGTERM: escribe el estado de todos los jugadores y solo después desconecta; sale con 0 y al volver el estado está', async () => {

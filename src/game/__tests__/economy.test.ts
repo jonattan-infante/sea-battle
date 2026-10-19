@@ -1,4 +1,4 @@
-import { DEATH_COUNTDOWN, DISCONNECT_GRACE, RESPAWN_CLOCK_TOLERANCE, RESPAWN_RING, SHIP_CLASSES, SINKING_TIME, SPAWN_PROTECTION, TICK_RATE, WRECK_LIFETIME } from '../constants';
+import { CAPTAIN_CLASS, DEATH_COUNTDOWN, DISCONNECT_GRACE, PORT_POSITION, RESPAWN_CLOCK_TOLERANCE, RESPAWN_RING, SHIP_CLASSES, SINKING_TIME, SPAWN_PROTECTION, TICK_RATE, WRECK_LIFETIME } from '../constants';
 import { GameEvent, Player, Ship, World } from '../types';
 import { distance } from '../vec';
 import {
@@ -340,7 +340,10 @@ describe('E5 — PvP y conexión (§12, §13)', () => {
 
 describe('E4 — Curva económica (§10)', () => {
   // Bot "barco primero" (AC-60): ataca al NPC más cercano, repara bajo el 40 %, no compra nada hasta poder
-  // pagar el Bergantín y, desde ahí, compra siempre lo más barato disponible (Fragata incluida)
+  // pagar el Bergantín y, desde ahí, compra siempre lo más barato disponible (Fragata incluida). Con el Capitán pirata
+  // (H-305): no lo ataca, no entra a menos de 200 m de su guarida y, si el capitán lo elige, navega al puerto
+  const LAIR_AVOID = 200;
+  const DUEL_DISTANCE = 40; // el bot se mantiene a ≤ 40 m de su objetivo
   const CATALOG: ShopItem[] = [
     ...(['cannons', 'hull', 'sails'] as const).flatMap((upgrade) => [2, 3].map((level) => ({ kind: 'upgrade' as const, upgrade, level }))),
     { kind: 'ship', classId: 'brig' },
@@ -354,8 +357,8 @@ describe('E4 — Curva económica (§10)', () => {
     return available.sort((x, y) => itemPrice(x) - itemPrice(y))[0] ?? null;
   }
 
-  function simulate(seed: number) {
-    const world = createWorld({ seed });
+  function simulate(seed: number, i2: boolean) {
+    const world = createWorld({ seed, i2 });
     addPlayer(world, 'g', 'Bot');
     const p = world.players.get('g')!;
     let earned = 0;
@@ -363,12 +366,30 @@ describe('E4 — Curva económica (§10)', () => {
     let tBrig = Infinity;
     let tAll = Infinity;
     let earnedAtBrig = 0;
+    let captains = 0;
+    let fled = 0;
+    let minLair = Infinity;
+    const seen = new Set<string>();
     for (let tick = 1; tick <= 90 * 60 * TICK_RATE && tAll === Infinity; tick++) {
       const t = tick * DT;
+      const cap = [...world.ships.values()].find((o) => o.classId === CAPTAIN_CLASS && o.state === 'alive');
+      const lair = cap?.ai?.origin ?? null;
+      if (cap && !seen.has(cap.id)) {
+        seen.add(cap.id);
+        captains++;
+      }
+      const own = shipOfPlayer(world, 'g')!;
+      if (lair && own.state === 'alive') minLair = Math.min(minLair, distance(own.pos, lair));
       if (tick % 10 === 0) {
         const s = shipOfPlayer(world, 'g')!;
         if (s.state === 'dead') respawn(world, 'g');
-        else if (s.state === 'alive' && !s.repairing) {
+        else if (s.state === 'alive' && cap && (cap.attackTargetId === s.id || distance(s.pos, lair!) < LAIR_AVOID) && !isInSafeZone(s.pos)) {
+          // El capitán lo eligió o está cerca de su guarida: al puerto
+          if (s.attackTargetId) fled++;
+          s.attackTargetId = null;
+          if (s.repairing) setRepair(world, 'g', false);
+          if (!s.destination || distance(s.destination, PORT_POSITION) > 5) moveTo(world, 'g', PORT_POSITION);
+        } else if (s.state === 'alive' && !s.repairing) {
           const item = nextItem(p);
           if (s.hp / s.maxHp < 0.4) setRepair(world, 'g', true);
           else if (item && p.gold >= itemPrice(item)) {
@@ -386,12 +407,14 @@ describe('E4 — Curva económica (§10)', () => {
           } else {
             let best: Ship | null = null;
             for (const o of world.ships.values()) {
-              if (o.kind === 'player' || o.state !== 'alive') continue;
+              if (o.kind === 'player' || o.state !== 'alive' || o.classId === CAPTAIN_CLASS) continue;
+              // Para dispararle tendría que acercarse a ≤ 40 m: nada a menos de 240 m de la guarida
+              if (lair && distance(o.pos, lair) < LAIR_AVOID + DUEL_DISTANCE) continue;
               if (!best || distance(o.pos, s.pos) < distance(best.pos, s.pos)) best = o;
             }
             if (best) {
               if (s.attackTargetId !== best.id) attack(world, 'g', best.id);
-              if (distance(s.pos, best.pos) > 40) moveTo(world, 'g', best.pos);
+              if (distance(s.pos, best.pos) > DUEL_DISTANCE) moveTo(world, 'g', best.pos);
             }
           }
         }
@@ -401,16 +424,22 @@ describe('E4 — Curva económica (§10)', () => {
       }
       if (t500 === Infinity && earned >= 500) t500 = t;
     }
-    return { t500, tBrig, tAll, deaths: p.deaths, n1PerMin: earnedAtBrig / (tBrig / 60) };
+    return { t500, tBrig, tAll, deaths: p.deaths, n1PerMin: earnedAtBrig / (tBrig / 60), captains, fled, minLair };
   }
 
-  test('AC-60: con el bot "barco primero", la mediana de las semillas 1–5 cumple 500 de oro ≤ 4 min, Bergantín ≤ 20 min y todo en 45–70 min', () => {
-    const runs = [1, 2, 3, 4, 5].map(simulate);
+  // Los dos modos del servidor (AC-187): con el I2 apagado, la curva de la 1.0.3; encendido, la medida con el Capitán (H-305)
+  test.each([
+    ['apagado', false],
+    ['encendido', true]
+  ] as const)('AC-60 (I2 %s): con el bot "barco primero", la mediana de las semillas 1–5 cumple 500 de oro ≤ 4 min, Bergantín ≤ 20 min y todo en 45–70 min', (mode, i2) => {
+    const runs = [1, 2, 3, 4, 5].map((seed) => simulate(seed, i2));
     const min = (v: number) => +(v / 60).toFixed(1);
     const t500 = median(runs.map((r) => r.t500));
     const tBrig = median(runs.map((r) => r.tBrig));
     const tAll = median(runs.map((r) => r.tAll));
-    console.log(`AC-60 por semilla (min): ${runs.map((r, i) => `s${i + 1} ${min(r.t500)}/${min(r.tBrig)}/${min(r.tAll)} (${r.deaths} muertes, N1 ${r.n1PerMin.toFixed(0)} oro/min)`).join(' · ')} → mediana ${min(t500)}/${min(tBrig)}/${min(tAll)}; N1 mediana ${median(runs.map((r) => r.n1PerMin)).toFixed(0)} oro/min`);
+    console.log(`AC-60 (I2 ${mode}) por semilla (min): ${runs.map((r, i) => `s${i + 1} ${min(r.t500)}/${min(r.tBrig)}/${min(r.tAll)} (${r.deaths} muertes, N1 ${r.n1PerMin.toFixed(0)} oro/min)`).join(' · ')} → mediana ${min(t500)}/${min(tBrig)}/${min(tAll)}; N1 mediana ${median(runs.map((r) => r.n1PerMin)).toFixed(0)} oro/min`);
+    console.log(`AC-60 (I2 ${mode}) capitán por semilla: ${runs.map((r, i) => `s${i + 1} ${r.captains} capitán(es), ${r.fled} huidas, mínimo a la guarida ${r.minLair === Infinity ? '—' : r.minLair.toFixed(0) + ' m'}`).join(' · ')}`);
+    if (!i2) expect(runs.map((r) => r.captains)).toEqual([0, 0, 0, 0, 0]);
     expect(t500).toBeLessThanOrEqual(4 * 60);
     expect(tBrig).toBeLessThanOrEqual(20 * 60);
     expect(tAll).toBeGreaterThanOrEqual(45 * 60);

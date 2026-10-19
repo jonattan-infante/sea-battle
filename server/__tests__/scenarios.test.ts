@@ -1,6 +1,8 @@
 import {
   CANNON_LEVELS,
+  CAPTAIN_CLASS,
   INTEREST_RADIUS,
+  LEVEL_XP,
   ISLANDS,
   NAV_LIMIT,
   PIRATE_AGGRO_RADIUS,
@@ -15,14 +17,18 @@ import {
   TICK_RATE
 } from '../../src/game/constants';
 import { addPlayer, attack, createWorld, drainEvents, setRepair, shipOfPlayer, step } from '../../src/game/world';
+import { levelOf, rankOf } from '../../src/game/xp';
 import {
   AMBUSH_POINT,
   applyScenario,
+  CAPTAIN_BAIT_POINT,
+  CAPTAIN_DOWN_POINT,
   BLIND_GUNNER_POINT,
   ENDURANCE_MERCHANT_RADIUS,
   ENDURANCE_MERCHANTS,
   ENDURANCE_PIRATE_OFFSET,
   ENDURANCE_POINT,
+  I2_SCENARIOS,
   LEGIBILITY,
   parseScenario,
   REPAIR_START_HULL,
@@ -30,7 +36,8 @@ import {
   SCENARIOS,
   SHOWCASE_POINT,
   TARGET_FAN,
-  TARGETS_POINT
+  TARGETS_POINT,
+  XP_BAIT_POINT
 } from '../scenarios';
 
 describe('escenario "showcase" para capturas', () => {
@@ -73,7 +80,7 @@ describe('escenario "showcase" para capturas', () => {
 // a ≤ 120 m (world.ts sobrescribía su espera de 1e9), así que el estado del servidor dependía de lo que pasó antes
 describe('piratas fijos de los escenarios (DT-04)', () => {
   test.each(SCENARIOS)('en "%s", todos los piratas esperan en su puesto (holdPosition)', (name) => {
-    const world = createWorld({ seed: 1, spawnNpcs: false });
+    const world = createWorld({ seed: 1, spawnNpcs: false, i2: I2_SCENARIOS.includes(name) });
     applyScenario(world, name);
     const roaming = [...world.ships.values()].filter((s) => s.kind === 'pirate' && s.holdPosition !== true);
     expect(roaming.map((s) => `${s.id} en (${s.pos.x.toFixed(0)}, ${s.pos.z.toFixed(0)})`)).toEqual([]);
@@ -169,6 +176,8 @@ describe('escenario "shipyard" (AC-70)', () => {
     expect(parseScenario('targets')).toBe('targets');
     expect(parseScenario('endurance')).toBe('endurance');
     expect(parseScenario('repair')).toBe('repair');
+    expect(parseScenario('captain')).toBe('captain');
+    expect(parseScenario('captain-down')).toBe('captain-down');
     expect(parseScenario('rich')).toBeNull();
     expect(parseScenario(undefined)).toBeNull();
   });
@@ -306,5 +315,93 @@ describe('escenario "endurance" (AC-91)', () => {
     expect(load.damageTaken).toBeGreaterThan(0);
     expect(load.repairs).toBeGreaterThanOrEqual(3);
     expect(load.deaths).toBe(0);
+  });
+});
+
+describe('escenarios del Capitán pirata (AC-111), con el I2 encendido (AC-187)', () => {
+  test('"captain": 9 piratas ya hundidos y un cebo quieto con 1 de vida a tiro desde el borde de la zona; al hundirlo aparece el capitán fuera del radio de interés del puerto', () => {
+    const world = createWorld({ seed: 1, spawnNpcs: false, i2: true });
+    applyScenario(world, 'captain');
+    const [bait] = [...world.ships.values()];
+    expect(world.ships.size).toBe(1);
+    expect(world.killsSinceBoss).toBe(9);
+    expect(bait).toMatchObject({ kind: 'pirate', classId: 'pirate', hp: 1, ai: null, holdPosition: true, pos: CAPTAIN_BAIT_POINT });
+    // A tiro del cañón inicial desde el borde de la zona segura
+    expect(Math.hypot(CAPTAIN_BAIT_POINT.x, CAPTAIN_BAIT_POINT.z) - SAFE_ZONE_RADIUS).toBeLessThanOrEqual(CANNON_LEVELS[0].range);
+    addPlayer(world, 'u1', 'Ana');
+    addPlayer(world, 'u2', 'Bea');
+    const a = shipOfPlayer(world, 'u1')!;
+    a.pos = { x: CAPTAIN_BAIT_POINT.x, z: CAPTAIN_BAIT_POINT.z - 45 };
+    world.rng = () => 0;
+    attack(world, 'u1', bait.id);
+    for (let i = 0; i < 2 * TICK_RATE; i++) {
+      step(world, 1 / TICK_RATE);
+      drainEvents(world);
+    }
+    const captain = [...world.ships.values()].find((s) => s.classId === CAPTAIN_CLASS)!;
+    expect(captain).toBeDefined();
+    // Lejos de todo el anillo de reaparición, de la zona segura y del cebo
+    expect(Math.hypot(captain.pos.x, captain.pos.z) - SAFE_ZONE_RADIUS).toBeGreaterThan(INTEREST_RADIUS);
+    expect(Math.hypot(captain.pos.x - CAPTAIN_BAIT_POINT.x, captain.pos.z - CAPTAIN_BAIT_POINT.z)).toBeGreaterThan(INTEREST_RADIUS);
+  });
+
+  test('"captain-down": un capitán quieto, con 1 de vida y que nunca acierta, a tiro desde el borde de la zona y fuera de la exclusión del puerto', () => {
+    const world = createWorld({ seed: 1, spawnNpcs: false, i2: true });
+    applyScenario(world, 'captain-down');
+    const ships = [...world.ships.values()];
+    expect(ships).toHaveLength(1);
+    expect(ships[0]).toMatchObject({ classId: CAPTAIN_CLASS, hp: 1, accuracyOverride: 0, holdPosition: true, pos: CAPTAIN_DOWN_POINT });
+    const r = Math.hypot(CAPTAIN_DOWN_POINT.x, CAPTAIN_DOWN_POINT.z);
+    expect(r).toBeGreaterThan(PIRATE_PORT_EXCLUSION);
+    expect(r - SAFE_ZONE_RADIUS).toBeLessThanOrEqual(CANNON_LEVELS[0].range);
+  });
+});
+
+// Experiencia (1.1; AC-151 y AC-153, e2e/xp-hud.spec.ts): cada jugador entra con la XP del escenario, salvo que traiga la
+// suya de la fila, que gana, como con el oro (así AC-155 no choca)
+describe('escenarios de la XP (AC-151, AC-153)', () => {
+  // Progreso guardado de un usuario con cuenta, con la XP de su fila
+  const row = (xp: number): Parameters<typeof addPlayer>[3] => ({ gold: 500, upgrades: { cannons: 1, hull: 1, sails: 1 }, ownedShips: ['sloop'], activeShip: 'sloop', xp });
+  const enter = (name: ScenarioName | null, initial?: Parameters<typeof addPlayer>[3]) => {
+    const world = createWorld({ seed: 1, spawnNpcs: false });
+    if (name) applyScenario(world, name);
+    return { world, player: addPlayer(world, 'u1', 'Ana', initial) };
+  };
+
+  test('"xp": sin progreso guardado, a 10 XP del nivel 9; con la XP de la fila, la de la fila; sin escenario, 0', () => {
+    expect(enter('xp').player.xp).toBe(LEVEL_XP[8] - 10);
+    expect(levelOf(enter('xp').player.xp)).toBe(8);
+    expect(enter('xp', row(1234)).player.xp).toBe(1234);
+    expect(enter('xp', row(0)).player.xp).toBe(0);
+    expect(enter(null).player.xp).toBe(0);
+    expect(enter(null, row(1234)).player.xp).toBe(1234);
+  });
+
+  test('"xp": un cebo quieto con 1 de vida a tiro desde el borde de la zona; hundirlo da 30 XP y el nivel 9, Contramaestre', () => {
+    const { world, player } = enter('xp');
+    const bait = [...world.ships.values()].find((s) => s.kind === 'pirate')!;
+    expect(bait).toMatchObject({ classId: 'pirate', hp: 1, ai: null, holdPosition: true, pos: XP_BAIT_POINT });
+    expect(Math.hypot(XP_BAIT_POINT.x, XP_BAIT_POINT.z) - SAFE_ZONE_RADIUS).toBeLessThanOrEqual(CANNON_LEVELS[0].range);
+    const ship = shipOfPlayer(world, 'u1')!;
+    ship.pos = { x: XP_BAIT_POINT.x, z: XP_BAIT_POINT.z - 45 };
+    world.rng = () => 0;
+    attack(world, 'u1', bait.id);
+    for (let i = 0; i < 2 * TICK_RATE; i++) {
+      step(world, 1 / TICK_RATE);
+      drainEvents(world);
+    }
+    expect(player.xp).toBe(LEVEL_XP[8] + 20);
+    expect([levelOf(player.xp), rankOf(levelOf(player.xp))]).toEqual([9, 3]);
+  });
+
+  test('"xp-13": nivel 13 (Teniente); "xp-12": nivel 12 (Contramaestre) con el oro del Bergantín; ninguno añade NPC', () => {
+    const t = enter('xp-13');
+    expect([levelOf(t.player.xp), rankOf(levelOf(t.player.xp))]).toEqual([13, 4]);
+    expect(t.player.gold).toBe(STARTING_GOLD);
+    const c = enter('xp-12');
+    expect([levelOf(c.player.xp), rankOf(levelOf(c.player.xp))]).toEqual([12, 3]);
+    expect(c.player.gold).toBe(SHIP_CLASSES.brig.price);
+    expect([t.world.ships.size, c.world.ships.size]).toEqual([1, 1]);
+    expect([parseScenario('xp'), parseScenario('xp-13'), parseScenario('xp-12')]).toEqual(['xp', 'xp-13', 'xp-12']);
   });
 });
