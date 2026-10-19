@@ -11,6 +11,7 @@ const PUSH_OUT = 0.05; // lo que el punto navegable más cercano queda por fuera
 interface Graph {
   nodes: Vec2[];
   edges: number[][]; // adyacencia entre nodos (índices)
+  weights: number[][]; // la longitud de cada arista de edges, en su mismo orden: el A* no la recalcula en cada ruta (O-43)
 }
 
 // El punto de la lista más cercano a q (null si la lista está vacía)
@@ -261,15 +262,18 @@ export class Navigator {
       }
     }
     const edges: number[][] = nodes.map(() => []);
+    const weights: number[][] = nodes.map(() => []);
     for (let i = 0; i < nodes.length; i++) {
       for (let j = i + 1; j < nodes.length; j++) {
         if (this.segmentClear(nodes[i], nodes[j], clearance)) {
           edges[i].push(j);
+          weights[i].push(distance(nodes[i], nodes[j]));
           edges[j].push(i);
+          weights[j].push(distance(nodes[j], nodes[i]));
         }
       }
     }
-    graph = { nodes, edges };
+    graph = { nodes, edges, weights };
     this.graphs.set(clearance, graph);
     this.builds++;
     return graph;
@@ -282,7 +286,7 @@ export class Navigator {
     // origen solo pueden mantener o aumentar su distancia actual a la isla, nunca acercarse más
     const startClear = Math.min(clearance, Math.max(0, this.edgeClearance(from) - EPS));
     if (this.segmentClear(from, to, startClear)) return [to];
-    const { nodes, edges } = this.graphFor(clearance);
+    const { nodes, edges, weights } = this.graphFor(clearance);
     const n = nodes.length;
     const START = n;
     const GOAL = n + 1;
@@ -304,10 +308,11 @@ export class Navigator {
       if (cur === GOAL) break;
       if (closed[cur]) continue;
       closed[cur] = 1;
-      const neighbors = cur === START ? startLinks : edges[cur];
-      const relax = (next: number) => {
+      // step: la longitud del tramo de cur a next, la misma distance(pos(cur), pos(next)) de siempre; entre nodos, la que
+      // guarda el grafo (O-43)
+      const relax = (next: number, step: number) => {
         if (closed[next]) return;
-        const cost = g[cur] + distance(pos(cur), pos(next));
+        const cost = g[cur] + step;
         if (cost < g[next]) {
           g[next] = cost;
           f[next] = cost + distance(pos(next), to);
@@ -315,10 +320,11 @@ export class Navigator {
           open.push(next, f[next]);
         }
       };
-      for (const next of neighbors) relax(next);
+      if (cur === START) for (const next of startLinks) relax(next, distance(from, nodes[next]));
+      else for (let k = 0; k < edges[cur].length; k++) relax(edges[cur][k], weights[cur][k]);
       // El destino se prueba desde cada nodo al expandirlo, no desde todos antes de empezar: cada nodo se expande una vez
       // como mucho, así que es la misma prueba, solo en los nodos que el A* llega a expandir (O-43)
-      if (cur !== START && this.segmentClear(nodes[cur], to, clearance)) relax(GOAL);
+      if (cur !== START && this.segmentClear(nodes[cur], to, clearance)) relax(GOAL, distance(nodes[cur], to));
     }
 
     const route = (end: number) => {
