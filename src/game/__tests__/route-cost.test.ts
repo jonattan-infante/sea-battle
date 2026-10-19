@@ -50,6 +50,31 @@ describe('Coste de las rutas con MAP_1_1 (O-43)', () => {
     expect(checks.filter((c) => c >= n)).toEqual([]);
   });
 
+  // El origen se engancha a los nodos cuya entrada sale de la lista antes que el destino, no a todos antes de empezar. Las
+  // pruebas de enganche son las llamadas a segmentClear que salen del origen, sin la de la línea recta. Solo cuentan las
+  // rutas que llegan al destino: sin ruta, la lista se vacía y se prueban todos
+  test.each(MARGINS)('Enganche del origen, margen %i: una ruta que no es directa prueba el origen solo contra los nodos que saca de la lista, menos de N', (margin) => {
+    const nav = new Navigator(MAP_1_1.islands);
+    const n = nodesOf(nav, margin);
+    const real = nav.segmentClear.bind(nav);
+    let linkChecks = 0;
+    let from: Vec2 | null = null;
+    jest.spyOn(nav, 'segmentClear').mockImplementation((a, b, clearance) => {
+      if (a === from) linkChecks++;
+      return real(a, b, clearance);
+    });
+    const checks: number[] = [];
+    for (const [a, b] of pairs(nav, margin, 200)) {
+      linkChecks = 0;
+      from = a;
+      const path = nav.findPath(a, b, margin);
+      if (path.length > 1 && path[path.length - 1] === b) checks.push(linkChecks - 1); // la primera prueba es la de la línea recta
+    }
+    console.log(`O-43 enganche margen ${margin}: N ${n} · ${checks.length} rutas no directas · pruebas desde el origen por ruta: media ${(checks.reduce((s, c) => s + c, 0) / checks.length).toFixed(1)}, máx. ${Math.max(...checks)}`);
+    expect(checks.length).toBeGreaterThan(80);
+    expect(checks.filter((c) => c >= n)).toEqual([]);
+  });
+
   // B (y C): la misma respuesta que la cuenta directa, círculo a círculo, en tramos al azar por todo el mapa y en tramos que
   // rozan el margen de cada círculo (a ±2 m del borde inflado), con los márgenes de las clases y con 0 (el del origen
   // dentro de la zona inflada, findPath)
