@@ -38,8 +38,20 @@ function starPath(ctx: CanvasRenderingContext2D, x: number, y: number, outer: nu
   ctx.closePath();
 }
 
-export default function Minimap({ client, islands, viewRect }: { client: GameClient; islands: { x: number; z: number; radius: number }[]; viewRect?: () => ViewRect | null }) {
+export default function Minimap({
+  client,
+  islands,
+  viewRect,
+  onView
+}: {
+  client: GameClient;
+  islands: { x: number; z: number; radius: number }[];
+  viewRect?: () => ViewRect | null;
+  onView?: (x: number, z: number) => void;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const onViewRef = useRef(onView);
+  onViewRef.current = onView;
   const coordsRef = useRef<HTMLDivElement>(null);
   const haloRef = useRef<SVGSVGElement>(null);
 
@@ -190,9 +202,49 @@ export default function Minimap({ client, islands, viewRect }: { client: GameCli
     return () => clearInterval(id);
   }, [client, islands, viewRect]);
 
+  // Vista libre (E13, AC-117): un clic o un arrastre en el minimapa centra la vista en ese punto del mundo, sin navegar
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    let dragging = false;
+    const toView = (e: PointerEvent) => {
+      const r = canvas.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) return;
+      const x = ((e.clientX - r.left) / r.width) * 2 * MAP_HALF_SIZE - MAP_HALF_SIZE;
+      const z = ((e.clientY - r.top) / r.height) * 2 * MAP_HALF_SIZE - MAP_HALF_SIZE;
+      onViewRef.current?.(x, z);
+    };
+    const down = (e: PointerEvent) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      dragging = true;
+      try {
+        canvas.setPointerCapture?.(e.pointerId); // con captura, el arrastre sigue aunque el puntero salga del minimapa
+      } catch {
+        // un PointerEvent sintético no es un puntero activo
+      }
+      toView(e);
+    };
+    const move = (e: PointerEvent) => {
+      if (dragging) toView(e);
+    };
+    const up = () => {
+      dragging = false;
+    };
+    canvas.addEventListener('pointerdown', down);
+    canvas.addEventListener('pointermove', move);
+    canvas.addEventListener('pointerup', up);
+    canvas.addEventListener('pointercancel', up);
+    return () => {
+      canvas.removeEventListener('pointerdown', down);
+      canvas.removeEventListener('pointermove', move);
+      canvas.removeEventListener('pointerup', up);
+      canvas.removeEventListener('pointercancel', up);
+    };
+  }, []);
+
   return (
     <section className="panel hud-minimap" aria-label="Minimapa" data-testid="minimap" data-hud-block="">
-      <canvas ref={canvasRef} />
+      <canvas ref={canvasRef} style={{ touchAction: 'none' }} />
       <svg className="hud-minimap__halo" ref={haloRef} viewBox="0 0 24 24" data-testid="minimap-captain" aria-hidden="true">
         <circle cx="12" cy="12" r="11.25" />
       </svg>

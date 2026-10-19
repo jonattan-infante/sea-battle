@@ -71,8 +71,10 @@ interface HudState {
   goldGain: { id: number; amount: number } | null;
   killedBy: { name: string; relation: Relation } | null;
   saveWarning: boolean; // aviso persistente de AC-132 (D50): la BD no guarda; no es un toast
+  freeView: boolean; // vista libre (E13): solo cambia al entrar o salir, nunca por frame (el botón Centrar)
   select: (id: string | null) => void;
   setShopOpen: (open: boolean) => void;
+  setFreeView: (free: boolean) => void;
   pushToast: (kind: Toast['kind'], text: string, rank?: Rank) => void;
   dismissToast: (id: number) => void;
   pushFeed: (tone: FeedLine['tone'], text: string, reward?: Reward) => void;
@@ -105,8 +107,10 @@ export const useHud = create<HudState>((set) => ({
   goldGain: null,
   killedBy: null,
   saveWarning: false,
+  freeView: false,
   select: (id) => set({ selectedId: id }),
   setShopOpen: (open) => set({ shopOpen: open }),
+  setFreeView: (free) => set((s) => (s.freeView === free ? s : { freeView: free })),
   pushToast: (kind, text, rank) => {
     // AC-127: un aviso con el mismo texto que uno visible no se apila; se queda en su sitio y su vida vuelve a empezar
     const same = useHud.getState().toasts.find((t) => t.text === text);

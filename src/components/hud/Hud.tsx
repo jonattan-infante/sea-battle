@@ -24,7 +24,7 @@ import { MeHud, Relation, TargetHud, useHud } from '../../client/hud-store';
 import { HUD_BLOCKS_EVENT } from '../../client/overlays';
 import { RankBadge } from './badges';
 import FeedText from './FeedText';
-import { Alert, Anchor, Close, CloudOff, Coins, Crosshair, Crown, Sailboat, Shield, Skull, Star, Stop, Store, Swords, Target, Wrench } from './icons';
+import { Alert, Anchor, Close, CloudOff, Coins, Crosshair, Crown, Recenter, Sailboat, Shield, Skull, Star, Stop, Store, Swords, Target, Wrench } from './icons';
 import Minimap, { ViewRect } from './Minimap';
 import Shop from './Shop';
 import { DeathOverlay } from './Overlays';
@@ -485,16 +485,37 @@ function MobileButtons({ actions }: { actions: HudActions }) {
   );
 }
 
+// ---------- Vista libre (E13, ART-DIRECTION §12.8, D89) ----------
+
+// Centrar: solo existe en vista libre (AC-119) y entra con un fundido de 150 ms. Vuelve la cámara al barco, como C. Es un
+// bloque del HUD: las placas y los indicadores de borde lo esquivan, y la pista también (AC-110). En escritorio va bajo el
+// minimapa con la tecla; en táctil es un botón de 52 × 52 con la palabra debajo, como Reparar (globals.css)
+function RecenterButton({ onRecenter }: { onRecenter?: () => void }) {
+  const free = useHud((s) => s.freeView) && !!onRecenter;
+  useLayoutEffect(() => {
+    window.dispatchEvent(new Event(HUD_BLOCKS_EVENT));
+  }, [free]);
+  if (!free) return null;
+  return (
+    <button type="button" className="panel hud-recenter" onClick={onRecenter} data-testid="recenter" data-hud-block="" aria-label="Centrar" title="Centrar (C)">
+      <Recenter size={22} />
+      <span className="hud-recenter__label">Centrar</span>
+      <kbd className="hud-recenter__key">C</kbd>
+    </button>
+  );
+}
+
 // ---------- Pistas de primera sesión (AC-79; textos en src/client/hints.ts) ----------
 
-// AC-105: la pista no tapa la placa propia, la del objetivo ni los toasts. Tiene dos ranuras, bajo el barco y sobre él
-// (CSS `.is-alt`), y cambia de ranura cuando se cruza con uno de esos elementos; si las dos se cruzan, se oculta
-// (`.is-hidden`) mientras dure el cruce. Las placas se mueven con el barco: se revisa por ref a ≤ 10 Hz y solo mientras
-// hay pista. Los toasts entran de golpe: además se recoloca en el mismo commit en el que aparecen (O-1, QA-4).
+// AC-105: la pista no tapa la placa propia, la del objetivo ni los toasts, y desde la vista libre (AC-110), tampoco el
+// botón Centrar ni los indicadores de borde. Tiene dos ranuras, bajo el barco y sobre él (CSS `.is-alt`), y cambia de
+// ranura cuando se cruza con uno de esos elementos; si las dos se cruzan, se oculta (`.is-hidden`) mientras dure el cruce.
+// Las placas y los indicadores se mueven con la cámara: se revisa por ref a ≤ 10 Hz y solo mientras hay pista. Los
+// toasts y Centrar entran de golpe: además se recoloca en el mismo commit en el que aparecen (O-1, QA-4).
 const overlaps = (a: DOMRect, b: DOMRect) => a.width > 0 && b.width > 0 && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
 
 function hintObstacles(): HTMLElement[] {
-  const els = Array.from(document.querySelectorAll<HTMLElement>('[data-plate][data-relation="self"], [data-testid="toasts"] > .toast'));
+  const els = Array.from(document.querySelectorAll<HTMLElement>('[data-plate][data-relation="self"], [data-testid="toasts"] > .toast, [data-testid="recenter"], [data-edge-chip]'));
   const selected = useHud.getState().selectedId;
   if (selected) els.push(...Array.from(document.querySelectorAll<HTMLElement>(`[data-plate][data-ship-id="${CSS.escape(selected)}"]`)));
   return els;
@@ -516,8 +537,8 @@ function placeHint(el: HTMLElement) {
 
 function Hint() {
   const hint = useHud((s) => s.hint);
-  // Cambia solo cuando entra o sale un toast (o una línea del feed, que en móvil es un toast): pocas veces por minuto
-  const toastKey = useHud((s) => `${s.toasts.map((t) => t.id).join()}|${s.feed.map((f) => f.id).join()}|${s.me?.inSafeZone && s.me.state === 'alive'}|${s.saveWarning}`);
+  // Cambia solo cuando entra o sale un toast (o una línea del feed, que en móvil es un toast) o Centrar: pocas veces por minuto
+  const toastKey = useHud((s) => `${s.toasts.map((t) => t.id).join()}|${s.feed.map((f) => f.id).join()}|${s.me?.inSafeZone && s.me.state === 'alive'}|${s.saveWarning}|${s.freeView}`);
   const ref = useRef<HTMLDivElement>(null);
   const visible = hint !== null && hint < HINTS.length;
 
@@ -551,7 +572,21 @@ function Compass16() {
 
 // ---------- Raíz ----------
 
-export default function Hud({ client, actions, islands, viewRect }: { client: GameClient; actions: HudActions; islands: { x: number; z: number; radius: number }[]; viewRect?: () => ViewRect | null }) {
+export default function Hud({
+  client,
+  actions,
+  islands,
+  viewRect,
+  onMinimapView,
+  onRecenter
+}: {
+  client: GameClient;
+  actions: HudActions;
+  islands: { x: number; z: number; radius: number }[];
+  viewRect?: () => ViewRect | null;
+  onMinimapView?: (x: number, z: number) => void; // vista libre (E13): el minimapa centra la vista
+  onRecenter?: () => void; // vista libre (E13): Centrar vuelve al seguimiento
+}) {
   const dead = useHud((s) => s.me?.state !== undefined && s.me.state !== 'alive');
   const shopOpen = useHud((s) => s.shopOpen);
   return (
@@ -560,11 +595,12 @@ export default function Hud({ client, actions, islands, viewRect }: { client: Ga
         <PlayerPanel client={client} />
         <TargetPanel actions={actions} />
         <GoldPanel />
-        <Minimap client={client} islands={islands} viewRect={viewRect} />
+        <Minimap client={client} islands={islands} viewRect={viewRect} onView={onMinimapView} />
         <Toasts />
         <Feed />
         <ActionBar actions={actions} />
         <MobileButtons actions={actions} />
+        <RecenterButton onRecenter={onRecenter} />
         <Hint />
       </div>
       {shopOpen && <Shop actions={actions} />}

@@ -99,7 +99,20 @@ const XP_SCENARIOS = {
   'xp-12': { xp: LEVEL_XP[11], gold: SHIP_CLASSES.brig.price }
 } as const;
 
-export const SCENARIOS = ['showcase', 'shipyard', 'targets', 'endurance', 'repair', 'legibility', 'captain', 'captain-down', 'legibility-i2', 'danger', 'xp', 'xp-13', 'xp-12'] as const;
+// Vuelta de la vista libre (AC-119, E13): un pirata quieto con puntería entera a 40 m de la zona segura (y fuera de la
+// exclusión del puerto) y el jugador entra con el casco al 30 %. Al atacarlo (atacar quita la protección) llegan 3
+// andanadas de 88 cada ~4,6 s: la 1.ª enseguida, la 2.ª daña sin hundir y la 3.ª hunde. El e2e entra en vista libre antes
+// de la 2.ª (daño) y de la 3.ª (muerte), y luego antes de reaparecer
+export const VIEW_RETURN = { pirate: { x: 0, z: 150 }, hull: 0.3 } as const;
+
+// Indicador de atacante (AC-124, E13): un pirata anclado al sur (no se mueve ni en combate: en combate, holdPosition no
+// basta y orbitaría a 45 m, dentro del marco útil), fuera de la exclusión del puerto, y un puesto 52 m al norte de él,
+// fuera de la zona segura y a tiro de los dos. Al atacarlo, sus andanadas llegan desde abajo; con el zoom más cerca (0,7×)
+// queda fuera del marco útil de 1440×900 (y = 827 > 792). Con puntería baja el jugador aguanta más de 30 s.
+// `volley-miss` (AC-119, una andanada contra ti devuelve la cámara aunque falle): el mismo pirata, con puntería 0
+export const EDGE_ATTACK = { pirate: { x: 0, z: 215 }, standoff: 52, accuracy: 0.25 } as const;
+
+export const SCENARIOS = ['showcase', 'shipyard', 'targets', 'endurance', 'repair', 'legibility', 'captain', 'captain-down', 'legibility-i2', 'danger', 'xp', 'xp-13', 'xp-12', 'view-return', 'edge-attack', 'volley-miss'] as const;
 export type ScenarioName = (typeof SCENARIOS)[number];
 // Escenarios con NPC del I2: con el I2 apagado no existen (AC-187), así que exigen SEA_BATTLE_I2=1
 export const I2_SCENARIOS: readonly ScenarioName[] = ['captain', 'captain-down', 'legibility-i2', 'danger'];
@@ -123,6 +136,30 @@ export function applyScenario(world: World, name: ScenarioName): void {
     bait.path = [];
     bait.hp = 1;
     bait.respawnPos = { ...bait.pos };
+    return;
+  }
+  if (name === 'view-return') {
+    world.startingHull = VIEW_RETURN.hull;
+    const pirate = spawnPirate(world, 3);
+    pirate.pos = { ...VIEW_RETURN.pirate };
+    pirate.heading = Math.PI; // la proa hacia el puerto
+    pirate.ai!.origin = { ...pirate.pos };
+    pirate.holdPosition = true; // DT-04
+    pirate.destination = null;
+    pirate.path = [];
+    pirate.accuracyOverride = 1;
+    return;
+  }
+  if (name === 'edge-attack' || name === 'volley-miss') {
+    const pirate = spawnPirate(world, 3);
+    pirate.pos = { ...EDGE_ATTACK.pirate };
+    pirate.heading = Math.PI / 2; // de costado al puesto del jugador
+    pirate.ai!.origin = { ...pirate.pos };
+    pirate.holdPosition = true; // DT-04
+    pirate.anchored = true;
+    pirate.destination = null;
+    pirate.path = [];
+    pirate.accuracyOverride = name === 'volley-miss' ? 0 : EDGE_ATTACK.accuracy;
     return;
   }
   if (name === 'shipyard') {

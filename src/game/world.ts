@@ -1121,6 +1121,12 @@ function updatePirate(world: World, ship: Ship, dt: number): void {
     }
     ai.targetId = target.id;
     ship.attackTargetId = target.id;
+    if (ship.anchored) {
+      // escenarios de prueba: dispara desde su puesto, sin acercarse ni orbitar (updateCombat mira el alcance)
+      ship.destination = null;
+      ship.path = [];
+      return;
+    }
     const d = distance(ship.pos, target.pos);
     const orbit = hostile.orbitRadius;
     const away = fleePoint(ship, target, hostile);

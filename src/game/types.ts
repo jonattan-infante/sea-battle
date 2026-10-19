@@ -54,6 +54,7 @@ export interface Ship {
   accuracyOverride?: number; // solo escenarios de prueba (server/scenarios.ts): precisión fija de sus andanadas
   respawnPos?: Vec2; // solo escenarios de prueba (server/scenarios.ts): NPC que reaparece aquí, quieto y sin IA
   holdPosition?: boolean; // solo escenarios de prueba (server/scenarios.ts): pirata que no patrulla; tras un combate vuelve a su puesto y espera allí
+  anchored?: boolean; // solo escenarios de prueba: tampoco se mueve en combate y dispara desde su puesto (AC-124, E13)
 }
 
 export interface DeathInfo {

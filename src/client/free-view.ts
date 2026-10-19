@@ -189,3 +189,17 @@ export function returnTrigger(prev: OwnSample | null, next: OwnSample | null): '
   if (next.state === 'alive' && next.classId === prev.classId && next.hp < prev.hp) return 'damage';
   return null;
 }
+
+// El barco propio de frame en frame. Hundido del todo no viaja en los frames (server/game-server.ts, snapshotAll), así que
+// entre el hundimiento y la reaparición la muestra es null: se compara con la última que hubo, y la reaparición se ve
+// como hundiéndose → a flote
+export class OwnWatch {
+  private last: OwnSample | null = null;
+
+  next(sample: OwnSample | null): ReturnType<typeof returnTrigger> {
+    if (!sample) return null;
+    const trigger = returnTrigger(this.last, sample);
+    this.last = sample;
+    return trigger;
+  }
+}

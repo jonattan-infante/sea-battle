@@ -125,6 +125,17 @@ export const Close = (p: IconProps) => (
   </Svg>
 );
 
+// Centrar (vista libre, ART-DIRECTION §12.8, D89; dibujo propio): las 4 esquinas de un visor con la estrella del barco
+// propio a 0,58 dentro, con el mismo trazo de 2 (3,45 × 0,58). Enlaza el botón con el chip propio, que lleva la estrella
+export const Recenter = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3" />
+    <g transform="translate(12 12) scale(0.58) translate(-12 -11.5)" strokeWidth={3.45}>
+      <path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9Z" />
+    </g>
+  </Svg>
+);
+
 export const Compass = (p: IconProps) => (
   <Svg {...p}>
     <circle cx="12" cy="12" r="10" />

@@ -65,9 +65,12 @@ async function instrument(page: Page) {
     document.addEventListener('click', (e) => {
       if ((e.target as Element | null)?.closest?.('[data-testid="m-attack"]')) w.__INPUT__.push({ t: performance.now(), code: 'm-attack', repeat: false });
     }, true);
-    // Clic en el agua (AC-128 d): el lienzo del juego recibe el puntero
-    document.addEventListener('pointerdown', (e) => {
-      if ((e.target as Element | null)?.tagName === 'CANVAS') w.__INPUT__.push({ t: performance.now(), code: 'water', repeat: false });
+    // Clic en el agua (AC-128 d): el lienzo del juego recibe el puntero. Desde la vista libre (D89) el clic navega al soltar,
+    // así que su hora es la del pointerup (AC-14 a, BACKLOG; decidido por producto el 2026-10-18). El pointerup capturado
+    // (setPointerCapture del envoltorio, GameCanvas.tsx) tiene por objetivo el envoltorio y no el lienzo: se mira qué hay
+    // bajo el puntero
+    document.addEventListener('pointerup', (e) => {
+      if (document.elementFromPoint(e.clientX, e.clientY)?.tagName === 'CANVAS') w.__INPUT__.push({ t: performance.now(), code: 'water', repeat: false });
     }, true);
     let last: string | null | undefined;
     new MutationObserver(() => {

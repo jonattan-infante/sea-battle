@@ -162,6 +162,45 @@
   to { box-shadow: 0 0 0 3px rgba(255, 209, 102, 0); }
 }
 
+/* ---- Indicadores de borde (ART-DIRECTION §12.8, D89; edge-chip-layer.ts) ----
+   La raíz es la caja de placeChip (forma y distancia): edge-chip-layer.ts escribe su tamaño, su posición, el centro de la
+   forma (--cx, --cy), su media forma (--half), el lado de la distancia (data-side), el giro del triángulo y el latido. */
+.wo-chip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ui-text);
+  font: inherit;
+  cursor: pointer;
+  pointer-events: auto;
+  will-change: transform;
+}
+.wo-chip__shape { position: absolute; left: var(--cx); top: var(--cy); width: 0; height: 0; }
+.wo-chip__shape::before { content: ''; position: absolute; box-sizing: border-box; background: var(--ui-panel); border: 2px solid var(--chip-color); }
+/* Propio: círculo de 44 / 48 px con borde de 2 px --rel-self */
+.wo-chip[data-chip="self"] .wo-chip__shape::before { left: -22px; top: -22px; width: 44px; height: 44px; border-radius: 50%; }
+.wo-chip[data-chip="self"][data-size="touch"] .wo-chip__shape::before { left: -24px; top: -24px; width: 48px; height: 48px; }
+/* Atacante: cuadrado de 36 / 40 px girado 45°, radio 6, borde de 3 px del color de la relación */
+.wo-chip[data-chip="attacker"] .wo-chip__shape::before { left: -18px; top: -18px; width: 36px; height: 36px; border-width: 3px; border-radius: 6px; transform: rotate(45deg); }
+.wo-chip[data-chip="attacker"][data-size="touch"] .wo-chip__shape::before { left: -20px; top: -20px; width: 40px; height: 40px; }
+/* El icono (18 px; los pares en columna) y el triángulo, del color del borde, con un perfil --ui-plate de 1 px */
+.wo-chip__icon { position: absolute; left: 0; top: 0; display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -50%); color: var(--chip-color); line-height: 0; }
+.wo-chip__icon svg { display: block; }
+.wo-chip__tri { position: absolute; left: 0; top: -5px; overflow: visible; transform-origin: 0 5px; fill: var(--chip-color); stroke: var(--ui-plate); stroke-width: 1; stroke-linejoin: round; }
+/* «+N» (atacantes agrupados) en el lado de arriba a la derecha del rombo */
+.wo-chip__more { position: absolute; left: 12.73px; top: -12.73px; display: none; align-items: center; justify-content: center; box-sizing: border-box; width: 18px; height: 18px; margin: -9px 0 0 -9px; border: 1px solid var(--ui-plate); border-radius: 9px; background: var(--chip-color); color: #0b1a24; font-size: 11px; font-weight: 700; line-height: 1; }
+.wo-chip[data-size="touch"] .wo-chip__more { left: 14.14px; top: -14.14px; }
+.wo-chip__more.is-visible { display: flex; }
+/* La distancia: pastilla --ui-plate de 16 px a 2 px de la forma, debajo o encima; el latido no la escala */
+.wo-chip__dist { position: absolute; left: 50%; box-sizing: border-box; height: 16px; padding: 0 5px; border-radius: 4px; background: var(--ui-plate); color: var(--ui-text); font-size: 12px; font-weight: 600; line-height: 16px; font-variant-numeric: tabular-nums; white-space: nowrap; transform: translateX(-50%); }
+.wo-chip[data-side="below"] .wo-chip__dist { top: calc(var(--cy) + var(--half) + 2px); }
+.wo-chip[data-side="above"] .wo-chip__dist { top: calc(var(--cy) - var(--half) - 18px); }
+
 /* Movimiento reducido: los pulsos pasan a un borde fijo (ART-DIRECTION §17) */
 @media (prefers-reduced-motion: reduce) {
   .wo-plate.is-low .wo-plate__bar { animation: none; outline: 1px solid var(--ui-danger); }

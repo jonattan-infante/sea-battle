@@ -1,7 +1,7 @@
 // Vista libre (E13, GDD §5): umbral de arrastre, flechas, minimapa, límite del mapa, vuelta al seguimiento y envíos de
 // viewAt (≤ 2/s, ninguno en reposo y un null al volver)
 import { MAP_HALF_SIZE } from '../../game/constants';
-import { FREE_VIEW, FreeView, returnTrigger } from '../free-view';
+import { FREE_VIEW, FreeView, OwnWatch, returnTrigger } from '../free-view';
 
 type Point = { x: number; z: number };
 const ppm = 6.2; // escritorio a 1,0×
@@ -113,6 +113,15 @@ describe('Vista libre: vuelta al seguimiento (AC-119)', () => {
     expect(returnTrigger(alive, { ...alive, hp: 0, state: 'sinking' })).toBe('death');
     expect(returnTrigger({ ...alive, hp: 0, state: 'dead' }, alive)).toBe('respawn');
     expect(returnTrigger(null, alive)).toBeNull();
+  });
+
+  // El hundido del todo no viaja en los frames: entre el hundimiento y la reaparición no hay muestra del barco propio
+  test('la reaparición devuelve la cámara aunque entre medias no haya muestra del barco propio', () => {
+    const alive = { hp: 100, classId: 'sloop', state: 'alive' as const };
+    const own = new OwnWatch();
+    const seq = [alive, { ...alive, hp: 0, state: 'sinking' as const }, null, null, { ...alive, hp: 0, state: 'dead' as const }, null, alive, null, alive];
+    expect(seq.map((s) => own.next(s))).toEqual([null, 'death', null, null, null, null, 'respawn', null, null]);
+    expect(new OwnWatch().next(alive)).toBeNull(); // la primera muestra al entrar no es una reaparición
   });
 });
 

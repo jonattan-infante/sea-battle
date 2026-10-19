@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import {
   CANNON_LEVELS,
   CAPTAIN_CLASS,
@@ -17,7 +19,7 @@ import {
   TAB_TARGET_RADIUS,
   TICK_RATE
 } from '../../src/game/constants';
-import { addPlayer, attack, buy, createWorld, drainEvents, setRepair, shipOfPlayer, step } from '../../src/game/world';
+import { addPlayer, attack, buy, cancelAttack, createWorld, drainEvents, setRepair, shipOfPlayer, step } from '../../src/game/world';
 import { levelOf, rankOf } from '../../src/game/xp';
 import {
   AMBUSH_POINT,
@@ -26,6 +28,7 @@ import {
   CAPTAIN_DOWN_POINT,
   DANGER,
   BLIND_GUNNER_POINT,
+  EDGE_ATTACK,
   ENDURANCE_MERCHANT_RADIUS,
   ENDURANCE_MERCHANTS,
   ENDURANCE_PIRATE_OFFSET,
@@ -40,6 +43,7 @@ import {
   SHOWCASE_POINT,
   TARGET_FAN,
   TARGETS_POINT,
+  VIEW_RETURN,
   XP_BAIT_POINT
 } from '../scenarios';
 
@@ -264,6 +268,141 @@ describe('escenario "danger" (AC-189), con el I2 encendido', () => {
     }
     expect([...w.ships.values()].filter((s) => s.kind !== 'player').map((s) => ({ ...s.pos, h: s.heading }))).toEqual(before);
     expect(volleys).toEqual([]);
+  });
+});
+
+describe('escenario "view-return" (AC-119, E13)', () => {
+  test('un pirata quieto con puntería entera, fuera de la exclusión del puerto y a tiro desde el borde de la zona segura; el jugador entra al 30 %', () => {
+    const world = createWorld({ seed: 1, spawnNpcs: false });
+    applyScenario(world, 'view-return');
+    const npcs = [...world.ships.values()];
+    expect(npcs.map((s) => [s.classId, s.holdPosition, s.accuracyOverride, s.pos])).toEqual([['pirate', true, 1, VIEW_RETURN.pirate]]);
+    const r = Math.hypot(VIEW_RETURN.pirate.x, VIEW_RETURN.pirate.z);
+    expect(r).toBeGreaterThan(PIRATE_PORT_EXCLUSION);
+    expect(r - SAFE_ZONE_RADIUS).toBeLessThanOrEqual(CANNON_LEVELS[0].range);
+    for (const isl of ISLANDS) expect(Math.hypot(VIEW_RETURN.pirate.x - isl.x, VIEW_RETURN.pirate.z - isl.z)).toBeGreaterThan(isl.radius + navClearance('pirate'));
+    const ship = shipOfPlayer(world, addPlayer(world, 'u1', 'Ana').id)!;
+    expect(ship.hp).toBe(Math.round(ship.maxHp * VIEW_RETURN.hull));
+  });
+
+  // Lo que el e2e de AC-119 necesita tras atacarlo desde el borde de la zona segura: dos impactos que no hunden, con
+  // ≥ 3 s entre la 1.ª andanada y la 2.ª y entre la 2.ª y la que hunde, para entrar en vista libre antes de cada una
+  test.each([1, 2, 3])('semilla %i: dos impactos sin hundir y luego la muerte, con ≥ 3 s entre andanadas y todo en < 30 s', (seed) => {
+    const world = createWorld({ seed, spawnNpcs: false });
+    applyScenario(world, 'view-return');
+    const pirate = [...world.ships.values()][0];
+    addPlayer(world, 'u1', 'Ana');
+    const ship = shipOfPlayer(world, 'u1')!;
+    ship.pos = { x: 0, z: SAFE_ZONE_RADIUS + 8 };
+    ship.destination = null;
+    ship.path = [];
+    expect(attack(world, 'u1', pirate.id).ok).toBe(true);
+    const drops: { t: number; hp: number }[] = [];
+    let last = ship.hp;
+    for (let i = 0; i < 30 * TICK_RATE && ship.state === 'alive'; i++) {
+      step(world, 1 / TICK_RATE);
+      drainEvents(world);
+      if (ship.hp < last) drops.push({ t: world.time, hp: ship.hp });
+      last = ship.hp;
+    }
+    console.log(`view-return, semilla ${seed}: ${drops.map((d) => `${d.t.toFixed(2)} s → ${d.hp}`).join(' · ')} · ${ship.state}`);
+    expect(ship.state).not.toBe('alive');
+    expect(drops.map((d) => d.hp > 0)).toEqual([true, true, false]);
+    expect(drops[1].t - drops[0].t).toBeGreaterThanOrEqual(3);
+    expect(drops[2].t - drops[1].t).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe('escenario "edge-attack" (AC-124, E13)', () => {
+  const post = { x: EDGE_ATTACK.pirate.x, z: EDGE_ATTACK.pirate.z - EDGE_ATTACK.standoff };
+
+  test('un pirata quieto fuera de la exclusión del puerto y de las islas; el puesto, fuera de la zona segura y a tiro de los dos', () => {
+    const world = createWorld({ seed: 1, spawnNpcs: false });
+    applyScenario(world, 'edge-attack');
+    const npcs = [...world.ships.values()];
+    expect(npcs.map((s) => [s.classId, s.holdPosition, s.accuracyOverride, s.pos])).toEqual([['pirate', true, EDGE_ATTACK.accuracy, EDGE_ATTACK.pirate]]);
+    expect(Math.hypot(EDGE_ATTACK.pirate.x, EDGE_ATTACK.pirate.z)).toBeGreaterThan(PIRATE_PORT_EXCLUSION);
+    for (const isl of ISLANDS) expect(Math.hypot(EDGE_ATTACK.pirate.x - isl.x, EDGE_ATTACK.pirate.z - isl.z)).toBeGreaterThan(isl.radius + navClearance('pirate'));
+    expect(Math.hypot(post.x, post.z)).toBeGreaterThan(SAFE_ZONE_RADIUS);
+    expect(EDGE_ATTACK.standoff).toBeLessThan(Math.min(SHIP_CLASSES.pirate.cannon!.range, CANNON_LEVELS[0].range));
+  });
+
+  // Lo que necesitan los e2e (edge-indicators AC-124 y free-view AC-119): el jugador lo ataca, que le quita la protección,
+  // y deja de atacar tras la 1.ª andanada (si no, lo hunde hacia los 14 s). El pirata sigue en su puesto y disparando cada
+  // ≤ 5 s durante 30 s: con 0,25, alguna con daño (el latido) y sin hundir al jugador; con 0, ninguna daña
+  test.each([
+    ['edge-attack', 1],
+    ['edge-attack', 2],
+    ['edge-attack', 3],
+    ['volley-miss', 1],
+    ['volley-miss', 2]
+  ] as const)('%s, semilla %i: anclado en su puesto, dispara cada ≤ 5 s durante 30 s aunque el jugador deje de atacar', (name, seed) => {
+    const world = createWorld({ seed, spawnNpcs: false });
+    applyScenario(world, name);
+    const pirate = [...world.ships.values()][0];
+    addPlayer(world, 'u1', 'Ana');
+    const ship = shipOfPlayer(world, 'u1')!;
+    ship.pos = { ...post };
+    ship.destination = null;
+    ship.path = [];
+    const hp0 = ship.hp;
+    expect(attack(world, 'u1', pirate.id).ok).toBe(true);
+    const volleys: number[] = [];
+    let damaged = 0;
+    let drift = 0;
+    for (let i = 0; i < 30 * TICK_RATE; i++) {
+      step(world, 1 / TICK_RATE);
+      for (const e of drainEvents(world)) {
+        if (e.type === 'volley' && e.shipId === pirate.id && e.targetId === ship.id) {
+          volleys.push(world.time);
+          if (volleys.length === 1) expect(cancelAttack(world, 'u1').ok).toBe(true);
+        }
+        if (e.type === 'impact' && e.shipId === ship.id && e.byShipId === pirate.id && e.damage > 0) damaged++;
+      }
+      drift = Math.max(drift, Math.hypot(pirate.pos.x - EDGE_ATTACK.pirate.x, pirate.pos.z - EDGE_ATTACK.pirate.z));
+    }
+    const gaps = [...volleys.slice(1).map((t, i) => t - volleys[i]), 30 - volleys[volleys.length - 1]];
+    console.log(`${name}, semilla ${seed}: ${volleys.length} andanadas (1.ª a ${volleys[0]?.toFixed(2)} s, hueco máx. ${Math.max(...gaps).toFixed(2)} s, contando hasta los 30 s), ${damaged} con daño · vida ${ship.hp}/${ship.maxHp} · pirata ${pirate.state}, ${pirate.hp}/${pirate.maxHp}, a ${drift.toFixed(2)} m de su puesto como mucho`);
+    expect(volleys[0]).toBeLessThan(5);
+    expect(Math.max(...gaps)).toBeLessThanOrEqual(5);
+    expect(drift).toBeLessThan(1);
+    expect(pirate.state).toBe('alive');
+    expect(ship.state).toBe('alive');
+    if (name === 'edge-attack') expect(damaged).toBeGreaterThan(0);
+    else {
+      expect(damaged).toBe(0);
+      expect(ship.hp).toBe(hp0);
+    }
+  });
+});
+
+// El ancla (Ship.anchored) está en la simulación compartida, pero solo la ponen los escenarios de prueba, y los escenarios
+// solo se aplican con AUTH_BYPASS fuera de Railway (server/bootstrap.ts, isAuthBypassAllowed). Ningún barco del mundo real
+// puede tenerla
+describe('Ship.anchored solo en escenarios de prueba (AC-124, E13)', () => {
+  const ROOT = path.join(__dirname, '../..');
+  const sources = (dir: string): string[] =>
+    fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true }).flatMap((e) => {
+      const rel = path.join(dir, e.name);
+      if (e.isDirectory()) return e.name === '__tests__' || e.name === 'node_modules' ? [] : sources(rel);
+      return /\.tsx?$/.test(e.name) ? [rel] : [];
+    });
+
+  test('el único que la escribe es server/scenarios.ts', () => {
+    const writers = [...sources('src'), ...sources('server')].filter((f) => /\.anchored\s*=(?!=)/.test(fs.readFileSync(path.join(ROOT, f), 'utf8')));
+    expect(writers).toEqual(['server/scenarios.ts']);
+  });
+
+  test('sin escenario, ningún barco del mundo está anclado, ni al crearse ni tras 60 s de reapariciones', () => {
+    const world = createWorld({ seed: 7, spawnNpcs: true });
+    addPlayer(world, 'u1', 'Ana');
+    expect([...world.ships.values()].filter((s) => s.anchored)).toEqual([]);
+    for (let i = 0; i < 60 * TICK_RATE; i++) {
+      step(world, 1 / TICK_RATE);
+      drainEvents(world);
+    }
+    expect(world.ships.size).toBeGreaterThan(1);
+    expect([...world.ships.values()].filter((s) => s.anchored)).toEqual([]);
   });
 });
 
