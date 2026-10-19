@@ -73,6 +73,7 @@ def gray(img): return img.convert('L').convert('RGB')
 def gz(b): return len(gzip.compress(b, 9, mtime=0))
 def mil(n): return f'{n:,}'.replace(',', '.')
 def dec(x, k): return f'{x:.{k}f}'.replace('.', ',')
+def num(x): return f'{x:g}'.replace('.', ',')  # «4,4», con coma decimal
 
 
 def traits(cls):
@@ -183,12 +184,12 @@ if __name__ == '__main__':
             'Los colores de cada familia: la británica, azul marino con la franja blanca y la Union Jack; la española, roja con la franja dorada, la rojigualda y la cruz de Borgoña en las velas cuadras.',
             'La bandera de la familia va en el pico de la vela de popa, y en la cubierta hay obenques, estays, el timón y, según la clase, botes, cabrestante y faroles.']),
         ('Lo que no cambia', INK, [
-            f"Lo que dice qué barco es: {c['L']:g} × {c['B']:g} m, {me['S2']} {'palo' if me['S2'] == 1 else 'palos'} con las velas de hoy, {me['S4']} y una franja de portas con {len(CC.rig_json(cls)['recipe']['cannonZ'])} cañones por banda. Las 2 familias son iguales en eso, y las velas siguen claras: es un barco del jugador.",
+            f"Lo que dice qué barco es: {num(c['L'])} × {num(c['B'])} m, {me['S2']} {'palo' if me['S2'] == 1 else 'palos'} con las velas de hoy, {me['S4']} y una franja de portas con {len(CC.rig_json(cls)['recipe']['cannonZ'])} cañones por banda. Las 2 familias son iguales en eso, y las velas siguen claras: es un barco del jugador.",
             f'Lo que pide: {pide}.']),
         ('Lo que cuesta', INK, [
             f"Triángulos de cerca y de lejos: británica {mil(g['lod0'])} y {mil(g['lod1'])}, española {mil(e['lod0'])} y {mil(e['lod1'])} (hoy, {mil(MED['hoy']['lod0'])} y {mil(MED['hoy']['lod1'])}; tope, {mil(TOPE['lod0'])} y {mil(TOPE['lod1'])}).",
             f"Lo que se descarga: británica {dec(g['total_B'] / 1000, 1)} KB y española {dec(e['total_B'] / 1000, 1)} KB, con la textura de {c['A']} × {c['A']}. Las 8 combinaciones que faltan tienen que sumar {dec(TOPE['suma'] / 1000, 1)} KB como mucho, para que las 10 quepan en 1 MB; esta clase se lleva el {dec(100 * (g['total_B'] + e['total_B']) / TOPE['suma'], 0)} %.",
-            f"El casco mide {dec(g['caja_casco']['eslora'], 2)} y {dec(e['caja_casco']['eslora'], 2)} m de largo (se pide {c['L']:g} m ± 2 %)."]),
+            f"El casco mide {dec(g['caja_casco']['eslora'], 2)} y {dec(e['caja_casco']['eslora'], 2)} m de largo (se pide {num(c['L'])} m ± 2 %)."]),
         ('La clase se distingue de las otras 3, en las 2 familias', INK if all(len(diff(me, tr[k])) >= 2 for k in others) else RED, lect),
         ('En contra', RED, [
             'Las velas son las de hoy: el detalle nuevo está en el casco, la cubierta y la bandera. De lejos, lo que más se ve sigue siendo el aparejo.',
