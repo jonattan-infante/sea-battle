@@ -110,7 +110,7 @@ const UNIONS = mapOf(
     if (s.archetype === 'cove' || s.id.startsWith('T')) circles.push(lobe(-Math.PI / 2, r + 14, 6));
     return { ...s, circles };
   }),
-  false
+  []
 );
 
 describe('E1 — Punto navegable más cercano en islas de varios círculos (AC-199)', () => {
