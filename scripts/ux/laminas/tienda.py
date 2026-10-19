@@ -238,7 +238,18 @@ def draw_card(p, c, ox, oy, st):
 
 def draw_shop(L, st, S, scroll=0.0, tab='Barcos'):
     """La tienda entera (marco, cabecera, pestañas y la rejilla desplazada `scroll` px), en RGBA de su tamaño."""
-    g = L['g']; W, H = g['w'], g['h']
+    g = L['g']; im, p, ix, gy, iw = draw_frame(g, st, S, tab); gh = g['grid_h']
+    tall = Image.new('RGBA', (round(iw * S), round((L['content_h'] + 2) * S)), (0, 0, 0, 0)); q = Pen(tall, S)
+    for c in L['cards']: draw_card(q, c, g['pad'][1], g['pad'][0], st)
+    win = tall.crop((0, round(scroll * S), round(iw * S), round((scroll + gh) * S)))
+    p.paste(win, ix, gy)
+    return im
+
+
+def draw_frame(g, st, S, tab, tabs=('Mejoras', 'Barcos')):
+    """Marco, cabecera de 64 y pestañas, en RGBA del tamaño de la tienda; devuelve también su Pen, la x interior, la y
+    donde empieza la rejilla y el ancho interior."""
+    W, H = g['w'], g['h']
     im = Image.new('RGBA', (round(W * S), round(H * S)), (0, 0, 0, 0)); p = Pen(im, S)
     if g['kind'] == 'modal':
         p.rect(0, 0, W, H, fill=C['wood'], radius=12)
@@ -263,18 +274,138 @@ def draw_shop(L, st, S, scroll=0.0, tab='Barcos'):
     # pestañas: 15/600, relleno 10 0, subrayado de 3; línea de 1 debajo
     ty = iy + 64; th = 15 * LH + 23
     x = ix + 20
-    for name in ('Mejoras', 'Barcos'):
+    for name in tabs:
         on = name == tab; wdt = tw(name, 15, 600)
         p.text(x, ty + 10, name, 15, 600, C['title'] if on else C['soft'])
         if on: p.rect(x, ty + th - 3, x + wdt, ty + th, fill=C['title'])
         x += wdt + 24
     p.rect(ix, ty + th, ix + iw, ty + th + 1, fill=C['line'])
-    # rejilla con su recorte
-    gy = ty + th + 1; gh = g['grid_h']
+    return im, p, ix, ty + th + 1, iw
+
+
+# --- pestaña Familia (AC-195; D94; ART-DIRECTION §14): una tarjeta por familia con la imagen del barco activo en ella, su
+# bandera, 3 rasgos y «Elegir» o el sello «En uso». La rejilla y la tarjeta usan las cajas de .shop__grid y .card
+FAMS = (dict(id='gb', label='Británica', adj='británica', rasgos='Casco azul marino · franjas blancas · Union Jack'),
+        dict(id='es', label='Española', adj='española', rasgos='Casco rojo · franjas doradas · cruz de Borgoña'))
+FAM_NOTE = 'Solo cambia el aspecto: la vida, la velocidad y los cañones son los mismos. Los demás jugadores te ven con tu familia.'
+FAM_OK = 'Tus barcos ahora son de la familia {}'  # el aviso, dentro del Astillero (los toasts del HUD quedan bajo el velo)
+FAM_ERR = 'No se pudo cambiar la familia. Inténtalo de nuevo.'
+UNAVAILABLE = 'La tienda no está disponible: no podemos guardar'  # SHOP_UNAVAILABLE (§14, AC-132)
+IMG_AR = 19 / 12  # la caja de la imagen en el modal: 380 × 240 en escritorio
+BACK = dict(sky=('#4F86AE', '#9EC2D6'), sea=('#1E6A93', '#0F3F5C'), hor=0.70)  # el fondo CSS de la caja (retrato.py)
+UI = dict(panel=(11, 26, 36, 217), text='#F5F1E6', ok='#3DDC97', danger='#FF7A7A')  # --ui-panel (α 0,85), --ui-text…
+FLAGS = {  # 30 × 20: las banderas de popa de navio_curvo.paint
+    'gb': ('<rect width="30" height="20" fill="#012169"/><path d="M0 0L30 20M30 0L0 20" stroke="#FFFFFF" stroke-width="4"/>'
+           '<path d="M0 0L30 20M30 0L0 20" stroke="#C8102E" stroke-width="1.4"/><path d="M15 0V20M0 10H30" stroke="#FFFFFF" stroke-width="6"/>'
+           '<path d="M15 0V20M0 10H30" stroke="#C8102E" stroke-width="3.6"/>'),
+    'es': '<rect width="30" height="20" fill="#AA151B"/><rect y="5" width="30" height="10" fill="#F1BF00"/>'}
+ICONS['cloud-off'] = ('<path d="m2 2 20 20"/><path d="M5.782 5.782A7 7 0 0 0 9 19h8.5a4.5 4.5 0 0 0 1.307-.193"/>'
+                      '<path d="M21.532 16.5A4.5 4.5 0 0 0 17.5 10h-1.79A7.008 7.008 0 0 0 10 5.07"/>')  # icons.tsx (Lucide, ISC)
+
+
+def flag(fid, S):
+    svg = f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 20" width="30" height="20">{FLAGS[fid]}</svg>'
+    k = ('flag', fid, S)
+    if k not in _cache:
+        src = os.path.join(RT.OUT, f'tienda-flag-{fid}.svg'); png = os.path.join(RT.OUT, f'tienda-flag-{fid}-{S}.png')
+        open(src, 'w').write(svg)
+        subprocess.run(['rsvg-convert', '-w', str(30 * S), '-h', str(20 * S), src, '-o', png], check=True)
+        _cache[k] = Image.open(png).convert('RGBA')
+    return _cache[k]
+
+
+def fam_layout(vw, vh, modal_h=672, banner=False):
+    """Las 2 tarjetas en px CSS. Imagen: ancho de la tarjeta − 26; alto 19:12 en el modal, 104 si el alto de la ventana
+    es < 700 (apaisado) y 160 en la hoja del móvil. Tarjeta: borde 1 + relleno 12 + imagen + 10 + fila de 40 (bandera,
+    nombre y botón) + 4 + rasgos (13 px) + 12 + borde 1. banner: la franja de 40 px de la BD caída, que encoge la rejilla."""
+    g = shop_geom(vw, vh, modal_h); cols = g['cols']
+    cw = (g['inner'] - 2 * g['pad'][1] - 16 * (cols - 1)) / cols; iw = cw - 26
+    ih = 160 if g['kind'] == 'sheet' else (104 if vh < 700 else iw / IMG_AR)
+    H = 2 + 24 + ih + 10 + 40 + 4 + 13 * LH
+    cards = [dict(fam=f, W=cw, H=H, iw=iw, ih=ih, x=j * (cw + 16) if cols == 2 else 0.0, y=0.0 if cols == 2 else j * (H + 16))
+             for j, f in enumerate(FAMS)]
+    cards_h = H if cols == 2 else 2 * H + 16; NW = cols * cw + 16 * (cols - 1)
+    note = wrap([(FAM_NOTE, 500)], NW); note_y = cards_h + 16
+    for f in FAMS: assert tw(f['rasgos'], 13, 500) <= iw, f"los rasgos de {f['label']} no caben en {iw} px"
+    return dict(g=g, cw=cw, cards=cards, note=note, note_y=note_y, NW=NW, content_h=2 * g['pad'][0] + note_y + len(note) * 13 * LH,
+                grid_h=g['grid_h'] - (40 if banner else 0), banner=banner)
+
+
+def sky_sea(w, h, S):
+    """El fondo CSS de la caja de la imagen (linear-gradient en sRGB), a S×."""
+    hx = lambda s: np.array(hexrgb(s), float)
+    H_ = round(h * S); y = (np.arange(H_) + 0.5) / H_; hor = BACK['hor']; sky = y < hor
+    s0, s1 = map(hx, BACK['sky']); m0, m1 = map(hx, BACK['sea'])
+    t = np.where(sky, y / hor, (y - hor) / (1 - hor))[:, None]
+    rows = np.where(sky[:, None], s0 + (s1 - s0) * t, m0 + (m1 - m0) * t)
+    return Image.fromarray(np.round(np.repeat(rows[:, None], round(w * S), 1)).astype(np.uint8), 'RGB').convert('RGBA')
+
+
+def draw_fam_card(p, c, ox, oy, st, imgs):
+    """st: fam (la que está en uso), pend (la elegida que espera al servidor), down (BD caída), loading (sin imágenes)."""
+    f = c['fam']; W, H = c['W'], c['H']; x0, y0 = ox + c['x'], oy + c['y']; on = st['fam'] == f['id']
+    p.rect(x0, y0, x0 + W, y0 + H, fill=C['card'], outline=C['gold_lo'] if on else C['line'], radius=8)
+    if on: p.rect(x0 + 1, y0 + 1, x0 + W - 1, y0 + H - 1, outline=C['gold_lo'], radius=7)  # box-shadow inset de 1 px: sin mover nada
+    # la imagen: el fondo CSS y el retrato encima con object-fit: contain, centrado (en la caja de 19:12 la llena)
+    ix, iy, iw, ih = x0 + 13, y0 + 13, c['iw'], c['ih']
+    box = sky_sea(iw, ih, p.S)
+    if not st.get('loading'):
+        im = imgs[f['id']]; k = ih * p.S / im.height; sw = round(im.width * k)
+        box.alpha_composite(im.resize((sw, round(ih * p.S)), Image.LANCZOS), ((box.width - sw) // 2, 0))
+    m = Image.new('L', box.size, 0); ImageDraw.Draw(m).rounded_rectangle((0, 0, box.width - 1, box.height - 1), 6 * p.S, fill=255)
+    box.putalpha(m); p.paste(box, ix, iy)
+    # fila de 40: bandera, nombre y, a la derecha, el botón o el sello
+    ry = iy + ih + 10
+    p.paste(flag(f['id'], p.S), ix, ry + 10)
+    p.text(ix + 38, ry + (40 - 18 * LH) / 2, f['label'], 18, 600, C['ink'])
+    if on:
+        sw_ = tw('EN USO', 13, 700) + 24; sh_ = 13 * LH + 12; sx = ix + iw - sw_; sy = ry + (40 - sh_) / 2
+        p.rect(sx, sy, sx + sw_, sy + sh_, outline=C['gold_lo'], width=2, radius=6); p.text(sx + 12, sy + 6, 'EN USO', 13, 700, C['gold_lo'])
+    else:
+        off = st.get('down') or st.get('pend') == f['id']; bw = max(132, tw('Elegir', 15, 600) + 32); bx = ix + iw - bw
+        p.rect(bx, ry, bx + bw, ry + 40, fill=C['dis'] if off else C['btn'], radius=8)
+        p.text(bx + (bw - tw('Elegir', 15, 600)) / 2, ry + (40 - 15 * LH) / 2, 'Elegir', 15, 600, C['dis_txt'] if off else '#FFFFFF')
+    p.text(ix, ry + 44, f['rasgos'], 13, 500, C['soft'])
+
+
+def notice_box(L, kind):
+    """El aviso dentro del Astillero, en px CSS de la tienda: centrado y a 16 px del borde de abajo (360 × 36 en el modal;
+    el ancho de la hoja − 32 en el móvil), con el estilo de .toast (--ui-panel, borde izquierdo de 4 y texto de 14)."""
+    g = L['g']; w = 360 if g['kind'] == 'modal' else g['w'] - 32
+    bottom = g['h'] - (g['bt'] if g['kind'] == 'modal' else 0)
+    return dict(x=(g['w'] - w) / 2, y=bottom - 16 - 36, w=w, h=36, kind=kind)
+
+
+def draw_fam(L, st, S, imgs, scroll=0.0, notice=None):
+    """La tienda en la pestaña Familia. notice: None, 'ok' (con st['fam'] ya cambiada) o 'err'."""
+    g = L['g']; im, p, ix, gy, iw = draw_frame(g, st, S, 'Familia', tabs=('Mejoras', 'Barcos', 'Familia'))
+    if L['banner']:  # .shop__unsaved: 40 px, --paper-card, borde inferior de 1 --paper-line, cloud-off 16 y texto 14 en #A23B2A
+        p.rect(ix, gy, ix + iw, gy + 40, fill=C['card']); p.rect(ix, gy + 39, ix + iw, gy + 40, fill=C['line'])
+        p.paste(icon('cloud-off', 16 * S, C['red']), ix + 20, gy + 12); p.text(ix + 44, gy + (40 - 14 * LH) / 2, UNAVAILABLE, 14, 500, C['red'])
+        gy += 40
     tall = Image.new('RGBA', (round(iw * S), round((L['content_h'] + 2) * S)), (0, 0, 0, 0)); q = Pen(tall, S)
-    for c in L['cards']: draw_card(q, c, g['pad'][1], g['pad'][0], st)
-    win = tall.crop((0, round(scroll * S), round(iw * S), round((scroll + gh) * S)))
-    p.paste(win, ix, gy)
+    px, py = g['pad'][1], g['pad'][0]
+    for c in L['cards']: draw_fam_card(q, c, px, py, st, imgs)
+    y = py + L['note_y']
+    for ln in L['note']:
+        x = px
+        for t, w in ln:
+            if t != ' ': q.text(x, y, t, 13, w, C['soft'])
+            x += tw(t, 13, w)
+        y += 13 * LH
+    p.paste(tall.crop((0, round(scroll * S), round(iw * S), round((scroll + L['grid_h']) * S))), ix, gy)
+    if notice:
+        b = notice_box(L, notice); t = FAM_OK.format(next(f['adj'] for f in FAMS if f['id'] == st['fam'])) if notice == 'ok' else FAM_ERR
+        assert 12 + tw(t, 14, 500) + 12 <= b['w'] - 4, f'el aviso no cabe en {b["w"]} px'
+        layer = Image.new('RGBA', im.size, (0, 0, 0, 0)); r = Pen(layer, S)
+        r.rect(b['x'], b['y'], b['x'] + b['w'], b['y'] + 36, fill=UI['panel'], radius=6)
+        # el borde izquierdo de 4 px sigue la curva del radio, como en CSS: la caja redondeada en su color, recortada a x < 4
+        edge = Image.new('RGBA', im.size, (0, 0, 0, 0))
+        Pen(edge, S).rect(b['x'], b['y'], b['x'] + b['w'], b['y'] + 36, fill=UI['ok'] if notice == 'ok' else UI['danger'], radius=6)
+        cut = edge.getchannel('A').point(lambda v: v); ImageDraw.Draw(cut).rectangle((r.r(b['x'] + 4), 0, cut.width, cut.height), fill=0)
+        layer.paste(edge, (0, 0), cut)
+        r.text(b['x'] + 16, b['y'] + (36 - 14 * LH) / 2, t, 14, 500, UI['text'])
+        im.alpha_composite(layer)
     return im
 
 
