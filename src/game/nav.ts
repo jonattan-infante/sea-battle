@@ -154,16 +154,27 @@ export class Navigator {
     return true;
   }
 
-  // Distancia del punto al borde de la isla más cercana
+  // Distancia del punto al borde de la isla más cercana. Ningún círculo de una forma tiene el borde más cerca del punto que
+  // el de su círculo envolvente: si ese ya no baja del mínimo hallado (con el EPS de sobra), la forma no lo cambia y se
+  // salta (O-43). El mínimo sale el mismo, porque solo se dejan los círculos que no lo bajan
   edgeClearance(p: Vec2): number {
     let min = Infinity;
-    for (const island of this.islands) min = Math.min(min, Math.hypot(p.x - island.x, p.z - island.z) - island.radius);
+    for (const shape of this.shapes) {
+      if (shape.circles.length > 1 && Math.hypot(p.x - shape.x, p.z - shape.z) - shape.radius - EPS >= min) continue;
+      for (const island of shape.circles) min = Math.min(min, Math.hypot(p.x - island.x, p.z - island.z) - island.radius);
+    }
     return min;
   }
 
-  // Fuera de todas las islas infladas por `extra` (con la tolerancia del redondeo, para los puntos justo en el borde)
+  // Fuera de todas las islas infladas por `extra` (con la tolerancia del redondeo, para los puntos justo en el borde). Fuera
+  // del círculo envolvente de una forma inflado por `extra` y el EPS, fuera de cada uno de sus círculos (O-43, como en
+  // segmentClear): la forma se salta con una sola cuenta, y los demás círculos se prueban como siempre
   private outside(p: Vec2, extra: number): boolean {
-    return this.islands.every((island) => Math.hypot(p.x - island.x, p.z - island.z) >= island.radius + extra - 1e-9);
+    for (const shape of this.shapes) {
+      if (shape.circles.length > 1 && Math.hypot(p.x - shape.x, p.z - shape.z) >= shape.radius + extra + EPS) continue;
+      for (const island of shape.circles) if (Math.hypot(p.x - island.x, p.z - island.z) < island.radius + extra - 1e-9) return false;
+    }
+    return true;
   }
 
   // Fuera de todas las islas infladas por `clearance` y dentro del límite
