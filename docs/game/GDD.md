@@ -92,7 +92,7 @@
 | Tamaño | 1 000 × 1 000 m, X y Z ∈ [−500, 500] |
 | Límite navegable | X y Z ∈ [−490, 490]. Los destinos fuera de ese rango se ajustan al borde |
 | Fuera del mapa | La cámara **no** se limita al borde (el barco sigue en el centro, AC-23). Más allá de ±500 se ve mar oscuro con una línea de borde clara, para que el jugador entienda que no puede pasar. |
-| Puerto | Isla puerto en (0, 0), radio 30 m. **1.1:** con muelles y 12 amarres (ver «El puerto», abajo). Jonattan pidió el 2026-10-18 que deje de ser un círculo: ver «El puerto con forma de isla», abajo |
+| Puerto | Isla puerto en (0, 0), radio 30 m. **1.1:** con muelles y 12 amarres (ver «El puerto», abajo). Jonattan pidió el 2026-10-18 que deje de ser un círculo: ver «El puerto con forma de isla», abajo. **Desde D92, aprobada el 2026-10-19,** es una unión de 7 círculos que llega a 54,32 m del centro (tabla de círculos, abajo) |
 | Zona segura | Círculo de radio 110 m centrado en (0, 0) |
 | Anillo de reaparición | Radio 60–90 m desde (0, 0), fuera de la isla, rumbo hacia afuera. **1.1:** se aparece en un amarre libre; el anillo solo se usa si los 12 están ocupados |
 | Zona de mercantes | Rutas cerradas en el anillo de 150–330 m |
@@ -119,11 +119,11 @@
 | G3 (1.1) | Cala pirata | (−368, 368) | 20 | SO, ídem |
 | G4 (1.1) | Cala pirata | (368, 368) | 20 | SE, ídem |
 
-**Tabla de círculos (colisión B; D83)**, copiada por producto de ASSET-SPEC §9.7 el 2026-10-18, tras el visto bueno de Jonattan a D83. La genera `scripts/ux/mapa/circulos.py` (r11). Cada forma es la unión de sus círculos; el primero es el principal. **44 círculos.** El del puerto es **provisional**: Jonattan pidió que el puerto deje de ser un círculo (abajo, «El puerto con forma de isla»), y su fila cambia cuando apruebe la lámina nueva. AC-04 y AC-170 comparan las constantes con esta tabla:
+**Tabla de círculos (colisión B; D83)**, copiada por producto de ASSET-SPEC §9.7 el 2026-10-18, tras el visto bueno de Jonattan a D83. La genera `scripts/ux/mapa/circulos.py` (r11). Cada forma es la unión de sus círculos; el primero es el principal. **50 círculos: 43 de las islas y 7 del puerto.** Los del puerto los copió producto el 2026-10-19, tras el visto bueno de Jonattan a D92 (`docs/game/art/D92-puerto-isla.png`, r11 `56360cd`). Salen de `scripts/ux/mapa/puerto_isla.py`, variante v3 (`puerto-forma-v3.json` en el scratchpad, leído por producto). Antes iba un solo círculo provisional, (0, 0, 30). AC-04 y AC-170 comparan las constantes con esta tabla:
 
 | Forma | Círculos (x, z, r), en m |
 |---|---|
-| PORT | (0, 0, 30) · **provisional** |
+| PORT (D92) | ciudad este (14, 8, 22) · ciudad oeste (−12, 8, 22) · fuerte (0, −22, 15) · muelle este (31, −6, 17) · palmar (−31, −4, 17) · roca (−16, −30, 9) · islote (−39, −31, 4,5) |
 | I1 | (260, 200, 45) · (212, 214, 30) · (305, 182, 28) · islotes (225, 150, 8) y (275, 255, 7) |
 | I2 | (−305, 160, 28) · (−282, 188, 18) · (−318, 186, 13) · islote (−336, 138, 6) |
 | I3 | (−220, −280, 55) · (−175, −250, 30) · islote (−158, −312, 9) |
@@ -242,7 +242,7 @@ Jonattan pidió cambios a las láminas de islas y puerto (D67 y D68; cita en BAC
 - **El cliente dibuja lo que simula el servidor:** las mismas formas, y el marcador de destino en el frame del clic, en el punto al que irá el barco (BACKLOG AC-199 e).
 
 **Reglas de las formas con B:**
-- **La tabla de círculos** (centro y radio de cada uno) la define `game-ux` como parte de su diseño, y producto la copia a este documento cuando Jonattan aprueba la lámina, para que AC-04 siga comparando las constantes con él. **Copiada el 2026-10-18 con D83** (arriba, «Tabla de círculos»), salvo el puerto, que queda provisional. **El centro de cada isla de la tabla de arriba no se mueve.** Es su punto de referencia, donde se coloca su modelo, y tiene que quedar dentro de la unión. Los círculos de la unión no tienen por qué estar centrados en él (decidido por producto el 2026-10-18, a pregunta de ux). En D83, el círculo principal de I2 está a 11,2 m del centro y el de I6 a 6,7 m, y los dos centros quedan dentro de su unión (cálculo de producto con la tabla de ux). Lo que importa del centro es que la isla no cambie de sitio. Las distancias que protegen la disposición (separación, zona segura, arco, anillo y guaridas) se miden sobre los círculos, no sobre el centro.
+- **La tabla de círculos** (centro y radio de cada uno) la define `game-ux` como parte de su diseño, y producto la copia a este documento cuando Jonattan aprueba la lámina, para que AC-04 siga comparando las constantes con él. **Copiada el 2026-10-18 con D83** (arriba, «Tabla de círculos»), y la del puerto el 2026-10-19, con D92. **El centro de cada isla de la tabla de arriba no se mueve.** Es su punto de referencia, donde se coloca su modelo, y tiene que quedar dentro de la unión. Los círculos de la unión no tienen por qué estar centrados en él (decidido por producto el 2026-10-18, a pregunta de ux). En D83, el círculo principal de I2 está a 11,2 m del centro y el de I6 a 6,7 m, y los dos centros quedan dentro de su unión (cálculo de producto con la tabla de ux). Lo que importa del centro es que la isla no cambie de sitio. Las distancias que protegen la disposición (separación, zona segura, arco, anillo y guaridas) se miden sobre los círculos, no sobre el centro.
 - **Las islas de la 1.0 que cambian de forma** (I1 a I6) siguen exentas en lo que ya ocupaba su círculo de la 1.0. **Lo que crezcan fuera de ese círculo cuenta como forma nueva**: respeta el arco de la guarida con 17 m de margen y el anillo de la cañonera con 16 m (reglas de disposición, arriba). Así, el cambio de forma no deja sin navegar ningún punto más del arco.
 - **Las guaridas siguen navegables para el Navío:** en la 1.0 había 39,6 m del punto de la guarida NE a I4 y 41,3 m del de la NO a I3. Un lóbulo de I4 o de I3 no crece más de 16 m hacia su punto de guarida (dato de dev-npc), y AC-177 se comprueba con la tabla de ux antes de construir el arte. **Con D83** (medida de dev-npc, BACKLOG AC-177): NE, 39,7 m a I4; NO, 41,3 m a I3; SO, 68,7 m a la cala G3, que pasa a ser lo más cercano; y SE, 59,7 m al islote de I1 en (275, 255, 7). Todas ≥ 23.
 
@@ -269,7 +269,26 @@ Jonattan pidió cambios a la lámina del puerto (cita en BACKLOG AC-192): «Quie
 | Lo que se ve es lo que hay | AC-199 (a): la tierra visible queda dentro de la unión, y la costa, de 0 a 3 m por dentro de su borde | Como en las islas |
 | Minimapa | El ancla del puerto (D87) y su costa círculo a círculo, como las islas (AC-199 e) | El puerto se encuentra desde cualquier punto |
 
-**Mientras Jonattan no apruebe la lámina nueva**, valen el círculo provisional (0, 0, 30) de la tabla de círculos y las filas de «El puerto» (arriba), y los tests corren con ellos. Cuando la apruebe, producto copia aquí los círculos del puerto y la tabla de amarres, y estas reglas sustituyen a las filas «Colisión», «Amarres», «Aparición» (el eje del amarre) y «Tiempo para salir» de «El puerto».
+~~**Mientras Jonattan no apruebe la lámina nueva**, valen el círculo provisional (0, 0, 30) de la tabla de círculos y las filas de «El puerto» (arriba), y los tests corren con ellos.~~ **Aprobada el 2026-10-19 (D92).** Los 7 círculos están en la tabla de círculos (arriba) y los 12 amarres, en la tabla de abajo. Estas reglas sustituyen ya a las filas «Colisión», «Amarres», «Aparición» (el eje del amarre) y «Tiempo para salir» de «El puerto».
+
+**Amarres de D92** (copiados por producto el 2026-10-19 de `puerto-forma-v3.json`, la variante de la lámina aprobada). Q es el punto del muelle en el borde de la unión, y ψ el rumbo hacia fuera, en grados, con la convención de esta sección (0 = +Z, sur; 90 = +X, este). El centro de cada barco está a L/2 + 2 m de Q en el rumbo ψ, así que el del Navío está a 23 m y el de la Balandra a 10. La salida es la recta del centro del barco atracado al borde de la zona segura (≤ 80 m):
+
+| Nº | Tramo | Q (x, z) | ψ | Centro del Navío | Salida del Navío | Salida de la Balandra |
+|---|---|---|---|---|---|---|
+| 1 | Ciudad este | (14,00, 30,00) | 0° | (14,0, 53,0) | 56,1 m | 69,1 m |
+| 2 | Ciudad este | (25,66, 26,66) | 32° | (37,8, 46,2) | 50,5 m | 63,5 m |
+| 3 | Ciudad este | (34,10, 16,95) | 66° | (55,1, 26,3) | 48,9 m | 61,9 m |
+| 4 | Muelle este | (45,72, 2,50) | 60° | (65,6, 14,0) | 44,2 m | 57,2 m |
+| 5 | Muelle este | (47,83, −8,37) | 98° | (70,6, −11,6) | 38,5 m | 51,5 m |
+| 6 | Muelle este | (42,81, −18,23) | 136° | (58,8, −34,8) | 42,6 m | 55,6 m |
+| 7 | Muelle este | (32,78, −22,91) | 174° | (35,2, −45,8) | 56,6 m | 69,6 m |
+| 8 | Palmar | (−45,87, −12,24) | 241° | (−66,0, −23,4) | 40,3 m | 53,3 m |
+| 9 | Palmar | (−47,56, −0,18) | 283° | (−70,0, 5,0) | 40,2 m | 53,2 m |
+| 10 | Palmar | (−39,76, 10,57) | 329° | (−51,6, 30,3) | 53,7 m | 66,7 m |
+| 11 | Ciudad oeste | (−24,93, 25,80) | 324° | (−38,5, 44,4) | 51,4 m | 64,4 m |
+| 12 | Ciudad oeste | (−12,00, 30,00) | 0° | (−12,0, 53,0) | 56,3 m | 69,3 m |
+
+Lo que miden con esta tabla, según ux (turno P3, dato de ux): los cascos más juntos quedan a 1,78 m (Navío–Navío, en los amarres 4–5, 5–6 y 6–7), y ningún centro está a menos de 12 m del eje de otro amarre. Además, el 86,5 % del anillo de 60–90 m es navegable para el Navío, y (0, 75) lo es para las 5 clases, con 23,1 m de sobra para el Navío. **Los barcos atracados y sus salidas quedan justo a su margen de toda la unión, con 0,00 m de sobra, por construcción.** La regla pide «a su margen o más», así que cumple. Si la prueba del juego (BACKLOG AC-199) saca un barco de su amarre por redondeo, dev-npc mueve Q unos centímetros hacia fuera, sin cambiar la regla ni lo que se ve, y producto copia la tabla nueva.
 
 **Si el puerto nuevo no llega a la 1.1**, se aplica la regla de AC-198: la 1.1 sale con el mapa y el puerto de la 1.0. Si llegado ese momento las islas de D83 están listas y solo falta el puerto, sacarlas con el puerto de hoy cambiaría esa regla, y eso lo decide Jonattan (pregunta abierta; hoy no hace falta hacerla).
 
