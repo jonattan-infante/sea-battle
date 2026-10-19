@@ -662,6 +662,58 @@ describe('O-42: tres resultados por escritura, y un intento vencido pero aplicad
     p.close();
   });
 
+  // Una fila en memoria con su revisión, que otro proceso puede reescribir (state.row); con failNext, el próximo intento
+  // vence sin aplicarse
+  const memoryRow = () => {
+    const state = { row: { progress: SLOOP_ONLY, carry: { newShips: [] }, revision: 1 } as StoredProgress, failNext: true };
+    const store: ProgressStore = {
+      load: async () => state.row,
+      save: async (_userId, progress, revision, carry) => {
+        if (state.failNext) {
+          state.failNext = false;
+          throw new Error('Query read timeout'); // vence sin aplicarse
+        }
+        if (revision !== state.row.revision) return null;
+        state.row = { progress, carry, revision: state.row.revision + 1 };
+        return state.row.revision;
+      },
+      ping: async () => {}
+    };
+    return { state, store };
+  };
+
+  // (b): «en cualquier otro caso es un conflicto de verdad». La fila en r+1 tras un intento nuestro no basta: si su estado
+  // no tiene la huella de uno de nuestros intentos, la escribió otro proceso, y no se adopta ni se pisa
+  test('(b) tras un intento fallido que no se aplicó, otro proceso escribe otro estado en r+1: conflicto, y su fila no se pisa', async () => {
+    const { state, store } = memoryRow();
+    const conflicts: string[] = [];
+    const p = createPersistence({ store, read: () => ({ ...SLOOP_ONLY, gold: 150 }), onConflict: (userId) => conflicts.push(userId), saveIntervalMs: 20, probeIntervalMs: 200 });
+    p.track('u', { progress: SLOOP_ONLY, carry: { newShips: [] }, revision: 1 });
+    await waitFor(() => p.isDegraded(), 1000, 'el estado degradado'); // el intento con 150 vence sin aplicarse y deja su huella
+    state.row = { progress: { ...SLOOP_ONLY, gold: 999 }, carry: { newShips: [] }, revision: 2 }; // otro proceso, con otro estado
+    await waitFor(() => conflicts.length > 0 || !p.isDegraded(), 2000, 'el sondeo');
+    expect({ conflicts, gold: state.row.progress.gold, revision: state.row.revision }).toEqual({ conflicts: ['u'], gold: 999, revision: 2 });
+    p.close();
+  });
+
+  // (c5): las huellas se borran con la escritura confirmada. Después, el estado de aquel intento en r+1 ya no puede ser
+  // nuestro: lo escribió otro proceso, y es un conflicto
+  test('(c5) tras un intento fallido y una escritura confirmada, otro proceso escribe en r+1 el estado de aquel intento: conflicto', async () => {
+    const { state, store } = memoryRow();
+    let gold = 150;
+    const conflicts: string[] = [];
+    const p = createPersistence({ store, read: () => ({ ...SLOOP_ONLY, gold }), onConflict: (userId) => conflicts.push(userId), saveIntervalMs: 20, probeIntervalMs: 200 });
+    p.track('u', { progress: SLOOP_ONLY, carry: { newShips: [] }, revision: 1 });
+    await waitFor(() => p.isDegraded(), 1000, 'el estado degradado'); // el intento con 150 vence sin aplicarse y deja su huella
+    await waitFor(() => !p.isDegraded(), 2000, 'el sondeo'); // escribe 150 sobre r1: confirmada, en r2
+    expect({ gold: state.row.progress.gold, revision: state.row.revision }).toEqual({ gold: 150, revision: 2 });
+    state.row = { progress: { ...SLOOP_ONLY, gold: 150 }, carry: { newShips: [] }, revision: 3 }; // otro proceso, con el estado de aquel intento
+    gold = 200;
+    await waitFor(() => conflicts.length > 0 || state.row.revision > 3, 2000, 'el guardado periódico');
+    expect({ conflicts, gold: state.row.progress.gold, revision: state.row.revision }).toEqual({ conflicts: ['u'], gold: 150, revision: 3 });
+    p.close();
+  });
+
   test('flush cuenta las fallidas y los conflictos; unsaved, los que quedan sin confirmar (sin contar los soltados)', async () => {
     const store: ProgressStore = {
       load: async () => null,
