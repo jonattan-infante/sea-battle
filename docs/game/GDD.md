@@ -207,7 +207,7 @@ Un puerto de verdad, no una isla con un pueblo: **muelles, amarres donde se apar
 | Colisión | Círculo de 30 m (sin cambios). Muelles, astillero, almacenes, grúa y faro van dentro (AC-103) | Lo que parece sólido es sólido. Si `game-ux` necesita más radio, lo pide a `game-product`, porque cambia AC-04 y los amarres |
 | Amarres | **12**, uno cada 30° de rumbo empezando en 15° (15°, 45°… 345°; rumbo ψ de §4). El barco amarrado tiene el centro a **30 + L/2 + 2 m** del centro del puerto, con la popa hacia el muelle (a 2 m) y la proa hacia fuera: Balandra a 40 m, Goleta 43, Bergantín 44, Fragata 49 y Navío 53 | Se ve atracado de popa, como en un puerto real, y el casco nunca toca la isla (es el margen de navegación de §6) |
 | Aparición | Al entrar al mundo y al zarpar tras hundirse: en un amarre **libre**, elegido al azar con la semilla entre los libres. Un amarre está libre si ningún barco vivo, de cualquier clase, tiene el centro a < 12 m de su **eje**: el segmento de r 30 a r 76 en su rumbo (76 = 30 + 42 + 4, el Navío entero con 2 m de holgura a cada lado). Medir solo hasta el punto de la clase que aparece no basta, porque cada clase atraca a un radio distinto: un Navío atracado (centro a 53 m) dejaría «libre» su amarre para una Balandra (40 m) y los cascos se solaparían (R-04 de QA). Con los 12 ocupados, en el anillo de 60–90 m de la 1.0 | 12 amarres para 20 jugadores: aparecer a la vez más de 12 es raro |
-| Entradas y salidas | **Sin diques ni bocanas sólidas**: se entra y se sale en cualquier rumbo. Desde un amarre hasta el centro de cualquier sector pirata, y desde 300 m en 8 rumbos hasta el amarre más cercano, la ruta mide **≤ 1,15 × la línea recta** (AC-177) | Dentro de la zona segura no hay combate (§7), así que un canal no tendría función táctica: solo alargaría cada viaje a la tienda y movería AC-60 |
+| Entradas y salidas | **Sin diques ni bocanas sólidas**: se entra y se sale en cualquier rumbo. Desde un amarre hasta el centro de cualquier sector pirata, la ruta que traza el juego mide **≤ 1,16 × la línea recta**, y desde 300 m en 8 rumbos hasta el amarre más cercano, **≤ 1,15** (AC-177) | Dentro de la zona segura no hay combate (§7), así que un canal no tendría función táctica: solo alargaría cada viaje a la tienda y movería AC-60. *El 1,16 de la salida es del 2026-10-19, con D92:* el navegador del juego alarga unos 2 m una sola ruta, la del Navío del amarre 10 a la guarida NE (BACKLOG AC-177) |
 | Tiempo para salir | Desde su amarre, la Balandra deja la zona en ~7 s (70 m) y el Navío en ~9 s (57 m), con la aceleración de §6 | La protección de 15 s (§12) cubre la salida |
 | Tienda | Se abre en cualquier punto de la zona segura (§11, sin cambios). El **astillero** es el edificio que la señala | Cambiar la regla rompería AC-66 y AC-68 sin ganar nada |
 | Minimapa | Icono propio del puerto (un ancla, por ejemplo) dentro del círculo discontinuo de la zona segura. Entra si pasa la regla de plantillas del minimapa de `game-ux` (AD-29) junto con los marcadores del Capitán y la Cañonera; lo modela ux en su fase 2. Si no la pasa, el puerto se queda con el círculo de la zona segura, como en la 1.0 | Se encuentra el puerto desde cualquier punto, sin confundirlo con un barco |
@@ -265,30 +265,32 @@ Jonattan pidió cambios a la lámina del puerto (cita en BACKLOG AC-192): «Quie
 | Amarre libre | La regla de hoy (ningún barco vivo con el centro a < 12 m del eje), con el eje desde el muelle: el segmento de Q a Q + 46 m en el rumbo ψ (hoy, de r 30 a r 76) | AC-176, sin cambios de fondo |
 | Salida | Desde cada amarre y en cada clase, la recta en el rumbo ψ, del centro del barco atracado al borde de la zona segura, es navegable y mide **≤ 80 m**. Con la aceleración de §6, el Navío la recorre en ≈ 11,5 s desde parado (4,25 s acelerando, 18 m, y el resto a 8,5 m/s) | Cabe en los 15 s de protección (§12) con margen. Hoy son 57 m y ~9 s |
 | Aparición de respaldo | Sin cambios: con los 12 ocupados, un punto navegable para la clase en el anillo de 60–90 m (`respawnPoint`, `src/game/world.ts:262-270`, con 50 intentos al azar). El puerto deja navegable para el Navío **≥ 50 % del área del anillo**, y el punto de último recurso del código, hoy (0, 75), es navegable para las 5 clases; si no lo es, dev lo cambia por uno que lo sea | Con la mitad navegable, agotar los 50 intentos tiene una probabilidad de 0,5⁵⁰, menos de 10⁻¹⁵. Un puerto que llegara a 55 m en todo el contorno dejaría el 45 % (cálculo de producto), así que la regla también pide que sea irregular |
-| Rutas | AC-177 sin cambios: desde cada amarre hasta cada guarida, y desde 8 puntos a 300 m hasta el amarre más cercano, ≤ 1,15 × la recta | Todo el contorno es salida, y obliga a repartir los amarres alrededor del puerto |
+| Rutas | AC-177: desde cada amarre hasta cada guarida, ≤ 1,16 × la recta, y desde 8 puntos a 300 m hasta el amarre más cercano, ≤ 1,15, las dos con la ruta que traza el juego. El 1,16 es del 2026-10-19, con D92 (antes, 1,15; BACKLOG AC-177) | Todo el contorno es salida, y obliga a repartir los amarres alrededor del puerto |
 | Lo que se ve es lo que hay | AC-199 (a): la tierra visible queda dentro de la unión, y la costa, de 0 a 3 m por dentro de su borde | Como en las islas |
 | Minimapa | El ancla del puerto (D87) y su costa círculo a círculo, como las islas (AC-199 e) | El puerto se encuentra desde cualquier punto |
 
 ~~**Mientras Jonattan no apruebe la lámina nueva**, valen el círculo provisional (0, 0, 30) de la tabla de círculos y las filas de «El puerto» (arriba), y los tests corren con ellos.~~ **Aprobada el 2026-10-19 (D92).** Los 7 círculos están en la tabla de círculos (arriba) y los 12 amarres, en la tabla de abajo. Estas reglas sustituyen ya a las filas «Colisión», «Amarres», «Aparición» (el eje del amarre) y «Tiempo para salir» de «El puerto».
 
-**Amarres de D92** (copiados por producto el 2026-10-19 de `puerto-forma-v3.json`, la variante de la lámina aprobada). Q es el punto del muelle en el borde de la unión, y ψ el rumbo hacia fuera, en grados, con la convención de esta sección (0 = +Z, sur; 90 = +X, este). El centro de cada barco está a L/2 + 2 m de Q en el rumbo ψ, así que el del Navío está a 23 m y el de la Balandra a 10. La salida es la recta del centro del barco atracado al borde de la zona segura (≤ 80 m):
+**Amarres de D92** (copiados por producto el 2026-10-19 de `puerto-forma-v3.json`, la variante de la lámina aprobada, y puestos al día ese mismo día con los 2 cm de dev-npc; abajo). Q es el punto del muelle, a 14 mm o más por fuera del borde de la unión, y ψ el rumbo hacia fuera, en grados, con la convención de esta sección (0 = +Z, sur; 90 = +X, este). El centro de cada barco está a L/2 + 2 m de Q en el rumbo ψ, así que el del Navío está a 23 m y el de la Balandra a 10. La salida es la recta del centro del barco atracado al borde de la zona segura (≤ 80 m):
 
 | Nº | Tramo | Q (x, z) | ψ | Centro del Navío | Salida del Navío | Salida de la Balandra |
 |---|---|---|---|---|---|---|
-| 1 | Ciudad este | (14,00, 30,00) | 0° | (14,0, 53,0) | 56,1 m | 69,1 m |
-| 2 | Ciudad este | (25,66, 26,66) | 32° | (37,8, 46,2) | 50,5 m | 63,5 m |
-| 3 | Ciudad este | (34,10, 16,95) | 66° | (55,1, 26,3) | 48,9 m | 61,9 m |
-| 4 | Muelle este | (45,72, 2,50) | 60° | (65,6, 14,0) | 44,2 m | 57,2 m |
-| 5 | Muelle este | (47,83, −8,37) | 98° | (70,6, −11,6) | 38,5 m | 51,5 m |
-| 6 | Muelle este | (42,81, −18,23) | 136° | (58,8, −34,8) | 42,6 m | 55,6 m |
-| 7 | Muelle este | (32,78, −22,91) | 174° | (35,2, −45,8) | 56,6 m | 69,6 m |
-| 8 | Palmar | (−45,87, −12,24) | 241° | (−66,0, −23,4) | 40,3 m | 53,3 m |
-| 9 | Palmar | (−47,56, −0,18) | 283° | (−70,0, 5,0) | 40,2 m | 53,2 m |
-| 10 | Palmar | (−39,76, 10,57) | 329° | (−51,6, 30,3) | 53,7 m | 66,7 m |
-| 11 | Ciudad oeste | (−24,93, 25,80) | 324° | (−38,5, 44,4) | 51,4 m | 64,4 m |
-| 12 | Ciudad oeste | (−12,00, 30,00) | 0° | (−12,0, 53,0) | 56,3 m | 69,3 m |
+| 1 | Ciudad este | (14,00, 30,02) | 0° | (14,0, 53,0) | 56,1 m | 69,1 m |
+| 2 | Ciudad este | (25,67, 26,68) | 32° | (37,9, 46,2) | 50,5 m | 63,5 m |
+| 3 | Ciudad este | (34,12, 16,96) | 66° | (55,1, 26,3) | 48,9 m | 61,9 m |
+| 4 | Muelle este | (45,74, 2,51) | 60° | (65,7, 14,0) | 44,2 m | 57,2 m |
+| 5 | Muelle este | (47,85, −8,37) | 98° | (70,6, −11,6) | 38,4 m | 51,4 m |
+| 6 | Muelle este | (42,82, −18,24) | 136° | (58,8, −34,8) | 42,6 m | 55,6 m |
+| 7 | Muelle este | (32,78, −22,93) | 174° | (35,2, −45,8) | 56,5 m | 69,5 m |
+| 8 | Palmar | (−45,89, −12,25) | 241° | (−66,0, −23,4) | 40,3 m | 53,3 m |
+| 9 | Palmar | (−47,58, −0,18) | 283° | (−70,0, 5,0) | 40,1 m | 53,1 m |
+| 10 | Palmar | (−39,77, 10,59) | 329° | (−51,6, 30,3) | 53,6 m | 66,6 m |
+| 11 | Ciudad oeste | (−24,94, 25,82) | 324° | (−38,5, 44,4) | 51,3 m | 64,3 m |
+| 12 | Ciudad oeste | (−12,00, 30,02) | 0° | (−12,0, 53,0) | 56,3 m | 69,3 m |
 
-Lo que miden con esta tabla, según ux (turno P3, dato de ux): los cascos más juntos quedan a 1,78 m (Navío–Navío, en los amarres 4–5, 5–6 y 6–7), y ningún centro está a menos de 12 m del eje de otro amarre. Además, el 86,5 % del anillo de 60–90 m es navegable para el Navío, y (0, 75) lo es para las 5 clases, con 23,1 m de sobra para el Navío. **Los barcos atracados y sus salidas quedan justo a su margen de toda la unión, con 0,00 m de sobra, por construcción.** La regla pide «a su margen o más», así que cumple. Si la prueba del juego (BACKLOG AC-199) saca un barco de su amarre por redondeo, dev-npc mueve Q unos centímetros hacia fuera, sin cambiar la regla ni lo que se ve, y producto copia la tabla nueva.
+Lo que miden con la tabla de la lámina, antes de los 2 cm, según ux (turno P3, dato de ux): los cascos más juntos quedan a 1,78 m (Navío–Navío, en los amarres 4–5, 5–6 y 6–7), y ningún centro está a menos de 12 m del eje de otro amarre. Además, el 86,5 % del anillo de 60–90 m es navegable para el Navío, y (0, 75) lo es para las 5 clases, con 23,1 m de sobra para el Navío. **Los barcos atracados y sus salidas quedan justo a su margen de toda la unión, con 0,00 m de sobra, por construcción.** La regla pide «a su margen o más», así que cumple. Si la prueba del juego (BACKLOG AC-199) saca un barco de su amarre por redondeo, dev-npc mueve Q unos centímetros hacia fuera, sin cambiar la regla ni lo que se ve, y producto copia la tabla nueva.
+
+**Pasó el 2026-10-19** (dev-npc, `dev-npc-d92-diag2-7afca6d.log:6-11` y `:44-48`, leído por producto). En el juego, los barcos de los amarres 4, 5 y 9 quedaban de 2,11 a 5,12 mm dentro de su margen, así que 15 centros (3 amarres por 5 clases) y sus 15 salidas no eran navegables. Con cada Q movido 2 cm hacia fuera en su rumbo ψ, en los 12 amarres y con el OK del lead, la holgura más pequeña pasa a 14,37 mm, no falla ningún centro ni ninguna salida, la salida más larga mide 69,5 m y los cascos más juntos quedan a 1,79 m. La tabla de arriba ya es la nueva (`dev-npc-d92-tabla-7afca6d.log`, «δ 0.02 m en los 12»). Lo que se ve no cambia, así que no vuelve a Jonattan.
 
 **Si el puerto nuevo no llega a la 1.1**, se aplica la regla de AC-198: la 1.1 sale con el mapa y el puerto de la 1.0. Si llegado ese momento las islas de D83 están listas y solo falta el puerto, sacarlas con el puerto de hoy cambiaría esa regla, y eso lo decide Jonattan (pregunta abierta; hoy no hace falta hacerla).
 
