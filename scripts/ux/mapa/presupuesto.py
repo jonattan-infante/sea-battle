@@ -1,5 +1,6 @@
 # Uso (desde la raíz del repo), tras islas.py y puerto_colonial.py: python3 -I scripts/ux/mapa/presupuesto.py
-#   →  imprime y escribe $UX_OUT/mapa/presupuesto-vista.json
+#   (con UX_PUERTO=puerto_isla, el puerto con forma de isla de D92: tras puerto_forma.py y puerto_isla.py)
+#   →  imprime y escribe $UX_OUT/mapa/presupuesto-vista.json (con UX_PUERTO=puerto_isla, presupuesto-vista-puerto_isla.json)
 # Vista peor del escenario (AC-200 b; GDD §16): triángulos y draw calls de islas y puerto con la cámara del juego (ortográfica
 # a 55°, ART-DIRECTION §6) a 1,5× con el cañón de N3 (5,04 px/m a 1,0×; 3,36 a 1,5×) en 1440×900, que es la vista que más
 # mapa enseña. La cámara sigue al barco propio, así que se recorre cada punto navegable del mapa cada 5 m (a ≥ 10 m de toda
@@ -14,6 +15,12 @@ import numpy as np
 import circulos as CI
 
 MAPA = os.path.join(RT.OUT, 'mapa')
+# el puerto: 'puerto' (D82, el círculo de 30 m) o 'puerto_isla' (D92: la malla de puerto_isla.py y los círculos de puerto_forma.py)
+PUERTO = os.environ.get('UX_PUERTO', 'puerto')
+if PUERTO == 'puerto_isla':
+    import puerto_forma as PF
+    PF.use(os.environ.get('UX_PUERTO_VAR', 'v3'))
+    _v = list(CI.ISLAS['PORT']); _v[4] = [(x, z, r) for _, x, z, r in PF.CIRCLES]; CI.ISLAS['PORT'] = tuple(_v)
 TH = math.radians(55)
 PPM = 402.9 / 80 / 1.5            # computePpm0(1440, 900, 80) = 5,04 px/m (src/client/art.ts:197) a 1,5× (ZOOM.levels)
 WM, HM = 1440 / PPM, 900 / PPM    # ancho y alto de la vista en m de pantalla
@@ -28,7 +35,7 @@ def sphere(P):
 def load():
     objs = {}
     for iid in CI.ISLAS:
-        f = os.path.join(MAPA, 'puerto_lod0.npz' if iid == 'PORT' else f'isla_{iid}_lod0.npz')
+        f = os.path.join(MAPA, f'{PUERTO}_lod0.npz' if iid == 'PORT' else f'isla_{iid}_lod0.npz')
         P = np.load(RT.need(f, os.path.basename(f)))['p']
         c, r = sphere(P)
         objs[iid] = {'tris': len(P) // 3, 'c': c, 'r': r}
@@ -79,5 +86,5 @@ if __name__ == '__main__':
         'mas_superficie': {'m2': round(best['area'][0]), 'tris': sum(objs[i]['tris'] for i in a_vis), 'draw_calls': len(a_vis), 'camara': best['area'][1][:2], 'objetos': a_vis},
         'fusionado_en_1': {'tris': sum(o['tris'] for o in objs.values()), 'draw_calls': 1},
     }
-    json.dump(res, open(os.path.join(MAPA, 'presupuesto-vista.json'), 'w'), indent=1, ensure_ascii=False)
+    json.dump(res, open(os.path.join(MAPA, 'presupuesto-vista.json' if PUERTO == 'puerto' else f'presupuesto-vista-{PUERTO}.json'), 'w'), indent=1, ensure_ascii=False)
     print(json.dumps({k: v for k, v in res.items() if k != 'por_objeto'}, ensure_ascii=False, indent=1))

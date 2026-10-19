@@ -7,6 +7,7 @@
 # gltf-transform etc1s y meshopt (como scripts/ux/barcos/comprimir.sh). No corre en la CI.
 import bpy, bmesh, sys, os, json
 import numpy as np
+sys.dont_write_bytecode = True  # el Python de Blender ignora PYTHONDONTWRITEBYTECODE (sin esto deja __pycache__ en laminas/)
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'laminas')); import rutas as RT
 HERE = os.path.join(RT.OUT, 'mapa')
 argv = sys.argv[sys.argv.index('--') + 1:]
