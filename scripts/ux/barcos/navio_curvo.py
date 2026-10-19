@@ -36,7 +36,13 @@ PAL = {'gb': dict(hull='#1E3557', band='#E9E2CF', wale='#100E0C', port='#100E0C'
                   rail='#D9A93F', trim='#D9A93F', window='#FFE9A8', wall='#9B2A1E', lid_out='#E0B23A')}
 
 
-def hull_of(fam): return CV.Hull(L, B, F, D, RAIL, 'standard', y_m=1.35, T=0.09, tiers=TIERS[fam], H_T=3.45)
+# Caída de la popa por familia (over_k) y espejo menos abombado (0,25 m), para la entrega (ASSET-SPEC §13, AS-V03): la caja del
+# casco sin el mascarón ni el bauprés mide 42,75 m en las 2 familias (≤ 42,84, el +2 % de 42). La lámina D91 se hizo con
+# 0,12 y 0,4 m (43,29 y 43,53 m; medida M1 de ux, 2026-10-19); la española tiene la popa más alta, así que cae menos por metro
+OVER_K = {'gb': 0.068, 'es': 0.053}
+
+
+def hull_of(fam): return CV.Hull(L, B, F, D, RAIL, 'standard', y_m=1.35, T=0.09, tiers=TIERS[fam], H_T=3.45, over=(0.42, 1.5, OVER_K[fam]), bulge=0.25)
 
 
 def rig(m, lod):
@@ -130,10 +136,10 @@ def details(m, H, fam, pal):
                 e0 = (side * (x + lh * math.sin(ang)), ytop - lh * math.cos(ang), z - w2); e1 = (e0[0], e0[1], z + w2)
                 m.solid(h0, h1, e1, e0, pal['lid_out'], 0.0)
                 o2 = 0.03 * side; m.solid((h0[0] + o2, h0[1], h0[2]), (e0[0] + o2, e0[1], e0[2]), (e1[0] + o2, e1[1], e1[2]), (h1[0] + o2, h1[1], h1[2]), '#9E2B1E', 0.0)
-    # mascarón
+    # mascarón: un apéndice, como el bauprés (fuera de la caja del casco de AS-V03), así que sin _RIM_MASK
     z = 20.6; y = H.y0(20.6) - 0.4
-    m.solid((-0.35, y - 1.2, z), (0.35, y - 1.2, z), (0.35, y, z + 1.0), (-0.35, y, z + 1.0), gold, 1.0)
-    m.solid((-0.35, y, z + 1.0), (0.35, y, z + 1.0), (0.3, y + 0.8, z + 1.3), (-0.3, y + 0.8, z + 1.3), gold, 1.0)
+    m.solid((-0.35, y - 1.2, z), (0.35, y - 1.2, z), (0.35, y, z + 1.0), (-0.35, y, z + 1.0), gold, 0.0)
+    m.solid((-0.35, y, z + 1.0), (0.35, y, z + 1.0), (0.3, y + 0.8, z + 1.3), (-0.3, y + 0.8, z + 1.3), gold, 0.0)
 
 
 def ensign(m, H, fam):

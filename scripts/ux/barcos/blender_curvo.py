@@ -5,8 +5,9 @@
 #        pasar por la gestión de color de Blender (un PNG de save_render saldría con la transformada de vista de la escena)
 #   blender -b --factory-startup -t 1 --python scripts/ux/barcos/blender_curvo.py -- <id> export
 #     (la textura sale en PNG, sin pérdida, y la KTX2 se hace desde él: ver la cabecera de comprimir_cadena.sh)
-#     →  $UX_OUT/cadena/<id>.glb con el atlas final (atlas_<fam>.png), LOD0 y LOD1, COLOR_0 y _RIM_MASK (ASSET-SPEC §1–§7)
-# <id>: navio_gb, navio_es o canonera. El horneado es una corrida pesada que pide turno de máquina (un núcleo con -t 1);
+#     →  $UX_OUT/cadena/<id>.glb con el atlas final (atlas_<fam>.png), LOD0 y LOD1, COLOR_0 y _RIM_MASK (ASSET-SPEC §1–§7);
+#        los Navíos, con los sockets y los extras de $UX_OUT/cadena/<id>-sockets.json (sockets_curvo.py)
+# <id>: navio_gb, navio_es, canonera (la de D91) o canonera2 (la rehecha, canonera2_curvo.py). El horneado es una corrida pesada que pide turno de máquina (un núcleo con -t 1);
 # el export es ligero (≈ 1 s). Blender 5.2.2. No corre en la CI.
 import bpy, bmesh, sys, os, math, json, time
 import numpy as np
@@ -64,12 +65,19 @@ else:
     mul = nt.nodes.new('ShaderNodeMix'); mul.data_type = 'RGBA'; mul.blend_type = 'MULTIPLY'; mul.inputs['Factor'].default_value = 1.0
     nt.links.new(tex.outputs['Color'], mul.inputs[6]); nt.links.new(vc.outputs['Color'], mul.inputs[7]); nt.links.new(mul.outputs[2], bsdf.inputs['Base Color'])
     bsdf.inputs['Roughness'].default_value = 0.85; bsdf.inputs['Metallic'].default_value = 0.0
-    sid = {'navio_gb': 'ship_line_gb', 'navio_es': 'ship_line_es', 'canonera': 'npc_pirate_gunboat'}[ID]
+    sid = {'navio_gb': 'ship_line_gb', 'navio_es': 'ship_line_es', 'canonera': 'npc_pirate_gunboat', 'canonera2': 'npc_pirate_gunboat'}[ID]
+    if ID.startswith('navio'): mat.name = sid  # el nombre del material, como en el piloto (blender_navio.py)
     root = bpy.data.objects.new(sid, None); bpy.context.collection.objects.link(root)
     tris = {}
     for lod in (0, 1):
         ob, tris[lod] = mesh(lod, f'{sid}_lod{lod}'); ob.data.materials.append(mat); ob.parent = root
     root['sb_id'] = sid
+    if ID.startswith('navio'):  # sockets (ASSET-SPEC §3) y extras (§4) de sockets_curvo.py; la Cañonera, con su rehecho
+        sk = json.load(open(RT.need(os.path.join(OUT, f'{ID}-sockets.json'), f'{ID}-sockets.json (sockets_curvo.py)')))
+        for k, v in sk['extras'].items(): root[k] = v
+        for name, p, rz in sk['sockets']:  # los de cañón miran hacia fuera: giro en Z de Blender, que el exportador pasa a +Y
+            e = bpy.data.objects.new(name, None); e.location = G2B(p); e.rotation_euler = (0, 0, rz); e.parent = root
+            bpy.context.collection.objects.link(e)
     out = os.path.join(OUT, f'{ID}.glb')
     bpy.ops.export_scene.gltf(filepath=out, export_format='GLB', export_yup=True, export_apply=True, export_image_format='AUTO',
                               export_vertex_color='ACTIVE', export_attributes=True, export_extras=True)
