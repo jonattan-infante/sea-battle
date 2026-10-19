@@ -291,40 +291,51 @@ export class Navigator {
     const START = n;
     const GOAL = n + 1;
     const pos = (i: number) => (i === START ? from : i === GOAL ? to : nodes[i]);
-    const startLinks: number[] = [];
-    for (let i = 0; i < n; i++) if (this.segmentClear(from, nodes[i], startClear)) startLinks.push(i);
+    // Los enganches del origen se prueban al salir de la lista, no todos antes de empezar (O-43): la entrada LINK + i lleva
+    // el tramo del origen al nodo i con la f que tendría el nodo enganchado. La línea recta es lo más corto hasta el nodo,
+    // así que ninguna otra entrada suya sale antes (salvo un empate exacto), y los enganches cuya f pasa de la de la ruta
+    // no se prueban nunca. Sin ruta, la lista se vacía y se prueban todos, como antes
+    const LINK = n + 2;
 
     const g = new Float64Array(n + 2).fill(Infinity);
     const f = new Float64Array(n + 2).fill(Infinity);
     const came = new Int32Array(n + 2).fill(-1);
     const closed = new Uint8Array(n + 2);
+    // La distancia de cada nodo al destino (la heurística y el último tramo), calculada la primera vez que hace falta y no
+    // en cada relajación (O-43)
+    const h = new Float64Array(n + 2).fill(-1);
+    const toGoal = (i: number) => (h[i] < 0 ? (h[i] = distance(pos(i), to)) : h[i]);
     const open = new OpenList();
     g[START] = 0;
-    f[START] = distance(from, to);
-    open.push(START, f[START]);
+    closed[START] = 1;
+    for (let i = 0; i < n; i++) open.push(LINK + i, distance(from, nodes[i]) + toGoal(i));
+    // step: la longitud del tramo de cur a next, la misma distance(pos(cur), pos(next)) de siempre; entre nodos, la que
+    // guarda el grafo (O-43). Una sola función para toda la ruta, no una por nodo expandido
+    const relax = (cur: number, next: number, step: number) => {
+      if (closed[next]) return;
+      const cost = g[cur] + step;
+      if (cost < g[next]) {
+        g[next] = cost;
+        f[next] = cost + toGoal(next);
+        came[next] = cur;
+        open.push(next, f[next]);
+      }
+    };
 
     while (open.size > 0) {
       const cur = open.pop();
       if (cur === GOAL) break;
+      if (cur >= LINK) {
+        const i = cur - LINK;
+        if (!closed[i] && this.segmentClear(from, nodes[i], startClear)) relax(START, i, distance(from, nodes[i]));
+        continue;
+      }
       if (closed[cur]) continue;
       closed[cur] = 1;
-      // step: la longitud del tramo de cur a next, la misma distance(pos(cur), pos(next)) de siempre; entre nodos, la que
-      // guarda el grafo (O-43)
-      const relax = (next: number, step: number) => {
-        if (closed[next]) return;
-        const cost = g[cur] + step;
-        if (cost < g[next]) {
-          g[next] = cost;
-          f[next] = cost + distance(pos(next), to);
-          came[next] = cur;
-          open.push(next, f[next]);
-        }
-      };
-      if (cur === START) for (const next of startLinks) relax(next, distance(from, nodes[next]));
-      else for (let k = 0; k < edges[cur].length; k++) relax(edges[cur][k], weights[cur][k]);
+      for (let k = 0; k < edges[cur].length; k++) relax(cur, edges[cur][k], weights[cur][k]);
       // El destino se prueba desde cada nodo al expandirlo, no desde todos antes de empezar: cada nodo se expande una vez
       // como mucho, así que es la misma prueba, solo en los nodos que el A* llega a expandir (O-43)
-      if (cur !== START && this.segmentClear(nodes[cur], to, clearance)) relax(GOAL, distance(nodes[cur], to));
+      if (this.segmentClear(nodes[cur], to, clearance)) relax(cur, GOAL, toGoal(cur));
     }
 
     const route = (end: number) => {
