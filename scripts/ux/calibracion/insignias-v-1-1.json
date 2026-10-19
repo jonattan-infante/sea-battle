@@ -1,0 +1,161 @@
+{
+ "viewBox": "0 0 12 12",
+ "nota": "AC-191 (ART-DIRECTION §11.5): las insignias en V, aprobadas por Jonattan el 2026-10-18 a las 23:55:12Z. rank 1..5 = GDD §10b. «svg» y «elementos»: la de placa, en orden de pintado y con la semántica de SVG 1.1, la que mide AD-40 (12, 16, 18, 24 y 32 px). «svg_grande»: la de material, solo para la tarjeta propia de la pantalla de niveles (64 / 48 / 56 px; ART §12.11), con overflow visible para su sombra. Lo genera scripts/ux/insignias_v_json.py desde los SVG de la lámina aprobada",
+ "fuente": {
+  "lamina": [
+   "docs/game/art/D69-insignias-v.png",
+   "34372b8bacd35d02ad697ed4ab12a5f94e1a7f9739520ed93e8d12ffd05971de"
+  ],
+  "placa": [
+   "docs/game/art/D69-insignias-v.svg",
+   "e0004c3cc3be99a2963767af1ea606bd450e1c8266769e1b8a8ae18f6d0e49e9"
+  ],
+  "grande": [
+   "docs/game/art/D69-insignias-v-grande.svg",
+   "720ddaffa4884afe7c2e923aeac1eb6983223706478c3540bbed788246f776ae"
+  ]
+ },
+ "insignias": {
+  "grumete": {
+   "rank": 1,
+   "codigo": "V-g1-hueca-c1,8",
+   "elementos": [
+    {
+     "etiqueta": "polygon",
+     "points": "1.8,0 10.2,0 12,1.8 12,10.2 10.2,12 1.8,12 0,10.2 0,1.8",
+     "fill": "#B4703A"
+    },
+    {
+     "etiqueta": "polygon",
+     "points": "2.386,1 9.614,1 11,2.386 11,9.614 9.614,11 2.386,11 1,9.614 1,2.386",
+     "fill": "#07121B"
+    },
+    {
+     "etiqueta": "polygon",
+     "points": "2.4,6.8 6,4 9.6,6.8 9.6,8.8 6,6 2.4,8.8",
+     "fill": "#B4703A"
+    }
+   ],
+   "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 12 12\"><polygon points=\"1.8,0 10.2,0 12,1.8 12,10.2 10.2,12 1.8,12 0,10.2 0,1.8\" fill=\"#B4703A\"/><polygon points=\"2.386,1 9.614,1 11,2.386 11,9.614 9.614,11 2.386,11 1,9.614 1,2.386\" fill=\"#07121B\"/><polygon points=\"2.4,6.8 6,4 9.6,6.8 9.6,8.8 6,6 2.4,8.8\" fill=\"#B4703A\"/></svg>",
+   "svg_grande": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 12 12\" overflow=\"visible\"><defs><linearGradient id=\"rb-gb\" x1=\"0\" y1=\"0\" x2=\"0.35\" y2=\"1\"><stop offset=\"0\" stop-color=\"#EDB98A\"/><stop offset=\"0.5\" stop-color=\"#B4703A\"/><stop offset=\"1\" stop-color=\"#5E3417\"/></linearGradient><pattern id=\"rb-tw\" patternUnits=\"userSpaceOnUse\" width=\"0.7\" height=\"0.7\" patternTransform=\"rotate(45)\"><rect width=\"0.7\" height=\"0.7\" fill=\"#07121B\"/><rect width=\"0.16\" height=\"0.7\" fill=\"#11273A\"/></pattern></defs><polygon points=\"1.8,0 10.2,0 12,1.8 12,10.2 10.2,12 1.8,12 0,10.2 0,1.8\" fill=\"#000000\" opacity=\"0.5\" transform=\"translate(0.3,0.4)\"/><polygon points=\"1.8,0 10.2,0 12,1.8 12,10.2 10.2,12 1.8,12 0,10.2 0,1.8\" fill=\"url(#rb-gb)\" stroke=\"#5E3417\" stroke-width=\"0.22\"/><polygon points=\"2.386,1 9.614,1 11,2.386 11,9.614 9.614,11 2.386,11 1,9.614 1,2.386\" fill=\"url(#rb-tw)\" stroke=\"#5E3417\" stroke-width=\"0.14\"/><polyline points=\"0,10.2 0,1.8 1.8,0 10.2,0\" fill=\"none\" stroke=\"#EDB98A\" stroke-width=\"0.18\" stroke-linejoin=\"miter\"/><polygon points=\"2.4,6.8 6,4 9.6,6.8 9.6,8.8 6,6 2.4,8.8\" fill=\"#000000\" opacity=\"0.55\" transform=\"translate(0.16,0.22)\"/><polygon points=\"2.4,6.8 6,4 9.6,6.8 9.6,8.8 6,6 2.4,8.8\" fill=\"url(#rb-gb)\" stroke=\"#5E3417\" stroke-width=\"0.12\"/><polyline points=\"2.75,7.8 6,5 9.25,7.8\" fill=\"none\" stroke=\"#5E3417\" stroke-width=\"0.09\" stroke-dasharray=\"0.32 0.22\"/></svg>"
+  },
+  "marinero": {
+   "rank": 2,
+   "codigo": "V-g2-hueca-c2,6",
+   "elementos": [
+    {
+     "etiqueta": "polygon",
+     "points": "2.6,0 9.4,0 12,2.6 12,9.4 9.4,12 2.6,12 0,9.4 0,2.6",
+     "fill": "#B4703A"
+    },
+    {
+     "etiqueta": "polygon",
+     "points": "3.186,1 8.814,1 11,3.186 11,8.814 8.814,11 3.186,11 1,8.814 1,3.186",
+     "fill": "#07121B"
+    },
+    {
+     "etiqueta": "polygon",
+     "points": "2.6,5.2 6,3 9.4,5.2 9.4,6.4 6,4.2 2.6,6.4",
+     "fill": "#B4703A"
+    },
+    {
+     "etiqueta": "polygon",
+     "points": "2.6,8.2 6,6 9.4,8.2 9.4,9.4 6,7.2 2.6,9.4",
+     "fill": "#B4703A"
+    }
+   ],
+   "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 12 12\"><polygon points=\"2.6,0 9.4,0 12,2.6 12,9.4 9.4,12 2.6,12 0,9.4 0,2.6\" fill=\"#B4703A\"/><polygon points=\"3.186,1 8.814,1 11,3.186 11,8.814 8.814,11 3.186,11 1,8.814 1,3.186\" fill=\"#07121B\"/><polygon points=\"2.6,5.2 6,3 9.4,5.2 9.4,6.4 6,4.2 2.6,6.4\" fill=\"#B4703A\"/><polygon points=\"2.6,8.2 6,6 9.4,8.2 9.4,9.4 6,7.2 2.6,9.4\" fill=\"#B4703A\"/></svg>",
+   "svg_grande": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 12 12\" overflow=\"visible\"><defs><linearGradient id=\"rb-gb\" x1=\"0\" y1=\"0\" x2=\"0.35\" y2=\"1\"><stop offset=\"0\" stop-color=\"#EDB98A\"/><stop offset=\"0.5\" stop-color=\"#B4703A\"/><stop offset=\"1\" stop-color=\"#5E3417\"/></linearGradient><pattern id=\"rb-tw\" patternUnits=\"userSpaceOnUse\" width=\"0.7\" height=\"0.7\" patternTransform=\"rotate(45)\"><rect width=\"0.7\" height=\"0.7\" fill=\"#07121B\"/><rect width=\"0.16\" height=\"0.7\" fill=\"#11273A\"/></pattern></defs><polygon points=\"2.6,0 9.4,0 12,2.6 12,9.4 9.4,12 2.6,12 0,9.4 0,2.6\" fill=\"#000000\" opacity=\"0.5\" transform=\"translate(0.3,0.4)\"/><polygon points=\"2.6,0 9.4,0 12,2.6 12,9.4 9.4,12 2.6,12 0,9.4 0,2.6\" fill=\"url(#rb-gb)\" stroke=\"#5E3417\" stroke-width=\"0.22\"/><polygon points=\"3.186,1 8.814,1 11,3.186 11,8.814 8.814,11 3.186,11 1,8.814 1,3.186\" fill=\"url(#rb-tw)\" stroke=\"#5E3417\" stroke-width=\"0.14\"/><polyline points=\"0,9.4 0,2.6 2.6,0 9.4,0\" fill=\"none\" stroke=\"#EDB98A\" stroke-width=\"0.18\" stroke-linejoin=\"miter\"/><polygon points=\"2.6,5.2 6,3 9.4,5.2 9.4,6.4 6,4.2 2.6,6.4\" fill=\"#000000\" opacity=\"0.55\" transform=\"translate(0.16,0.22)\"/><polygon points=\"2.6,5.2 6,3 9.4,5.2 9.4,6.4 6,4.2 2.6,6.4\" fill=\"url(#rb-gb)\" stroke=\"#5E3417\" stroke-width=\"0.12\"/><polyline points=\"2.95,5.8 6,3.6 9.05,5.8\" fill=\"none\" stroke=\"#5E3417\" stroke-width=\"0.09\" stroke-dasharray=\"0.32 0.22\"/><polygon points=\"2.6,8.2 6,6 9.4,8.2 9.4,9.4 6,7.2 2.6,9.4\" fill=\"#000000\" opacity=\"0.55\" transform=\"translate(0.16,0.22)\"/><polygon points=\"2.6,8.2 6,6 9.4,8.2 9.4,9.4 6,7.2 2.6,9.4\" fill=\"url(#rb-gb)\" stroke=\"#5E3417\" stroke-width=\"0.12\"/><polyline points=\"2.95,8.8 6,6.6 9.05,8.8\" fill=\"none\" stroke=\"#5E3417\" stroke-width=\"0.09\" stroke-dasharray=\"0.32 0.22\"/></svg>"
+  },
+  "contramaestre": {
+   "rank": 3,
+   "codigo": "V-g3-llena-c1,8",
+   "elementos": [
+    {
+     "etiqueta": "polygon",
+     "points": "1.8,0 10.2,0 12,1.8 12,10.2 10.2,12 1.8,12 0,10.2 0,1.8",
+     "fill": "#DCE2E8"
+    },
+    {
+     "etiqueta": "polygon",
+     "points": "2.386,1 9.614,1 11,2.386 11,9.614 9.614,11 2.386,11 1,9.614 1,2.386",
+     "fill": "#DCE2E8"
+    },
+    {
+     "etiqueta": "polygon",
+     "points": "2.4,2.8 6,1.4 9.6,2.8 9.6,4 6,2.6 2.4,4",
+     "fill": "#07121B"
+    },
+    {
+     "etiqueta": "polygon",
+     "points": "2.4,5.8 6,4.4 9.6,5.8 9.6,7 6,5.6 2.4,7",
+     "fill": "#07121B"
+    },
+    {
+     "etiqueta": "polygon",
+     "points": "2.4,8.8 6,7.4 9.6,8.8 9.6,10 6,8.6 2.4,10",
+     "fill": "#07121B"
+    }
+   ],
+   "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 12 12\"><polygon points=\"1.8,0 10.2,0 12,1.8 12,10.2 10.2,12 1.8,12 0,10.2 0,1.8\" fill=\"#DCE2E8\"/><polygon points=\"2.386,1 9.614,1 11,2.386 11,9.614 9.614,11 2.386,11 1,9.614 1,2.386\" fill=\"#DCE2E8\"/><polygon points=\"2.4,2.8 6,1.4 9.6,2.8 9.6,4 6,2.6 2.4,4\" fill=\"#07121B\"/><polygon points=\"2.4,5.8 6,4.4 9.6,5.8 9.6,7 6,5.6 2.4,7\" fill=\"#07121B\"/><polygon points=\"2.4,8.8 6,7.4 9.6,8.8 9.6,10 6,8.6 2.4,10\" fill=\"#07121B\"/></svg>",
+   "svg_grande": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 12 12\" overflow=\"visible\"><defs><linearGradient id=\"rb-gs\" x1=\"0\" y1=\"0\" x2=\"0.35\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFFFFF\"/><stop offset=\"0.5\" stop-color=\"#DCE2E8\"/><stop offset=\"1\" stop-color=\"#7D8894\"/></linearGradient></defs><polygon points=\"1.8,0 10.2,0 12,1.8 12,10.2 10.2,12 1.8,12 0,10.2 0,1.8\" fill=\"#000000\" opacity=\"0.5\" transform=\"translate(0.3,0.4)\"/><polygon points=\"1.8,0 10.2,0 12,1.8 12,10.2 10.2,12 1.8,12 0,10.2 0,1.8\" fill=\"url(#rb-gs)\" stroke=\"#7D8894\" stroke-width=\"0.22\"/><polygon points=\"2.386,1 9.614,1 11,2.386 11,9.614 9.614,11 2.386,11 1,9.614 1,2.386\" fill=\"url(#rb-gs)\" stroke=\"#7D8894\" stroke-width=\"0.14\"/><polygon points=\"2.4,2.8 6,1.4 9.6,2.8 9.6,4 6,2.6 2.4,4\" fill=\"#FFFFFF\" transform=\"translate(0.14,0.16)\"/><polygon points=\"2.4,2.8 6,1.4 9.6,2.8 9.6,4 6,2.6 2.4,4\" fill=\"#07121B\"/><polyline points=\"2.75,3.4 6,2 9.25,3.4\" fill=\"none\" stroke=\"#FFFFFF\" stroke-width=\"0.09\" stroke-dasharray=\"0.32 0.22\"/><polygon points=\"2.4,5.8 6,4.4 9.6,5.8 9.6,7 6,5.6 2.4,7\" fill=\"#FFFFFF\" transform=\"translate(0.14,0.16)\"/><polygon points=\"2.4,5.8 6,4.4 9.6,5.8 9.6,7 6,5.6 2.4,7\" fill=\"#07121B\"/><polyline points=\"2.75,6.4 6,5 9.25,6.4\" fill=\"none\" stroke=\"#FFFFFF\" stroke-width=\"0.09\" stroke-dasharray=\"0.32 0.22\"/><polygon points=\"2.4,8.8 6,7.4 9.6,8.8 9.6,10 6,8.6 2.4,10\" fill=\"#FFFFFF\" transform=\"translate(0.14,0.16)\"/><polygon points=\"2.4,8.8 6,7.4 9.6,8.8 9.6,10 6,8.6 2.4,10\" fill=\"#07121B\"/><polyline points=\"2.75,9.4 6,8 9.25,9.4\" fill=\"none\" stroke=\"#FFFFFF\" stroke-width=\"0.09\" stroke-dasharray=\"0.32 0.22\"/></svg>"
+  },
+  "teniente": {
+   "rank": 4,
+   "codigo": "V-b2-hueca-c1,8",
+   "elementos": [
+    {
+     "etiqueta": "polygon",
+     "points": "1.8,0 10.2,0 12,1.8 12,10.2 10.2,12 1.8,12 0,10.2 0,1.8",
+     "fill": "#E3A82B"
+    },
+    {
+     "etiqueta": "polygon",
+     "points": "2.386,1 9.614,1 11,2.386 11,9.614 9.614,11 2.386,11 1,9.614 1,2.386",
+     "fill": "#07121B"
+    },
+    {
+     "etiqueta": "rect",
+     "x": "3.6",
+     "y": "2.4",
+     "width": "1.6",
+     "height": "7.2",
+     "fill": "#E3A82B"
+    },
+    {
+     "etiqueta": "rect",
+     "x": "6.8",
+     "y": "2.4",
+     "width": "1.6",
+     "height": "7.2",
+     "fill": "#E3A82B"
+    }
+   ],
+   "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 12 12\"><polygon points=\"1.8,0 10.2,0 12,1.8 12,10.2 10.2,12 1.8,12 0,10.2 0,1.8\" fill=\"#E3A82B\"/><polygon points=\"2.386,1 9.614,1 11,2.386 11,9.614 9.614,11 2.386,11 1,9.614 1,2.386\" fill=\"#07121B\"/><rect x=\"3.6\" y=\"2.4\" width=\"1.6\" height=\"7.2\" fill=\"#E3A82B\"/><rect x=\"6.8\" y=\"2.4\" width=\"1.6\" height=\"7.2\" fill=\"#E3A82B\"/></svg>",
+   "svg_grande": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 12 12\" overflow=\"visible\"><defs><linearGradient id=\"rb-gg\" x1=\"0\" y1=\"0\" x2=\"0.35\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFE9A6\"/><stop offset=\"0.5\" stop-color=\"#E3A82B\"/><stop offset=\"1\" stop-color=\"#7E550C\"/></linearGradient><pattern id=\"rb-tw\" patternUnits=\"userSpaceOnUse\" width=\"0.7\" height=\"0.7\" patternTransform=\"rotate(45)\"><rect width=\"0.7\" height=\"0.7\" fill=\"#07121B\"/><rect width=\"0.16\" height=\"0.7\" fill=\"#11273A\"/></pattern></defs><polygon points=\"1.8,0 10.2,0 12,1.8 12,10.2 10.2,12 1.8,12 0,10.2 0,1.8\" fill=\"#000000\" opacity=\"0.5\" transform=\"translate(0.3,0.4)\"/><polygon points=\"1.8,0 10.2,0 12,1.8 12,10.2 10.2,12 1.8,12 0,10.2 0,1.8\" fill=\"url(#rb-gg)\" stroke=\"#7E550C\" stroke-width=\"0.22\"/><polygon points=\"2.386,1 9.614,1 11,2.386 11,9.614 9.614,11 2.386,11 1,9.614 1,2.386\" fill=\"url(#rb-tw)\" stroke=\"#7E550C\" stroke-width=\"0.14\"/><polyline points=\"0,10.2 0,1.8 1.8,0 10.2,0\" fill=\"none\" stroke=\"#FFE9A6\" stroke-width=\"0.18\" stroke-linejoin=\"miter\"/><rect x=\"3.6\" y=\"2.4\" width=\"1.6\" height=\"7.2\" fill=\"#000000\" opacity=\"0.55\" transform=\"translate(0.16,0.22)\"/><rect x=\"3.6\" y=\"2.4\" width=\"1.6\" height=\"7.2\" fill=\"url(#rb-gg)\" stroke=\"#7E550C\" stroke-width=\"0.12\"/><rect x=\"3.75\" y=\"2.6\" width=\"0.352\" height=\"6.8\" fill=\"#FFE9A6\"/><rect x=\"6.8\" y=\"2.4\" width=\"1.6\" height=\"7.2\" fill=\"#000000\" opacity=\"0.55\" transform=\"translate(0.16,0.22)\"/><rect x=\"6.8\" y=\"2.4\" width=\"1.6\" height=\"7.2\" fill=\"url(#rb-gg)\" stroke=\"#7E550C\" stroke-width=\"0.12\"/><rect x=\"6.95\" y=\"2.6\" width=\"0.352\" height=\"6.8\" fill=\"#FFE9A6\"/></svg>"
+  },
+  "almirante": {
+   "rank": 5,
+   "codigo": "V-rosa8-llena-c2,6",
+   "elementos": [
+    {
+     "etiqueta": "polygon",
+     "points": "2.6,0 9.4,0 12,2.6 12,9.4 9.4,12 2.6,12 0,9.4 0,2.6",
+     "fill": "#E3A82B"
+    },
+    {
+     "etiqueta": "polygon",
+     "points": "3.186,1 8.814,1 11,3.186 11,8.814 8.814,11 3.186,11 1,8.814 1,3.186",
+     "fill": "#E3A82B"
+    },
+    {
+     "etiqueta": "polygon",
+     "points": "6,1.4 6.497,4.799 8.121,3.879 7.201,5.503 10.6,6 7.201,6.497 8.121,8.121 6.497,7.201 6,10.6 5.503,7.201 3.879,8.121 4.799,6.497 1.4,6 4.799,5.503 3.879,3.879 5.503,4.799",
+     "fill": "#07121B"
+    }
+   ],
+   "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 12 12\"><polygon points=\"2.6,0 9.4,0 12,2.6 12,9.4 9.4,12 2.6,12 0,9.4 0,2.6\" fill=\"#E3A82B\"/><polygon points=\"3.186,1 8.814,1 11,3.186 11,8.814 8.814,11 3.186,11 1,8.814 1,3.186\" fill=\"#E3A82B\"/><polygon points=\"6,1.4 6.497,4.799 8.121,3.879 7.201,5.503 10.6,6 7.201,6.497 8.121,8.121 6.497,7.201 6,10.6 5.503,7.201 3.879,8.121 4.799,6.497 1.4,6 4.799,5.503 3.879,3.879 5.503,4.799\" fill=\"#07121B\"/></svg>",
+   "svg_grande": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 12 12\" overflow=\"visible\"><defs><linearGradient id=\"rb-gg\" x1=\"0\" y1=\"0\" x2=\"0.35\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFE9A6\"/><stop offset=\"0.5\" stop-color=\"#E3A82B\"/><stop offset=\"1\" stop-color=\"#7E550C\"/></linearGradient></defs><polygon points=\"2.6,0 9.4,0 12,2.6 12,9.4 9.4,12 2.6,12 0,9.4 0,2.6\" fill=\"#000000\" opacity=\"0.5\" transform=\"translate(0.3,0.4)\"/><polygon points=\"2.6,0 9.4,0 12,2.6 12,9.4 9.4,12 2.6,12 0,9.4 0,2.6\" fill=\"url(#rb-gg)\" stroke=\"#7E550C\" stroke-width=\"0.22\"/><polygon points=\"3.186,1 8.814,1 11,3.186 11,8.814 8.814,11 3.186,11 1,8.814 1,3.186\" fill=\"url(#rb-gg)\" stroke=\"#7E550C\" stroke-width=\"0.14\"/><polygon points=\"6,1.4 6.497,4.799 8.121,3.879 7.201,5.503 10.6,6 7.201,6.497 8.121,8.121 6.497,7.201 6,10.6 5.503,7.201 3.879,8.121 4.799,6.497 1.4,6 4.799,5.503 3.879,3.879 5.503,4.799\" fill=\"#000000\" opacity=\"0.45\" transform=\"translate(0.18,0.24)\"/><polygon points=\"6,6 6,1.4 5.503,4.799\" fill=\"#22323F\"/><polygon points=\"6,6 6,1.4 6.497,4.799\" fill=\"#07121B\"/><polygon points=\"6,6 8.121,3.879 6.497,4.799\" fill=\"#22323F\"/><polygon points=\"6,6 8.121,3.879 7.201,5.503\" fill=\"#07121B\"/><polygon points=\"6,6 10.6,6 7.201,5.503\" fill=\"#22323F\"/><polygon points=\"6,6 10.6,6 7.201,6.497\" fill=\"#07121B\"/><polygon points=\"6,6 8.121,8.121 7.201,6.497\" fill=\"#22323F\"/><polygon points=\"6,6 8.121,8.121 6.497,7.201\" fill=\"#07121B\"/><polygon points=\"6,6 6,10.6 6.497,7.201\" fill=\"#22323F\"/><polygon points=\"6,6 6,10.6 5.503,7.201\" fill=\"#07121B\"/><polygon points=\"6,6 3.879,8.121 5.503,7.201\" fill=\"#22323F\"/><polygon points=\"6,6 3.879,8.121 4.799,6.497\" fill=\"#07121B\"/><polygon points=\"6,6 1.4,6 4.799,6.497\" fill=\"#22323F\"/><polygon points=\"6,6 1.4,6 4.799,5.503\" fill=\"#07121B\"/><polygon points=\"6,6 3.879,3.879 4.799,5.503\" fill=\"#22323F\"/><polygon points=\"6,6 3.879,3.879 5.503,4.799\" fill=\"#07121B\"/></svg>"
+  }
+ }
+}
