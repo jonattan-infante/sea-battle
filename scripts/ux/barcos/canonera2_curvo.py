@@ -147,9 +147,9 @@ def rigging(m, H, lod):
 
 def battery(m, H, lod):
     """6 cañones por banda sobre cureña (ASSET-SPEC §8.4: Cylinder(0,34, 0,40, 2,4, 6) con tapa, eje en X; cureña de
-    1,0 × 0,5 × 1,4 apoyada en la cubierta) y el mortero (Cylinder(1,1, 1,3, 1,2, 8))."""
-    if lod == 1: return
-    for z in CANNON_Z:
+    1,0 × 0,5 × 1,4 apoyada en la cubierta) y el mortero (Cylinder(1,1, 1,3, 1,2, 8)). LOD1 quita los cañones y conserva el
+    mortero, que es rasgo de identidad (ASSET-SPEC §7, AD-28)."""
+    for z in (CANNON_Z if lod == 0 else ()):
         yd = H.y0(z) + H.deck_h(z)
         for side in (1, -1):
             xc = side * (H.x_at(z, yd) - 1.0)
