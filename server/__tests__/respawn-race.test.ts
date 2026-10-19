@@ -2,6 +2,8 @@
 // test decide el instante de cada mensaje. El cliente envía `respawn` en el momento en que su Zarpar se activa
 // (`serverTime() ≥ respawnAt`) con el reloj adelantado `e` respecto al servidor, y el mensaje llega justo antes del
 // tick siguiente: el servidor lo procesa con el world.time del último tick, el peor caso (hasta 1 tick por detrás).
+// Cada corrida espera a que el servidor procese el `respawn` antes de leer si lo aceptó (O-52): antes leía tras 20 ms de
+// reloj real, y con carga el servidor lo procesaba más tarde y la corrida contaba como no aceptada.
 import { createServer, Server as HttpServer } from 'http';
 import { AddressInfo } from 'net';
 import { Server } from 'socket.io';
@@ -22,6 +24,32 @@ let game: GameServer;
 let clock = 0;
 const clients: ClientSocket[] = [];
 const flush = (ms = 20) => new Promise((r) => setTimeout(r, ms));
+// Tope de la espera a que el servidor procese un `respawn` (O-52). No es una cota de ninguna aserción: si se agota, la
+// corrida cuenta como no aceptada y el test cae por los 20 de 20
+const PROCESS_TIMEOUT_MS = 2000;
+
+// El socket del servidor de un jugador
+const serverSocketOf = (userId: string) => [...io.sockets.sockets.values()].find((s) => (s.data.identity as { userId: string }).userId === userId)!;
+
+// Emite `respawn` desde el cliente de V y espera a que el servidor lo procese, lo acepte o no (O-52). La escucha se pone
+// después de la del juego (game-server.ts:306), así que en el mismo emit corre detrás de ella. Da false si en el tope no
+// llegó: el servidor se lo habría tragado
+function emitRespawn(victim: { c: ClientSocket }): Promise<boolean> {
+  const socket = serverSocketOf('V');
+  const processed = new Promise<boolean>((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+    const timer = setTimeout(() => {
+      socket.off(C2S.respawn, done);
+      resolve(false);
+    }, PROCESS_TIMEOUT_MS);
+    socket.once(C2S.respawn, done);
+  });
+  victim.c.emit(C2S.respawn);
+  return processed;
+}
 
 beforeEach(async () => {
   httpServer = createServer();
@@ -82,8 +110,7 @@ async function sailWithClockAhead(victim: { c: ClientSocket; frames: ServerFrame
   const serverTime = game.world.time;
   const mark = victim.frames.length;
   clock += 1000; // la cubeta de intenciones se recarga entre corridas
-  victim.c.emit(C2S.respawn);
-  await flush();
+  const processed = await emitRespawn(victim);
   const accepted = game.world.players.get('V')!.death === null && shipOfPlayer(game.world, 'V')!.state === 'alive';
   await ticks(4); // los avisos van en el frame siguiente
   const rejected = victim.frames.slice(mark).flatMap((f) => f.n ?? []).filter((n) => n.text === NOT_YET).length;
@@ -91,42 +118,41 @@ async function sailWithClockAhead(victim: { c: ClientSocket; frames: ServerFrame
     // Rechazado: zarpa ya fuera de la carrera para que la corrida siguiente empiece con el barco a flote
     await ticks(Math.ceil((respawnAt - game.world.time) / DT) + 1);
     clock += 1000;
-    victim.c.emit(C2S.respawn);
-    await flush();
+    await emitRespawn(victim);
   }
-  return { accepted, rejected, lagMs: (respawnAt - serverTime) * 1000 };
+  return { accepted, rejected, processed, lagMs: (respawnAt - serverTime) * 1000 };
 }
 
 describe('AC-109: Zarpar en el mismo frame en que se activa, con el reloj del cliente adelantado', () => {
   test('con el reloj adelantado de 0 a 50 ms, el servidor acepta 20 de 20 y no llega ningún "Aún no puedes zarpar"', async () => {
     const victim = await join('V');
     await join('K');
-    const runs: { ahead: number; accepted: boolean; rejected: number; lagMs: number }[] = [];
+    const runs: { ahead: number; accepted: boolean; rejected: number; processed: boolean; lagMs: number }[] = [];
     for (let i = 0; i < 20; i++) {
       const ahead = (0.05 * i) / 19;
       runs.push({ ahead, ...(await sailWithClockAhead(victim, ahead)) });
     }
     const worst = Math.max(...runs.map((r) => r.lagMs));
-    console.log(`AC-109: ${runs.filter((r) => r.accepted).length}/20 aceptados · ${runs.reduce((a, r) => a + r.rejected, 0)} "${NOT_YET}" · el servidor procesó con su reloj hasta ${worst.toFixed(1)} ms antes de respawnAt`);
+    console.log(`AC-109: ${runs.filter((r) => r.accepted).length}/20 aceptados · ${runs.filter((r) => r.processed).length}/20 procesados · ${runs.reduce((a, r) => a + r.rejected, 0)} "${NOT_YET}" · el servidor procesó con su reloj hasta ${worst.toFixed(1)} ms antes de respawnAt`);
     expect(runs.filter((r) => r.accepted)).toHaveLength(20);
     expect(runs.reduce((a, r) => a + r.rejected, 0)).toBe(0);
     // El caso límite sí se dio: el servidor procesó algún respawn con su reloj 1 tick (50 ms) antes de los 8 s
     expect(worst).toBeCloseTo(DT * 1000, 0);
   }, 30_000);
 
-  // El 2.º tick de margen (constants.ts:193-196, QA-6 H-18): con el reloj del cliente adelantado hasta 50 ms y el tick
+  // El 2.º tick de margen (constants.ts:248-251, QA-6 H-18): con el reloj del cliente adelantado hasta 50 ms y el tick
   // anterior retrasado por el setInterval, el servidor procesa el respawn con su world.time 2 ticks (100 ms) antes de
   // respawnAt. Se acepta con 2 ticks de tolerancia; con 1 tick, se rechazaría
   test('con el reloj adelantado hasta 50 ms y 1 tick retrasado por el setInterval, el servidor acepta 20 de 20 con su reloj 100 ms antes de respawnAt', async () => {
     const victim = await join('V');
     await join('K');
-    const runs: { ahead: number; accepted: boolean; rejected: number; lagMs: number }[] = [];
+    const runs: { ahead: number; accepted: boolean; rejected: number; processed: boolean; lagMs: number }[] = [];
     for (let i = 0; i < 20; i++) {
       const ahead = (0.05 * (i + 1)) / 20;
       runs.push({ ahead, ...(await sailWithClockAhead(victim, ahead, 1)) });
     }
     const lags = runs.map((r) => r.lagMs);
-    console.log(`AC-109 (tick retrasado): ${runs.filter((r) => r.accepted).length}/20 aceptados · ${runs.reduce((a, r) => a + r.rejected, 0)} "${NOT_YET}" · el servidor procesó con su reloj entre ${Math.min(...lags).toFixed(1)} y ${Math.max(...lags).toFixed(1)} ms antes de respawnAt`);
+    console.log(`AC-109 (tick retrasado): ${runs.filter((r) => r.accepted).length}/20 aceptados · ${runs.filter((r) => r.processed).length}/20 procesados · ${runs.reduce((a, r) => a + r.rejected, 0)} "${NOT_YET}" · el servidor procesó con su reloj entre ${Math.min(...lags).toFixed(1)} y ${Math.max(...lags).toFixed(1)} ms antes de respawnAt`);
     expect(runs.filter((r) => r.accepted)).toHaveLength(20);
     expect(runs.reduce((a, r) => a + r.rejected, 0)).toBe(0);
     for (const lag of lags) expect(lag).toBeCloseTo(2 * DT * 1000, 0);
@@ -139,4 +165,21 @@ describe('AC-109: Zarpar en el mismo frame en que se activa, con el reloj del cl
     expect(r.accepted).toBe(false);
     expect(r.rejected).toBe(1);
   });
+
+  // O-52: con carga, el servidor procesó un `respawn` después de los 20 ms tras los que el test leía el resultado, y la
+  // corrida contó como no aceptada sin que llegara ningún aviso. Aquí cada mensaje de V llega al juego el triple de tarde
+  // (un middleware del socket del servidor), como con carga: el test espera a que se procese, así que sigue viendo 20 de 20
+  test('O-52: con cada respawn procesado 60 ms tarde, como con carga, el servidor sigue aceptando 20 de 20 sin "Aún no puedes zarpar"', async () => {
+    const victim = await join('V');
+    await join('K');
+    serverSocketOf('V').use((_event, next) => void setTimeout(next, 3 * 20));
+    const runs: { ahead: number; accepted: boolean; rejected: number; processed: boolean; lagMs: number }[] = [];
+    for (let i = 0; i < 20; i++) {
+      const ahead = (0.05 * i) / 19;
+      runs.push({ ahead, ...(await sailWithClockAhead(victim, ahead)) });
+    }
+    console.log(`O-52: ${runs.filter((r) => r.accepted).length}/20 aceptados · ${runs.filter((r) => r.processed).length}/20 procesados · ${runs.reduce((a, r) => a + r.rejected, 0)} "${NOT_YET}"`);
+    expect(runs.filter((r) => r.accepted)).toHaveLength(20);
+    expect(runs.reduce((a, r) => a + r.rejected, 0)).toBe(0);
+  }, 30_000);
 });
