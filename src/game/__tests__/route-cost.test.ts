@@ -112,6 +112,43 @@ describe('Coste de las rutas con MAP_1_1 (O-43)', () => {
     expect(wrong).toEqual([]);
   });
 
+  // La colisión con el círculo envolvente (outside y edgeClearance, O-43): la misma respuesta que la cuenta directa, círculo
+  // a círculo, en puntos al azar por todo el mapa, a ±2 m del borde inflado de cada círculo y en el borde exacto (donde
+  // dejan los barcos pushOut y nearestNavigable), con los radios de colisión, los márgenes de las clases y 0. La distancia
+  // al borde, igual hasta el último bit
+  test.each<[string, IslandDef[]]>([['MAP_1_1', MAP_1_1.islands], ['MAP_1_0', MAP_1_0.islands]])('Colisión, %s: outside y edgeClearance dan lo mismo que la cuenta círculo a círculo', (name, islands) => {
+    const nav = new Navigator(islands);
+    const outside = (p: Vec2, extra: number) => (nav as unknown as { outside(p: Vec2, extra: number): boolean }).outside(p, extra);
+    const rng = createRng(17);
+    const at = () => (rng() * 2 - 1) * 490;
+    const wrong: string[] = [];
+    let inside = 0;
+    let total = 0;
+    for (const extra of [0, 0.05, 5, 6, 7, 8, 9, 10, 12, 13, 14, 16, 17, 19, 20, 23]) {
+      const points: Vec2[] = [];
+      for (let k = 0; k < 400; k++) points.push({ x: at(), z: at() });
+      for (const c of islands) {
+        for (let k = 0; k < 16; k++) {
+          const ang = rng() * Math.PI * 2;
+          const r = c.radius + extra + (k < 4 ? 0 : rng() * 4 - 2);
+          points.push({ x: c.x + Math.cos(ang) * r, z: c.z + Math.sin(ang) * r });
+        }
+      }
+      for (const p of points) {
+        const expected = islands.every((i) => Math.hypot(p.x - i.x, p.z - i.z) >= i.radius + extra - 1e-9);
+        total++;
+        if (!expected) inside++;
+        if (outside(p, extra) !== expected && wrong.length < 5) wrong.push(`outside, extra ${extra}: (${p.x}, ${p.z}) debía dar ${expected}`);
+        const edge = Math.min(...islands.map((i) => Math.hypot(p.x - i.x, p.z - i.z) - i.radius));
+        if (!Object.is(nav.edgeClearance(p), edge) && wrong.length < 5) wrong.push(`edgeClearance: (${p.x}, ${p.z}) debía dar ${edge}, dio ${nav.edgeClearance(p)}`);
+      }
+    }
+    console.log(`O-43 colisión ${name}: ${total} puntos, ${inside} dentro`);
+    expect(inside).toBeGreaterThan(total / 10);
+    expect(total - inside).toBeGreaterThan(total / 10);
+    expect(wrong).toEqual([]);
+  });
+
   // D: el montículo de la lista abierta saca siempre una entrada de f mínima, frente a una lista ordenada a mano, con
   // entradas y salidas mezcladas como en el A* (más entradas que salidas, f repetidas y nodos que vuelven a entrar)
   test('D: la lista abierta saca siempre una entrada de f mínima', () => {
