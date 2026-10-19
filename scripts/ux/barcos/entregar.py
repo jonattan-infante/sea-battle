@@ -1,7 +1,9 @@
 # Uso (desde la raíz del repo), tras sockets_curvo.py, blender_curvo.py <id> export y comprimir_cadena.sh (la misma UX_OUT):
-#   python3 -I scripts/ux/barcos/entregar.py   →  $UX_OUT/entrega/dentro/<sb_id>.glb (la entrega a dev-render: la KTX2 y el respaldo
+#   python3 -I scripts/ux/barcos/entregar.py [navios | canonera2]   →  $UX_OUT/entrega/dentro/<sb_id>.glb (la entrega a dev-render: la KTX2 y el respaldo
 #   en el BIN; el paso 4c lo hace su externalizeKtx2), y de contraste <sb_id>.<hash>.glb y <sb_id>_atlas.<hash>.ktx2 con el 4c
-#   de aquí; entrega.json con las medidas, también la eslora del casco en la caja y en la flotación (AS-V03)
+#   de aquí; entrega.json (o entrega-canonera2.json) con las medidas, también la eslora del casco en la caja y en la flotación
+#   (AS-V03). Con `canonera2`, la Cañonera de la receta (D91, 2.ª vuelta; tras sockets_canonera2.py), con el respaldo de 128²,
+#   que pasa la regla de 4b (lamina_canonera2.py, turno C2: ΔE76 1,651 frente a 1,779)
 # Los 2 Navíos de la receta de D91 (aprobados por Jonattan el 2026-10-18) como los espera el juego (ASSET-SPEC §13, pasos
 # 4, 4b y 4c): la geometría con meshopt (`gltf-transform meshopt`); el respaldo PNG de 256² en el BIN, en `texture.source`
 # (D90; 128² no pasa la regla de 4b en ninguno de los dos: respaldo-d90.json de respaldo_curvo.py); y la KTX2 de
@@ -17,11 +19,13 @@ for p in (HERE, os.path.join(HERE, '..', 'laminas'), os.path.join(HERE, '..', 'm
 import rutas as RT
 import respaldo as RS
 import navio_curvo as NCV
+import canonera2_curvo as C2
 import numpy as np
 
 CAD = os.path.join(RT.OUT, 'cadena'); DST = os.path.join(RT.OUT, 'entrega'); TMP = os.path.join(DST, 'tmp'); DST_D = os.path.join(DST, 'dentro')
-SHIPS = (('navio_gb', 'gb', 'ship_line_gb'), ('navio_es', 'es', 'ship_line_es'))
-SIDE = 256
+# (id, nombre del atlas, sb_id, lado del respaldo, regiones del atlas)
+SETS = {'navios': (('navio_gb', 'gb', 'ship_line_gb', 256, NCV.AT.R), ('navio_es', 'es', 'ship_line_es', 256, NCV.AT.R)),
+        'canonera2': (('canonera2', 'canonera2', 'npc_pirate_gunboat', 128, C2.AT.R),)}
 BASISU = 'KHR_texture_basisu'
 
 
@@ -70,7 +74,7 @@ def gz(b): return len(gzip.compress(b, 9, mtime=0))
 def h8(b): return hashlib.sha256(b).hexdigest()[:8]
 
 
-def deliver(id_, fam, sid, ref_png_bytes):
+def deliver(id_, fam, sid, SIDE, regions, ref_png_bytes):
     src = RT.need(os.path.join(CAD, f'{id_}.glb'), f'{id_}.glb (blender_curvo.py {id_} export)')
     mo = os.path.join(TMP, f'{id_}_meshopt.glb')
     subprocess.run(['gltf-transform', 'meshopt', src, mo], check=True, capture_output=True)
@@ -81,7 +85,7 @@ def deliver(id_, fam, sid, ref_png_bytes):
     ktx = open(RT.need(os.path.join(CAD, 'comp', f'atlas_{fam}.ktx2'), f'atlas_{fam}.ktx2 (comprimir_cadena.sh)'), 'rb').read()
     kh = ktx2_header(ktx); kname = f'{sid}_atlas.{h8(ktx)}.ktx2'
     # 4b: el respaldo, por regiones (respaldo.fallback con las del atlas de navio_curvo)
-    png = RS.encode(RS.fallback(os.path.join(CAD, f'atlas_{fam}.png'), SIDE, regions=NCV.AT.R, size=1024), 'png')
+    png = RS.encode(RS.fallback(os.path.join(CAD, f'atlas_{fam}.png'), SIDE, regions=regions, size=1024), 'png')
     # la forma que recibe dev-render: la KTX2 y el respaldo en el BIN (pasos 4 y 4b); el paso 4c lo hace su externalizeKtx2
     # (scripts/glb/glb-fallback.ts:138), que es la implementación única del paso (decisión del lead, 2026-10-19)
     jd = copy.deepcopy(js); bd = bytearray(geo)
@@ -124,7 +128,7 @@ def deliver(id_, fam, sid, ref_png_bytes):
         val = subprocess.run(['gltf-transform', 'validate', path], capture_output=True, text=True)
         vtxt = val.stdout + val.stderr; open(os.path.join(TMP, f'{form}_{fam}.txt'), 'w').write(vtxt)
         res[form] = dict(exit=val.returncode, sin_errores='No errors found.' in vtxt.split('WARNING')[0])
-    res['AS-V03 casco'] = hull_lengths(fam)
+    res['AS-V03 casco'] = hull_lengths(id_)
     sha = lambda b: hashlib.sha256(b).hexdigest()
     info = dict(sb_id=sid, glb=gname, ktx2=kname, glb_B=len(glb), glb_gzip9_B=gz(glb), ktx2_B=len(ktx), ktx2_gzip9_B=gz(ktx),
                 sha256_glb=sha(glb), sha256_ktx2=sha(ktx), respaldo_B=len(png), respaldo_igual_a_la_medida=(len(png) == ref_png_bytes) if ref_png_bytes else None,
@@ -132,9 +136,9 @@ def deliver(id_, fam, sid, ref_png_bytes):
     return info
 
 
-def hull_lengths(fam):
+def hull_lengths(id_):
     """Eslora y manga del casco de LOD0 (vértices con _RIM_MASK = 1): la caja entera y el corte de la flotación (y = 0)."""
-    z = np.load(os.path.join(CAD, f'navio_{fam}_lod0.npz')); P = z['p'].reshape(-1, 3, 3); R = z['r'].reshape(-1, 3)
+    z = np.load(os.path.join(CAD, f'{id_}_lod0.npz')); P = z['p'].reshape(-1, 3, 3); R = z['r'].reshape(-1, 3)
     hull = P[(R > 0.5).all(1)]; pts = []
     for k in range(3):
         a, b = hull[:, k], hull[:, (k + 1) % 3]; mk = (a[:, 1] > 0) != (b[:, 1] > 0)
@@ -149,11 +153,11 @@ if __name__ == '__main__':
     os.makedirs(TMP, exist_ok=True); os.makedirs(DST_D, exist_ok=True)
     assert shutil.which('gltf-transform'), 'falta gltf-transform 4.5.1 en el PATH'
     ref = os.path.join(CAD, 'respaldo-d90.json'); ref = json.load(open(ref)) if os.path.exists(ref) else {}
-    out = {}
-    for id_, fam, sid in SHIPS:
-        out[sid] = deliver(id_, fam, sid, ref.get(id_, {}).get(f'png{SIDE}', {}).get('bytes'))
+    which = sys.argv[1] if len(sys.argv) > 1 else 'navios'; out = {}
+    for id_, fam, sid, side, regions in SETS[which]:
+        out[sid] = deliver(id_, fam, sid, side, regions, ref.get(id_, {}).get(f'png{side}', {}).get('bytes'))
         print(sid, json.dumps(out[sid], ensure_ascii=False), flush=True)
-    json.dump(out, open(os.path.join(DST, 'entrega.json'), 'w'), indent=1, ensure_ascii=False)
+    json.dump(out, open(os.path.join(DST, 'entrega.json' if which == 'navios' else f'entrega-{which}.json'), 'w'), indent=1, ensure_ascii=False)
     bad = [s for s, v in out.items() if not (v['comprobaciones']['validate']['sin_errores'] and v['comprobaciones']['validate_dentro']['sin_errores'] and v['comprobaciones']['AS-V02']
                                              and all(v['comprobaciones'][f'AS-V06 {k}'] for k in ('port', 'stbd'))
                                              and min(v['comprobaciones'][f'AS-V07 {k}'] for k in ('port', 'stbd')) >= 0.99)]
