@@ -7,6 +7,11 @@ import { Vec2, distance } from './vec';
 const NODES_PER_ISLAND = 16;
 const EPS = 1e-3;
 const PUSH_OUT = 0.05; // lo que el punto navegable más cercano queda por fuera del margen, para que el redondeo no lo meta
+// Math.hypot leída una vez (O-43): la misma función, sin leer la global Math en cada llamada. En el contexto vm de Jest,
+// donde se miden AC-22 y AC-03, cada lectura cuesta más que la cuenta: Math.hypot da ~110 ns por llamada leída cada vez
+// y ~5 leída una vez, y Math.max con Math.min ~190 ns frente a ~1 de dos comparaciones. En node, ~5 y ~1 en los dos
+// casos (dev-npc, 2026-10-19)
+const { hypot } = Math;
 
 interface Graph {
   nodes: Vec2[];
@@ -21,7 +26,7 @@ function closest(q: Vec2, points: Vec2[]): Vec2 | null {
   return best;
 }
 
-// Distancia mínima entre el segmento ab y el punto c
+// Distancia mínima entre el segmento ab y el punto c (la cuenta de siempre, con Math: es la de referencia de los tests)
 export function segmentPointDistance(a: Vec2, b: Vec2, c: Vec2): number {
   const abx = b.x - a.x;
   const abz = b.z - a.z;
@@ -32,10 +37,10 @@ export function segmentPointDistance(a: Vec2, b: Vec2, c: Vec2): number {
 }
 
 // El cuadrado de esa distancia, con el tramo ya restado (ab y su longitud al cuadrado), para segmentClear: la misma cuenta
-// sin la raíz ni objetos (O-43)
+// sin la raíz ni objetos, y el recorte de t a [0, 1] con comparaciones en vez de Math.max y Math.min (O-43)
 function segmentPointDistance2(a: Vec2, abx: number, abz: number, len2: number, x: number, z: number): number {
   let t = len2 > 0 ? ((x - a.x) * abx + (z - a.z) * abz) / len2 : 0;
-  t = Math.max(0, Math.min(1, t));
+  t = t < 0 ? 0 : t > 1 ? 1 : t;
   const dx = a.x + abx * t - x;
   const dz = a.z + abz * t - z;
   return dx * dx + dz * dz;
@@ -110,7 +115,7 @@ function shapesOf(islands: IslandDef[]): Shape[] {
   return [...byShape.values()].map((circles) => {
     const x = circles.reduce((sum, c) => sum + c.x, 0) / circles.length;
     const z = circles.reduce((sum, c) => sum + c.z, 0) / circles.length;
-    return { x, z, radius: Math.max(...circles.map((c) => Math.hypot(c.x - x, c.z - z) + c.radius)), circles };
+    return { x, z, radius: Math.max(...circles.map((c) => hypot(c.x - x, c.z - z) + c.radius)), circles };
   });
 }
 
@@ -160,8 +165,11 @@ export class Navigator {
   edgeClearance(p: Vec2): number {
     let min = Infinity;
     for (const shape of this.shapes) {
-      if (shape.circles.length > 1 && Math.hypot(p.x - shape.x, p.z - shape.z) - shape.radius - EPS >= min) continue;
-      for (const island of shape.circles) min = Math.min(min, Math.hypot(p.x - island.x, p.z - island.z) - island.radius);
+      if (shape.circles.length > 1 && hypot(p.x - shape.x, p.z - shape.z) - shape.radius - EPS >= min) continue;
+      for (const island of shape.circles) {
+        const d = hypot(p.x - island.x, p.z - island.z) - island.radius;
+        if (d < min) min = d;
+      }
     }
     return min;
   }
@@ -171,15 +179,15 @@ export class Navigator {
   // segmentClear): la forma se salta con una sola cuenta, y los demás círculos se prueban como siempre
   private outside(p: Vec2, extra: number): boolean {
     for (const shape of this.shapes) {
-      if (shape.circles.length > 1 && Math.hypot(p.x - shape.x, p.z - shape.z) >= shape.radius + extra + EPS) continue;
-      for (const island of shape.circles) if (Math.hypot(p.x - island.x, p.z - island.z) < island.radius + extra - 1e-9) return false;
+      if (shape.circles.length > 1 && hypot(p.x - shape.x, p.z - shape.z) >= shape.radius + extra + EPS) continue;
+      for (const island of shape.circles) if (hypot(p.x - island.x, p.z - island.z) < island.radius + extra - 1e-9) return false;
     }
     return true;
   }
 
   // Fuera de todas las islas infladas por `clearance` y dentro del límite
   navigable(p: Vec2, clearance: number): boolean {
-    return Math.abs(p.x) <= NAV_LIMIT && Math.abs(p.z) <= NAV_LIMIT && this.outside(p, clearance);
+    return p.x <= NAV_LIMIT && p.x >= -NAV_LIMIT && p.z <= NAV_LIMIT && p.z >= -NAV_LIMIT && this.outside(p, clearance);
   }
 
   // Punto navegable más cercano: fuera de las islas infladas y dentro del límite (§4, AC-18, AC-21). Está en el borde de
@@ -227,7 +235,7 @@ export class Navigator {
     const points: Vec2[] = [];
     for (const island of this.islands) {
       const r = island.radius + extra + pad;
-      const d = Math.hypot(q.x - island.x, q.z - island.z);
+      const d = hypot(q.x - island.x, q.z - island.z);
       const nx = d > EPS ? (q.x - island.x) / d : 1;
       const nz = d > EPS ? (q.z - island.z) / d : 0;
       const c = { x: island.x + nx * r, z: island.z + nz * r };
@@ -249,7 +257,7 @@ export class Navigator {
         const b = this.islands[j];
         const ra = a.radius + extra + pad;
         const rb = b.radius + extra + pad;
-        const d = Math.hypot(b.x - a.x, b.z - a.z);
+        const d = hypot(b.x - a.x, b.z - a.z);
         if (d >= ra + rb || d <= Math.abs(ra - rb)) continue; // no se tocan, o una contiene a la otra
         const along = (d * d + ra * ra - rb * rb) / (2 * d); // de a al pie de la cuerda común
         const half = Math.sqrt(ra * ra - along * along);
@@ -277,7 +285,7 @@ export class Navigator {
         const a = (i / NODES_PER_ISLAND) * Math.PI * 2;
         const n = { x: island.x + Math.cos(a) * r, z: island.z + Math.sin(a) * r };
         if (Math.abs(n.x) > NAV_LIMIT || Math.abs(n.z) > NAV_LIMIT) continue;
-        if (!this.islands.every((o) => Math.hypot(n.x - o.x, n.z - o.z) >= o.radius + clearance)) continue;
+        if (!this.islands.every((o) => hypot(n.x - o.x, n.z - o.z) >= o.radius + clearance)) continue;
         nodes.push(n);
       }
     }
