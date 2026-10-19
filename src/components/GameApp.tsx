@@ -32,6 +32,7 @@ import {
   targetDistance
 } from '../client/hud-logic';
 import { MeHud, resetSaveWarning, sameShallow, syncUnsaved, TargetHud, useHud } from '../client/hud-store';
+import { predictedShip, rememberShip } from '../client/own-ship-memory';
 import { attachOverlays, createRuntime, disposeRuntime, GameRuntime } from '../client/runtime';
 import GameCanvas from './game/GameCanvas';
 import Hud, { HudActions } from './hud/Hud';
@@ -141,7 +142,10 @@ export default function GameApp({ guest }: { guest: boolean }) {
       name,
       auth: async () => (testUser ? { testUser } : guest ? { guest: true, guestId: id } : { token: (await getTokenRef.current()) ?? undefined })
     });
-    const rt = createRuntime(client);
+    // Opción A de AC-193 c: el GLB propio se pide antes de la bienvenida, con la última clase de este jugador en el
+    // navegador o, si es nuevo, la de salida (own-ship-memory.ts)
+    const playerKey = testUser ? `test:${testUser}` : guest ? `guest:${id}` : `user:${user?.id ?? ''}`;
+    const rt = createRuntime(client, predictedShip(playerKey));
     const hud = useHud.getState();
     // Recompensas de esta pasada de eventos (AC-152; GDD §14, «XP ganada»). El hundimiento, el oro y la XP de un barco
     // llegan en el mismo frame y se reproducen en la misma llamada a update() (game-client.ts): se juntan aquí y salen
@@ -283,6 +287,7 @@ export default function GameApp({ guest }: { guest: boolean }) {
         if (connection === 'connected') useHud.setState({ reconnectAttempt: 0 });
         if (connection === 'full') router.replace('/?full=1');
       }),
+      client.onPlayer((p) => rememberShip(playerKey, p.activeShip)),
       client.onPlayer((player) => {
         // AC-151: la subida de nivel sale en el mismo commit que el panel con el nivel nuevo, al llegar el frame que la
         // trae. Un solo aviso con el nivel final aunque el hundimiento dé varios niveles

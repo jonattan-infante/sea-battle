@@ -755,7 +755,8 @@ export class GameRuntime implements OverlayHost, ChipHost {
   private readonly hullIdx: number[] = [0, 1, 2, 3, 4, 5, 6, 7];
   private readonly hullOut: number[] = [];
 
-  constructor(client: GameClient) {
+  // ownClass: la clase propia predicha antes de la bienvenida (opción A de AC-193 c; own-ship-memory.ts)
+  constructor(client: GameClient, ownClass?: string) {
     this.client = client;
     this.src = client;
     // Los viewAt solo salen con el cliente real (no con las escenas sintéticas de QA); el botón Centrar lee el modo del store
@@ -803,6 +804,7 @@ export class GameRuntime implements OverlayHost, ChipHost {
 
     this.director = new VfxDirector(this);
     this.subscribe(client);
+    if (ownClass) this.shipGlb.predictOwn(ownClass); // su GLB, antes que el cargador
     this.shipGlb.warm(); // con manifiesto, el cargador baja mientras se conecta (el transcodificador, después del GLB propio)
   }
 
@@ -1789,8 +1791,8 @@ function ringRgb(hex: string): Float32Array {
   return c;
 }
 
-export function createRuntime(client: GameClient): GameRuntime {
-  return new GameRuntime(client);
+export function createRuntime(client: GameClient, ownClass?: string): GameRuntime {
+  return new GameRuntime(client, ownClass);
 }
 
 export function disposeRuntime(rt: GameRuntime): void {
