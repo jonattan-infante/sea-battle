@@ -6,8 +6,8 @@
 #   blender -b --factory-startup -t 1 --python scripts/ux/barcos/blender_curvo.py -- <id> export
 #     (la textura sale en PNG, sin pérdida, y la KTX2 se hace desde él: ver la cabecera de comprimir_cadena.sh)
 #     →  $UX_OUT/cadena/<id>.glb con el atlas final (atlas_<fam>.png), LOD0 y LOD1, COLOR_0 y _RIM_MASK (ASSET-SPEC §1–§7);
-#        los Navíos y la Cañonera rehecha, con los sockets y los extras de $UX_OUT/cadena/<id>-sockets.json (sockets_curvo.py;
-#        sockets_canonera2.py)
+#        los Navíos, la Cañonera rehecha y el Capitán, con los sockets y los extras de $UX_OUT/cadena/<id>-sockets.json
+#        (sockets_curvo.py; sockets_canonera2.py; sockets_capitan.py)
 # <id>: navio_gb, navio_es, canonera (la de D91), canonera2 (la rehecha, canonera2_curvo.py) o capitan (capitan_curvo.py). El horneado es una corrida pesada que pide turno de máquina (un núcleo con -t 1);
 # el export es ligero (≈ 1 s). Blender 5.2.2. No corre en la CI.
 import bpy, bmesh, sys, os, math, json, time
@@ -73,8 +73,8 @@ else:
     for lod in (0, 1):
         ob, tris[lod] = mesh(lod, f'{sid}_lod{lod}'); ob.data.materials.append(mat); ob.parent = root
     root['sb_id'] = sid
-    if ID in ('navio_gb', 'navio_es', 'canonera2'):  # sockets (ASSET-SPEC §3) y extras (§4) de sockets_curvo.py o sockets_canonera2.py; el Capitán, en su entrega
-        sk = json.load(open(RT.need(os.path.join(OUT, f'{ID}-sockets.json'), f'{ID}-sockets.json (sockets_curvo.py o sockets_canonera2.py)')))
+    if ID in ('navio_gb', 'navio_es', 'canonera2', 'capitan'):  # sockets (ASSET-SPEC §3) y extras (§4) de sockets_curvo.py, sockets_canonera2.py o sockets_capitan.py
+        sk = json.load(open(RT.need(os.path.join(OUT, f'{ID}-sockets.json'), f'{ID}-sockets.json (sockets_curvo.py, sockets_canonera2.py o sockets_capitan.py)')))
         for k, v in sk['extras'].items(): root[k] = v
         for name, p, rz in sk['sockets']:  # los de cañón miran hacia fuera: giro en Z de Blender, que el exportador pasa a +Y
             e = bpy.data.objects.new(name, None); e.location = G2B(p); e.rotation_euler = (0, 0, rz); e.parent = root

@@ -1,9 +1,11 @@
 # Uso (desde la raíz del repo), tras sockets_curvo.py, blender_curvo.py <id> export y comprimir_cadena.sh (la misma UX_OUT):
-#   python3 -I scripts/ux/barcos/entregar.py [navios | canonera2]   →  $UX_OUT/entrega/dentro/<sb_id>.glb (la entrega a dev-render: la KTX2 y el respaldo
+#   python3 -I scripts/ux/barcos/entregar.py [navios | canonera2 | capitan]   →  $UX_OUT/entrega/dentro/<sb_id>.glb (la entrega a dev-render: la KTX2 y el respaldo
 #   en el BIN; el paso 4c lo hace su externalizeKtx2), y de contraste <sb_id>.<hash>.glb y <sb_id>_atlas.<hash>.ktx2 con el 4c
-#   de aquí; entrega.json (o entrega-canonera2.json) con las medidas, también la eslora del casco en la caja y en la flotación
+#   de aquí; entrega.json (o entrega-<conjunto>.json) con las medidas, también la eslora del casco en la caja y en la flotación
 #   (AS-V03). Con `canonera2`, la Cañonera de la receta (D91, 2.ª vuelta; tras sockets_canonera2.py), con el respaldo de 128²,
-#   que pasa la regla de 4b (lamina_canonera2.py, turno C2: ΔE76 1,651 frente a 1,779)
+#   que pasa la regla de 4b (lamina_canonera2.py, turno C2: ΔE76 1,651 frente a 1,779). Con `capitan`, el Capitán de la receta
+#   (D91; tras sockets_capitan.py), con el respaldo PNG de 128², el lado más pequeño que pasa (lamina_capitan.py, turno CP1:
+#   ΔE76 1,140 frente a 1,280; el JPEG de 128² no pasa)
 # Los 2 Navíos de la receta de D91 (aprobados por Jonattan el 2026-10-18) como los espera el juego (ASSET-SPEC §13, pasos
 # 4, 4b y 4c): la geometría con meshopt (`gltf-transform meshopt`); el respaldo PNG de 256² en el BIN, en `texture.source`
 # (D90; 128² no pasa la regla de 4b en ninguno de los dos: respaldo-d90.json de respaldo_curvo.py); y la KTX2 de
@@ -20,12 +22,14 @@ import rutas as RT
 import respaldo as RS
 import navio_curvo as NCV
 import canonera2_curvo as C2
+import capitan_curvo as CPT
 import numpy as np
 
 CAD = os.path.join(RT.OUT, 'cadena'); DST = os.path.join(RT.OUT, 'entrega'); TMP = os.path.join(DST, 'tmp'); DST_D = os.path.join(DST, 'dentro')
 # (id, nombre del atlas, sb_id, lado del respaldo, regiones del atlas)
 SETS = {'navios': (('navio_gb', 'gb', 'ship_line_gb', 256, NCV.AT.R), ('navio_es', 'es', 'ship_line_es', 256, NCV.AT.R)),
-        'canonera2': (('canonera2', 'canonera2', 'npc_pirate_gunboat', 128, C2.AT.R),)}
+        'canonera2': (('canonera2', 'canonera2', 'npc_pirate_gunboat', 128, C2.AT.R),),
+        'capitan': (('capitan', 'capitan', 'npc_pirate_captain', 128, CPT.AT.R),)}
 BASISU = 'KHR_texture_basisu'
 
 

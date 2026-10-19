@@ -66,14 +66,15 @@ def build(lod):
         m.solid(H.warp(-xs, yd_, zt), H.warp(xs, yd_, zt), H.warp(xs, yt, zt), H.warp(-xs, yt, zt), PAL['inner'], 1.0)
         CV.build_gallery(m, H, -14.6, -11.2, H.y0(-13) + Q0['h'] - 0.6, H.top(-13) - 0.3, 0.4, PAL['trim'], nz=4, ny=2)
         details(m, H)
-    figurehead(m, H)
+        figurehead(m, H)
     rig(m, lod)
     return m, H
 
 
 def figurehead(m, H):
     """Mascarón dorado bajo el bauprés (un apéndice, sin _RIM_MASK, como el de los Navíos; AS-V03 no lo cuenta): un tajamar
-    curvo y, en la punta, una calavera de hueso. También en LOD1, porque es rasgo del Capitán (§8.4)."""
+    curvo y, en la punta, una calavera de hueso. Solo en LOD0 (D45: en LOD1 son 1–2 px y no es rasgo de identidad, como sí
+    lo es el estandarte); la lámina D91-capitan.png se hizo con LOD0 en todas sus vistas, así que no cambia."""
     gold, bone = PAL['trim'], PAL['bone']; z = 14.6; y = H.y0(z) - 0.2
     m.solid((-0.3, y - 1.4, z - 0.2), (0.3, y - 1.4, z - 0.2), (0.3, y, z + 0.9), (-0.3, y, z + 0.9), gold, 0.0)
     m.solid((-0.3, y, z + 0.9), (0.3, y, z + 0.9), (0.26, y + 0.7, z + 1.25), (-0.26, y + 0.7, z + 1.25), gold, 0.0)
