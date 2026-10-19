@@ -396,7 +396,7 @@ Y sobre las láminas de islas y puerto (cita que trajo el lead): «Las islas req
        - el ▣, con el Galeón (P2).
      - **D89 (vista libre, E13, P0), para dev (dev-tests)**, después de O-36.
      - **Lo aprobado que va a dev-render, en este orden:** D81, cuando acabe el turno de la rejilla en curso; después la salida 1, D78 (niveles), D85 (la tarjeta de la tienda) y D86 (sin WebGL, P2). D70 sigue en el puesto 10.
-       - *Cambiado el 2026-10-18 (noche)* por producto, con las insignias en V y los dos Navíos aprobados. Después de lo que tiene en curso (la salida 1 con la opción A de AC-193 c), dev-render sigue este orden:
+       - *Cambiado el 2026-10-18 (noche)* por producto, con las insignias en V y los dos Navíos aprobados. Después de lo que tiene en curso (la salida 1 con la opción A de AC-193 c, y el arreglo del #27 si los ROJO de la sonda de QA son del código), dev-render sigue este orden:
          1. **Las insignias en V** (D93, ART-DIRECTION §11.5, r11 `f532663`): frenan el candidato, son pequeñas y tienen la spec lista. Pasan delante de la sombra, y D78 ya sale con ellas.
          2. **El piloto de E17** (AC-193): los dos Navíos de D91 en el juego con la sombra; la medida definitiva de AC-193 (c), con el modelo aprobado y sus 20 corridas; y AC-89 y AC-90 con el peor caso de (b). Va con turno de máquina. Pasa delante de D78 porque decide dos P0 de la 1.1 (E17 y H-1603) y es la cadena más larga, y D78 no frena nada mientras el candidato espere a la Cañonera.
          3. **D78, D85 y D86**, como estaban.
