@@ -127,17 +127,26 @@ export class Navigator {
   // Libre si el segmento no entra en ninguna isla inflada por `clearance`. Una forma de varios círculos se prueba antes por
   // su círculo envolvente (O-43): si el tramo pasa a radio + margen o más de su centro, pasa a más del margen de cada uno
   // de sus círculos (desigualdad triangular), con el EPS de sobra, y la forma entera se salta con una sola cuenta. Las
-  // distancias se comparan al cuadrado
+  // distancias se comparan al cuadrado. Antes que la distancia, la caja (O-43): un círculo que queda entero fuera de la
+  // caja del tramo inflada por el margen y el EPS está a más de radio + margen de todo el tramo, y se salta con cuatro
+  // comparaciones. Un círculo de la forma no sale de su círculo envolvente, así que tampoco de la caja de este
   segmentClear(a: Vec2, b: Vec2, clearance: number): boolean {
     const abx = b.x - a.x;
     const abz = b.z - a.z;
     const len2 = abx * abx + abz * abz;
+    const pad = clearance + EPS;
+    const minX = (a.x < b.x ? a.x : b.x) - pad;
+    const maxX = (a.x < b.x ? b.x : a.x) + pad;
+    const minZ = (a.z < b.z ? a.z : b.z) - pad;
+    const maxZ = (a.z < b.z ? b.z : a.z) + pad;
     for (const shape of this.shapes) {
+      if (shape.x + shape.radius < minX || shape.x - shape.radius > maxX || shape.z + shape.radius < minZ || shape.z - shape.radius > maxZ) continue;
       if (shape.circles.length > 1) {
         const reach = shape.radius + clearance;
         if (segmentPointDistance2(a, abx, abz, len2, shape.x, shape.z) >= reach * reach) continue;
       }
       for (const island of shape.circles) {
+        if (island.x + island.radius < minX || island.x - island.radius > maxX || island.z + island.radius < minZ || island.z - island.radius > maxZ) continue;
         const reach = island.radius + clearance - EPS;
         if (reach > 0 && segmentPointDistance2(a, abx, abz, len2, island.x, island.z) < reach * reach) return false;
       }
