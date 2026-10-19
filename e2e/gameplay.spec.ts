@@ -4,6 +4,7 @@ import { HINTS } from '../src/client/hints';
 import { SHIP_CLASSES } from '../src/game/constants';
 import { AMBUSH_POINT, BLIND_GUNNER_POINT, SHOWCASE_POINT } from '../server/scenarios';
 import { clickWater, dialogsOf, enterGame, hud, me, ships, trackSocket, waitFor } from './helpers';
+import { intentNames } from './net';
 import { OwnServer, startOwnServer } from './own-server';
 
 test.describe('Landing', () => {
@@ -155,13 +156,17 @@ test.describe('Partida como invitado', () => {
   });
 
   test('Tab selecciona y Esc deselecciona sin generar tráfico de red', async ({ page }) => {
+    // Antes de entrar: page.on('websocket') solo avisa de los sockets nuevos, y el del juego se abre al conectar
+    const net = trackSocket(page);
     await enterGame(page);
     // Navegar hacia los mercantes hasta tener alguno a ≤ 150 m
     await page.evaluate(() => {
       const rt = window.__SEA_BATTLE__!.runtime() as unknown as { client: { moveTo: (x: number, z: number) => void } };
       rt.client.moveTo(0, 200);
     });
-    const net = trackSocket(page); // después del moveTo: desde aquí el cliente no debe enviar nada
+    // Tras ver salir el moveTo se vacía el registro: desde aquí el cliente no debe enviar nada
+    await waitFor(async () => intentNames(net), (names) => names.includes('moveTo'), 3000, 50);
+    net.reset();
     const target = await waitFor(
       async () => {
         await page.keyboard.press('Tab');
