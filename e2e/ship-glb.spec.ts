@@ -309,8 +309,11 @@ test.describe('Barcos en GLB (ASSET-SPEC §13)', () => {
     await page.waitForTimeout(500);
     const after = { ...(await ownMap(page)), ...(await ownPixels(page)) };
     console.log(`AC-193 c salida 1, con la KTX2: ${JSON.stringify(after)}`);
-    // Mismo programa del material y mismo número de programas: el cambio de mapa no compila otro
-    expect([after.program, after.programs]).toEqual([before.program, before.programs]);
+    // Mismo programa del material del barco: el cambio de mapa no compila otro (D90). El total del renderer no se aserta
+    // (O-47): un programa ajeno al barco se compila cuando quiere y lo sube de 7 a 8 sin que el del barco cambie
+    console.log(`AC-193 c salida 1, programas del renderer (sin asertar): ${before.programs} → ${after.programs}`);
+    expect(before.program).toEqual(expect.any(Number));
+    expect(after.program).toBe(before.program);
     expect([after.flipY, after.colorSpace, after.materialMap, after.oneDrawCall]).toEqual([before.flipY, before.colorSpace, true, true]);
     expect(after.magenta).toBeGreaterThan(50);
     expect(before.green - after.green).toBeGreaterThan(50);
@@ -357,7 +360,10 @@ test.describe('Barcos en GLB (ASSET-SPEC §13)', () => {
     await page.waitForTimeout(500);
     const after = { ...(await ownMap(page)), ...(await ownPixels(page)) };
     console.log(`AC-193 c paso 4c, con la KTX2: ${JSON.stringify(after)}`);
-    expect([after.program, after.programs]).toEqual([before.program, before.programs]);
+    // Como en la salida 1: solo el programa del material del barco (O-47)
+    console.log(`AC-193 c paso 4c, programas del renderer (sin asertar): ${before.programs} → ${after.programs}`);
+    expect(before.program).toEqual(expect.any(Number));
+    expect(after.program).toBe(before.program);
     expect([after.flipY, after.colorSpace, after.materialMap, after.oneDrawCall]).toEqual([before.flipY, before.colorSpace, true, true]);
     expect(after.magenta).toBeGreaterThan(50);
     expect(before.green - after.green).toBeGreaterThan(50);
