@@ -8,9 +8,10 @@
 #     →  $UX_OUT/cadena/<id>.glb con el atlas final (atlas_<fam>.png), LOD0 y LOD1, COLOR_0 y _RIM_MASK (ASSET-SPEC §1–§7);
 #        los Navíos, la Cañonera rehecha y el Capitán, con los sockets y los extras de $UX_OUT/cadena/<id>-sockets.json
 #        (sockets_curvo.py; sockets_canonera2.py; sockets_capitan.py)
-# <id>: navio_gb, navio_es, canonera (la de D91), canonera2 (la rehecha, canonera2_curvo.py), capitan (capitan_curvo.py) o
-# <clase>_<familia> de clase_curvo.py (sloop, schooner, brig o frigate; gb o es). El horneado es una corrida pesada que
-# pide turno de máquina (un núcleo con -t 1); el export es ligero (≈ 1 s). Blender 5.2.2. No corre en la CI.
+# <id>: navio_gb, navio_es, canonera (la de D91), canonera2 (la rehecha, canonera2_curvo.py), capitan (capitan_curvo.py),
+# galeon (galeon_curvo.py, D88 v2) o <clase>_<familia> de clase_curvo.py (sloop, schooner, brig o frigate; gb o es). El
+# horneado es una corrida pesada que pide turno de máquina (un núcleo con -t 1); el export es ligero (≈ 1 s). Blender 5.2.2.
+# No corre en la CI.
 import bpy, bmesh, sys, os, math, json, time
 import numpy as np
 sys.dont_write_bytecode = True  # el Python de Blender ignora PYTHONDONTWRITEBYTECODE
@@ -67,7 +68,8 @@ else:
     mul = nt.nodes.new('ShaderNodeMix'); mul.data_type = 'RGBA'; mul.blend_type = 'MULTIPLY'; mul.inputs['Factor'].default_value = 1.0
     nt.links.new(tex.outputs['Color'], mul.inputs[6]); nt.links.new(vc.outputs['Color'], mul.inputs[7]); nt.links.new(mul.outputs[2], bsdf.inputs['Base Color'])
     bsdf.inputs['Roughness'].default_value = 0.85; bsdf.inputs['Metallic'].default_value = 0.0
-    sid = {'navio_gb': 'ship_line_gb', 'navio_es': 'ship_line_es', 'canonera': 'npc_pirate_gunboat', 'canonera2': 'npc_pirate_gunboat', 'capitan': 'npc_pirate_captain'}.get(ID)
+    sid = {'navio_gb': 'ship_line_gb', 'navio_es': 'ship_line_es', 'canonera': 'npc_pirate_gunboat', 'canonera2': 'npc_pirate_gunboat',
+           'capitan': 'npc_pirate_captain', 'galeon': 'npc_merchant_galleon'}.get(ID)
     if sid is None:  # las 4 clases de clase_curvo.py: <clase>_<familia> → ship_<assetId de la clase>_<familia>
         cls_, fam_ = ID.rsplit('_', 1); sid = {'sloop': 'ship_sloop', 'schooner': 'ship_schooner', 'brig': 'ship_brigantine', 'frigate': 'ship_frigate'}[cls_] + '_' + fam_
     if ID != 'canonera': mat.name = sid  # el nombre del material, como en el piloto (blender_navio.py)
