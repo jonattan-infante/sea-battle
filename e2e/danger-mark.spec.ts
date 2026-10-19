@@ -125,10 +125,15 @@ test.describe('Marca de peligro en el objetivo (AC-189)', () => {
         if (touch) await page.getByTestId('buy-cannons-2').tap();
         else await page.getByTestId('buy-cannons-2').click();
         await expect(page.getByTestId('shop-cannons')).toContainText('Nivel 2/3');
+        const boughtAt = Date.now();
         if (touch) await page.getByRole('button', { name: 'Cerrar (Esc)' }).tap();
         else await page.keyboard.press('Escape');
         await expect(page.getByTestId('shop')).toHaveCount(0);
         await expect(page.getByTestId('target-frame')).toHaveAttribute('data-target-id', gunboat.id);
+        // O-51: la tienda ve la compra en el acto (client.onPlayer), pero la marca se recalcula en el sync del HUD, cada
+        // HUD_SYNC_MS = 100 ms (GameApp.tsx): se espera a que se vaya en vez de leer el panel una vez, y los ms van al log
+        await expect.poll(async () => (await targetPanel(page)).icon, { timeout: 2000, intervals: [10] }).toBeNull();
+        console.log(`AC-189 la marca se va ${Date.now() - boughtAt} ms después de «Nivel 2/3» (${size})`);
         const after = await targetPanel(page);
         console.log(`AC-189 tras Cañones N2 ${size}: ${JSON.stringify(after)}`);
         expect(after.icon).toBeNull();
