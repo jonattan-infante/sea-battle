@@ -391,7 +391,7 @@ Equilibrio: la Balandra es rápida y frágil; la Fragata es lenta y tiene la may
 
 | Regla | Valor |
 |---|---|
-| Familias | 2: **española** (galeón: castillos altos, popa labrada y dorada) y **británica** (la del HMS Victory: casco oscuro con franjas de portas). Lo que debe comunicar cada una, abajo; el diseño es de `game-ux` |
+| Familias | 2: **española** (galeón: castillos altos, popa labrada y dorada) y **británica** (la del HMS Victory: casco oscuro con franjas de portas). Lo que debe comunicar cada una, abajo; el diseño es de `game-ux`. **Ids** (fijados por producto el 2026-10-20, a pregunta de dev-render): `gb` (británica) y `es` (española), los mismos de `sb_family` en ASSET-SPEC §4 (D80). Son los valores que usan el guardado en el navegador, la red y las claves de los modelos (clase × familia). Un valor desconocido entra con `gb`, la de por defecto (BACKLOG AC-196 b) |
 | Clases | Cada familia tiene las 5 clases de la tabla de arriba. Las estadísticas son las de la clase, iguales en las 2 familias. La eslora, el radio de colisión y la caja de selección también: la familia no cambia ni dónde se acierta ni por dónde se pasa |
 | La clase se sigue leyendo | El número de palos, la eslora y los rasgos de clase de ux (AD-37: las dos filas de portas del Navío, por ejemplo) son los mismos en las 2 familias. La familia cambia el casco, los castillos, la popa, los colores, las velas y la bandera, no lo que dice qué clase es |
 | Nombres | Los de la clase, sin cambios: el Navío español es «Navío de línea», no «Galeón». Así el panel del objetivo sigue diciendo la clase (§14) y no se confunde con el Galeón del tesoro (§9) |
