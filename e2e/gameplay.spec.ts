@@ -56,6 +56,13 @@ test.describe('Partida como invitado', () => {
 
   test('AC-14 (a, c): marcador ≤ 50 ms y la posición renderizada cambia en ≤ 350 ms en 10 de 10 corridas', async ({ page }) => {
     test.setTimeout(120_000);
+    // O-56: el barco de un jugador que sale de otro test sigue 10 s en el mundo (DISCONNECT_GRACE) y, si caía bajo el clic,
+    // el clic lo seleccionaba en vez de navegar. Cada clic va a un punto de agua libre, elegido justo antes de lanzarlo como
+    // waterPoint() de input-toggle.spec.ts: sobre el lienzo y sin barcos ajenos a < 60 px. El primer candidato de cada lado
+    // es el punto de siempre, a 120 px del barco
+    const FREE_PX = 60;
+    const OFFSETS_X = [0, -100, 100, -200, 200];
+    const px = (v: number) => (v === Infinity ? 'ninguno en pantalla' : `${v.toFixed(0)} px`);
     await enterGame(page);
     const markers: number[] = [];
     const moves: number[] = [];
@@ -75,18 +82,28 @@ test.describe('Partida como invitado', () => {
         10_000,
         0
       );
-      const start = (await me(page))!;
       // Alterna arriba y abajo para quedarse cerca del puerto
       const dy = run % 2 === 0 ? -120 : 120;
       const t = await page.evaluate(
-        ([x, y]) =>
-          new Promise<{ marker: number; move: number }>((resolve) => {
+        ({ offY, freePx, offsets }) =>
+          new Promise<{ marker: number; move: number; point: { x: number; y: number; nearest: number } | null; tried: { x: number; y: number; nearest: number; onCanvas: boolean }[] }>((resolve) => {
             const dbg = window.__SEA_BATTLE__!;
             const rt = dbg.runtime() as unknown as { clickMarker: unknown };
-            const me0 = dbg.me() as { x: number; z: number };
+            type Seen = { id: string; x: number; z: number; screen: { sx: number; sy: number } | null };
+            const me0 = dbg.me() as Seen;
+            const others = (dbg.ships() as Seen[]).filter((s) => s.id !== me0.id && s.screen).map((s) => s.screen!);
+            const tried = offsets.map((dx) => {
+              const x = me0.screen!.sx + dx;
+              const y = me0.screen!.sy + offY;
+              const nearest = Math.min(Infinity, ...others.map((o) => Math.hypot(o.sx - x, o.sy - y)));
+              return { x, y, nearest, onCanvas: document.elementFromPoint(x, y)?.tagName === 'CANVAS' };
+            });
+            const free = tried.find((c) => c.onCanvas && c.nearest >= freePx);
+            if (!free) return resolve({ marker: -1, move: Infinity, point: null, tried });
+            const point = { x: free.x, y: free.y, nearest: free.nearest };
             const canvas = document.querySelector('canvas')!;
             const t0 = performance.now();
-            const opts = { clientX: x, clientY: y, bubbles: true, pointerType: 'mouse', button: 0, isPrimary: true };
+            const opts = { clientX: point.x, clientY: point.y, bubbles: true, pointerType: 'mouse', button: 0, isPrimary: true };
             canvas.dispatchEvent(new PointerEvent('pointerdown', opts));
             canvas.dispatchEvent(new PointerEvent('pointerup', opts));
             let marker = -1;
@@ -94,14 +111,21 @@ test.describe('Partida como invitado', () => {
               const now = performance.now();
               if (marker < 0 && rt.clickMarker) marker = now - t0;
               const m = dbg.me() as { x: number; z: number };
-              if (Math.hypot(m.x - me0.x, m.z - me0.z) > 0.01) return resolve({ marker, move: now - t0 });
-              if (now - t0 > 3000) return resolve({ marker, move: Infinity });
+              if (Math.hypot(m.x - me0.x, m.z - me0.z) > 0.01) return resolve({ marker, move: now - t0, point, tried });
+              if (now - t0 > 3000) return resolve({ marker, move: Infinity, point, tried });
               requestAnimationFrame(poll);
             };
             requestAnimationFrame(poll);
           }),
-        [start.screen!.sx, start.screen!.sy + dy]
+        { offY: dy, freePx: FREE_PX, offsets: OFFSETS_X }
       );
+      const side = dy < 0 ? 'norte' : 'sur';
+      if (t.point) {
+        console.log(`AC-14 corrida ${run + 1}: ${side}, clic en (${t.point.x.toFixed(0)}, ${t.point.y.toFixed(0)}) · barco ajeno más cercano: ${px(t.point.nearest)}`);
+      } else {
+        console.log(`AC-14 corrida ${run + 1}: ${side}, sin punto libre · candidatos ${t.tried.map((c) => `(${c.x.toFixed(0)}, ${c.y.toFixed(0)}) ${c.onCanvas ? px(c.nearest) : 'fuera del lienzo'}`).join(' · ')}`);
+      }
+      expect(t.point, `AC-14: sin punto de agua libre (sobre el lienzo y sin barcos ajenos a < ${FREE_PX} px) en la corrida ${run + 1}`).not.toBeNull();
       markers.push(t.marker);
       moves.push(t.move);
     }
