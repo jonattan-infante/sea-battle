@@ -6,6 +6,12 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-10-23
+
+### Seguridad
+
+- **Next.js 15.5.28.** Corrige dos fallos de seguridad de Next.js publicados el 2026-10-22, que afectaban a la 15.5.27 que usaba la 1.0.3. El primero, crítico, estaba en la optimización de imágenes y podía permitir ejecutar código en el servidor (GHSA-2464-fhr4-w9xw). El segundo, de gravedad alta, dejaba saturar el servidor con peticiones preparadas contra las Server Actions (CVE-2026-94482). La 15.5.28 también exige `sharp` 0.35.5 o superior, la versión que cierra el primero. Nada cambia en lo que ves ni en cómo se juega.
+
 ## [1.0.3] - 2026-10-17
 
 ### Cambiado
