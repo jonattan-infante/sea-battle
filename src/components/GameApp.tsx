@@ -104,6 +104,7 @@ interface SeaBattleDebug {
   hud: () => unknown;
   renderInfo: () => unknown;
   runtime: () => GameRuntime;
+  select: (id: string | null) => void; // un objetivo elegido sin teclado ni ratón (e2e de O-54, bajo la portada)
 }
 
 declare global {
@@ -441,6 +442,14 @@ export default function GameApp({ guest }: { guest: boolean }) {
       // Sin partida que mandar (AC-131, AC-133): las teclas no generan intenciones y Enter y Espacio quedan para el overlay
       const { connection } = useHud.getState();
       if (connection === 'load-failed' || connection === 'kicked') return;
+      // Con la portada de la entrada puesta, ninguna tecla hace nada (O-54). Tab y las flechas tampoco hacen lo suyo, para
+      // que el foco no baje a un botón del HUD que hay debajo; Espacio y Enter, solo sobre un botón del aviso de conexión
+      if (runtime?.entryCovered()) {
+        const overlay = !!el?.closest('[data-testid="connection-overlay"]');
+        const press = e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter';
+        if (e.code === 'Tab' || ARROW_KEYS[e.code] || (press && !overlay)) e.preventDefault();
+        return;
+      }
       // Una pulsación, como mucho una intención (GDD §5): la autorrepetición de una tecla mantenida no cuenta
       if (e.repeat) {
         if (e.code === 'Space' || e.code === 'Tab' || ARROW_KEYS[e.code]) e.preventDefault();
@@ -531,6 +540,7 @@ export default function GameApp({ guest }: { guest: boolean }) {
         return { me, target, selectedId, shopOpen, connection, hint, feed, toasts, saveWarning };
       },
       renderInfo: () => ({ ...runtime.renderInfo }),
+      select: (id) => useHud.getState().select(id),
       runtime: () => runtime
     };
     return () => {

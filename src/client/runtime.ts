@@ -1107,6 +1107,11 @@ export class GameRuntime implements OverlayHost, ChipHost {
     if (this.entryCover) this.entryCover.hidden = true;
   }
 
+  // La portada tapa el juego (O-54): mientras tanto, el teclado no hace nada. Sin manifiesto o sin WebGL ya está oculta
+  entryCovered(): boolean {
+    return !!this.entryCover && !this.entryCover.hidden;
+  }
+
   attachOverlays(labels: HTMLElement, floating: HTMLElement, chips: HTMLElement): void {
     this.detachOverlays();
     this.labels = new LabelLayer(labels, this);
