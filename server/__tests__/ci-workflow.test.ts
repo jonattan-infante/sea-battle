@@ -8,12 +8,12 @@ import path from 'path';
 const CI = fs.readFileSync(path.join(__dirname, '..', '..', '.github', 'workflows', 'ci.yml'), 'utf8');
 const CODE = CI.split('\n').filter((l) => !l.trim().startsWith('#')).join('\n'); // sin los comentarios
 
-// El bloque de cada job: desde «  <nombre>:» hasta el siguiente job
+// El bloque de cada job: desde «  <nombre>:» hasta el siguiente job (los nombres pueden llevar cifras, como e2e)
 function job(name: string): string {
   const start = CI.search(new RegExp(`^  ${name}:$`, 'm'));
   if (start < 0) throw new Error(`no hay job ${name}`);
   const rest = CI.slice(start + 1);
-  const next = rest.search(/^ {2}[a-z][a-z-]*:$/m);
+  const next = rest.search(/^ {2}[a-z][a-z0-9-]*:$/m);
   return next < 0 ? rest : rest.slice(0, next);
 }
 
@@ -70,5 +70,41 @@ describe('despliegue automático (DT-16)', () => {
   test('el secreto solo va a los pasos que lo usan, nunca a un echo', () => {
     expect(CI).not.toMatch(/echo[^\n]*RAILWAY_TOKEN/);
     for (const line of CI.split('\n').filter((l) => l.includes('secrets.RAILWAY_TOKEN'))) expect(line.trim()).toBe('RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}');
+  });
+});
+
+// El e2e de Playwright en los PR: la misma selección que `npm run test:e2e`, sin secretos ni escritura, cada shard cancela
+// solo su corrida anterior del mismo PR, y los artefactos (el repo es público) caducan a los 7 días
+describe('e2e de Playwright en los PR', () => {
+  const PKG = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf8')) as { scripts: Record<string, string> };
+  const steps = (name: string) => job(name).split(/\n {6}- /);
+
+  test('la misma selección que npm run test:e2e, en tantos shards como la matriz, con un reintento', () => {
+    const e2e = job('e2e');
+    const grep = PKG.scripts['test:e2e'].match(/--grep-invert "([^"]+)"/)?.[1];
+    expect(grep).toBeDefined();
+    expect(e2e).toContain(`--grep-invert "${grep}"`);
+    const shards = e2e.match(/shard: \[([\d, ]+)\]/)?.[1].split(',').length;
+    expect(e2e).toContain(`--shard=\${{ matrix.shard }}/${shards} `);
+    expect(e2e).toContain('--retries=1');
+  });
+
+  test('solo en PR (no al poner una etiqueta), sin secretos y con permiso de solo lectura', () => {
+    expect(job('e2e')).toContain("if: github.event_name == 'pull_request' && github.event.action != 'labeled'");
+    for (const name of ['e2e', 'e2e-report']) {
+      expect(job(name)).not.toMatch(/secrets\./);
+      expect(job(name)).toMatch(/permissions:\n\s+contents: read\n/);
+    }
+  });
+
+  test('cada shard tiene su grupo de concurrencia por PR y cancela la corrida anterior', () => {
+    expect(job('e2e')).toContain("format('e2e-pr-{0}-{1}', github.event.pull_request.number, matrix.shard)");
+    expect(job('e2e')).toMatch(/cancel-in-progress: true/);
+  });
+
+  test('todos los artefactos del e2e caducan a los 7 días', () => {
+    const uploads = [...steps('e2e'), ...steps('e2e-report')].filter((s) => s.includes('actions/upload-artifact'));
+    expect(uploads).toHaveLength(3);
+    for (const step of uploads) expect(step).toMatch(/retention-days: 7\n/);
   });
 });
