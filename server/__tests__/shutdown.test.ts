@@ -433,4 +433,22 @@ describe.each(PIPE_MODES)('AC-203 (O-41): con las tuberías de los logs cerradas
     await sleep(5000);
     expect({ frames: f.frames.length - before >= 25, alive: alive(child.pid) }).toEqual({ frames: true, alive: true });
   });
+
+  // «Un error al escribir en stdout o stderr»: el servidor escribe sus logs por stdout, así que sin esta línea por stderr
+  // nada probaría la tubería de stderr (M2, el listener solo en stdout, sobrevivía al resto del archivo)
+  test('(b) y (c) con una línea por stderr: el juego sigue durante 5 s y SIGTERM escribe el estado y sale solo con 0', async () => {
+    await seed('test-hal', SLOOP_ONLY);
+    const child = await start(env);
+    const h = await joinGame(child.url, { testUser: 'hal' }, undefined, sockets);
+    h.c.emit(C2S.moveTo, { x: 300, z: 300 });
+    expect(await child.addGold('test-hal', 250)).toBe(true);
+    child.closeOutput();
+    expect(await child.logError()).toBe(true);
+    const before = h.frames.length;
+    await sleep(5000);
+    expect({ frames: h.frames.length - before >= 25, alive: alive(child.pid) }).toEqual({ frames: true, alive: true }); // (c)
+    const outcome = await Promise.race([child.kill('SIGTERM'), sleep(10_000).then(() => 'sigue vivo a los 10 s del SIGTERM')]);
+    expect(outcome).toEqual({ code: 0, signal: null }); // (b)
+    expect(await goldOf('test-hal')).toBe(350);
+  });
 });
