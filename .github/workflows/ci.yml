@@ -52,6 +52,126 @@ jobs:
       - name: Build (Next + servidor)
         run: npm run build
 
+  # e2e de Playwright en cada PR, sin desplegar nada: los tests de `npm run test:e2e` (sin @perf, @capture ni @soak, que
+  # piden GPU real o son largos y siguen en el Mac). Cada shard es una máquina con su build y sus 4 servidores, y corre en
+  # serie como en el Mac (workers: 1). Linux no tiene GPU: WebGL por SwiftShader (playwright.config.ts). Un fallo se
+  # repite una vez y, si pasa, sale como «flaky» en el informe. No es un check obligatorio: eso lo decide Jonattan
+  e2e:
+    if: github.event_name == 'pull_request' && github.event.action != 'labeled'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    # Un push nuevo al PR cancela su e2e en curso, shard a shard. La etiqueta (labeled) no corre el e2e y va a un grupo
+    # propio, para no cancelar el de la última cabeza
+    concurrency:
+      group: ${{ github.event.action == 'labeled' && format('e2e-labeled-{0}-{1}', github.run_id, matrix.shard) || format('e2e-pr-{0}-{1}', github.event.pull_request.number, matrix.shard) }}
+      cancel-in-progress: true
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    env:
+      # Sin secretos: clave de Clerk de producción ficticia, de un host .invalid. El middleware ve «producción sin
+      # cookies» y no hace handshake; el navegador no llega a cargar clerk-js. Nada sale hacia Clerk
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_live_Y2xlcmsuZ2hhLWUyZS5zZWEtYmF0dGxlLmludmFsaWQk
+      CLERK_SECRET_KEY: sk_live_dummy
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4.4.0
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      # Chrome del runner (channel: 'chrome') y los binarios de Postgres para el clúster temporal de los specs de
+      # persistencia (server/__tests__/pg/cluster.ts lee PG_BIN)
+      - name: Chrome, WebGL y Postgres del runner
+        run: |
+          google-chrome --version
+          pg_bin="$(printf '%s\n' /usr/lib/postgresql/*/bin | sort -V | tail -1)"
+          test -x "${pg_bin}/initdb"
+          "${pg_bin}/postgres" --version
+          echo "PG_BIN=${pg_bin}" >> "$GITHUB_ENV"
+          npx tsx -e "(async () => {
+            const { chrome } = await import('./playwright.config.ts');
+            const { chromium } = await import('@playwright/test');
+            const browser = await chromium.launch({ channel: chrome.channel, args: chrome.launchOptions.args });
+            const page = await browser.newPage();
+            const renderer = await page.evaluate(() => {
+              const gl = document.createElement('canvas').getContext('webgl2');
+              const info = gl && gl.getExtension('WEBGL_debug_renderer_info');
+              return gl ? gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER) : 'sin WebGL2';
+            });
+            console.log('Chrome ' + browser.version() + ', args ' + chrome.launchOptions.args.join(' ') + ', WebGL: ' + renderer);
+            await browser.close();
+          })()"
+      - name: Build de e2e
+        run: npm run build:e2e
+      - name: e2e (shard ${{ matrix.shard }}/4)
+        run: npx playwright test --grep-invert "@perf|@capture|@soak" --shard=${{ matrix.shard }}/4 --retries=1 --reporter=blob,list
+      - name: Informe del shard (blob)
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: e2e-blob-${{ matrix.shard }}
+          path: blob-report
+          retention-days: 7
+      # El repo es público y sus artefactos también: solo las trazas de los fallos, 7 días
+      - name: Trazas de los fallos (test-results)
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: e2e-test-results-${{ matrix.shard }}
+          path: test-results
+          retention-days: 7
+
+  # Junta los blobs de los shards en un informe HTML (con las trazas de los fallos) y un resumen en la página del run
+  e2e-report:
+    needs: e2e
+    if: ${{ !cancelled() && needs.e2e.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    concurrency:
+      group: ${{ github.event.action == 'labeled' && format('e2e-report-labeled-{0}', github.run_id) || format('e2e-report-pr-{0}', github.event.pull_request.number) }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4.4.0
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@v4.3.0
+        with:
+          pattern: e2e-blob-*
+          path: all-blob-reports
+          merge-multiple: true
+      - name: Juntar los informes
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: e2e-results.json
+        run: npx playwright merge-reports --reporter=html,json all-blob-reports
+      - name: Resumen
+        run: |
+          {
+            echo '### e2e'
+            jq -r '.stats | "Pasan \(.expected), fallan \(.unexpected), flaky \(.flaky), saltados \(.skipped); duración según el informe \(.duration / 1000 | floor) s"' e2e-results.json
+            echo
+            echo '```'
+            jq -r '.. | objects | select(has("specs")) | .specs[] | . as $s | .tests[] | select(.status == "unexpected" or .status == "flaky") | "\(.status)\t[\(.projectName)] \($s.file):\($s.line) \($s.title)"' e2e-results.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Informe HTML
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: e2e-html-report
+          path: |
+            playwright-report
+            e2e-results.json
+          retention-days: 7
+
   # DT-16: un PR hacia main desde una rama de este repo (nunca un fork: el secreto no debe llegar a código ajeno) se
   # despliega en staging tras verify solo si tiene la etiqueta «staging»: al ponerla y en cada push posterior. Sin ella,
   # solo verify, para que varios PR abiertos no se pisen staging. Un despliegue a medias no se cancela; si llegan varios,
