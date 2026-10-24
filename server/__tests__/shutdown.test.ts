@@ -264,12 +264,12 @@ describe('orden del apagado (createShutdown)', () => {
   // O-42 (a): el aviso lleva los ms reales (antes, el plazo) y, después del (+N ms) que lee check_deploy.py:160, cuántos
   // jugadores quedaron sin guardar
   test('si la escritura no llega en su plazo, el aviso lleva la hora, los ms reales y cuántos jugadores quedaron sin guardar', async () => {
-    const h = harness(() => new Promise<boolean>(() => {}), { unsaved: 2 });
+    let clock = 0; // el reloj del proceso (now): la escritura colgada se lleva 250 ms; el plazo real de 200 ms cierra igual
+    const h = harness(() => ((clock += 250), new Promise<boolean>(() => {})), { unsaved: 2, now: () => clock });
     await h.shutdown('SIGTERM');
     const m = /^⚠️ {2}El progreso no se pudo guardar en (\d+) ms \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z \(\+(\d+) ms\) · 2 jugadores sin guardar$/.exec(h.lines[1]);
     expect(m).not.toBeNull();
-    expect(m![1]).toBe(m![2]);
-    expect(Number(m![1])).toBeGreaterThanOrEqual(190);
+    expect([m![1], m![2]]).toEqual(['250', '250']); // lo que marca el reloj del proceso, en el aviso y en el (+N ms)
     expect(h.lines[2]).toMatch(/^🔌 Sockets cerrados /);
   });
 
@@ -283,7 +283,7 @@ describe('orden del apagado (createShutdown)', () => {
     const h = harness(() => new Promise<boolean>(() => {}));
     const t0 = Date.now();
     await h.shutdown('SIGTERM');
-    expect(Date.now() - t0).toBeGreaterThanOrEqual(190);
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(190); // O-59: espera al plazo real de 200 ms; un temporizador se adelanta ~1 ms, no 10
     expect(h.order).toEqual(['stop', 'io.close', 'http.close', 'pool.end', 'exit 0']);
   });
 
@@ -309,13 +309,13 @@ describe('orden del apagado (createShutdown)', () => {
 
   // El pool espera a sus conexiones al cerrarse: un intento empezado al final del plazo retrasaría la salida hasta 3 s más
   test('no empieza un intento que no cabe en el plazo (se supone que dura como el que acaba de fallar)', async () => {
-    const h = harness(() => new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 120)), { retryPauseMs: 10 });
+    let clock = 0; // el reloj del proceso (now) avanza 120 ms con la escritura: el aviso no depende de los ms reales de la CI
+    const h = harness(() => new Promise<boolean>((resolve) => setTimeout(() => ((clock += 120), resolve(false)), 120)), { retryPauseMs: 10, now: () => clock });
     await h.shutdown('SIGTERM');
     expect(h.flushes()).toBe(1);
     expect(h.order).toEqual(['stop', 'flush-fallido', 'io.close', 'http.close', 'pool.end', 'exit 0']);
     const ms = Number(/no se pudo guardar en (\d+) ms /.exec(h.lines[1])?.[1]);
-    expect(ms).toBeGreaterThanOrEqual(120); // lo que tardó de verdad, no el plazo de 200 ms
-    expect(ms).toBeLessThan(200);
+    expect(ms).toBe(120); // lo que tardó la escritura en el reloj del proceso, no el plazo de 200 ms
   });
 
   // O-42 (a): un conflicto de verdad (otro proceso escribió antes) ni se reintenta ni cuenta como guardado

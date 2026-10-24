@@ -4,7 +4,7 @@ import os, sys, unittest
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import railway_api
-from check_deploy import START, shutdown_timeline, start_check
+from check_deploy import START, railpack_banner, shutdown_timeline, start_check
 
 BANNER = 'Railpack 0.40.1\n  Steps\n  ──────────\n  ▸ build\n    $ npm run build\n  Deploy\n  ──────────\n    $ {cmd}\n'
 
@@ -32,8 +32,44 @@ class StartCheck(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("['npm start']", detail)
 
-    def test_banner_sin_plan_legible_falla(self):
-        self.assertFalse(start_check(START, START, 'Railpack 0.40.1\n  (formato nuevo)\n')[0])
+    # O-60 (i): un banner sin la línea del plan no se puede comprobar y no cuenta como FALLA. El caso es lo que este script
+    # leía del build de prod de b55345f (Railpack 0.43.0): solo el mensaje del título del recuadro
+    def test_banner_sin_linea_de_plan_no_falla_y_dice_que_no_es_comprobable(self):
+        ok, detail = start_check(START, START, '│ Railpack 0.43.0 │')
+        self.assertTrue(ok)
+        self.assertIn('no comprobable (el banner de Railpack no trae la línea del plan)', detail)
+
+    def test_banner_sin_linea_de_plan_falla_si_el_ajuste_dice_otra_cosa(self):
+        self.assertFalse(start_check('npm start', START, '│ Railpack 0.43.0 │')[0])
+
+
+# Mensajes del log del build tal como llegan (prod b55345f, Railpack 0.43.0, 2026-10-23; staging da los mismos): una línea
+# del banner por mensaje, y el que nombra a Railpack es solo el título del recuadro (O-60)
+def build_log(cmd):
+    return ['🚂 All aboard, next stop: builder v4', 'using build driver railpack-v0.43.0', '                   ', '╭─────────────────╮',
+            '│ Railpack 0.43.0 │', '╰─────────────────╯', '', '  ↳ Detected Node', '            ', '\x1b[1m  Steps     \x1b[0m',
+            '  ──────────', '  ▸ install', '    $ npm install', '         ', '  ▸ build', '    $ npm run build', '            ',
+            '\x1b[1m  Deploy    \x1b[0m', '  ──────────', f'    $ {cmd}', '', 'load build definition from ./railpack-plan.json']
+
+
+class RailpackBanner(unittest.TestCase):
+    def test_banner_de_una_linea_por_mensaje_con_el_plan_start_no_falla(self):
+        ok, detail = start_check(START, START, railpack_banner(build_log(START)))
+        self.assertTrue(ok)
+        self.assertIn(f"plan de Railpack ['{START}']", detail)
+
+    def test_banner_de_una_linea_por_mensaje_con_otro_plan_falla(self):
+        ok, detail = start_check(START, START, railpack_banner(build_log('npm start')))
+        self.assertFalse(ok)
+        self.assertIn("['npm start']", detail)
+
+    def test_banner_de_un_solo_mensaje_sigue_valiendo(self):
+        self.assertTrue(start_check(START, START, railpack_banner(['uploading snapshot', BANNER.format(cmd=START), 'copy / /app']))[0])
+
+    def test_sin_banner_no_es_comprobable(self):
+        banner = railpack_banner(['uploading snapshot', 'using build driver railpack-v0.43.0', 'copy / /app'])
+        self.assertEqual(banner, '')
+        self.assertIn('no comprobable', start_check(START, START, banner)[1])
 
 
 class ProjectToken(unittest.TestCase):
