@@ -463,19 +463,36 @@ function pathOf(url: string, withQuery = false): string {
     return 'sin URL';
   }
 }
-// La ventana de H5 de cada página va de su entrada en settle a la captura de sus esquinas (open)
-const lastSettle = new WeakMap<Page, { label: string; at: number; open: boolean }>();
+const lastSettle = new WeakMap<Page, { label: string; at: number }>();
 
-// Al entrar en settle: desde el primero de la página, cada navegación del frame principal dentro de la ventana va al log
-// con los ms desde la entrada; las de fuera son las del propio test y no van; devuelve cuántas document.images hay
-async function settleEntry(page: Page, label: string): Promise<number> {
-  if (!lastSettle.has(page)) {
-    page.on('framenavigated', (f) => {
-      const last = lastSettle.get(page)!;
-      if (f === page.mainFrame() && last.open) console.log(safeLog(`O-63 navegación a ${pathOf(f.url())}, ${Date.now() - last.at} ms después de entrar en el settle de ${last.label}, antes de la captura de sus esquinas`));
-    });
+// La ventana de H5 de cada página medida va de su load a la captura de sus esquinas, que es la última de esa página. Desde
+// antes del 1.er goto de cada test se guardan las navegaciones del frame principal y el 1.er load tras la captura anterior
+// (el del goto del test); la captura de las esquinas lleva al log las de la ventana y vacía la lista
+type Watch = { navs: { at: number; to: string }[]; load?: { at: number; to: string } };
+const watches = new WeakMap<Page, Watch>();
+test.beforeEach(async ({ page }) => {
+  const w: Watch = { navs: [] };
+  watches.set(page, w);
+  page.on('framenavigated', (f) => {
+    if (f === page.mainFrame()) w.navs.push({ at: Date.now(), to: pathOf(f.url()) });
+  });
+  page.on('load', () => {
+    w.load ??= { at: Date.now(), to: pathOf(page.url()) };
+  });
+});
+function logWindow(page: Page) {
+  const [w, s, at] = [watches.get(page), lastSettle.get(page), Date.now()];
+  if (!w) return;
+  for (const n of w.load ? w.navs.filter((n) => n.at >= w.load!.at) : []) {
+    const settle = s ? `, ${n.at < s.at ? 'antes' : 'después'} de entrar en el settle de ${s.label}` : '';
+    console.log(safeLog(`O-63 navegación a ${n.to}, ${n.at - w.load!.at} ms después del load de ${w.load!.to}${settle}, ${at - n.at} ms antes de la captura de sus esquinas`));
   }
-  lastSettle.set(page, { label, at: Date.now(), open: true });
+  [w.navs, w.load] = [[], undefined];
+}
+
+// Al entrar en settle: devuelve cuántas document.images hay
+async function settleEntry(page: Page, label: string): Promise<number> {
+  lastSettle.set(page, { label, at: Date.now() });
   return page.evaluate(() => document.images.length);
 }
 
@@ -502,8 +519,7 @@ async function settleImages(page: Page, label: string, atEntry: number) {
 // al test solo si falla (faltaba en el rojo de QA-53; en verde serían ~1,7 MB por run sin uso)
 let landingPng: Buffer | undefined;
 async function attachLanding(page: Page, png: Buffer): Promise<Buffer> {
-  const last = lastSettle.get(page);
-  if (last) last.open = false;
+  logWindow(page);
   if (pathOf(page.url()) === '/') landingPng = png;
   return png;
 }
