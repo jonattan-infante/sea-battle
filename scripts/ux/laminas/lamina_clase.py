@@ -43,9 +43,9 @@ def fam_adj(k, f): return ('británico' if f == 'gb' else 'español') if k in MA
 SHIP = {s['id']: s for s in T.SHIPS}
 TOPE = dict(lod0=5000, lod1=1200, suma=630930)  # producto, 2026-10-19 (BACKLOG :359): el de las familias y la suma de las 8
 APROBADAS = ('sloop', 'brig')  # láminas D95 aprobadas por Jonattan el 2026-10-20 (ART-DIRECTION, fila D95)
-APROBADO_B = 110955 + 139308  # lo que pesan sus 4 combinaciones (ASSET-SPEC §13, turnos K)
+BALANDRA_B, BERGANTIN_B = 110955, 139308; APROBADO_B = BALANDRA_B + BERGANTIN_B  # sus 4 combinaciones (ASSET-SPEC §13, turnos K)
 # lo que producto deja a la clase (2026-10-20): a la Fragata, lo que queda menos lo que pesa el Bergantín, para la Goleta
-OBJETIVO = {'frigate': TOPE['suma'] - APROBADO_B - 139308}
+OBJETIVO = {'frigate': TOPE['suma'] - APROBADO_B - BERGANTIN_B}
 # salida (a) de producto (BACKLOG :361): la KTX2 más comprimida vale si no baja de lo peor de los Navíos aprobados, en
 # fidelidad del atlas (D91: 30,5 dB) y en la diferencia de la propia KTX2 con el atlas en el render del juego (D90: 1,01)
 # (producto, 2026-10-20: también el p95, 4,9, porque el error de la ETC1S está en los cantos finos; y el respaldo se mide
@@ -157,6 +157,18 @@ def alto(k):
     return f", y con {' y '.join(p)} {dec(CC.T_ES * 100, 0)} cm más {adj}"
 
 
+def cubierta(k):
+    """Lo que lleva la cubierta de la clase k (clase_curvo.CLASES), para «Qué cambia»: el de esta clase, no el de todas."""
+    c = CC.CLASES[k]; nb, cz = len(c['boats']), c['carronades']; ed = {t['kind']: t['edge'] for t in c['tiers']}
+    p = ['obenques', 'estays', 'el timón'] + (['la campana'] if c['bell'] is not None else []) + ([f"{nb} {'bote' if nb == 1 else 'botes'}"] if nb else [])
+    if c['capstan'] is not None: p.append('el cabrestante')
+    if cz:  # las últimas, para que su «en el alcázar y el castillo de proa» no se lea con lo que viene detrás
+        donde = [x for x, ok in (('el alcázar', any(z <= ed.get('aft', -1e9) for z in cz)), ('el castillo de proa', any(z >= ed.get('fore', 1e9) for z in cz))) if ok]
+        p.append('carronadas' + (f" en {' y '.join(donde)}" if donde else ''))
+    nl = c['lanterns']
+    return ', '.join(p[:-1]) + f" y {p[-1]}; en la popa, {nl} {'farol' if nl == 1 else 'faroles'}"
+
+
 def psnr(a, b): return round(float(10 * np.log10(255 ** 2 / ((a.astype(float) - b.astype(float)) ** 2).mean())), 2)  # lamina_cadena.py
 def densidad(npz, A):
     """px por metro del atlas de lado A, por región de AT: la mediana (por área) de la dirección más estrecha de cada
@@ -264,6 +276,8 @@ if __name__ == '__main__':
     MED['densidad_tabla'] = DENS[cls]
     if cls in OBJETIVO:
         MED['objetivo_B'] = OBJETIVO[cls]; MED['salida_a'] = {}
+        # con la textura a la mitad de lado, para «En contra»: si se pasa, bajarla no vale si deja < 18 px/m (BACKLOG :361)
+        MED['densidad_mitad'] = min(min((v, r) for r, v in densidad(os.path.join(CAD, f'{cls}_{f}_lod0.npz'), CC.CLASES[cls]['A'] // 2).items() if r in DENS_REG) for f in ('gb', 'es'))
         if MED['dos_B'] > OBJETIVO[cls]:
             for v in ('a512', 'a256'):
                 fam = {}
@@ -329,6 +343,7 @@ if __name__ == '__main__':
         return t + (' Además es de otra facción: velas negras y casco oscuro.' if k == 'captain' else '')
     lect = [frente(k) for k in COMP]
     g, e = MED['gb'], MED['es']
+    resto, mitad = TOPE['suma'] - APROBADO_B - MED['dos_B'], c['A'] // 2  # lo que quedaría a la Goleta, y la textura a la mitad
     peso = []
     if cls in OBJETIVO:
         dos, obj = MED['dos_B'], MED['objetivo_B']
@@ -347,7 +362,7 @@ if __name__ == '__main__':
         ('Qué cambia', INK, [
             f'El casco: curvas, la popa con caída y el espejo con su fila de ventanas; la española, con tallas doradas y un friso de volutas{alto(cls)}.',
             'Los colores de cada familia: la británica, azul marino con la franja blanca y la Union Jack; la española, roja con la franja dorada, la rojigualda y la cruz de Borgoña en las velas cuadras.',
-            'La bandera de la familia va en el pico de la vela de popa, y en la cubierta hay obenques, estays, el timón y, según la clase, botes, cabrestante y faroles.']),
+            f'La bandera de la familia va en el pico de la vela de popa, y en la cubierta hay {cubierta(cls)}.']),
         ('Lo que no cambia', INK, [
             f"Lo que dice qué barco es: {num(c['L'])} × {num(c['B'])} m, {me['S2']} {'palo' if me['S2'] == 1 else 'palos'} con las velas de hoy, {me['S4']} y una franja de portas con {len(CC.rig_json(cls)['recipe']['cannonZ'])} cañones por banda. Las 2 familias son iguales en eso, y las velas siguen claras: es un barco del jugador.",
             f'Lo que pide: {pide}.']),
@@ -355,12 +370,12 @@ if __name__ == '__main__':
             f"Triángulos de cerca y de lejos: británica {mil(g['lod0'])} y {mil(g['lod1'])}, española {mil(e['lod0'])} y {mil(e['lod1'])} (hoy, {mil(MED['hoy']['lod0'])} y {mil(MED['hoy']['lod1'])}; tope, {mil(TOPE['lod0'])} y {mil(TOPE['lod1'])}).",
             f"Lo que se descarga: británica {dec(g['total_B'] / 1000, 1)} KB y española {dec(e['total_B'] / 1000, 1)} KB, con la textura de {c['A']} × {c['A']} ({dec(MED['densidad_min'][0], 1)} px por metro en lo más estrecho, medido en este turno; se piden 18). Las 8 combinaciones que faltan tienen que sumar {dec(TOPE['suma'] / 1000, 1)} KB como mucho, para que las 10 quepan en 1 MB; esta clase se lleva el {dec(100 * (g['total_B'] + e['total_B']) / TOPE['suma'], 0)} %.",
             *peso,
-            f"El casco mide {dec(g['caja_casco']['eslora'], 2)} y {dec(e['caja_casco']['eslora'], 2)} m de largo (se pide {num(c['L'])} m ± 2 %)."]),
+            (f"Las 2 miden {dec(g['caja_casco']['eslora'], 2)} m de largo" if dec(g['caja_casco']['eslora'], 2) == dec(e['caja_casco']['eslora'], 2) else f"El casco mide {dec(g['caja_casco']['eslora'], 2)} y {dec(e['caja_casco']['eslora'], 2)} m de largo") + f" (se pide {num(c['L'])} m ± 2 %)."]),
         ('Lo que la distingue de los demás, igual en las 2 familias', INK if all(len(diff(me, tr[k])) >= 2 for k in COMP) else RED, lect),
         ('En contra', RED, [
             'Las velas son las de hoy: el detalle nuevo está en el casco, la cubierta y la bandera. De lejos, lo que más se ve sigue siendo el aparejo.',
             *(['La textura va a 512 × 512 para que quepa la descarga: con el zoom más cercano se ve algo menos nítida que la de los Navíos, que va a 1024 × 1024.'] if c['A'] < 1024 else []),
-            *([f"Pesa más de lo previsto: las 2 se pasan en {dec((MED['dos_B'] - MED['objetivo_B']) / 1000, 1)} KB de lo que dejaría a la Goleta lo mismo que al Bergantín. Si la medida del piloto no sube la cota de 1 MB, habría que rehacer su textura más pequeña, y se vería algo menos nítida."] if cls in OBJETIVO and MED['dos_B'] > MED['objetivo_B'] else [])]),
+            *([f"Pesa más de lo previsto: las 2 se pasan en {dec((MED['dos_B'] - MED['objetivo_B']) / 1000, 1)} KB de lo que dejaría a la Goleta lo mismo que al Bergantín. Si la medida del piloto no sube la cota de 1 MB, a las 2 Goletas les quedarían {dec(resto / 1000, 1)} KB, {'menos' if resto < BALANDRA_B else 'más'} de lo que pesan las 2 Balandras ({dec(BALANDRA_B / 1000, 1)} KB). " + (f"Bajarle la textura no lo arregla: a {mitad} × {mitad} se queda en {dec(MED['densidad_mitad'][0], 1)} px por metro, y se piden 18." if MED['densidad_mitad'][0] < 18 else f"Con la textura a {mitad} × {mitad} se quedaría en {dec(MED['densidad_mitad'][0], 1)} px por metro (se piden 18), y se vería algo menos nítida.")] if cls in OBJETIVO and MED['dos_B'] > MED['objetivo_B'] else [])]),
     ]
     for title, colr, lines in BLOCKS:
         d.text((40, y), title, font=font(19), fill=TITLE if colr == INK else RED); y += 30
