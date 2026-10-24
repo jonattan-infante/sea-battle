@@ -56,6 +56,7 @@ import {
   REPAIR_RATE_UNDER_FIRE,
   REPAIR_TICK,
   REPAIR_UNDER_FIRE_WINDOW,
+  RESPAWN_FALLBACK,
   RESPAWN_RING,
   SAFE_ZONE_RADIUS,
   SHIP_CLASSES,
@@ -410,7 +411,7 @@ function respawnPoint(world: World, classId: string): { pos: Vec2; heading: numb
     const pos = { x: PORT_POSITION.x + Math.sin(a) * r, z: PORT_POSITION.z + Math.cos(a) * r };
     if (navigableFor(world, pos, clearance)) return { pos, heading: a };
   }
-  return { pos: { x: 0, z: 75 }, heading: 0 };
+  return { pos: { ...RESPAWN_FALLBACK }, heading: 0 };
 }
 
 // initial: el progreso guardado de un usuario de Clerk (server/persistence.ts); sin él, el inicial (100 de oro, Balandra y

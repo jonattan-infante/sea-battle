@@ -20,6 +20,9 @@ export const PORT_POSITION = { x: 0, z: 0 };
 export const PORT_RADIUS = 30;
 export const SAFE_ZONE_RADIUS = 110;
 export const RESPAWN_RING = { min: 60, max: 90 };
+// Punto de último recurso de la aparición, si los 50 intentos en el anillo fallan: navegable para las 5 clases del jugador
+// con el puerto de D92 (GDD §4, «Aparición de respaldo»; AC-176 iii, O-58)
+export const RESPAWN_FALLBACK = { x: 0, z: 75 };
 export const MERCHANT_RING = { min: 150, max: 330 };
 export const PIRATE_RING = { min: 300, max: 460 };
 export const GUNBOAT_RING = { min: 400, max: 470 }; // cañoneras de I2 (§9)

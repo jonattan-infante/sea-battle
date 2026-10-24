@@ -7,7 +7,10 @@ import {
   ISLAND_SHAPES_1_1,
   MAP_1_1,
   PIRATE_SECTORS,
+  PORT_POSITION,
+  PORT_SHAPE_1_1,
   PlayerShipClass,
+  RESPAWN_FALLBACK,
   RESPAWN_RING,
   SAFE_ZONE_RADIUS,
   SHIP_CLASSES,
@@ -141,6 +144,18 @@ describe('E16 — Mapa de la 1.1 (D83 y el puerto de D92)', () => {
     expect(MAP_1_1.islands).toEqual(GDD_TABLE.flatMap(([id, , cs]) => cs.map(([x, z, radius], k) => ({ id: cs.length > 1 ? `${id}.${k}` : id, x, z, radius }))));
     expect(MAP_1_1.islands).toHaveLength(50);
     expect(MAP_1_1.moorings.map((m) => [m.x, m.z, m.psiDeg])).toEqual(GDD_MOORINGS.map(([x, z, psi]) => [x, z, psi]));
+  });
+
+  // GDD §4, «El puerto con forma de isla»: ≤ 8 círculos, su unión contiene el centro (0, 0) y ningún círculo pasa de 55 m
+  // del centro con su borde. Se calcula sobre el puerto del código, no sobre la copia de la tabla (O-58 ii)
+  test('AC-170: el puerto del mapa (PORT_SHAPE_1_1) tiene ≤ 8 círculos, su unión contiene el centro y ninguno pasa de 55 m del centro con su borde', () => {
+    const port = MAP_1_1.shapes.find((s) => s.id === 'PORT')!;
+    const reach = port.circles.map((c) => Math.hypot(c.x - PORT_POSITION.x, c.z - PORT_POSITION.z) + c.radius);
+    console.log(`AC-170: el puerto tiene ${port.circles.length} círculos y su borde más lejano está a ${Math.max(...reach).toFixed(3)} m del centro`);
+    expect(port).toBe(PORT_SHAPE_1_1);
+    expect(port.circles.length).toBeLessThanOrEqual(8);
+    expect(port.circles.some((c) => Math.hypot(c.x - PORT_POSITION.x, c.z - PORT_POSITION.z) < c.radius)).toBe(true);
+    expect(Math.max(...reach)).toBeLessThanOrEqual(55);
   });
 
   test('AC-170: entre los círculos de islas distintas hay ≥ 46 m de borde a borde, salvo entre los 3 escollos, a 31 ±0,5 m, y nada toca la zona segura salvo el puerto', () => {
@@ -313,6 +328,51 @@ describe('E16 — Escollos y destino inalcanzable (AC-172)', () => {
     expect(Math.abs(distance(end, CENTER) - expected)).toBeLessThanOrEqual(0.1);
     expect(path.every((p, i) => nav.segmentClear(i === 0 ? WEST : path[i - 1], p, margin))).toBe(true);
   });
+
+  // (c) La ruta hasta el punto alcanzable es la del navegador con ese punto como destino, a ±0,01 m (O-57). En 1e2022f, el
+  // Capitán desde WEST recorría 676,6 m, por un nodo de I2, en lugar de 82,0, y la Cañonera desde (100, 280), 752,0 en
+  // lugar de 25,7 (QA-47)
+  test.each([
+    ['del Capitán', 17, WEST, 82.0],
+    ['de la Cañonera', 16, { x: 100, z: 280 }, 25.7]
+  ])('AC-172 (c): la ruta %s hasta el punto alcanzable mide lo mismo que la del navegador con ese punto de destino', (_, margin, from, qa) => {
+    const nav = nav11();
+    const path = nav.findPath(from, CENTER, margin);
+    const end = path[path.length - 1];
+    const got = pathLength(from, path);
+    const want = pathLength(from, nav.findPath(from, end, margin));
+    console.log(`AC-172 (c) margen ${margin}: ruta de ${got.toFixed(2)} m; con el punto de destino, ${want.toFixed(2)} m (QA-47: ${qa.toFixed(1)})`);
+    expect(Math.abs(got - want)).toBeLessThanOrEqual(0.01);
+    expect(Math.abs(want - qa)).toBeLessThanOrEqual(0.05);
+  });
+
+  // (c) en la rejilla de orígenes cada 20 m por todo el mapa (los navegables para el margen), con destino en el centro de E1
+  test.each([16, 17])(
+    'AC-172 (c): con margen %i, desde cada origen de la rejilla de 20 m la ruta hasta el punto alcanzable mide lo mismo que con ese punto de destino',
+    (margin) => {
+      const nav = nav11();
+      const wrong: string[] = [];
+      let origins = 0;
+      let outside = 0;
+      let worst = 0;
+      for (let x = -480; x <= 480; x += 20) {
+        for (let z = -480; z <= 480; z += 20) {
+          const from = { x, z };
+          if (!nav.navigable(from, margin)) continue;
+          origins++;
+          const path = nav.findPath(from, CENTER, margin);
+          const end = path[path.length - 1];
+          if (distance(end, CENTER) > 0.01) outside++;
+          const diff = Math.abs(pathLength(from, path) - pathLength(from, nav.findPath(from, end, margin)));
+          worst = Math.max(worst, diff);
+          if (diff > 0.01) wrong.push(`(${x}, ${z}): ${diff.toFixed(2)} m de más`);
+        }
+      }
+      console.log(`AC-172 (c) margen ${margin}: ${origins} orígenes, ${outside} acaban fuera del centro, ${wrong.length} con la ruta más larga (peor diferencia ${worst.toFixed(3)} m)`);
+      expect({ wrong: wrong.length, first: wrong.slice(0, 5) }).toEqual({ wrong: 0, first: [] });
+    },
+    120_000
+  );
 
   // AC-199 (e): el cliente calcula la ruta desde su posición interpolada para pintar el marcador en el mismo frame, así que
   // el punto alcanzable no puede depender del origen exacto, solo de la zona desde la que se llega
@@ -526,7 +586,7 @@ describe('E16 — Amarres del puerto de D92 (AC-176, AC-199 d)', () => {
     expect(wrong).toEqual([]);
   });
 
-  test('AC-176 (iii): el anillo de 60–90 m es navegable para el Navío en ≥ 50 % de su área (rejilla de 1 m), y (0, 75) lo es para las 5 clases', () => {
+  test('AC-176 (iii): el anillo de 60–90 m es navegable para el Navío en ≥ 50 % de su área (rejilla de 1 m), y el punto de último recurso (RESPAWN_FALLBACK) lo es para las 5 clases', () => {
     const nav = nav11();
     let total = 0;
     let free = 0;
@@ -540,7 +600,28 @@ describe('E16 — Amarres del puerto de D92 (AC-176, AC-199 d)', () => {
     }
     console.log(`AC-176 (iii): ${free} de ${total} puntos del anillo navegables para el Navío (${((100 * free) / total).toFixed(1)} %)`);
     expect(free / total).toBeGreaterThanOrEqual(0.5);
-    expect(HULLS_1_1.filter(([, length]) => !nav.navigable({ x: 0, z: 75 }, length / 2 + 2))).toEqual([]);
+    expect(HULLS_1_1.filter(([, length]) => !nav.navigable(RESPAWN_FALLBACK, length / 2 + 2))).toEqual([]);
+  });
+
+  // O-58 (i): el último recurso, forzado. Con los 12 amarres ocupados y las 50 tiradas del anillo a r 60 m hacia el islote
+  // del puerto (−39, −31, r 4,5), a 5,68 m de su borde, donde ni la Balandra (margen 10) cabe, el barco aparece en el punto
+  // que da respawnPoint, y ese punto es navegable para las 5 clases. Un cambio del punto en world.ts cae aquí aunque la
+  // constante no cambie
+  test('AC-176 (iii): con los 12 amarres ocupados y las 50 tiradas del anillo fallidas, el jugador aparece en el punto de último recurso, navegable para las 5 clases', () => {
+    const world = world11(3);
+    D92.forEach((_, k) => occupy(world, k, 23));
+    const nav = navigatorOf(world);
+    const a = Math.atan2(-39, -31) + 2 * Math.PI; // rumbo del islote visto desde el centro: x = sin a · r, z = cos a · r
+    const ring = { x: Math.sin(a) * RESPAWN_RING.min, z: Math.cos(a) * RESPAWN_RING.min };
+    expect(nav.navigable(ring, 10)).toBe(false);
+    let draws = 0;
+    world.rng = () => (draws++ % 2 === 0 ? a / (2 * Math.PI) : 0); // rumbo a, y r = 60 m
+    addPlayer(world, 'x', 'x');
+    const ship = shipOfPlayer(world, 'x')!;
+    console.log(`AC-176 (iii): ${draws} tiradas del anillo; el barco aparece en (${ship.pos.x}, ${ship.pos.z})`);
+    expect(draws).toBe(100);
+    expect(ship.pos).toEqual(RESPAWN_FALLBACK);
+    expect(HULLS_1_1.filter(([, length]) => !nav.navigable(ship.pos, length / 2 + 2)).map(([name]) => name)).toEqual([]);
   });
 
   // AC-199 (c) con la tabla de GDD §4, cuya Q va 2 cm por fuera de la lámina (que deja cada barco con 0,00 m de sobra): en

@@ -1,6 +1,8 @@
 // AC-129: un redeploy llega como SIGTERM y no se pierde nada. El servidor (proceso hijo real, con el mismo apagado que
 // server/index.ts) escribe el progreso de todos y solo después cierra las conexiones. La BD va detrás de un proxy que
 // retrasa lo que le llega: si el servidor cerrara antes de escribir, el cliente vería la desconexión con la fila aún vieja
+import { execFileSync } from 'child_process';
+import net from 'net';
 import { Pool } from 'pg';
 import { Socket as ClientSocket } from 'socket.io-client';
 import { migrate } from '../db/migrate';
@@ -11,7 +13,7 @@ import type { GameServer } from '../game-server';
 import type { FlushResult } from '../persistence';
 import { createShutdown, SHUTDOWN_FLUSH_MS } from '../shutdown';
 import { GameChild, startGameChild } from './fixtures/game-child';
-import { joinGame, waitFor } from './fixtures/game-socket';
+import { connectGame, joinGame, sleep, waitFor } from './fixtures/game-socket';
 import { rowV1 } from './fixtures/progress-rows';
 import { PgProxy, startPgProxy } from './fixtures/pg-proxy';
 import { createTestDb, TestDb } from './pg/test-db';
@@ -46,8 +48,8 @@ afterEach(async () => {
 });
 
 // Sin guardado periódico (60 s): lo único que puede escribir el oro es el apagado
-async function start(): Promise<GameChild> {
-  const child = await startGameChild({ DATABASE_URL: proxy.url, TEST_SAVE_INTERVAL_MS: '60000' });
+async function start(env: Record<string, string> = {}): Promise<GameChild> {
+  const child = await startGameChild({ DATABASE_URL: proxy.url, TEST_SAVE_INTERVAL_MS: '60000', ...env });
   children.push(child);
   return child;
 }
@@ -359,4 +361,94 @@ test('SIGTERM con la BD colgada: el proceso sale igualmente antes de los 15 s de
   await explain(child, () => expect(outcome).toEqual({ code: 0, signal: null }));
   await explain(child, () => expect(ms).toBeLessThan(SHUTDOWN_FLUSH_MS + 3000));
   await explain(child, () => expect(child.output()).toMatch(/🔁 Intento 2 del guardado [\s\S]*no se pudo guardar en \d+ ms .* · 1 jugador sin guardar/u)); // O-42: lo intentó más de una vez
+});
+
+// AC-203 (O-41): si desaparece el proceso que lee los logs, escribir en stdout o stderr da EPIPE, y Node lo lanza como
+// uncaughtException. Sin listener, eso tumba el proceso antes de guardar; con el de Next (server/index.ts) entra en bucle
+// (EPIPE → console.error → EPIPE) y el apagado no termina. Las dos variantes deben apagarse como con las tuberías abiertas
+const alive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code !== 'ESRCH';
+  }
+};
+// El proceso y sus descendientes, leídos de ps (con node --import tsx hoy es uno solo; el servicio de esbuild de la CLI de
+// tsx, O-36, sería un hijo más)
+function processTree(root: number): number[] {
+  const rows = execFileSync('ps', ['-Ao', 'pid=,ppid='], { encoding: 'utf8' })
+    .trim()
+    .split('\n')
+    .map((line) => line.trim().split(/\s+/).map(Number));
+  const tree = [root];
+  for (let i = 0; i < tree.length; i++) for (const [pid, ppid] of rows) if (ppid === tree[i]) tree.push(pid);
+  return tree;
+}
+const refused = (url: string) =>
+  new Promise<boolean>((resolve) => {
+    const { hostname, port } = new URL(url);
+    const socket = net.connect(Number(port), hostname);
+    socket.once('connect', () => (socket.destroy(), resolve(false)));
+    socket.once('error', () => resolve(true));
+  });
+
+const PIPE_MODES: { mode: string; env: Record<string, string> }[] = [
+  { mode: 'sin listener de uncaughtException (como este proceso de pruebas)', env: {} },
+  { mode: 'con el listener de Next (como server/index.ts)', env: { TEST_LOG_UNCAUGHT: '1' } }
+];
+
+describe.each(PIPE_MODES)('AC-203 (O-41): con las tuberías de los logs cerradas, $mode', ({ mode, env }) => {
+  test('(a) y (b): SIGTERM escribe el estado antes de desconectar y sale solo con 0 en ≤ 10 s, sin dejar procesos ni puerto', async () => {
+    await seed('test-dan', SLOOP_ONLY);
+    await seed('test-eva', { ...SLOOP_ONLY, gold: 300 });
+    const child = await start(env);
+    const d = await joinGame(child.url, { testUser: 'dan' }, undefined, sockets);
+    await joinGame(child.url, { testUser: 'eva' }, undefined, sockets);
+    expect(await child.addGold('test-dan', 250)).toBe(true);
+    expect(await child.addGold('test-eva', 50)).toBe(true);
+    const tree = processTree(child.pid);
+    console.log(`AC-203, ${mode}: árbol del hijo antes del SIGTERM, ${tree.length} procesos (${tree.join(', ')})`);
+    child.closeOutput();
+
+    proxy.delay(400); // como en AC-129: si cerrara antes de escribir, el cliente vería la fila vieja
+    const atDisconnect = new Promise<number[]>((resolve) => d.c.once('disconnect', async () => resolve([await goldOf('test-dan'), await goldOf('test-eva')])));
+    const outcome = await Promise.race([child.kill('SIGTERM'), sleep(10_000).then(() => 'sigue vivo a los 10 s del SIGTERM')]);
+    expect(outcome).toEqual({ code: 0, signal: null }); // (b)
+    expect(await atDisconnect).toEqual([350, 350]); // (a)
+    for (let i = 0; i < 20 && tree.some(alive); i++) await sleep(100); // un hijo que hubiera sale al cerrarse su stdin
+    expect({ tree: tree.length, alive: tree.filter(alive) }).toEqual({ tree: tree.length, alive: [] });
+    expect(await refused(child.url)).toBe(true);
+  });
+
+  test('(c) sin SIGTERM el juego sigue: tras una línea de log, un cliente que navega recibe frames durante 5 s', async () => {
+    const child = await start(env);
+    const f = await joinGame(child.url, { testUser: 'fio' }, undefined, sockets);
+    f.c.emit(C2S.moveTo, { x: 300, z: 300 }); // navegando hay deltas de su barco en cada snapshot (10 Hz)
+    child.closeOutput();
+    const before = f.frames.length;
+    const g = connectGame(child.url, { testUser: 'gus' });
+    sockets.push(g);
+    g.emit(C2S.join, {}); // al unirse, el servidor escribe «🎮 … se unió» en su log, ya sin nadie que lo lea
+    await sleep(5000);
+    expect({ frames: f.frames.length - before >= 25, alive: alive(child.pid) }).toEqual({ frames: true, alive: true });
+  });
+
+  // «Un error al escribir en stdout o stderr»: el servidor escribe sus logs por stdout, así que sin esta línea por stderr
+  // nada probaría la tubería de stderr (M2, el listener solo en stdout, sobrevivía al resto del archivo)
+  test('(b) y (c) con una línea por stderr: el juego sigue durante 5 s y SIGTERM escribe el estado y sale solo con 0', async () => {
+    await seed('test-hal', SLOOP_ONLY);
+    const child = await start(env);
+    const h = await joinGame(child.url, { testUser: 'hal' }, undefined, sockets);
+    h.c.emit(C2S.moveTo, { x: 300, z: 300 });
+    expect(await child.addGold('test-hal', 250)).toBe(true);
+    child.closeOutput();
+    expect(await child.logError()).toBe(true);
+    const before = h.frames.length;
+    await sleep(5000);
+    expect({ frames: h.frames.length - before >= 25, alive: alive(child.pid) }).toEqual({ frames: true, alive: true }); // (c)
+    const outcome = await Promise.race([child.kill('SIGTERM'), sleep(10_000).then(() => 'sigue vivo a los 10 s del SIGTERM')]);
+    expect(outcome).toEqual({ code: 0, signal: null }); // (b)
+    expect(await goldOf('test-hal')).toBe(350);
+  });
 });

@@ -184,6 +184,10 @@ export class ParticlePool {
   private dirtyMin = Infinity;
   private dirtyMax = -1;
   private lastDeath = 0;
+  // Nacidas y Σ de sus vidas (s) por forma (SHAPE) desde que existe el pool, para los e2e de D32 (O-66): solo cuentan,
+  // no cambian lo que se emite ni lo que se ve
+  readonly born = new Float64Array(Math.max(...Object.values(SHAPE)) + 1);
+  readonly bornLife = new Float64Array(this.born.length);
 
   constructor(opts: PoolOptions) {
     this.capacity = opts.capacity;
@@ -246,6 +250,8 @@ export class ParticlePool {
     const i = this.head;
     this.head = (this.head + 1) % this.capacity;
     this.emitted++;
+    this.born[p.shape]++;
+    this.bornLife[p.shape] += p.life;
     const a = this.arrays;
     let o = i * 4;
     a.aP0T0[o] = p.x; a.aP0T0[o + 1] = p.y; a.aP0T0[o + 2] = p.z; a.aP0T0[o + 3] = p.t0;

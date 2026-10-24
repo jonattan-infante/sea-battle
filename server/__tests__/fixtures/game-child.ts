@@ -9,9 +9,12 @@ const BOOT_TIMEOUT_MS = 30_000;
 
 export interface GameChild {
   url: string;
+  pid: number;
   output: () => string;
+  closeOutput: () => void; // cierra el lado del test de stdout y stderr, como si desapareciera quien lee los logs (AC-203)
   addGold: (userId: string, amount: number) => Promise<boolean>;
   addXp: (userId: string, amount: number) => Promise<boolean>;
+  logError: () => Promise<boolean>; // el hijo escribe una línea por stderr (AC-203); false si sale antes de contestar
   kill: (signal: 'SIGKILL' | 'SIGTERM') => Promise<{ code: number | null; signal: string | null }>;
 }
 
@@ -59,7 +62,7 @@ export async function startGameChild(env: Record<string, string>): Promise<GameC
   });
 
   let nextId = 1;
-  const send = (type: 'addGold' | 'addXp', userId: string, amount: number) =>
+  const send = (type: 'addGold' | 'addXp' | 'logError', userId: string, amount: number) =>
     new Promise<boolean>((resolve) => {
       const id = nextId++;
       const onMessage = (msg: { id: number; ok: boolean }) => {
@@ -68,13 +71,20 @@ export async function startGameChild(env: Record<string, string>): Promise<GameC
         resolve(msg.ok);
       };
       child.on('message', onMessage);
+      exited.then(() => (child.off('message', onMessage), resolve(false))); // si sale sin contestar, no se queda colgado
       child.send({ id, type, userId, amount });
     });
   return {
     url: `http://127.0.0.1:${port}`,
+    pid: child.pid!,
     output: () => out,
+    closeOutput: () => {
+      child.stdout!.destroy();
+      child.stderr!.destroy();
+    },
     addGold: (userId, amount) => send('addGold', userId, amount),
     addXp: (userId, amount) => send('addXp', userId, amount),
+    logError: () => send('logError', '', 0),
     kill: async (signal) => {
       if (child.exitCode === null && child.signalCode === null) child.kill(signal);
       return exited;

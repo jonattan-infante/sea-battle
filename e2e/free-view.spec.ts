@@ -33,26 +33,26 @@ async function minimapCenter(page: Page, p: Point): Promise<void> {
   await page.mouse.click(box.x + ((p.x + MAP_HALF_SIZE) / (2 * MAP_HALF_SIZE)) * box.width, box.y + ((p.z + MAP_HALF_SIZE) / (2 * MAP_HALF_SIZE)) * box.height);
 }
 
-// Pulsa una tecla desde la página y, desde ese instante, mira en cada frame si el barco propio está en el 10 % central
-// (AC-23): los ms hasta el primer frame dentro y si siguió dentro en todos los siguientes, durante `ms`
+// Un frame de la vuelta al seguimiento (AC-119): ms desde t0 con la marca de requestAnimationFrame, que es el inicio del frame y no lo que tarda en pintarse (O-64), si el barco propio está en el 10 % central (AC-23) y el modo de la vista
+type CentredFrame = { t: number; inside: boolean; mode: string };
+const offFrames = (frames: CentredFrame[]) => frames.filter((f) => f.t >= 300 && (!f.inside || f.mode !== 'follow')); // lo que promete AC-119, sin margen en ms
+const describeFrames = (fs: CentredFrame[]) => `${fs.length} frames en ${fs.at(-1)!.t.toFixed(0)} ms, cada ${Math.min(...fs.slice(1).map((f, i) => f.t - fs[i].t)).toFixed(0)}–${Math.max(...fs.slice(1).map((f, i) => f.t - fs[i].t)).toFixed(0)} ms; ${fs.filter((f) => f.t >= 300).length} desde los 300 ms; dentro desde los ${fs.find((f) => f.inside)?.t.toFixed(0) ?? '—'} ms`;
+// Pulsa una tecla desde la página y apunta cada frame de los `ms` siguientes. t0 va justo después del keydown, cuyo manejador ya empezó la vuelta (GameApp.tsx): t0 ≥ returnAt
 const pressAndWatchCentred = (page: Page, code: string, ms: number) =>
   page.evaluate(
     ([key, windowMs]) =>
-      new Promise<{ firstInMs: number | null; stayed: boolean; mode: string }>((resolve) => {
-        const t0 = performance.now();
+      new Promise<CentredFrame[]>((resolve) => {
         window.dispatchEvent(new KeyboardEvent('keydown', { code: key }));
-        let firstInMs: number | null = null;
-        let stayed = true;
-        const tick = () => {
+        const t0 = performance.now();
+        const frames: CentredFrame[] = [];
+        const tick = (ts: number) => {
           const dbg = window.__SEA_BATTLE__!;
           const s = dbg.me() as { x: number; z: number } | null;
           const p = s && dbg.runtime().project(s.x, s.z);
           const inside = !!p && Math.abs(p.sx - innerWidth / 2) <= 0.05 * innerWidth && Math.abs(p.sy - innerHeight / 2) <= 0.05 * innerHeight;
-          const t = performance.now() - t0;
-          if (inside && firstInMs === null) firstInMs = t;
-          if (!inside && firstInMs !== null) stayed = false;
-          if (t < windowMs) requestAnimationFrame(tick);
-          else resolve({ firstInMs, stayed, mode: dbg.runtime().freeView.mode });
+          frames.push({ t: ts - t0, inside, mode: dbg.runtime().freeView.mode });
+          if (ts - t0 < windowMs) requestAnimationFrame(tick);
+          else resolve(frames);
         };
         requestAnimationFrame(tick);
       }),
@@ -125,12 +125,12 @@ test.describe('Vista libre (E13)', () => {
     await minimapCenter(page, { x: -300, z: 300 });
     await page.waitForTimeout(200);
     expect((await camera(page)).mode).toBe('free');
-    const r = await pressAndWatchCentred(page, 'KeyC', 800);
-    console.log(`AC-119 (C): el barco entra en el 10 % central a los ${r.firstInMs?.toFixed(0)} ms y sigue dentro: ${r.stayed}; modo ${r.mode}`);
-    expect(r.firstInMs).not.toBeNull();
-    expect(r.firstInMs!).toBeLessThanOrEqual(300);
-    expect(r.stayed).toBe(true);
-    expect(r.mode).toBe('follow');
+    const frames = await pressAndWatchCentred(page, 'KeyC', 800);
+    console.log(`AC-119 (C): ${describeFrames(frames)}`);
+    const late = frames.filter((f) => f.t >= 300);
+    expect(offFrames(frames), 'desde los 300 ms de la C, frames con el barco fuera del 10 % central o sin seguirlo').toEqual([]);
+    expect(late.length, 'frames desde los 300 ms').toBeGreaterThan(0);
+    expect(frames.at(-1)!.mode).toBe('follow');
   });
 
   test('AC-120: a 400 m del barco, un clic en el agua navega hasta allí (1 moveTo) y el centro de la vista no sale de ±500 m', async ({ page }) => {
@@ -311,28 +311,28 @@ test.describe('Vista libre (E13)', () => {
       const hp0 = (await me(page))!.hp;
       await minimapCenter(page, { x: -300, z: -300 });
       await waitFor(() => camera(page), (c) => c.mode === 'free', 2000, 50);
-      // Desde la llegada de la siguiente andanada: el primer frame con el barco en el 10 % central y si sigue dentro
+      // Desde la llegada de la siguiente andanada, cada frame de los 800 ms siguientes, como en pressAndWatchCentred
       const r = await page.evaluate(
         () =>
-          new Promise<{ firstInMs: number | null; stayed: boolean; mode: string; freeAtVolley: boolean }>((resolve) => {
+          new Promise<{ frames: CentredFrame[]; freeAtVolley: boolean }>((resolve) => {
             const dbg = window.__SEA_BATTLE__!;
             const w = window as unknown as { __volleys: number[] };
             const n0 = w.__volleys.length;
             const wait = () => {
               if (w.__volleys.length === n0) return void requestAnimationFrame(wait);
+              // La hora de la andanada: este listener corre después del de runtime.ts, que ya empezó la vuelta (t0 ≥ returnAt)
               const t0 = w.__volleys[w.__volleys.length - 1];
               const freeAtVolley = dbg.runtime().freeView.mode !== 'follow';
-              let firstInMs: number | null = null;
-              let stayed = true;
-              const tick = () => {
+              const frames: CentredFrame[] = [];
+              // O-64: el tiempo de cada frame es la marca que requestAnimationFrame pasa al callback (el inicio del frame), no
+              // performance.now() dentro de él, que llega después del render
+              const tick = (ts: number) => {
                 const s = dbg.me() as { x: number; z: number } | null;
                 const p = s && dbg.runtime().project(s.x, s.z);
                 const inside = !!p && Math.abs(p.sx - innerWidth / 2) <= 0.05 * innerWidth && Math.abs(p.sy - innerHeight / 2) <= 0.05 * innerHeight;
-                const t = performance.now() - t0;
-                if (inside && firstInMs === null) firstInMs = t;
-                if (!inside && firstInMs !== null) stayed = false;
-                if (t < 800) requestAnimationFrame(tick);
-                else resolve({ firstInMs, stayed, mode: dbg.runtime().freeView.mode, freeAtVolley });
+                frames.push({ t: ts - t0, inside, mode: dbg.runtime().freeView.mode });
+                if (ts - t0 < 800) requestAnimationFrame(tick);
+                else resolve({ frames, freeAtVolley });
               };
               requestAnimationFrame(tick);
             };
@@ -340,13 +340,13 @@ test.describe('Vista libre (E13)', () => {
           })
       );
       const hp1 = (await me(page))!.hp;
-      console.log(`AC-119 (andanada sin daño): vida ${hp0} → ${hp1}; el barco entra en el 10 % central a los ${r.firstInMs?.toFixed(0)} ms de la andanada y sigue dentro: ${r.stayed}; modo ${r.mode}`);
+      console.log(`AC-119 (andanada sin daño): vida ${hp0} → ${hp1}; desde la andanada, ${describeFrames(r.frames)}`);
       expect(r.freeAtVolley).toBe(true); // la andanada llegó con la vista libre (o ya volviendo por ella)
       expect(hp1).toBe(hp0); // ninguna dañó: la vuelta es por la andanada
-      expect(r.firstInMs).not.toBeNull();
-      expect(r.firstInMs!).toBeLessThanOrEqual(300);
-      expect(r.stayed).toBe(true);
-      expect(r.mode).toBe('follow');
+      const late = r.frames.filter((f) => f.t >= 300);
+      expect(offFrames(r.frames), 'desde los 300 ms de la andanada, frames con el barco fuera del 10 % central o sin seguirlo').toEqual([]);
+      expect(late.length, 'frames desde los 300 ms').toBeGreaterThan(0);
+      expect(r.frames.at(-1)!.mode).toBe('follow');
     } finally {
       await server.kill();
     }
