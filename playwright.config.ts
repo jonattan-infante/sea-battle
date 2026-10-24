@@ -20,11 +20,13 @@ const server = (port: number, env: string) => ({
 });
 
 // Chrome del sistema con GPU (Metal en macOS): con SwiftShader el WebGL por software satura la CPU. En Linux (la CI de
-// GitHub) no hay GPU ni Metal: WebGL por SwiftShader, que Chrome ya solo da si se le pide (--enable-unsafe-swiftshader)
+// GitHub) no hay GPU ni Metal: WebGL por llvmpipe, el OpenGL por software de Mesa, por EGL sin superficie (EGL_PLATFORM=
+// surfaceless en ci.yml). Con el juego da unas 3 veces los frames del SwiftShader de Chrome (PR #45). Sin
+// --enable-unsafe-swiftshader, para no caer en SwiftShader sin avisar; ci.yml comprueba además que el WebGL sea llvmpipe
 const GPU_ARGS =
   process.platform === 'darwin'
     ? ['--use-angle=metal', '--enable-gpu-rasterization', '--ignore-gpu-blocklist']
-    : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'];
+    : ['--use-gl=angle', '--use-angle=gl-egl', '--ignore-gpu-blocklist'];
 export const chrome = {
   channel: 'chrome',
   launchOptions: { args: GPU_ARGS }

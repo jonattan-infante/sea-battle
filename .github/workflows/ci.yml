@@ -54,8 +54,9 @@ jobs:
 
   # e2e de Playwright en cada PR, sin desplegar nada: los tests de `npm run test:e2e` (sin @perf, @capture ni @soak, que
   # piden GPU real o son largos y siguen en el Mac). Cada shard es una máquina con su build y sus 4 servidores, y corre en
-  # serie como en el Mac (workers: 1). Linux no tiene GPU: WebGL por SwiftShader (playwright.config.ts). Un fallo se
-  # repite una vez y, si pasa, sale como «flaky» en el informe. No es un check obligatorio: eso lo decide Jonattan
+  # serie como en el Mac (workers: 1). El runner no tiene GPU: WebGL por llvmpipe, el OpenGL por software de Mesa
+  # (playwright.config.ts). Un fallo se repite una vez y, si pasa, sale como «flaky» en el informe. No es un check
+  # obligatorio: eso lo decide Jonattan
   e2e:
     if: github.event_name == 'pull_request' && github.event.action != 'labeled'
     runs-on: ubuntu-latest
@@ -77,6 +78,8 @@ jobs:
       NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_live_Y2xlcmsuZ2hhLWUyZS5zZWEtYmF0dGxlLmludmFsaWQk
       CLERK_SECRET_KEY: sk_live_dummy
       NEXT_TELEMETRY_DISABLED: '1'
+      # llvmpipe por EGL sin pantalla (playwright.config.ts)
+      EGL_PLATFORM: surfaceless
     steps:
       - uses: actions/checkout@v4.4.0
       - uses: actions/setup-node@v4.4.0
@@ -84,8 +87,12 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      # Chrome del runner (channel: 'chrome') y los binarios de Postgres para el clúster temporal de los specs de
-      # persistencia (server/__tests__/pg/cluster.ts lee PG_BIN)
+      - name: OpenGL por software de Mesa (llvmpipe)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends libegl1 libegl-mesa0 libgl1-mesa-dri
+      # Chrome del runner (channel: 'chrome'), su WebGL, que tiene que ser llvmpipe, y los binarios de Postgres para el
+      # clúster temporal de los specs de persistencia (server/__tests__/pg/cluster.ts lee PG_BIN)
       - name: Chrome, WebGL y Postgres del runner
         run: |
           google-chrome --version
@@ -93,7 +100,8 @@ jobs:
           test -x "${pg_bin}/initdb"
           "${pg_bin}/postgres" --version
           echo "PG_BIN=${pg_bin}" >> "$GITHUB_ENV"
-          npx tsx scripts/ci/webgl-renderer.ts
+          npx tsx scripts/ci/webgl-renderer.ts | tee "$RUNNER_TEMP/webgl.txt"
+          grep -q llvmpipe "$RUNNER_TEMP/webgl.txt"
       - name: Build de e2e
         run: npm run build:e2e
       - name: e2e (shard ${{ matrix.shard }}/4)
@@ -159,48 +167,6 @@ jobs:
             playwright-report
             e2e-results.json
           retention-days: 7
-
-  # TEMPORAL (experimento del PR #45, se quita antes de fusionar): con qué WebGL por CPU da el juego más frames en el
-  # runner. Corre 2 tests que miden por frame con SwiftShader, lavapipe (Vulkan de Mesa) y llvmpipe (OpenGL de Mesa)
-  e2e-gl-exp:
-    if: github.event_name == 'pull_request' && github.event.action != 'labeled'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    continue-on-error: true
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        gl: [swiftshader, lavapipe, llvmpipe]
-    env:
-      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_live_Y2xlcmsuZ2hhLWUyZS5zZWEtYmF0dGxlLmludmFsaWQk
-      CLERK_SECRET_KEY: sk_live_dummy
-      NEXT_TELEMETRY_DISABLED: '1'
-      GL_EXP: ${{ matrix.gl }}
-    steps:
-      - uses: actions/checkout@v4.4.0
-      - uses: actions/setup-node@v4.4.0
-        with:
-          node-version-file: .nvmrc
-          cache: npm
-      - run: npm ci
-      - name: Mesa
-        if: matrix.gl != 'swiftshader'
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends mesa-vulkan-drivers libegl-mesa0 libgl1-mesa-dri libegl1
-          ls /usr/share/vulkan/icd.d/ || true
-      - name: WebGL
-        run: |
-          if [ "$GL_EXP" = llvmpipe ]; then export EGL_PLATFORM=surfaceless; fi
-          nproc
-          npx tsx scripts/ci/gl-exp.ts
-      - run: npm run build:e2e
-      - name: 2 tests que miden por frame
-        run: |
-          if [ "$GL_EXP" = llvmpipe ]; then export EGL_PLATFORM=surfaceless; fi
-          npx playwright test -c e2e-gl-exp.config.ts e2e/input-toggle.spec.ts:299 e2e/gameplay.spec.ts:57 --project=desktop --retries=0 --reporter=list
 
   # DT-16: un PR hacia main desde una rama de este repo (nunca un fork: el secreto no debe llegar a código ajeno) se
   # despliega en staging tras verify solo si tiene la etiqueta «staging»: al ponerla y en cada push posterior. Sin ella,
