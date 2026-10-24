@@ -603,16 +603,37 @@ test.describe('Reparar y atacar cruzados con el casco dañado (AC-128)', () => {
 test.describe('Reparar, navegar y reparar con el casco dañado (AC-128 d)', () => {
   test.beforeEach(serve('repair'));
 
-  // Un punto de agua en pantalla: el lienzo bajo el puntero, sin barcos a < 60 px ni elementos del HUD
+  // Un punto de agua en pantalla: el lienzo bajo el puntero, sin elementos del HUD, y donde runtime.pick no coge ningún
+  // barco, la misma prueba que hace el clic (GameCanvas.tsx, act; touch = false, porque el clic es de ratón). Una distancia
+  // fija en px no vale: pick coge la Balandra hasta a 104–105 px de su centro en algún rumbo (O-61, QA-47). La distancia
+  // al barco ajeno más cercano solo va al log
   async function waterPoint(page: Page): Promise<{ x: number; y: number }> {
-    const mine = (await me(page))!;
-    const others = (await ships(page)).filter((s) => s.screen).map((s) => s.screen!);
-    const candidates = [[-160, -110], [160, -110], [-160, 110], [160, 110], [0, -160], [0, 160]].map(([dx, dy]) => ({ x: mine.screen!.sx + dx, y: mine.screen!.sy + dy }));
-    for (const c of candidates) {
-      const onCanvas = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.tagName === 'CANVAS', [c.x, c.y]);
-      if (onCanvas && others.every((o) => Math.hypot(o.sx - c.x, o.sy - c.y) >= 60)) return c;
+    const offsets = [[-160, -110], [160, -110], [-160, 110], [160, 110], [0, -160], [0, 160]];
+    const r = await page.evaluate(
+      ({ offsets, touch }) => {
+        const dbg = window.__SEA_BATTLE__!;
+        const rt = dbg.runtime() as unknown as { pick(x: number, y: number, touch: boolean): string | null };
+        type Seen = { id: string; screen: { sx: number; sy: number } | null };
+        const me0 = dbg.me() as Seen;
+        const others = (dbg.ships() as Seen[]).filter((s) => s.id !== me0.id && s.screen).map((s) => s.screen!);
+        const tried = offsets.map(([dx, dy]) => {
+          const x = me0.screen!.sx + dx;
+          const y = me0.screen!.sy + dy;
+          const onCanvas = document.elementFromPoint(x, y)?.tagName === 'CANVAS';
+          return { x, y, onCanvas, picked: onCanvas ? rt.pick(x, y, touch) : null, nearest: Math.min(Infinity, ...others.map((o) => Math.hypot(o.sx - x, o.sy - y))) };
+        });
+        return { point: tried.find((c) => c.onCanvas && c.picked === null) ?? null, tried };
+      },
+      { offsets, touch: false }
+    );
+    const px = (v: number) => (v === Infinity ? 'ninguno en pantalla' : `${v.toFixed(0)} px`);
+    if (r.point) {
+      console.log(`AC-128 (d) punto de agua: (${r.point.x.toFixed(0)}, ${r.point.y.toFixed(0)}) · pick null · barco ajeno más cercano: ${px(r.point.nearest)}`);
+    } else {
+      console.log(`AC-128 (d) sin punto de agua · candidatos ${r.tried.map((c) => `(${c.x.toFixed(0)}, ${c.y.toFixed(0)}) ${c.onCanvas ? `pick ${c.picked} · ${px(c.nearest)}` : 'fuera del lienzo'}`).join(' · ')}`);
     }
-    throw new Error('sin un punto de agua libre en pantalla');
+    expect(r.point, 'AC-128 (d): sin punto de agua libre en pantalla (sobre el lienzo y sin barco que coja runtime.pick)').not.toBeNull();
+    return { x: r.point!.x, y: r.point!.y };
   }
 
   for (const delay of DELAYS) {
