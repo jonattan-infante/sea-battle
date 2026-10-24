@@ -160,6 +160,48 @@ jobs:
             e2e-results.json
           retention-days: 7
 
+  # TEMPORAL (experimento del PR #45, se quita antes de fusionar): con qué WebGL por CPU da el juego más frames en el
+  # runner. Corre 2 tests que miden por frame con SwiftShader, lavapipe (Vulkan de Mesa) y llvmpipe (OpenGL de Mesa)
+  e2e-gl-exp:
+    if: github.event_name == 'pull_request' && github.event.action != 'labeled'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        gl: [swiftshader, lavapipe, llvmpipe]
+    env:
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_live_Y2xlcmsuZ2hhLWUyZS5zZWEtYmF0dGxlLmludmFsaWQk
+      CLERK_SECRET_KEY: sk_live_dummy
+      NEXT_TELEMETRY_DISABLED: '1'
+      GL_EXP: ${{ matrix.gl }}
+    steps:
+      - uses: actions/checkout@v4.4.0
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Mesa
+        if: matrix.gl != 'swiftshader'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends mesa-vulkan-drivers libegl-mesa0 libgl1-mesa-dri libegl1
+          ls /usr/share/vulkan/icd.d/ || true
+      - name: WebGL
+        run: |
+          if [ "$GL_EXP" = llvmpipe ]; then export EGL_PLATFORM=surfaceless; fi
+          nproc
+          npx tsx scripts/ci/gl-exp.ts
+      - run: npm run build:e2e
+      - name: 2 tests que miden por frame
+        run: |
+          if [ "$GL_EXP" = llvmpipe ]; then export EGL_PLATFORM=surfaceless; fi
+          npx playwright test -c e2e-gl-exp.config.ts e2e/input-toggle.spec.ts:299 e2e/gameplay.spec.ts:57 --project=desktop --retries=0 --reporter=list
+
   # DT-16: un PR hacia main desde una rama de este repo (nunca un fork: el secreto no debe llegar a código ajeno) se
   # despliega en staging tras verify solo si tiene la etiqueta «staging»: al ponerla y en cada push posterior. Sin ella,
   # solo verify, para que varios PR abiertos no se pisen staging. Un despliegue a medias no se cancela; si llegan varios,
