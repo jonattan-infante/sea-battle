@@ -116,7 +116,7 @@ async function signature([id, keep, dprs = []]: [string, boolean, number[]?]): P
     const dpr = A.width / document.querySelector('canvas')!.clientWidth;
     return {
       classId: id, deg: 0, lod: view.lod, dpr, model: !view.model.map ? 'procedural' : view.model.map.isCompressedTexture ? 'ktx2' : 'respaldo',
-      area, areaCss: area / dpr ** 2, meanL: area ? sumL / area : 0, light: area ? light / area : 0, mid: area ? mid / area : 0, bright
+      area, areaCss: area, meanL: area ? sumL / area : 0, light: area ? light / area : 0, mid: area ? mid / area : 0, bright // CONTROL O-62 (NO FUSIONAR): sin dividir por el DPR²
     };
   };
   return { ...(await measure([con, sin])), crops: keep ? [con, sin] : undefined, atDpr: shots.length ? await Promise.all(shots.map(measure)) : undefined };
