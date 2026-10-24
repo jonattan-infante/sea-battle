@@ -463,18 +463,19 @@ function pathOf(url: string, withQuery = false): string {
     return 'sin URL';
   }
 }
-const lastSettle = new WeakMap<Page, { label: string; at: number }>();
+// La ventana de H5 de cada página va de su entrada en settle a la captura de sus esquinas (open)
+const lastSettle = new WeakMap<Page, { label: string; at: number; open: boolean }>();
 
-// Al entrar en settle: desde el primero de la página, cada navegación del frame principal va al log con los ms desde el
-// último settle; devuelve cuántas document.images hay
+// Al entrar en settle: desde el primero de la página, cada navegación del frame principal dentro de la ventana va al log
+// con los ms desde la entrada; las de fuera son las del propio test y no van; devuelve cuántas document.images hay
 async function settleEntry(page: Page, label: string): Promise<number> {
   if (!lastSettle.has(page)) {
     page.on('framenavigated', (f) => {
       const last = lastSettle.get(page)!;
-      if (f === page.mainFrame()) console.log(safeLog(`O-63 navegación a ${pathOf(f.url())}, ${Date.now() - last.at} ms después de entrar en el settle de ${last.label}`));
+      if (f === page.mainFrame() && last.open) console.log(safeLog(`O-63 navegación a ${pathOf(f.url())}, ${Date.now() - last.at} ms después de entrar en el settle de ${last.label}, antes de la captura de sus esquinas`));
     });
   }
-  lastSettle.set(page, { label, at: Date.now() });
+  lastSettle.set(page, { label, at: Date.now(), open: true });
   return page.evaluate(() => document.images.length);
 }
 
@@ -497,8 +498,17 @@ async function settleImages(page: Page, label: string, atEntry: number) {
   expect(images.filter((i) => i.decode.startsWith('decode rechazado')), `${label}: decode() de las imágenes`).toEqual([]);
 }
 
-// La captura de la landing, la referencia de las esquinas, va adjunta al test (faltaba en el rojo de QA-53)
+// La captura de las esquinas cierra la ventana de H5. La de la landing, la referencia de las esquinas, se guarda y va adjunta
+// al test solo si falla (faltaba en el rojo de QA-53; en verde serían ~1,7 MB por run sin uso)
+let landingPng: Buffer | undefined;
 async function attachLanding(page: Page, png: Buffer): Promise<Buffer> {
-  if (pathOf(page.url()) === '/') await test.info().attach('landing.png', { body: png, contentType: 'image/png' });
+  const last = lastSettle.get(page);
+  if (last) last.open = false;
+  if (pathOf(page.url()) === '/') landingPng = png;
   return png;
 }
+test.afterEach(async () => {
+  const [png, info] = [landingPng, test.info()];
+  landingPng = undefined;
+  if (png && info.status !== info.expectedStatus) await info.attach('landing.png', { body: png, contentType: 'image/png' });
+});
