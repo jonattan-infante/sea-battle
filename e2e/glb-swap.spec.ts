@@ -128,10 +128,10 @@ test.describe('AC-193 a: el cambio al GLB del Capitán', () => {
       ship.hp = Math.round(0.1 * ship.maxHp);
     });
     const puesta = await placaPuesta(page, 'g-captain'); await record(page, 'g-captain');
-    await page.waitForTimeout(2_000); // el humo y el fuego, en régimen, con el procedural
+    await page.waitForTimeout(2_000); const grabadosAntes = await grabados(page, 'antes', 31); // el humo y el fuego, en régimen, con el procedural (2 s como mínimo), y > 30 frames antes del cambio (:154)
     release();
     await captainLoaded(page);
-    await page.waitForTimeout(2_000);
+    await page.waitForTimeout(2_000); const grabadosDespues = await grabados(page, 'después', 31); // 2 s como mínimo y > 30 frames desde el cambio (:155)
     const glb = await sockets(page);
     // Sockets del GLB a más de 2 mm de los del procedural: sin ninguno, el test no distinguiría los dos modelos
     const moved = [...glb.smoke.filter((q) => !at(q, proc.smoke)), ...glb.fire.filter((q) => !at(q, proc.fire))].length;
@@ -148,7 +148,7 @@ test.describe('AC-193 a: el cambio al GLB del Capitán', () => {
       plateChanges: changes(list, (f) => f.plate), ringChanges: changes(list, (f) => f.rings), rings: [before.at(-1)?.rings, after[0]?.rings],
       sizes: [...new Set(list.map((f) => `${f.length}×${f.beam}`))]
     };
-    console.log(`AC-193 a, cambio al GLB del Capitán: ${JSON.stringify(summary)} · sockets procedural ${JSON.stringify(proc)} · GLB ${JSON.stringify(glb)} · la placa, puesta en ${puesta.ms} ms (${puesta.placa})`);
+    console.log(`AC-193 a, cambio al GLB del Capitán: ${JSON.stringify(summary)} · sockets procedural ${JSON.stringify(proc)} · GLB ${JSON.stringify(glb)} · grabados ${grabadosAntes.n} antes del cambio (${grabadosAntes.ms} ms tras los 2 s) y ${grabadosDespues.n} desde él (${grabadosDespues.ms} ms tras los 2 s) · la placa, puesta en ${puesta.ms} ms (${puesta.placa})`);
     expect(moved, 'sockets del GLB que no están en el procedural').toBeGreaterThan(0);
     expect(swap).toBeGreaterThan(0);
     expect(before.length).toBeGreaterThan(30); // con frames de sobra a los dos lados
@@ -227,4 +227,21 @@ async function placaPuesta(page: Page, id: string): Promise<{ ms: number; placa:
     return puesta;
   }, 15_000, 200);
   return { ms: Date.now() - t0, placa };
+}
+
+// :154 y :155 piden > 30 frames a cada lado del cambio. En la CI (llvmpipe, run 40119428123) los 2 s de las :131 y :134
+// dieron 36 frames antes del cambio y 21 desde él: ~10 frames/s tras el cambio (21 en ~2 s). Los 2 s siguen como mínimo (el
+// humo y el fuego en régimen a los 2 lados, :159) y, tras ellos, se espera a que __SWAP__ tenga n frames a ese lado del
+// cambio, contados como en las :140-141: antes, n < swap; desde él, n ≥ swap (sin cambio, todos son de antes). Se cuentan
+// en la página, sin copiar el buffer; si no llegan en 30 s, waitFor lanza un error. Devuelve cuántos había y cuánto tardó
+async function grabados(page: Page, lado: 'antes' | 'después', n: number): Promise<{ n: number; ms: number }> {
+  const t0 = Date.now();
+  const k = await waitFor(() => page.evaluate((lado) => {
+    const fs = (window as unknown as { __SWAP__: Frame[] }).__SWAP__;
+    const swap = fs.find((f) => f.glb)?.n ?? Infinity;
+    let c = 0;
+    for (const f of fs) if (lado === 'antes' ? f.n < swap : f.n >= swap) c++;
+    return c;
+  }, lado), (c) => c >= n, 30_000, 200);
+  return { n: k, ms: Date.now() - t0 };
 }
