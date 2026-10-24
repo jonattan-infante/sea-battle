@@ -128,7 +128,7 @@ test.describe('AC-193 a: el cambio al GLB del Capitán', () => {
       ship.hp = Math.round(0.1 * ship.maxHp);
     });
     const puesta = await placaPuesta(page, 'g-captain'); await record(page, 'g-captain');
-    await page.waitForTimeout(2_000); const grabadosAntes = await grabados(page, 'antes', 31); // el humo y el fuego, en régimen, con el procedural (2 s como mínimo), y > 30 frames antes del cambio (:154)
+    await page.waitForTimeout(2_000); const grabadosAntes = await grabados(page, 'antes', 31); const zoomTras = await page.evaluate(() => { window.__SEA_BATTLE__!.runtime().zoomBy(1); const fs = (window as unknown as { __SWAP__: Frame[] }).__SWAP__; return { n: fs.at(-1)?.n ?? -1, grabados: fs.length }; }); console.log(`CONTROL C-S4 de la CI: zoomBy(1) tras el frame ${zoomTras.n} (${zoomTras.grabados} grabados), antes de release()`); await page.waitForTimeout(1_000); // el humo y el fuego, en régimen, con el procedural (2 s como mínimo), y > 30 frames antes del cambio (:154)
     release();
     await captainLoaded(page);
     await page.waitForTimeout(2_000); const grabadosDespues = await grabados(page, 'después', 31); // 2 s como mínimo y > 30 frames desde el cambio (:155)
