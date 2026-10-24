@@ -93,19 +93,7 @@ jobs:
           test -x "${pg_bin}/initdb"
           "${pg_bin}/postgres" --version
           echo "PG_BIN=${pg_bin}" >> "$GITHUB_ENV"
-          npx tsx -e "(async () => {
-            const { chrome } = await import('./playwright.config.ts');
-            const { chromium } = await import('@playwright/test');
-            const browser = await chromium.launch({ channel: chrome.channel, args: chrome.launchOptions.args });
-            const page = await browser.newPage();
-            const renderer = await page.evaluate(() => {
-              const gl = document.createElement('canvas').getContext('webgl2');
-              const info = gl && gl.getExtension('WEBGL_debug_renderer_info');
-              return gl ? gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER) : 'sin WebGL2';
-            });
-            console.log('Chrome ' + browser.version() + ', args ' + chrome.launchOptions.args.join(' ') + ', WebGL: ' + renderer);
-            await browser.close();
-          })()"
+          npx tsx scripts/ci/webgl-renderer.ts
       - name: Build de e2e
         run: npm run build:e2e
       - name: e2e (shard ${{ matrix.shard }}/4)
