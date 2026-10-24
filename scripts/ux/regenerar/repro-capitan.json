@@ -1,0 +1,151 @@
+{
+ "sb_id": "npc_pirate_captain",
+ "esperado": [
+  [
+   "lod0",
+   2383,
+   "ee2eaea:docs/game/ASSET-SPEC.md:839 y :891"
+  ],
+  [
+   "lod1",
+   511,
+   "ee2eaea:docs/game/ASSET-SPEC.md:839 (sin el mascarón, D45) y :891"
+  ],
+  [
+   "caja_eslora_m",
+   "30.465",
+   "ee2eaea:docs/game/ASSET-SPEC.md:892"
+  ],
+  [
+   "sj:comprobaciones/AS-V03 eslora del casco/1",
+   "0.0155",
+   "ee2eaea:docs/game/ASSET-SPEC.md:892 (+1,55 %: la fracción de sockets_capitan.py:75, con la eslora sin redondear, como en la entrega)"
+  ],
+  [
+   "caja_manga_m",
+   "8.121",
+   "ee2eaea:docs/game/ASSET-SPEC.md:892"
+  ],
+  [
+   "sj:comprobaciones/AS-V03 manga del casco/1",
+   "0.0152",
+   "ee2eaea:docs/game/ASSET-SPEC.md:892 (+1,52 %: la fracción de sockets_capitan.py:76, con la manga sin redondear; de los 8,121 m ya redondeados sale 1,51)"
+  ],
+  [
+   "extra:sb_length",
+   "30",
+   "ee2eaea:docs/game/ASSET-SPEC.md:883"
+  ],
+  [
+   "extra:sb_beam",
+   "8",
+   "ee2eaea:docs/game/ASSET-SPEC.md:883"
+  ],
+  [
+   "cannons_port",
+   6,
+   "ee2eaea:docs/game/ASSET-SPEC.md:728 (Cañones por banda) y :883"
+  ],
+  [
+   "cannons_stbd",
+   6,
+   "ee2eaea:docs/game/ASSET-SPEC.md:728 y :883"
+  ],
+  [
+   "sj:comprobaciones/cañones fuera del costado (≥ 0,05 m)/0",
+   "0.311",
+   "ee2eaea:docs/game/ASSET-SPEC.md:894"
+  ],
+  [
+   "fires",
+   3,
+   "ee2eaea:docs/game/ASSET-SPEC.md:894"
+  ],
+  [
+   "sj:fuego/socket_fire_01/movido_m",
+   "0.1",
+   "ee2eaea:docs/game/ASSET-SPEC.md:894"
+  ],
+  [
+   "sj:fuego/socket_fire_02/movido_m",
+   "0",
+   "ee2eaea:docs/game/ASSET-SPEC.md:894 («en la fórmula»)"
+  ],
+  [
+   "sj:fuego/socket_fire_03/movido_m",
+   "1.4",
+   "ee2eaea:docs/game/ASSET-SPEC.md:894"
+  ],
+  [
+   "socket:socket_smoke",
+   [
+    "0",
+    "*",
+    "-4.5"
+   ],
+   "ee2eaea:docs/game/ASSET-SPEC.md:894 (−0,15·L, con L = 30 de :883)"
+  ],
+  [
+   "socket:socket_smoke_02",
+   null,
+   "ee2eaea:docs/game/ASSET-SPEC.md:894 (sin socket_smoke_02)"
+  ],
+  [
+   "extra:sb_mast_height",
+   "24",
+   "ee2eaea:docs/game/ASSET-SPEC.md:894"
+  ],
+  [
+   "extra:sb_pick",
+   [
+    "6",
+    "24",
+    "15"
+   ],
+   "ee2eaea:docs/game/ASSET-SPEC.md:894"
+  ],
+  [
+   "extra:sb_lod_px",
+   [
+    "72",
+    "64"
+   ],
+   "ee2eaea:docs/game/ASSET-SPEC.md:894"
+  ],
+  [
+   "sj:h_max",
+   "23.93",
+   "ee2eaea:docs/game/ASSET-SPEC.md:894"
+  ],
+  [
+   "sj:comprobaciones/D45 calavera del mascarón, vértices en LOD0",
+   36,
+   "ee2eaea:docs/game/ASSET-SPEC.md:888"
+  ],
+  [
+   "sj:comprobaciones/D45 calavera del mascarón, vértices en LOD1",
+   0,
+   "ee2eaea:docs/game/ASSET-SPEC.md:888"
+  ],
+  [
+   "ktx_B",
+   46716,
+   "ee2eaea:docs/game/ASSET-SPEC.md:839"
+  ],
+  [
+   "respaldo_B",
+   10916,
+   "ee2eaea:docs/game/ASSET-SPEC.md:839"
+  ],
+  [
+   "dentro_B",
+   97568,
+   "ee2eaea:docs/game/ASSET-SPEC.md:839"
+  ],
+  [
+   "fuera_B",
+   50832,
+   "ee2eaea:docs/game/ASSET-SPEC.md:839"
+  ]
+ ]
+}
