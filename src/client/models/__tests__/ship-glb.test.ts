@@ -15,6 +15,7 @@ import {
   EntryGate,
   GlbLoader,
   OWN_GLB_WAIT_MS,
+  prefetchClasses,
   setShipMap,
   SHIP_GLB,
   ShipGlbError,
@@ -203,8 +204,8 @@ describe('AC-193 c: el procedural mientras carga, el propio primero y de uno en 
     const { calls, loader, fetchGlb } = fakeLoader();
     const store = new ShipGlbStore(manifest, () => loader, fetchGlb);
     store.request('brig', true);
-    store.prefetchAll();
-    store.prefetchAll(); // repetido: no duplica
+    store.prefetchAll(prefetchClasses(null));
+    store.prefetchAll(prefetchClasses(null)); // repetido: no duplica
     const classOf = (url: string) => Object.entries(manifest).find(([, u]) => u === url)![0];
     for (let i = 0; i < 3; i++) {
       store.pump(gl);
@@ -280,6 +281,54 @@ describe('AC-193 c: el procedural mientras carga, el propio primero y de uno en 
 // AC-193 c, opción B (producto, 2026-10-18): la entrada espera al GLB propio con un tope. Para que la espera sea corta, su
 // descarga empieza en cuanto se conoce la clase, sin esperar al renderer, y el cargador (sus módulos) en cuanto hay
 // manifiesto. El transcodificador de KTX2 no: con el respaldo (D90) baja después del GLB propio
+// BACKLOG :423-:427 (punto 3 de dev-render): el jugador no baja en segundo plano los modelos de barcos que no pueden salir en
+// su partida. prefetchAll solo encola las clases de la lista (las del jugador y las de NPC de la bienvenida), y sin GLB de
+// una clase del jugador la entrada no espera ni el cargador se crea antes de hacer falta, como sin manifiesto
+describe('BACKLOG :423-:427: solo se precargan los modelos de los barcos que pueden salir', () => {
+  const manifest = { sloop: '/models/ship_sloop.glb', gunboat: '/models/npc_pirate_gunboat.glb', captain: '/models/npc_pirate_captain.glb' };
+  const I2_OFF = { npcClasses: ['pirate', 'merchant'] };
+  const I2_ON = { npcClasses: ['pirate', 'merchant', 'gunboat', 'captain'] };
+
+  test('prefetchClasses: las clases del jugador y las de NPC de la bienvenida; sin bienvenida, solo las del jugador', () => {
+    expect(prefetchClasses(null)).toEqual(['sloop', 'brig', 'frigate']);
+    expect(prefetchClasses(I2_ON)).toEqual(['sloop', 'brig', 'frigate', 'pirate', 'merchant', 'gunboat', 'captain']);
+  });
+
+  test('con el I2 apagado no se encolan la Cañonera ni el Capitán; encendido, sí, una vez cada uno y detrás del propio', async () => {
+    const { calls, loader, fetchGlb } = fakeLoader();
+    const store = new ShipGlbStore(manifest, () => loader, fetchGlb);
+    store.request('sloop', true);
+    store.prefetchAll(prefetchClasses(I2_OFF));
+    store.pump(gl);
+    calls[0].resolve(await glb('sloop'));
+    await settle();
+    store.pump(gl);
+    expect(calls.map((c) => c.url)).toEqual(['/models/ship_sloop.glb']);
+    store.prefetchAll(prefetchClasses(I2_ON));
+    store.prefetchAll(prefetchClasses(I2_ON)); // repetido: no duplica
+    for (const classId of ['gunboat', 'captain']) {
+      store.pump(gl);
+      calls[calls.length - 1].resolve(await glb(classId));
+      await settle();
+    }
+    store.pump(gl);
+    expect(calls.map((c) => c.url)).toEqual(['/models/ship_sloop.glb', '/models/npc_pirate_gunboat.glb', '/models/npc_pirate_captain.glb']);
+    expect([store.loaded('gunboat'), store.loaded('captain')]).toEqual([true, true]);
+  });
+
+  test('con GLB solo de NPC, la entrada no espera y el cargador no se crea hasta que baja el primero, como sin manifiesto', () => {
+    const { calls, fetchGlb, make } = fakeLoader();
+    const store = new ShipGlbStore({ gunboat: manifest.gunboat, captain: manifest.captain }, make, fetchGlb);
+    store.warm();
+    store.predictOwn('sloop');
+    store.request('sloop', true);
+    expect([store.waiting(null), store.waiting('sloop'), make.mock.calls.length, calls.length]).toEqual([false, false, 0, 0]);
+    store.prefetchAll(prefetchClasses(I2_ON));
+    store.pump(gl);
+    expect([make.mock.calls.length, calls.map((c) => c.url)]).toEqual([1, ['/models/npc_pirate_gunboat.glb']]);
+  });
+});
+
 describe('AC-193 c, opción B: el GLB propio se empieza a bajar antes del primer frame', () => {
   const manifest = { sloop: '/models/ship_sloop.glb', brig: '/models/ship_brig.glb' };
 
@@ -375,7 +424,7 @@ describe('AC-193 c, opción A: el GLB de la clase propia predicha, antes de la b
     store.predictOwn('sloop');
     expect(order).toEqual(['/models/ship_sloop.glb', 'cargador']);
     store.request('sloop', true);
-    store.prefetchAll();
+    store.prefetchAll(prefetchClasses(null));
     expect(f.calls.map((c) => c.url)).toEqual(['/models/ship_sloop.glb']);
     f.calls[0].resolve(await glb('sloop'));
     store.pump(gl);
@@ -393,7 +442,7 @@ describe('AC-193 c, opción A: el GLB de la clase propia predicha, antes de la b
       ['/models/ship_frigate.glb', true],
       ['/models/ship_sloop.glb', undefined]
     ]);
-    store.prefetchAll();
+    store.prefetchAll(prefetchClasses(null));
     f.calls[1].resolve(await glb('sloop'));
     store.pump(gl);
     await settle();

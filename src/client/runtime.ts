@@ -16,7 +16,7 @@ import { buildBuoyGeometry, buildIslands, buildLootGeometry, buildPalmGeometry, 
 import { createOceanGeometry, createOceanMaterial } from './models/ocean-material';
 import { measureSailVisibility, measureShipValues, SailVisibility, ShipValues } from './models/sail-visibility';
 import { createShipMaterial, LOD_PX, ShipMaterial, ShipModel } from './models/ship-geometry';
-import { EntryGate, setShipMap, ShipGlbStore } from './models/ship-glb';
+import { EntryGate, prefetchClasses, setShipMap, ShipGlbStore } from './models/ship-glb';
 import { FloatingTextLayer, LabelLayer, LabelTarget, OverlayHost, ReloadState, ScreenPoint } from './overlays';
 import { DAMAGE_FX, Effects, RENDER_ORDER, rgba } from './vfx/effects';
 import { makeRing, RING_MODE, RingSpec } from './vfx/rings';
@@ -1431,9 +1431,9 @@ export class GameRuntime implements OverlayHost, ChipHost {
 
   private createView(ship: RenderShip): ShipView {
     const model = this.shipGlb.model(ship.classId);
-    // AC-193 c: el GLB del barco propio, el primero; al entrar, los demás del manifiesto en segundo plano
+    // AC-193 c: el GLB del barco propio, el primero; al entrar, los demás que pueden salir, en segundo plano (BACKLOG :423)
     this.shipGlb.request(ship.classId, ship.id === this.src.myShipId);
-    if (ship.id === this.src.myShipId) this.shipGlb.prefetchAll();
+    if (ship.id === this.src.myShipId) this.shipGlb.prefetchAll(prefetchClasses(this.src.welcome));
     const material = this.materialPool.pop() ?? createShipMaterial();
     setShipMap(material, model.map ?? null);
     const lod: 0 | 1 = model.recipe.L * this.ppm >= LOD_PX[0] ? 0 : 1;
