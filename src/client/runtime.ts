@@ -539,7 +539,7 @@ export class VfxDirector {
         const ratio = s.hp / Math.max(1, s.maxHp);
         const sockets = ratio <= 0.12 ? DAMAGE_FX.fireSockets : 2;
         // Por socket: 12 cuerpos de llama/s (P_ALPHA), 6 núcleos/s y 2 brasas/s (P_ADD); vivos ≤ 20, ≤ 8 y ≤ 7 (D21)
-        view.fireAcc += dt * DAMAGE_FX.flameRate;
+        view.fireAcc += dt * DAMAGE_FX.flameRate * (rt.mobile ? 0.5 : 1); // CONTROL C1 de O-66: la mitad en móvil, lo que D32 prohíbe
         view.coreAcc += dt * DAMAGE_FX.coreRate;
         view.emberAcc += dt * DAMAGE_FX.emberRate;
         while (view.fireAcc >= 1 || view.coreAcc >= 1 || view.emberAcc >= 1) {
