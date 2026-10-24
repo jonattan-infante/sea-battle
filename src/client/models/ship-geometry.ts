@@ -3,7 +3,7 @@
 // +X babor; origen en la flotación, en el centro de la eslora del casco. Mismo contrato que un .glb futuro.
 import * as THREE from 'three';
 import { ShipKind } from '../../game/constants';
-import { RING_COLORS, SHIP_LOOKS, ShipLook, TOP_FACE } from '../art';
+import { LIGHTING, RING_COLORS, SHIP_LOOKS, ShipLook, TOP_FACE } from '../art';
 import { creaseNormals, GeoBuilder, lin, trs, Vec3 } from './geometry-utils';
 
 const deg = Math.PI / 180;
@@ -907,11 +907,26 @@ export interface ShipFx {
   uDamage: { value: number };
   uShield: { value: number };
   uShieldColor: { value: THREE.Color };
+  uShapeLight: { value: THREE.Vector2 }; // (KS, KH), el mismo objeto en todos los materiales
 }
 
 export type ShipMaterial = THREE.MeshStandardMaterial & { userData: { fx: ShipFx } };
 
 const SHIELD_COLOR = new THREE.Color(RING_COLORS.shield);
+
+// Luz de forma (palanca 3 de D91; ASSET-SPEC §13, fila 6): en la madera del casco (_rim_mask), el sol directo, difuso y
+// especular, × KS y la hemisférica × KH, con KH tal que una cara que mira arriba (la cubierta, D62) recibe la misma luz
+// que sin ella; los costados ganan contraste (scripts/ux/laminas/lamina_cadena.py:28-30)
+const luminance = (hex: string) => {
+  const c = new THREE.Color(hex); // en lineal
+  return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+};
+const UP_HEMI = LIGHTING.hemiIntensity * luminance(LIGHTING.hemiSky);
+const UP_SUN = LIGHTING.sunIntensity * luminance(LIGHTING.sunColor) * LIGHTING.sunDir[1];
+const KS = 2.0;
+export const SHAPE_LIGHT = { ks: KS, kh: (UP_HEMI + UP_SUN - KS * UP_SUN) / UP_HEMI };
+// Un uniform compartido, no una constante del shader: el e2e lo pone a (1, 1) para medir el barco sin la luz de forma
+const SHAPE_LIGHT_UNIFORM = { value: new THREE.Vector2(SHAPE_LIGHT.ks, SHAPE_LIGHT.kh) };
 
 // Misma función para todos los materiales → misma clave de caché → un único programa de shader
 function shipOnBeforeCompile(this: THREE.Material, shader: THREE.WebGLProgramParametersWithUniforms): void {
@@ -922,13 +937,22 @@ function shipOnBeforeCompile(this: THREE.Material, shader: THREE.WebGLProgramPar
   shader.uniforms.uDamage = fx.uDamage;
   shader.uniforms.uShield = fx.uShield;
   shader.uniforms.uShieldColor = fx.uShieldColor;
+  shader.uniforms.uShapeLight = fx.uShapeLight;
   // Protección (VFX §12, D8, D18): borde luminoso (rim) solo en el casco (_rim_mask), no un velo sobre el difuso.
   // Con cámara ortográfica la dirección de vista es (0, 0, 1) en espacio de vista, como geometryViewDir de three
-  shader.fragmentShader = 'uniform float uHit;\nuniform float uDamage;\nuniform float uShield;\nuniform vec3 uShieldColor;\nvarying float vRimMask;\n' +
+  shader.fragmentShader = 'uniform float uHit;\nuniform float uDamage;\nuniform float uShield;\nuniform vec3 uShieldColor;\nuniform vec2 uShapeLight;\nvarying float vRimMask;\n' +
     shader.fragmentShader
       .replace(
         '#include <color_fragment>',
         '#include <color_fragment>\n\tdiffuseColor.rgb = diffuseColor.rgb * (1.0 - 0.25 * uDamage) + vec3(0.35) * uHit;'
+      )
+      // Luz de forma, solo en el material con atlas (los GLB de la receta): el procedural compila lo de antes. Aquí
+      // irradiance es la hemisférica y reflectedLight.direct*, el sol
+      .replace(
+        '#include <lights_fragment_begin>',
+        '#include <lights_fragment_begin>\n#ifdef USE_MAP\n\tfloat sbShapeSun = mix(1.0, uShapeLight.x, vRimMask);\n' +
+          '\tirradiance *= mix(1.0, uShapeLight.y, vRimMask);\n' +
+          '\treflectedLight.directDiffuse *= sbShapeSun;\n\treflectedLight.directSpecular *= sbShapeSun;\n#endif'
       )
       .replace(
         '#include <opaque_fragment>',
@@ -945,7 +969,7 @@ export function createShipMaterial(): ShipMaterial {
     metalness: 0,
     side: THREE.DoubleSide
   }) as ShipMaterial;
-  material.userData.fx = { uHit: { value: 0 }, uDamage: { value: 0 }, uShield: { value: 0 }, uShieldColor: { value: SHIELD_COLOR } };
+  material.userData.fx = { uHit: { value: 0 }, uDamage: { value: 0 }, uShield: { value: 0 }, uShieldColor: { value: SHIELD_COLOR }, uShapeLight: SHAPE_LIGHT_UNIFORM };
   material.onBeforeCompile = shipOnBeforeCompile;
   return material;
 }

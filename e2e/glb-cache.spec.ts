@@ -87,13 +87,13 @@ const network = (page: Page, paths: string[]) =>
   );
 
 test.describe('Caché de la cadena de carga de los GLB (AC-193 c)', () => {
-  test('con el manifiesto vacío, la primera visita no baja la cadena de carga: 0 peticiones al cargador, a /basis y a /models, y se entra como hoy', async ({ page }) => {
+  test('sin ningún GLB que pueda salir (ninguno de una clase del jugador y el I2 apagado), la primera visita no baja la cadena de carga: 0 peticiones al cargador, a /basis y a /models, y se entra como hoy', async ({ page }) => {
     const seen = track(page);
     await enterGame(page);
-    await page.waitForTimeout(2_000); // la precarga de los demás GLB arranca al entrar (prefetchAll): con el manifiesto vacío, nada
+    await page.waitForTimeout(2_000); // la precarga de los demás GLB arranca al entrar (prefetchAll): sin GLB que pueda salir, nada
     await seen.settled();
     const entry = await entryOf(page);
-    console.log(`AC-193 c manifiesto vacío: ${seen.scripts.length} js leídos, firmas ${JSON.stringify([...seen.loaderChunks])}, entrada ${JSON.stringify(entry)}`);
+    console.log(`AC-193 c sin GLB que pueda salir: ${seen.scripts.length} js leídos, firmas ${JSON.stringify([...seen.loaderChunks])}, entrada ${JSON.stringify(entry)}`);
     expect(seen.unread).toEqual([]);
     expect(seen.scripts.length).toBeGreaterThan(5); // se leyó el código de la página: la ausencia de firmas no es vacía
     expect([...seen.loaderChunks.keys()]).toEqual([]);

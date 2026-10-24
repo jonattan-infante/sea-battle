@@ -10,10 +10,18 @@
 //   ids   regiones como vertex color: costado (casco con |n_y| ≤ 0,6), cubierta y tapas (model.decks, AS-V22), cada
 //         vela y cañones/portas
 // Con D23_OUT=<carpeta> guarda los recortes de cada pose (k = 0) y un JSON con todas las cifras, para QA.
+// Las clases con GLB (BACKLOG :421, 2026-10-24): el primer test las mide en su procedural, con el GLB retenido, porque es
+// lo que se ve mientras carga o si falla. El segundo mide su GLB con la KTX2 de 1024², su anisótropo y la luz de forma
+// comprobados: AS-V19 con el suelo provisional de la tanda B (≥ 45 % a 0° y 90°; el 55 %, al registro) y AS-V18, AS-V20,
+// AS-V21, AD-10, AD-25 y AD-33 como «no medido en GLB», nunca en verde. Con HD_ANISO=<n> pone el anisótropo de los GLB a
+// n y AS-V19 va solo al registro (la corrida a nivel 1). El tercero comprueba que el anisótropo no toca los procedurales.
 import { expect, Page, test } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
+import { LinearMipmapLinearFilter } from 'three';
 import { SHIP_LOOKS } from '../src/client/art';
+import { SHAPE_LIGHT } from '../src/client/models/ship-geometry';
+import { mapAnisotropyFor, SHIP_GLB, SHIP_MAP_ANISOTROPY } from '../src/client/models/ship-glb';
 import type { ShipKind } from '../src/game/constants';
 import { enterGame } from './helpers';
 
@@ -28,6 +36,17 @@ const BUDGET: Record<string, number> = { sloop: 2500, brig: 2500, frigate: 2500,
 const HEADINGS = [0, 90, 180, 270];
 const SHOTS = 3; // capturas por pose, separadas 0,5 s (balanceo distinto)
 const OUT = process.env.D23_OUT;
+const GLB_CLASSES: readonly string[] = CLASSES.filter((c) => SHIP_GLB[c]);
+const ATLAS_PX = 1024; // la KTX2 del atlas de los GLB de la receta (ASSET-SPEC §13); el respaldo PNG es de 128²
+// Lo que no se mide en el GLB (BACKLOG :421 (a)): no trae los rangos de partes que piden, o mide el procedural
+// (measureShipValues). Lo asertan sobre el procedural el primer test, la lámina aprobada y la captura de QA
+const NOT_IN_GLB = (classId: string) => ['AS-V18', ...(AS_V20_CLASSES.includes(classId) ? ['AS-V20'] : []), 'AS-V21', 'AD-10', 'AD-25', 'AD-33'];
+// Tanda B (BACKLOG :421 (c)): suelo provisional de AS-V19 en el GLB a 0° y 90°, con el anisótropo y la luz de forma. El 55 %
+// y el suelo de 2 corridas se leen en el registro
+const AS_V19_GLB_FLOOR = 0.45;
+const HD_ANISO = process.env.HD_ANISO ? Number(process.env.HD_ANISO) : null;
+if (HD_ANISO !== null && !(Number.isInteger(HD_ANISO) && HD_ANISO >= 1 && HD_ANISO <= 16)) throw new Error(`HD_ANISO=${process.env.HD_ANISO}: tiene que ser un entero de 1 a 16`);
+const PROCEDURAL_CLASSES: readonly string[] = CLASSES.filter((c) => !SHIP_GLB[c]); // las 5 de la 1.0 y la Cañonera (BACKLOG :421)
 
 interface Region {
   name: string;
@@ -60,17 +79,19 @@ interface Shot {
   rejected: { x: number; y: number; w: number; h: number; why: 'caja' | 'sin franja' }[]; // AS-V20: las descartadas
   cloth: { sail: number; px: number; axis: 1 | 2; lines: number; n: number; r: number; eta: number; range: number }[]; // AS-V21 (b), por vela
   deck: Profile | { px: number; skip: string } | null; // AS-V22 (b): la cubierta y las tapas juntas; null sin los tonos de D62
+  model: 'procedural' | 'respaldo' | 'ktx2'; // lo que dibuja la vista en la captura, por el mapa de su material (D90)
+  map: { w: number; h: number; aniso: number; mips: number; minFilter: number } | null; // ese mapa, su anisótropo, sus mips y su filtro; null en el procedural
   crops?: Record<string, string>;
 }
 
 // Mide una pose: se ejecuta en la página (sin acceso a nada de Node)
 async function measurePose([id, keep, bandHex, measureDeck]: [string, boolean, string, boolean]): Promise<Shot> {
   type V3 = { x: number; y: number; z: number };
-  type Attr = { count: number; array: Float32Array; clone(): Attr; getX(i: number): number; getY(i: number): number; getZ(i: number): number };
+  type Attr = { count: number; array: Float32Array; clone(): Attr; getX(i: number): number; getY(i: number): number; getZ(i: number): number; setXYZ(i: number, x: number, y: number, z: number): void };
   type Light = { isLight?: boolean; isHemisphereLight?: boolean; intensity: number; color: { clone(): unknown; copy(c: unknown): void; setRGB(r: number, g: number, b: number): void }; groundColor?: Light['color'] };
   type Node = Light & { visible: boolean; isMesh?: boolean; isPoints?: boolean; isLine?: boolean; isSprite?: boolean };
   interface Loose {
-    views: Map<string, { lod: number; model: { sails: [number, number][][]; decks: [number, number][][][] }; mesh: { visible: boolean; geometry: { getAttribute(n: string): Attr; setAttribute(n: string, a: Attr): void } } }>;
+    views: Map<string, { lod: number; model: { sails: [number, number][][]; decks: [number, number][][][] }; mesh: { visible: boolean; geometry: { getAttribute(n: string): Attr; setAttribute(n: string, a: Attr): void }; material: { map: { isCompressedTexture?: boolean; image?: { width?: number; height?: number }; anisotropy: number; mipmaps?: unknown[]; minFilter: number } | null } } }>;
     rootScene: { traverse(fn: (o: Node) => void): void };
     stats(): { ppm: number };
     setPaused(p: boolean): void;
@@ -80,6 +101,10 @@ async function measurePose([id, keep, bandHex, measureDeck]: [string, boolean, s
   const rt = window.__SEA_BATTLE__!.runtime() as unknown as Loose;
   const view = rt.views.get(id)!;
   const geo = view.mesh.geometry;
+  // El mapa de esta captura: entre aquí y «con» no corre ningún frame (setPaused y captureImage son síncronos)
+  const tex = view.mesh.material.map;
+  const model = !tex ? 'procedural' : tex.isCompressedTexture ? 'ktx2' : 'respaldo';
+  const map = tex ? { w: tex.image?.width ?? 0, h: tex.image?.height ?? 0, aniso: tex.anisotropy, mips: tex.mipmaps?.length ?? 0, minFilter: tex.minFilter } : null;
   rt.setPaused(true);
   const shot = () => rt.captureImage('image/png')!;
   const con = shot();
@@ -117,8 +142,9 @@ async function measurePose([id, keep, bandHex, measureDeck]: [string, boolean, s
   const tris = pos.count / 3;
   const deckTri = new Uint8Array(tris); // tablas de la cubierta y de las tapas (model.decks, D62)
   for (const surface of view.model.decks[view.lod]) for (const [a, b] of surface) deckTri.fill(1, a, b);
-  const set = (t: number, r: number, g: number, b: number) => { for (let k = 0; k < 3; k++) ids.array.set([r, g, b], (3 * t + k) * 3); };
-  const setPort = (t: number, v: number) => { for (let k = 0; k < 3; k++) portIds.array.set([v, v, v], (3 * t + k) * 3); };
+  // Por vértice con setXYZ, que respeta el itemSize y la normalización del atributo (el COLOR_0 de Blender es RGBA de 8 bits)
+  const set = (t: number, r: number, g: number, b: number) => { for (let k = 0; k < 3; k++) ids.setXYZ(3 * t + k, r, g, b); };
+  const setPort = (t: number, v: number) => { for (let k = 0; k < 3; k++) portIds.setXYZ(3 * t + k, v, v, v); };
   const p = (i: number): V3 => ({ x: pos.getX(i), y: pos.getY(i), z: pos.getZ(i) });
   for (let t = 0; t < (cached ? 0 : tris); t++) {
     setPort(t, near(3 * t, dark[0]) || near(3 * t, dark[1]) ? 1 : 0);
@@ -478,7 +504,7 @@ async function measurePose([id, keep, bandHex, measureDeck]: [string, boolean, s
     };
     crops = { con: crop(A), sin: crop(B), alb: crop(C), ids: crop(D), cob: crop(E) };
   }
-  return { ppm, lod: view.lod, calls: withShip.calls - without.calls, triangles: withShip.triangles - without.triangles, mask: maskPx, interior, texture: interior ? textured / interior : 0, regions, ports, rejected, cloth, deck, crops };
+  return { ppm, lod: view.lod, calls: withShip.calls - without.calls, triangles: withShip.triangles - without.triangles, mask: maskPx, interior, texture: interior ? textured / interior : 0, regions, ports, rejected, cloth, deck, model, map, crops };
 }
 
 interface Row extends Omit<Shot, 'crops'> {
@@ -509,8 +535,9 @@ const MOBILE_N1_PPM = 2.82; // 390×844 con N1 (ASSET-SPEC §7): Balandra, Berga
 const LOD1_CLASSES = ['sloop', 'brig', 'pirate', 'merchant'];
 const legible = (q: Port) => q.core >= 2 && q.contrast >= AS_V20_CONTRAST; // AS-V20 (D38): núcleo ≥ 2 px y contraste ≥ 15
 
-// Una pasada por la galería con un nivel de cañón (encuadre de §6.2): cada clase al foco con cada rumbo, SHOTS capturas
-async function gallery(page: Page, level: number, headings: number[], out?: string, classes: readonly string[] = CLASSES): Promise<Row[]> {
+// La galería con un nivel de cañón (encuadre de §6.2) y sin VFX, tras la transición del encuadre: todas las clases a 2 km
+// del foco hasta que les toque; pose() pone una en (x, z) con su rumbo
+async function startGallery(page: Page, level: number) {
   const setup = await page.evaluate((level) => {
     const rt = window.__SEA_BATTLE__!.runtime();
     rt.setCameraPreset('game');
@@ -528,6 +555,14 @@ async function gallery(page: Page, level: number, headings: number[], out?: stri
     page.evaluate(([id, x, z, deg]) => {
       (window as unknown as { __gallery: { setPose(id: string, x: number, z: number, h: number): void } }).__gallery.setPose(id, x, z, (deg * Math.PI) / 180);
     }, [id, x, z, deg] as [string, number, number, number]);
+  return { ...setup, pose };
+}
+
+// Una pasada por la galería con un nivel de cañón: cada clase al foco con cada rumbo, SHOTS capturas. ready, tras la
+// transición del encuadre y antes de la primera pose (la espera de la KTX2 del test del GLB)
+async function gallery(page: Page, level: number, headings: number[], out?: string, classes: readonly string[] = CLASSES, ready?: () => Promise<void>): Promise<Row[]> {
+  const { pose, ...setup } = await startGallery(page, level);
+  await ready?.();
   const rows: Row[] = [];
   for (const classId of classes) {
     const id = `g-${classId}`; // galleryScene: un barco por clase, aparcado en su hueco i hasta que le toca
@@ -556,9 +591,87 @@ async function gallery(page: Page, level: number, headings: number[], out?: stri
   return rows;
 }
 
+// Lo que dibujan las vistas de las clases con GLB: 'procedural', o 'ktx2' o 'respaldo' con el tamaño de su mapa
+const KTX2_ATLAS = `ktx2 ${ATLAS_PX}×${ATLAS_PX}`;
+const glbMaps = (page: Page) =>
+  page.evaluate((ids) => {
+    const rt = window.__SEA_BATTLE__!.runtime() as unknown as { views: Map<string, { mesh: { material: { map: { isCompressedTexture?: boolean; image?: { width?: number; height?: number } } | null } } }> };
+    return ids.map((id) => {
+      const m = rt.views.get(id)?.mesh.material.map;
+      return !m ? 'procedural' : `${m.isCompressedTexture ? 'ktx2' : 'respaldo'} ${m.image?.width}×${m.image?.height}`;
+    });
+  }, GLB_CLASSES.map((c) => `g-${c}`));
+const waitKtx2 = (page: Page) =>
+  expect.poll(() => glbMaps(page), { timeout: 60_000, message: `${KTX2_ATLAS} en las vistas de ${GLB_CLASSES.join(', ')}` }).toEqual(GLB_CLASSES.map(() => KTX2_ATLAS));
+
+// El renderizador (WebGL y su anisótropo máximo) y, por clase con GLB, la luz de forma de su material (P5, uShapeLight)
+interface GlbGpu { renderer: string; max: number; shapeLight: Record<string, number[]> }
+const glbGpu = (page: Page): Promise<GlbGpu> =>
+  page.evaluate((classes) => {
+    type Rt = {
+      gl: { capabilities: { getMaxAnisotropy(): number }; getContext(): WebGLRenderingContext };
+      views: Map<string, { mesh: { material: { userData: { fx?: { uShapeLight: { value: { toArray(): number[] } } } } } } }>;
+    };
+    const rt = window.__SEA_BATTLE__!.runtime() as unknown as Rt;
+    const gl = rt.gl.getContext();
+    const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+    const renderer = String(gl.getParameter(dbg ? dbg.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
+    const shapeLight = Object.fromEntries(classes.map((c) => [c, rt.views.get(`g-${c}`)?.mesh.material.userData.fx?.uShapeLight.value.toArray() ?? []]));
+    return { renderer, max: rt.gl.capabilities.getMaxAnisotropy(), shapeLight };
+  }, [...GLB_CLASSES]);
+
+// En la página, con el frame congelado: se dibuja con el anisótropo de los GLB a hi, a 1 y otra vez a hi. Devuelve los
+// píxeles distintos entre los dos primeros y entre el primero y el último, y en cada uno el nivel y los mips de los mapas
+// de los GLB (setMapAnisotropy los vuelve a subir a la GPU)
+async function anisoPixels([ids, hi]: [string[], number]) {
+  type Tex = { anisotropy: number; mipmaps?: unknown[]; minFilter: number };
+  type Rt = {
+    views: Map<string, { mesh: { material: { map: Tex | null } } }>;
+    shipGlb: { setMapAnisotropy(level: number): void };
+    gl: { domElement: HTMLCanvasElement };
+    setPaused(p: boolean): void;
+    captureImage(type: string): string | null;
+  };
+  const rt = window.__SEA_BATTLE__!.runtime() as unknown as Rt;
+  const maps = ids.map((id) => rt.views.get(id)!.mesh.material.map);
+  const levels: number[][] = [];
+  const mips: number[][] = [];
+  const at = (level: number) => {
+    rt.shipGlb.setMapAnisotropy(level);
+    const png = rt.captureImage('image/png')!;
+    levels.push(maps.map((m) => m?.anisotropy ?? 0));
+    mips.push(maps.map((m) => m?.mipmaps?.length ?? 0));
+    return png;
+  };
+  rt.setPaused(true);
+  const shots = [at(hi), at(1), at(hi)];
+  rt.setPaused(false);
+  const decode = async (url: string) => {
+    const im = new Image();
+    im.src = url;
+    await im.decode();
+    const c = document.createElement('canvas');
+    c.width = im.width;
+    c.height = im.height;
+    const x = c.getContext('2d', { willReadFrequently: true })!;
+    x.drawImage(im, 0, 0);
+    return x.getImageData(0, 0, c.width, c.height).data;
+  };
+  const differ = async (a: string, b: string) => {
+    if (a === b) return 0;
+    const [A, B] = await Promise.all([a, b].map(decode));
+    let n = 0;
+    for (let i = 0; i < A.length; i += 4) if (A[i] !== B[i] || A[i + 1] !== B[i + 1] || A[i + 2] !== B[i + 2]) n++;
+    return n;
+  };
+  return { px: rt.gl.domElement.width * rt.gl.domElement.height, diff: await differ(shots[0], shots[1]), back: await differ(shots[0], shots[2]), levels, mips, minFilter: maps.map((m) => m?.minFilter ?? 0) };
+}
+
 test.describe('Detalle interno de los cascos @perf', () => {
   test('D23 c, D36, D40 y D62: AS-V19 ≥ 55 %, AS-V18 sin facetas, AS-V20 con contraste local, AS-V21, AS-V22, AD-10, AD-25, AD-26, AD-33 y 1 draw call por barco en su presupuesto', async ({ page }) => {
     test.setTimeout(420_000);
+    // Las clases con GLB, en su procedural: su GLB, retenido (BACKLOG :421 (a))
+    for (const c of GLB_CLASSES) await page.route(`**${SHIP_GLB[c]}`, (r) => r.abort());
     await enterGame(page);
     if (OUT) fs.mkdirSync(OUT, { recursive: true });
     const n1 = await gallery(page, 1, HEADINGS, OUT);
@@ -594,6 +707,8 @@ test.describe('Detalle interno de los cascos @perf', () => {
         facetMax: lines.length ? Math.max(...lines) : 0,
         facetMean: lines.length ? mean(lines) : 0,
         regions: rs[0].regions.map((g) => `${g.name}:${g.pixels}`).join(' '),
+        regionCount: Math.min(...rs.map((r) => r.regions.length)), // AS-V18: regiones medidas en la peor de las capturas
+        models: [...new Set(rs.map((r) => r.model))].join('/'),
         ports: rs.map((r) => r.ports.filter(legible).length),
         components: rs.map((r) => r.ports.length),
         core: rs.flatMap((r) => r.ports.map((q) => q.core)),
@@ -655,25 +770,31 @@ test.describe('Detalle interno de los cascos @perf', () => {
     for (const p of summary) {
       const v20 = p.level === 3 ? ` · AS-V20 ${p.ports.join('/')} de ${CANNONS[p.classId]} (componentes ${p.components.join('/')}, núcleo ${p.core.length ? `${Math.min(...p.core)}–${Math.max(...p.core)}` : '—'} px, contraste ${p.contrast.length ? `${Math.min(...p.contrast).toFixed(1)}–${Math.max(...p.contrast).toFixed(1)}` : '—'})` : '';
       const v19 = p.level === 1 ? ` · AS-V19 ${(p.texture * 100).toFixed(1)} % · AS-V18 máx. ${p.facetMax} / media ${p.facetMean.toFixed(2)} (${p.regions})` : '';
-      console.log(`D36 ${p.classId.padEnd(8)} N${p.level} ${String(p.deg).padStart(3)}° LOD${p.lod} · ${p.calls} draw call / ${p.triangles} tris · silueta ${p.mask} px${v19}${v20}`);
+      console.log(`D36 ${p.classId.padEnd(8)} N${p.level} ${String(p.deg).padStart(3)}° LOD${p.lod} · ${p.calls} draw call / ${p.triangles} tris · silueta ${p.mask} px${v19}${v20} · ${p.models}`);
     }
+    // Las clases con GLB llevan «procedural» en todo lo que se mide aquí (BACKLOG :421 (a))
+    const proc = (classId: string) => (GLB_CLASSES.includes(classId) ? ' · procedural' : '');
     console.log(`AD-26 (ppm ${ppm.toFixed(3)}): ${ad26.map((v) => `${v.deg}° ${v.sail}+${v.deck}+${v.hull} = ${v.total}`).join(' · ')}`);
-    for (const v of sails) console.log(`AD-10/AD-25 ${v.classId.padEnd(8)} ${String(v.deg).padStart(3)}°: lona L* ${v.sailL.toFixed(1)}${v.stripeL ? ` (franjas ${v.stripeL.toFixed(1)})` : ''} · cubierta ${v.deckHex} (ΔE76 ${v.ad25.toFixed(1)} del token)`);
+    for (const v of sails) console.log(`AD-10/AD-25 ${v.classId.padEnd(8)} ${String(v.deg).padStart(3)}°: lona L* ${v.sailL.toFixed(1)}${v.stripeL ? ` (franjas ${v.stripeL.toFixed(1)})` : ''} · cubierta ${v.deckHex} (ΔE76 ${v.ad25.toFixed(1)} del token)${proc(v.classId)}`);
     console.log(`AS-V21 (b): ${v21.length} velas · r mediana ${v21r.toFixed(2)} (≤ ${AS_V21.rMedian}) · r ≥ ${AS_V21.rHigh}: ${(100 * v21rHigh).toFixed(0)} % · η ≥ ${AS_V21.etaHigh}: ${(100 * v21etaHigh).toFixed(0)} % (≤ ${100 * AS_V21.share} %) · rango ${med(v21.map((c) => c.range)).toFixed(1)}`);
-    for (const c of v21class) console.log(`AS-V21 ${c.classId.padEnd(8)}: ${c.sails} velas · η ${c.eta.toFixed(2)}${c.classId === 'merchant' ? ' (sin asertar)' : ` (≤ ${AS_V21.etaClass})`} · r ${c.r.toFixed(2)} · rango ${c.range.toFixed(1)}`);
+    for (const c of v21class) console.log(`AS-V21 ${c.classId.padEnd(8)}: ${c.sails} velas · η ${c.eta.toFixed(2)}${c.classId === 'merchant' ? ' (sin asertar)' : ` (≤ ${AS_V21.etaClass})`} · r ${c.r.toFixed(2)} · rango ${c.range.toFixed(1)}${proc(c.classId)}`);
     console.log(`AS-V22 (b): ${v22.length} regiones · r mediana ${v22r.toFixed(2)} (≤ ${AS_V22.rMedian}) · r ≥ ${AS_V22.rHigh}: ${(100 * v22rHigh).toFixed(0)} % · η ≥ ${AS_V22.etaHigh}: ${(100 * v22etaHigh).toFixed(0)} % (≤ ${100 * AS_V22.share} %) · rango ${v22.length ? med(v22.map((d) => d.range)).toFixed(1) : '—'}`);
     for (const c of v22class) console.log(`AS-V22 ${c.classId.padEnd(8)}: ${c.regions} regiones · η ${c.eta.toFixed(2)}${c.classId === 'merchant' ? ' (sin asertar)' : ` (≤ ${AS_V22.etaClass})`} · r ${c.r.toFixed(2)} · rango ${c.range.toFixed(1)}`);
     for (const d of v22all) console.log(`AS-V22 ${d.classId.padEnd(8)} ${String(d.deg).padStart(3)}°: ${d.px} px · ${'skip' in d ? `sin medir (${d.skip})` : `${d.lines} líneas de ${d.n} px · r ${d.r.toFixed(2)} · η ${d.eta.toFixed(2)} · rango ${d.range.toFixed(1)}`}`);
-    for (const a of ad33) console.log(`AD-33 ${a.classId.padEnd(8)}: vela L* ${a.sail0.toFixed(1)} → ${a.sail1.toFixed(1)} (Δ ${a.dL >= 0 ? '+' : ''}${a.dL.toFixed(1)}) · cubierta ${a.deck0} → ${a.deck1} (ΔE76 ${a.dE.toFixed(1)}) · por rumbo ${a.poses.map((q) => `${q.deg}° vela ${q.dL >= 0 ? '+' : ''}${q.dL.toFixed(1)} cubierta ${q.dE.toFixed(1)}`).join(' · ')}`);
+    for (const a of ad33) console.log(`AD-33 ${a.classId.padEnd(8)}: vela L* ${a.sail0.toFixed(1)} → ${a.sail1.toFixed(1)} (Δ ${a.dL >= 0 ? '+' : ''}${a.dL.toFixed(1)}) · cubierta ${a.deck0} → ${a.deck1} (ΔE76 ${a.dE.toFixed(1)}) · por rumbo ${a.poses.map((q) => `${q.deg}° vela ${q.dL >= 0 ? '+' : ''}${q.dL.toFixed(1)} cubierta ${q.dE.toFixed(1)}`).join(' · ')}${proc(a.classId)}`);
     for (const v of ad25m) console.log(`AD-25 390×844 LOD1 ${v.classId.padEnd(8)} ${String(v.deg).padStart(3)}°: cubierta ${v.deckHex} (${v.px} px) · ΔE76 ${v.dE.toFixed(1)} del token`);
     if (OUT) fs.writeFileSync(path.join(OUT, 'd36.json'), JSON.stringify({ ppm, rows, summary, ad26, sails, v21: v21all, v22: v22all, ad33, ad25m }, null, 1));
 
     for (const p of summary) {
       expect(p.lod, `${p.classId} N${p.level} ${p.deg}°: LOD0 en escritorio`).toBe(0);
+      // Con un GLB a la vista, las reglas de abajo no medirían el procedural
+      expect.soft(p.models, `${p.classId} N${p.level} ${p.deg}°: el procedural, con el GLB retenido`).toBe('procedural');
       expect.soft(p.calls, `${p.classId} N${p.level} ${p.deg}°: 1 draw call por barco`).toBe(1);
       expect.soft(p.triangles, `${p.classId} N${p.level} ${p.deg}°: triángulos del barco ≤ §5`).toBeLessThanOrEqual(BUDGET[p.classId]);
-      // AS-V18 y AS-V19 en 0° y 90° con N1 (180° y 270° se registran sin asertar, AS-V19)
+      // AS-V18 y AS-V19 en 0° y 90° con N1 (180° y 270° se registran sin asertar, AS-V19). AS-V18 pide regiones medidas:
+      // sin ninguna, los escalones salían 0 y pasaba en verde (el GLB en el A2)
       if (p.level === 1 && (p.deg === 0 || p.deg === 90)) {
+        expect.soft(p.regionCount, `AS-V18 ${p.classId} ${p.deg}°: regiones medidas`).toBeGreaterThan(0);
         expect.soft(p.texture, `AS-V19 ${p.classId} ${p.deg}°`).toBeGreaterThanOrEqual(0.55);
         expect.soft(p.facetMax, `AS-V18 ${p.classId} ${p.deg}°: escalones por línea`).toBeLessThanOrEqual(1);
         expect.soft(p.facetMean, `AS-V18 ${p.classId} ${p.deg}°: media`).toBeLessThanOrEqual(0.5);
@@ -714,4 +835,156 @@ test.describe('Detalle interno de los cascos @perf', () => {
     }
     for (const v of ad25m) expect.soft(v.dE, `AD-25 390×844 ${v.classId} ${v.deg}°`).toBeLessThanOrEqual(4);
   });
+
+  // Las clases con GLB, en su GLB (BACKLOG :421; ASSET-SPEC, AS-V19): antes de la primera pose se espera a que sus vistas
+  // lleven la KTX2 del atlas, y cada captura tiene que dibujarla con el anisótropo del runtime (mapAnisotropyFor: el
+  // máximo del renderizador hasta SHIP_MAP_ANISOTROPY, o el de HD_ANISO) y la luz de forma (P5). AS-V19, con el suelo
+  // provisional de la tanda B a 0° y 90°; con HD_ANISO, solo al registro. Lo de NOT_IN_GLB sale como «no medido en GLB»
+  test('Clases con GLB: la KTX2 del atlas con su anisótropo en cada captura, AS-V19 ≥ 45 % a 0° y 90°, 1 draw call en su presupuesto y lo no medido en GLB', async ({ page }) => {
+    test.skip(GLB_CLASSES.length === 0, 'ninguna clase con GLB en SHIP_GLB');
+    test.setTimeout(240_000);
+    await enterGame(page);
+    const out = OUT && path.join(OUT, 'glb');
+    if (out) fs.mkdirSync(out, { recursive: true });
+    let gpu!: GlbGpu;
+    const rows = await gallery(page, 1, HEADINGS, out, GLB_CLASSES, async () => {
+      await waitKtx2(page);
+      if (HD_ANISO !== null) await page.evaluate((n) => window.__SEA_BATTLE__!.runtime().shipGlb.setMapAnisotropy(n), HD_ANISO);
+      gpu = await glbGpu(page);
+    });
+    const { renderer, max, shapeLight } = gpu;
+    const level = HD_ANISO ?? mapAnisotropyFor(max);
+
+    const summary = GLB_CLASSES.flatMap((classId) => HEADINGS.map((deg) => {
+      const rs = rows.filter((r) => r.classId === classId && r.deg === deg);
+      return {
+        classId, deg,
+        lod: Math.max(...rs.map((r) => r.lod)),
+        calls: Math.max(...rs.map((r) => r.calls)),
+        triangles: Math.max(...rs.map((r) => r.triangles)),
+        mask: Math.round(mean(rs.map((r) => r.mask))),
+        texture: mean(rs.map((r) => r.texture)),
+        shots: rs.map((r) => (r.texture * 100).toFixed(1)).join('/'),
+        maps: [...new Set(rs.map((r) => (r.map ? `${r.model} ${r.map.w}×${r.map.h} anisótropo ${r.map.aniso} mips ${r.map.mips}` : r.model)))].join(', ')
+      };
+    }));
+    const floored = (deg: number) => HD_ANISO === null && (deg === 0 || deg === 90);
+    console.log(`AS-V19 GLB · ${renderer} · anisótropo máximo del renderizador ${max}, tope ${SHIP_MAP_ANISOTROPY}, nivel ${level}${HD_ANISO !== null ? ' (HD_ANISO)' : ''} · luz de forma ${GLB_CLASSES.map((c) => `${c} (${shapeLight[c].join(', ')})`).join(', ')}`);
+    for (const p of summary) console.log(`D36 GLB ${p.classId.padEnd(8)} N1 ${String(p.deg).padStart(3)}° LOD${p.lod} · ${p.maps} · ${p.calls} draw call / ${p.triangles} tris · silueta ${p.mask} px · AS-V19 ${(p.texture * 100).toFixed(1)} % (${p.shots}; ${floored(p.deg) ? `suelo provisional ${AS_V19_GLB_FLOOR * 100} %` : 'registro, sin asertar'} · ≥ 55 %: ${p.texture >= 0.55 ? 'sí' : 'no'})`);
+    for (const classId of GLB_CLASSES) console.log(`GLB ${classId.padEnd(8)}: no medido en GLB · ${NOT_IN_GLB(classId).join(', ')} (se asertan sobre su procedural)`);
+    if (out) fs.writeFileSync(path.join(out, 'd36-glb.json'), JSON.stringify({ renderer, max, level, shapeLight, rows, summary }, null, 1));
+
+    expect(rows.filter((r) => !(r.model === 'ktx2' && r.map?.w === ATLAS_PX && r.map?.h === ATLAS_PX)).map((r) => `${r.classId} ${r.deg}° k${r.k}: ${r.model} ${r.map ? `${r.map.w}×${r.map.h}` : ''}`), `capturas sin la ${KTX2_ATLAS}`).toEqual([]);
+    expect(rows.filter((r) => r.map?.aniso !== level).map((r) => `${r.classId} ${r.deg}° k${r.k}: ${r.map?.aniso}`), `capturas sin el anisótropo ${level}`).toEqual([]);
+    expect(GLB_CLASSES.filter((c) => shapeLight[c].join() !== [SHAPE_LIGHT.ks, SHAPE_LIGHT.kh].join()), 'materiales de los GLB sin la luz de forma (P5)').toEqual([]);
+    for (const p of summary) {
+      expect(p.lod, `GLB ${p.classId} ${p.deg}°: LOD0 en escritorio`).toBe(0);
+      expect.soft(p.calls, `GLB ${p.classId} ${p.deg}°: 1 draw call por barco`).toBe(1);
+      expect.soft(p.triangles, `GLB ${p.classId} ${p.deg}°: triángulos del barco ≤ §5`).toBeLessThanOrEqual(BUDGET[p.classId]);
+    }
+    // El suelo, en su propia línea: el control de map=null en «con» (measurePose) cae aquí, a 0° y 90° en las 2 clases
+    for (const p of summary.filter((p) => floored(p.deg))) expect.soft(p.texture, `AS-V19 GLB ${p.classId} ${p.deg}°: suelo provisional de la tanda B`).toBeGreaterThanOrEqual(AS_V19_GLB_FLOOR);
+  });
+
+  // Tanda B (BACKLOG :421 (3)): el anisótropo solo toca los mapas de los GLB. Cada clase al foco a 0° y 90°, con el frame
+  // congelado, se dibuja con el nivel del runtime, con 1 y otra vez con el del runtime: los procedurales de la 1.0 salen
+  // idénticos píxel a píxel con los dos niveles y los GLB no, y volver al nivel da el mismo frame. La KTX2 conserva sus
+  // mips al volver a subirla y su filtro es con mips: sin ellos, three no aplica el anisótropo (WebGLTextures)
+  test('Anisótropo de los GLB: los procedurales de la 1.0 salen idénticos píxel a píxel con el nivel del runtime y con 1, los GLB no, y la KTX2 conserva sus mips', async ({ page }) => {
+    test.skip(GLB_CLASSES.length === 0, 'ninguna clase con GLB en SHIP_GLB');
+    test.setTimeout(180_000);
+    await enterGame(page);
+    const { pose, ...setup } = await startGallery(page, 1);
+    await waitKtx2(page);
+    const { renderer, max } = await glbGpu(page);
+    const level = mapAnisotropyFor(max);
+    const ids = GLB_CLASSES.map((c) => `g-${c}`);
+    const rows: ({ classId: string; deg: number; glb: boolean } & Awaited<ReturnType<typeof anisoPixels>>)[] = [];
+    for (const classId of [...PROCEDURAL_CLASSES, ...GLB_CLASSES]) {
+      const id = `g-${classId}`;
+      const i = setup.ids.indexOf(id);
+      for (const deg of [0, 90]) {
+        await pose(id, setup.focus.x, setup.focus.z, deg);
+        await page.waitForTimeout(800);
+        rows.push({ classId, deg, glb: GLB_CLASSES.includes(classId), ...(await page.evaluate(anisoPixels, [ids, level] as [string[], number])) });
+      }
+      await pose(id, setup.focus.x + 2000 * (i + 1), setup.focus.z, 90);
+    }
+    console.log(`Anisótropo · ${renderer} · máximo ${max}, nivel del runtime ${level} · mapas de ${GLB_CLASSES.join(', ')}`);
+    for (const r of rows) console.log(`Anisótropo ${r.classId.padEnd(8)} ${String(r.deg).padStart(3)}° (${r.glb ? 'GLB' : 'procedural de la 1.0'}): ${r.diff} de ${r.px} px distintos entre ${level} y 1 · ${r.back} al volver a ${level} · niveles ${JSON.stringify(r.levels)} · mips ${JSON.stringify(r.mips)} · minFilter ${r.minFilter.join('/')}`);
+    const label = (r: (typeof rows)[number]) => `${r.classId} ${r.deg}°`;
+    expect(rows.filter((r) => !r.glb && r.diff !== 0).map((r) => `${label(r)}: ${r.diff} px`), `procedurales de la 1.0 con píxeles distintos entre ${level} y 1`).toEqual([]);
+    expect(rows.filter((r) => r.back !== 0).map((r) => `${label(r)}: ${r.back} px`), `frames distintos al volver a ${level}`).toEqual([]);
+    expect(rows.filter((r) => JSON.stringify(r.levels) !== JSON.stringify([level, 1, level].map((l) => ids.map(() => l)))).map(label), `mapas de los GLB sin los niveles ${level}, 1 y ${level}`).toEqual([]);
+    expect(rows.filter((r) => r.mips.some((m) => m.some((n, k) => n <= 1 || n !== r.mips[0][k])) || r.minFilter.some((f) => f !== LinearMipmapLinearFilter)).map(label), 'KTX2 sin sus mips o sin el filtro con mips').toEqual([]);
+    for (const r of rows.filter((r) => r.glb)) expect.soft(r.diff, `Anisótropo ${label(r)}: el GLB cambia entre ${level} y 1`).toBeGreaterThan(0);
+  });
+
+  // Tanda B (BACKLOG :421 (4), producto): la luz de forma y el anisótropo, entre builds. Con HD_BUILD_OUT, cada clase al
+  // foco a 0° y 90°, en pausa, con la postura a 0 y el uTime del océano fijo (frozenShots), con el barco y sin él, en
+  // <HD_BUILD_OUT>/r<repetición>/<clase>-<rumbo>-{con,sin}.png. El guion del turno lo corre en el árbol del turno (2
+  // repeticiones: el A/A) y en un build sin P5 ni anisótropo, y compara fuera: los procedurales de la 1.0, a 0 px
+  // distintos en el lienzo y en la silueta; los GLB, a más de 0 (el control positivo)
+  test('Tanda B entre builds (HD_BUILD_OUT): cada clase al foco a 0° y 90°, en pausa, con la postura a 0 y el uTime del océano fijo, con el barco y sin él, en PNG', async ({ page }) => {
+    test.skip(!BUILD_OUT, 'solo con HD_BUILD_OUT (el turno de la tanda B)');
+    test.setTimeout(180_000);
+    const dir = path.join(BUILD_OUT!, `r${test.info().repeatEachIndex}`);
+    fs.mkdirSync(dir, { recursive: true });
+    await enterGame(page);
+    const { pose, ...setup } = await startGallery(page, 1);
+    await waitKtx2(page);
+    let n = 0;
+    for (const classId of CLASSES) {
+      const id = `g-${classId}`;
+      const i = setup.ids.indexOf(id);
+      for (const deg of [0, 90]) {
+        await pose(id, setup.focus.x, setup.focus.z, deg);
+        await page.waitForTimeout(800);
+        const shots = await page.evaluate(frozenShots, id);
+        for (const [k, url] of Object.entries(shots)) {
+          fs.writeFileSync(path.join(dir, `${classId}-${deg}-${k}.png`), Buffer.from(url.slice(url.indexOf(',') + 1), 'base64'));
+          n++;
+        }
+      }
+      await pose(id, setup.focus.x + 2000 * (i + 1), setup.focus.z, 90);
+    }
+    console.log(`Tanda B entre builds: ${n} PNG en ${dir}`);
+    expect(n).toBe(CLASSES.length * 2 * 2);
+  });
 });
+
+// Tanda B, entre builds: el último test de arriba solo corre con HD_BUILD_OUT=<carpeta>
+const BUILD_OUT = process.env.HD_BUILD_OUT; // el test entre builds de la tanda B; sin ella, se salta
+
+// En la página, en pausa: la vista id con la postura a 0 (alabeo, cabeceo e y; las vistas llevan matrixAutoUpdate = false,
+// así que hace falta updateMatrix) y el océano con su reloj fijo, con el barco y sin él. Sin las sombras de los GLB, que
+// siguen la postura del último frame. El bucle de frames no se intercala: las 2 capturas son síncronas
+function frozenShots(id: string) {
+  type Rt = {
+    views: Map<string, { mesh: { visible: boolean; rotation: { x: number; z: number }; position: { y: number }; updateMatrix(): void } }>;
+    ocean: { material: { uniforms: { uTime: { value: number } } } };
+    shipShadows: { group: { visible: boolean } };
+    setPaused(p: boolean): void;
+    captureImage(type: string): string | null;
+  };
+  const rt = window.__SEA_BATTLE__!.runtime() as unknown as Rt;
+  const mesh = rt.views.get(id)!.mesh;
+  const u = rt.ocean.material.uniforms.uTime;
+  const t = u.value;
+  const shadows = rt.shipShadows.group.visible;
+  rt.setPaused(true);
+  mesh.rotation.x = 0;
+  mesh.rotation.z = 0;
+  mesh.position.y = 0;
+  mesh.updateMatrix();
+  u.value = 100;
+  rt.shipShadows.group.visible = false;
+  const con = rt.captureImage('image/png')!;
+  mesh.visible = false;
+  const sin = rt.captureImage('image/png')!;
+  mesh.visible = true;
+  rt.shipShadows.group.visible = shadows;
+  u.value = t;
+  rt.setPaused(false);
+  return { con, sin };
+}

@@ -12,15 +12,29 @@ import type { Welcome } from '../../game/types';
 import { creaseNormals } from './geometry-utils';
 import { getShipModel, LOD_PX, ShipExtras, ShipModel, ShipSockets } from './ship-geometry';
 
-// Clase → URL del GLB (/models/<id>.<hash de su contenido>.glb, servido con caché de un año: next.config.ts). Vacío hasta el
-// piloto: sin entrada, la clase usa el procedural y no se descarga nada
-export const SHIP_GLB: Partial<Record<string, string>> = {};
+// Clase → URL del GLB (/models/<id>.<hash de su contenido>.glb, servido con caché de un año: next.config.ts). Sin entrada,
+// la clase usa el procedural y no se descarga nada. Cada GLB entra aprobado y con el paso 4c (scripts/glb/stage-model.ts)
+export const SHIP_GLB: Partial<Record<string, string>> = {
+  captain: '/models/npc_pirate_captain.73eb940c.glb' // el Capitán de D91 (ASSET-SPEC §13; sha256 7a9b694c…ef92)
+};
+// GLB aprobados y en public/models con el paso 4c, pero sin entrada en SHIP_GLB: el runtime no los lee y la clase sigue en
+// su procedural. Los tests leen de aquí sus archivos. La Cañonera: el Capitán entra solo (producto, BACKLOG :421), y ella se
+// queda en su procedural hasta que producto la pase a SHIP_GLB
+export const SHIP_GLB_STAGED: Partial<Record<string, string>> = {
+  gunboat: '/models/npc_pirate_gunboat.36e700c2.glb' // la Cañonera de D91, 2.ª vuelta (ASSET-SPEC §13; sha256 7912ea8a…7055)
+};
 // Transcodificador de KTX2 (basis_transcoder.js y .wasm, copiados de three/examples/jsm/libs/basis), en una carpeta con el
 // hash de los dos: se sirve con caché de un año, y al subir three cambia de URL (lo comprueba ship-glb.test.ts)
 export const BASIS_PATH = '/basis/dc5e5d6a/';
 const CREASE = (40 * Math.PI) / 180; // D23: normales con pliegue de 40° si el GLB no trae NORMAL
 // AC-193 c, opción B: lo más que la entrada espera al GLB del barco propio, sobre la de hoy (el primer frame)
 export const OWN_GLB_WAIT_MS = 500;
+// Tanda B (BACKLOG :421; ASSET-SPEC, AS-V19): tope del anisótropo del mapa de los GLB. Los costados y la cubierta se ven en
+// ángulo y, sin él, la GPU muestrea los mips 3–4 del atlas; el runtime pone el máximo del renderizador hasta este tope. Los
+// procedurales no tienen mapa
+export const SHIP_MAP_ANISOTROPY = 16;
+// El nivel que pone el runtime: el máximo del renderizador hasta el tope, y al menos 1 (sin la extensión, three da 0)
+export const mapAnisotropyFor = (max: number) => Math.max(1, Math.min(SHIP_MAP_ANISOTROPY, max));
 
 export class ShipGlbError extends Error {}
 
@@ -241,6 +255,7 @@ export class ShipGlbStore {
   private loading: string | null = null;
   private loader: GlbLoader | null = null;
   private disposed = false;
+  private mapAnisotropy = 1;
 
   constructor(
     manifest: Partial<Record<string, string>> = SHIP_GLB,
@@ -355,6 +370,17 @@ export class ShipGlbStore {
     }
   }
 
+  // El anisótropo de los mapas de los GLB (tanda B): el runtime lo pone al tener renderer, antes de la primera carga, y el
+  // e2e lo cambia para medir con él y sin él. Los mapas ya cargados se vuelven a subir a la GPU (needsUpdate)
+  setMapAnisotropy(level: number): void {
+    this.mapAnisotropy = level;
+    for (const { map } of this.ready.values()) {
+      if (!map || map.anisotropy === level) continue;
+      map.anisotropy = level;
+      map.needsUpdate = true;
+    }
+  }
+
   // Lanza la siguiente carga si no hay otra en curso. Se llama en cada frame, que es cuando ya hay renderer
   pump(renderer: THREE.WebGLRenderer): void {
     if (this.disposed || this.loading || this.queue.length === 0) return;
@@ -376,6 +402,7 @@ export class ShipGlbStore {
           throw e;
         }
         disposeScene(scene, model.map ?? null);
+        if (model.map) model.map.anisotropy = this.mapAnisotropy;
         if (this.disposed || this.manifest[classId] !== url) this.release(model);
         else this.ready.set(classId, model);
         this.upgrade(classId, url, model, upgrades);
@@ -416,6 +443,7 @@ export class ShipGlbStore {
           ktx2.colorSpace = fallback.colorSpace;
           ktx2.channel = fallback.channel;
         }
+        ktx2.anisotropy = this.mapAnisotropy;
         this.ready.set(classId, { ...model!, map: ktx2 });
         fallback?.dispose();
       }

@@ -250,17 +250,20 @@ export function heroScene(view: SceneView): SceneSpec {
 }
 
 // AC-89: 20 barcos de jugadores + 20 NPC (12 piratas y 8 mercantes) + 1 Fragata en lugar del jefe (P2), todos en
-// pantalla con el zoom por defecto, una isla en una esquina, 8 duelos simultáneos y daño variado (humo y fuego)
-export function standardScene(view: SceneView): SceneSpec {
+// pantalla con el zoom por defecto, una isla en una esquina, 8 duelos simultáneos y daño variado (humo y fuego).
+// i2: la población del I2 de GDD §0 (8 piratas, 4 Cañoneras y 8 mercantes) con el Capitán en el sitio de la Fragata, en las
+// mismas posiciones, rumbos, vidas y duelos (producto, P2 del punto 3 de dev-render)
+export function standardScene(view: SceneView, options: { i2?: boolean } = {}): SceneSpec {
   const rng = createRng(89);
   const isle = island('I1');
   const focus = focusFor(view, isle, 0.94, 0.1);
   const players = ['sloop', 'brig', 'frigate'];
   const roster: { kind: ShipKind; classId: string; name: string }[] = [];
   for (let i = 0; i < 20; i++) roster.push({ kind: 'player', classId: players[i % 3], name: `Capitán ${i + 1}` });
-  for (let i = 0; i < 12; i++) roster.push({ kind: 'pirate', classId: 'pirate', name: 'Pirata' });
+  const npc = (classId: string) => ({ kind: 'pirate' as const, classId, name: SHIP_CLASSES[classId].label });
+  for (let i = 0; i < 12; i++) roster.push(options.i2 && i >= 8 ? npc('gunboat') : { kind: 'pirate', classId: 'pirate', name: 'Pirata' });
   for (let i = 0; i < 8; i++) roster.push({ kind: 'merchant', classId: 'merchant', name: 'Mercante' });
-  roster.push({ kind: 'player', classId: 'frigate', name: 'Capitán 21' });
+  roster.push(options.i2 ? npc('captain') : { kind: 'player', classId: 'frigate', name: 'Capitán 21' });
 
   // Rejilla que salta las celdas pegadas a cualquier isla visible; con más columnas si no caben los 41
   const clear = (p: { x: number; z: number }) => ISLANDS.every((i) => Math.hypot(p.x - i.x, p.z - i.z) >= i.radius + 22);

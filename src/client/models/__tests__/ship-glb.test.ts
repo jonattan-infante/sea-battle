@@ -14,10 +14,12 @@ import {
   createGlbLoader,
   EntryGate,
   GlbLoader,
+  mapAnisotropyFor,
   OWN_GLB_WAIT_MS,
   prefetchClasses,
   setShipMap,
   SHIP_GLB,
+  SHIP_GLB_STAGED,
   ShipGlbError,
   ShipGlbStore,
   shipModelFromGlb,
@@ -663,12 +665,27 @@ describe('§13: los GLB de public/models llevan el hash de su contenido', () => 
     }
   });
 
-  test('public/models no tiene GLB sin hash, y SHIP_GLB solo apunta a GLB con hash que existen', () => {
+  const badUrl = (url: string | undefined) =>
+    !url || !/^\/models\/[^/]+$/.test(url) || !HASHED_GLB.test(path.basename(url)) || path.basename(url).startsWith(E2E_PREFIX) || !fs.existsSync(path.join(ROOT, 'public', url));
+
+  test('public/models no tiene GLB sin hash, y SHIP_GLB y SHIP_GLB_STAGED solo apuntan a GLB con hash que existen', () => {
     expect(unhashedModels(path.join(ROOT, 'public', 'models'))).toEqual([]);
-    const bad = Object.values(SHIP_GLB).filter(
-      (url) => !url || !/^\/models\/[^/]+$/.test(url) || !HASHED_GLB.test(path.basename(url)) || path.basename(url).startsWith(E2E_PREFIX) || !fs.existsSync(path.join(ROOT, 'public', url))
-    );
-    expect(bad).toEqual([]);
+    expect([Object.values(SHIP_GLB).filter(badUrl), Object.values(SHIP_GLB_STAGED).filter(badUrl)]).toEqual([[], []]);
+  });
+
+  // La Cañonera, sin entrada en SHIP_GLB (producto, BACKLOG :421: el Capitán entra solo): su GLB sigue en public/models,
+  // pero el store del juego no lo pide ni con el I2 encendido, y la clase se queda en su procedural
+  test('SHIP_GLB_STAGED: ninguna de sus clases está en SHIP_GLB, y el store del juego no las pide con el I2 encendido', async () => {
+    expect([Object.keys(SHIP_GLB_STAGED), Object.keys(SHIP_GLB_STAGED).filter((c) => SHIP_GLB[c])]).toEqual([['gunboat'], []]);
+    const { calls, fetchGlb, make } = fakeLoader();
+    const store = new ShipGlbStore(undefined, make, fetchGlb);
+    store.prefetchAll(prefetchClasses({ npcClasses: ['pirate', 'merchant', 'gunboat', 'captain'] }));
+    store.pump(gl);
+    calls[0].resolve(await glb('captain'));
+    await settle();
+    store.pump(gl);
+    expect(calls.map((c) => c.url)).toEqual([SHIP_GLB.captain]);
+    expect([store.loaded('captain'), store.loaded('gunboat'), store.model('gunboat')]).toEqual([true, false, getShipModel('gunboat')]);
   });
 });
 
@@ -745,6 +762,44 @@ function fakeTextureLoaders() {
   } as unknown as THREE.Loader;
   return { ktx2, images, ktx2Texture, imageTexture, calls, urls, init, release };
 }
+
+// La Cañonera de la 2.ª vuelta y el Capitán de la receta (D91), aprobados por Jonattan y entregados por ux (ASSET-SPEC §13,
+// sus filas), en public/models con el paso 4c. Se leen como en el juego, con un KTX2Loader falso porque sin navegador no hay
+// transcodificador, y dan el modelo de su clase con los números de la entrega: triángulos, extras y sockets. El Capitán, de
+// SHIP_GLB; la Cañonera, de SHIP_GLB_STAGED (sin entrada en SHIP_GLB: BACKLOG :421)
+describe('Los GLB de la Cañonera y el Capitán de D91 (ASSET-SPEC §13)', () => {
+  const read = async (classId: string) => {
+    (globalThis as unknown as { self?: unknown }).self ??= globalThis; // GLTFLoader crea la URL de la imagen con self.URL
+    const texture = new THREE.CompressedTexture([], 1024, 1024);
+    const asked: string[] = [];
+    const ktx2 = { load: (url: string, onLoad: (t: THREE.Texture) => void) => (asked.push(url), onLoad(texture)) } as unknown as KTX2Loader;
+    const url = (SHIP_GLB[classId] ?? SHIP_GLB_STAGED[classId])!;
+    const file = fs.readFileSync(path.join(ROOT, 'public', url));
+    const scene = await new Promise<THREE.Object3D>((resolve, reject) =>
+      new GLTFLoader()
+        .setMeshoptDecoder(MeshoptDecoder)
+        .setKTX2Loader(ktx2)
+        .parse(file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) as ArrayBuffer, THREE.LoaderUtils.extractUrlBase(url), (g) => resolve(g.scene), reject)
+    );
+    return { m: shipModelFromGlb(scene, classId), asked, texture };
+  };
+  const at = (v: THREE.Vector3 | undefined) => v?.toArray().map((x) => Math.round(x * 1000) / 1000);
+
+  test('la Cañonera: 1 988 / 465 triángulos, su palo de 18,15 m, los 2 humos de D25 y los fuegos de AS-V17, con la KTX2 de al lado', async () => {
+    const { m, asked, texture } = await read('gunboat');
+    expect([m.extras.sb_id, m.triangles, m.extras.sb_mast_height, m.extras.sb_radius, m.extras.sb_pick]).toEqual(['npc_pirate_gunboat', [1988, 465], 18.15, 14, [5.5, 18.15, 13]]);
+    expect([at(m.sockets.smoke), at(m.sockets.smoke2), m.sockets.fire.map(at)]).toEqual([[0, 2.009, -4.2], [0, 2.015, 5.6], [[1.2, 1.832, 7.1], [-1.8, 1.8, 0], [0, 1.827, -6.6]]]);
+    expect([m.sockets.cannonsPort.length, m.sockets.cannonsStbd.length, m.recipe]).toEqual([6, 6, getShipModel('gunboat').recipe]);
+    expect([m.map, asked]).toEqual([texture, ['/models/npc_pirate_gunboat_atlas.12e7f712.ktx2']]);
+  });
+
+  test('el Capitán: 2 383 / 511 triángulos, su palo de 24 m y un solo humo', async () => {
+    const { m, asked } = await read('captain');
+    expect([m.extras.sb_id, m.triangles, m.extras.sb_mast_height, m.extras.sb_radius, m.extras.sb_pick]).toEqual(['npc_pirate_captain', [2383, 511], 24, 16, [6, 24, 15]]);
+    expect([at(m.sockets.smoke), m.sockets.smoke2, m.sockets.fire.map(at)]).toEqual([[0, 3.316, -4.5], undefined, [[1.6, 3.205, 7.4], [-1.6, 3.1, 0], [1.4, 4.796, -9]]]);
+    expect([m.sockets.cannonsPort.length, m.recipe, asked]).toEqual([6, getShipModel('captain').recipe, ['/models/npc_pirate_captain_atlas.5455a0a6.ktx2']]);
+  });
+});
 
 describe('D90: KHR_texture_basisu con respaldo, sin esperar al transcodificador (salida 1 de AC-193 c)', () => {
   beforeAll(() => {
@@ -885,6 +940,29 @@ describe('D90: KHR_texture_basisu con respaldo, sin esperar al transcodificador 
     }
     warn.mockRestore();
   });
+
+  // Tanda B (BACKLOG :421; ASSET-SPEC, AS-V19): el anisótropo del mapa de los GLB. El runtime lo pone al tener renderer, antes
+  // de la primera carga; el e2e lo cambia para medir con él y sin él
+  test('el nivel es el máximo del renderizador hasta 16, y al menos 1; el respaldo y la KTX2 llevan el anisótropo del store; cambiarlo vuelve a subir los mapas cargados', async () => {
+    expect([32, 16, 8, 0].map((max) => mapAnisotropyFor(max))).toEqual([16, 16, 8, 1]); // 0: sin la extensión
+    const { calls, loader, fetchGlb } = fakeLoader();
+    const store = new ShipGlbStore(manifest, () => loader, fetchGlb);
+    store.setMapAnisotropy(16);
+    const g = withFallback();
+    store.request('sloop', true);
+    store.pump(gl);
+    calls[0].resolve(g.scene, g.upgrades);
+    await settle();
+    expect([store.model('sloop').map === g.fallback, g.fallback.anisotropy]).toEqual([true, 16]);
+    g.deliver([[g.fallback, g.ktx2]]);
+    await settle();
+    expect([store.model('sloop').map === g.ktx2, g.ktx2.anisotropy]).toEqual([true, 16]);
+    const version = g.ktx2.version;
+    store.setMapAnisotropy(1);
+    expect([g.ktx2.anisotropy, g.ktx2.version > version]).toEqual([1, true]);
+    store.setMapAnisotropy(1); // sin cambio, no se vuelve a subir
+    expect(g.ktx2.version).toBe(version + 1);
+  });
 });
 
 describe('AS-V10 (D90): cada textura KTX2 de un GLB lleva su respaldo', () => {
@@ -906,7 +984,9 @@ describe('AS-V10 (D90): cada textura KTX2 de un GLB lleva su respaldo', () => {
     const table = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'glb', 'respaldo-tamanos.json'), 'utf8')) as Record<string, { lado: number; mimeType: string }>;
     expect(Object.entries(table).flatMap(([k, v]) => (k.startsWith('_') ? [] : [[k, v.lado, v.mimeType]]))).toEqual([
       ['ship_line_es', 256, 'image/png'],
-      ['ship_line_gb', 256, 'image/png']
+      ['ship_line_gb', 256, 'image/png'],
+      ['npc_pirate_gunboat', 128, 'image/png'], // la medida de ux, en ASSET-SPEC §13 (la Cañonera y el Capitán de la receta)
+      ['npc_pirate_captain', 128, 'image/png']
     ]);
     const line = (fallback: Uint8Array, sbId: string | null = 'ship_line_es', mimeType = 'image/png') => {
       const ext = externalizeKtx2(addFallback(fixture(), fallback), 'ship_line_es');
