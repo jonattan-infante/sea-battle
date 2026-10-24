@@ -1,7 +1,7 @@
 // Humo y fuego de vida baja en móvil (VFX-SPEC §0.4 y §6, D32): son información de daño (AC-104), así que no se
 // recortan con la calidad baja (tasa y vida completas). A cambio, humo en ≤ 12 barcos y fuego en ≤ 4, los más cercanos
 // al centro de la pantalla. Escenas sintéticas del runtime (src/client/synthetic-scene.ts) en el proyecto móvil.
-import { expect, test } from '@playwright/test';
+import { expect, Page, test } from '@playwright/test';
 import { enterGame } from './helpers';
 
 const PUFF = 7; // SHAPE.puff: bocanada de humo de daño (P_ALPHA)
@@ -21,6 +21,7 @@ test.describe('Humo y fuego de daño en móvil', () => {
       return rt.mobile;
     });
     expect(mobile).toBe(true);
+    await slowFrames(page); // CONTROL C2: frames lentos a propósito; el test de la A tiene que pasar
     await page.waitForTimeout(4500); // > 3,4 s de vida del humo: régimen estable
 
     // O-66: se aserta lo nacido por segundo simulado (nacidas en la ventana ÷ Σ step), que no depende de los fps. Con
@@ -69,6 +70,42 @@ test.describe('Humo y fuego de daño en móvil', () => {
     expect(puffLife, 'vida de las bocanadas (s)').toBeCloseTo(3.4, 6);
     // Los máximos de vivas no dependen de los fps: con frames lentos solo bajan. Cazan que se emita de más o con más vida
     expect(max('puffs')).toBeLessThanOrEqual(21);
+    expect(max('flames')).toBeLessThanOrEqual(14);
+    await page.evaluate(() => window.__SEA_BATTLE__!.runtime().stopScene());
+  });
+
+  // CONTROL C2 de O-66: el test de D32 de c3e1bf8, tal cual salvo el título y los frames lentos
+  test('D32 @mobile, control C2: el test de antes (≥ 19 bocanadas y ≥ 12 llamas vivas en 10 instantes) con frames lentos', async ({ page }) => {
+    await enterGame(page);
+    const mobile = await page.evaluate(() => {
+      const rt = window.__SEA_BATTLE__!.runtime();
+      rt.setCameraPreset('game');
+      rt.setZoomLevel(1);
+      const scene = rt.startScene('damage');
+      for (const id of ['d-sloop', 'd-frigate']) scene.getShip(id)!.hp = scene.getShip(id)!.maxHp;
+      const m = scene.getShip('d-merchant')!;
+      m.hp = Math.round(0.2 * m.maxHp); // humo denso (6/s) y fuego en 2 sockets (12/s cada uno)
+      return rt.mobile;
+    });
+    expect(mobile).toBe(true);
+    await slowFrames(page); // CONTROL C2: con frames lentos, el test de antes tiene que caer
+    await page.waitForTimeout(4500); // > 3,4 s de vida del humo: régimen estable
+
+    // Con tasa completa: 6/s × 3,4 s ≈ 20 bocanadas y 2 × 12/s × 0,55 s ≈ 13 llamas; con × 0,5 serían ≈ 10 y ≈ 7
+    const samples: { puffs: number; flames: number }[] = [];
+    for (let i = 0; i < 10; i++) {
+      samples.push(await page.evaluate(([puff, flame]) => {
+        const fx = window.__SEA_BATTLE__!.runtime().effects;
+        return { puffs: fx.alpha.live(fx.time, puff), flames: fx.alpha.live(fx.time, flame) };
+      }, [PUFF, FLAME]));
+      await page.waitForTimeout(150);
+    }
+    const min = (k: 'puffs' | 'flames') => Math.min(...samples.map((s) => s[k]));
+    const max = (k: 'puffs' | 'flames') => Math.max(...samples.map((s) => s[k]));
+    console.log(`D32 móvil: bocanadas vivas ${min('puffs')}–${max('puffs')} · llamas vivas ${min('flames')}–${max('flames')} (10 muestras)`);
+    expect(min('puffs')).toBeGreaterThanOrEqual(19);
+    expect(max('puffs')).toBeLessThanOrEqual(21);
+    expect(min('flames')).toBeGreaterThanOrEqual(12);
     expect(max('flames')).toBeLessThanOrEqual(14);
     await page.evaluate(() => window.__SEA_BATTLE__!.runtime().stopScene());
   });
@@ -130,3 +167,17 @@ test.describe('Humo de daño de la Cañonera', () => {
     await page.evaluate(() => window.__SEA_BATTLE__!.runtime().stopScene());
   });
 });
+
+// CONTROL C2 de O-66: frames lentos a propósito, con un bucle ocupado de ~120 ms en cada rAF de la página
+async function slowFrames(page: Page) {
+  await page.evaluate(() => {
+    const busy = () => {
+      const t = performance.now();
+      while (performance.now() - t < 120) {
+        // ocupado: el frame no acaba antes de 120 ms
+      }
+      requestAnimationFrame(busy);
+    };
+    requestAnimationFrame(busy);
+  });
+}
