@@ -189,55 +189,6 @@ jobs:
             e2e-results.json
           retention-days: 7
 
-  # TEMPORAL (PR #45, se quita antes de fusionar): trazas de verdad de los specs que pasan por Clerk, siempre grabadas,
-  # para comprobar que redact_clerk.py las tapa antes de subirlas. Mismo filtro y misma comprobación que el job e2e
-  e2e-trace-probe:
-    if: github.event_name == 'pull_request' && github.event.action != 'labeled'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    env:
-      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.E2E_CLERK_SECRET_KEY != '' && vars.E2E_CLERK_PUBLISHABLE_KEY != '' && vars.E2E_CLERK_PUBLISHABLE_KEY || 'pk_live_Y2xlcmsuZ2hhLWUyZS5zZWEtYmF0dGxlLmludmFsaWQk' }}
-      NEXT_TELEMETRY_DISABLED: '1'
-      EGL_PLATFORM: surfaceless
-    steps:
-      - uses: actions/checkout@v4.4.0
-      - uses: actions/setup-node@v4.4.0
-        with:
-          node-version-file: .nvmrc
-          cache: npm
-      - run: npm ci
-      - name: OpenGL por software de Mesa (llvmpipe)
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends libegl1 libegl-mesa0 libgl1-mesa-dri
-      - name: Build de e2e
-        env:
-          CLERK_SECRET_KEY: sk_test_solo_para_compilar
-        run: npm run build:e2e
-      - name: Specs con Clerk, con traza siempre
-        shell: bash
-        env:
-          CLERK_SECRET_KEY: ${{ secrets.E2E_CLERK_SECRET_KEY != '' && vars.E2E_CLERK_PUBLISHABLE_KEY != '' && secrets.E2E_CLERK_SECRET_KEY || 'sk_live_dummy' }}
-        run: npx playwright test e2e/auth-gate.spec.ts e2e/auth-pages.spec.ts e2e/clerk-js.spec.ts e2e/app-icon.spec.ts --trace on --retries=0 --reporter=blob,list 2>&1 | python3 -u scripts/ci/redact_clerk.py stream
-      - name: Tapar los datos de sesión de Clerk en el blob y las trazas
-        if: ${{ !cancelled() }}
-        run: python3 scripts/ci/redact_clerk.py redact blob-report test-results
-      - name: Comprobar que no queda ninguno
-        id: clean
-        if: ${{ !cancelled() }}
-        run: python3 scripts/ci/redact_clerk.py check blob-report test-results
-      - name: Blob y trazas tapados
-        if: ${{ !cancelled() && steps.clean.outcome == 'success' }}
-        uses: actions/upload-artifact@v4.6.2
-        with:
-          name: e2e-trace-probe
-          path: |
-            blob-report
-            test-results
-          retention-days: 7
-
   # DT-16: un PR hacia main desde una rama de este repo (nunca un fork: el secreto no debe llegar a código ajeno) se
   # despliega en staging tras verify solo si tiene la etiqueta «staging»: al ponerla y en cada push posterior. Sin ella,
   # solo verify, para que varios PR abiertos no se pisen staging. Un despliegue a medias no se cancela; si llegan varios,
