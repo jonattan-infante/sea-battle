@@ -69,5 +69,7 @@ const v = (p: { x: number; y: number; z: number } | undefined) => (p ? [p.x, p.y
 out.extras = m.extras;
 out.sockets = { port: m.sockets.cannonsPort.map(v), stbd: m.sockets.cannonsStbd.map(v), smoke: v(m.sockets.smoke), fire: m.sockets.fire.map(v), label: v(m.sockets.label), wake: v(m.sockets.wake), bow: v(m.sockets.bow) };
 out.hullBox = [m.hullBox.min.toArray(), m.hullBox.max.toArray()];
+// la receta, para los rasgos de silueta de la lámina de cada clase (ART-DIRECTION §9.2, AD-37): palos, foques y franjas
+out.recipe = { L: LINE.L, B: LINE.B, profile: LINE.profile, bowsprit: LINE.bowsprit, masts: LINE.masts, jibs: LINE.jibs, cannonZ: LINE.cannonZ, bands: LINE.bands };
 fs.writeFileSync(process.argv[2], JSON.stringify(out));
 console.log('tris', m.triangles.join('/'));
