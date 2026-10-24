@@ -134,7 +134,7 @@ export class Effects {
     s.x = x; s.y = y; s.z = z;
     s.vx = 0; s.vy = 0; s.vz = 0;
     s.t0 = this.time + delay;
-    s.life = life;
+    s.life = this.mobile && (shape === SHAPE.puff || shape === SHAPE.damageFlame) ? life * 0.7 : life; // CONTROL C3 de O-66: la vida × 0,7 del humo y el fuego de daño en móvil, lo que D32 prohíbe
     s.s0 = s0; s.s1 = s1;
     s.gravity = 0; s.drag = 0;
     s.c0.set(colors[0]);
