@@ -380,9 +380,14 @@ export class Navigator {
     const reached = [START];
     for (let i = 0; i < n; i++) if (closed[i]) reached.push(i);
     const candidates = this.edgePoints(to, clearance, PUSH_OUT, true).sort((a, b) => distance(a, to) - distance(b, to));
+    // La ruta hasta ese punto es la más corta, la misma que con él de destino (AC-172 c; O-57): con la lista agotada, la g
+    // de cada nodo cerrado es su distancia más corta desde el origen, así que se sale por el que lo ve con menor g más el
+    // último tramo. Antes salía por el primero que lo veía en el orden de las islas, y el Capitán desde WEST recorría
+    // 676,6 m en lugar de 82,0
     for (const c of candidates) {
-      const via = reached.find((i) => this.segmentClear(pos(i), c, i === START ? startClear : clearance));
-      if (via !== undefined) return [...route(via), c];
+      const order = reached.map((i) => ({ i, cost: g[i] + distance(pos(i), c) })).sort((a, b) => a.cost - b.cost);
+      const via = order.find(({ i }) => this.segmentClear(pos(i), c, i === START ? startClear : clearance));
+      if (via !== undefined) return [...route(via.i), c];
     }
     const nearest = reached.reduce((best, i) => (distance(pos(i), to) < distance(pos(best), to) ? i : best));
     return nearest === START ? [from] : route(nearest);

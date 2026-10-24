@@ -314,6 +314,51 @@ describe('E16 — Escollos y destino inalcanzable (AC-172)', () => {
     expect(path.every((p, i) => nav.segmentClear(i === 0 ? WEST : path[i - 1], p, margin))).toBe(true);
   });
 
+  // (c) La ruta hasta el punto alcanzable es la del navegador con ese punto como destino, a ±0,01 m (O-57). En 1e2022f, el
+  // Capitán desde WEST recorría 676,6 m, por un nodo de I2, en lugar de 82,0, y la Cañonera desde (100, 280), 752,0 en
+  // lugar de 25,7 (QA-47)
+  test.each([
+    ['del Capitán', 17, WEST, 82.0],
+    ['de la Cañonera', 16, { x: 100, z: 280 }, 25.7]
+  ])('AC-172 (c): la ruta %s hasta el punto alcanzable mide lo mismo que la del navegador con ese punto de destino', (_, margin, from, qa) => {
+    const nav = nav11();
+    const path = nav.findPath(from, CENTER, margin);
+    const end = path[path.length - 1];
+    const got = pathLength(from, path);
+    const want = pathLength(from, nav.findPath(from, end, margin));
+    console.log(`AC-172 (c) margen ${margin}: ruta de ${got.toFixed(2)} m; con el punto de destino, ${want.toFixed(2)} m (QA-47: ${qa.toFixed(1)})`);
+    expect(Math.abs(got - want)).toBeLessThanOrEqual(0.01);
+    expect(Math.abs(want - qa)).toBeLessThanOrEqual(0.05);
+  });
+
+  // (c) en la rejilla de orígenes cada 20 m por todo el mapa (los navegables para el margen), con destino en el centro de E1
+  test.each([16, 17])(
+    'AC-172 (c): con margen %i, desde cada origen de la rejilla de 20 m la ruta hasta el punto alcanzable mide lo mismo que con ese punto de destino',
+    (margin) => {
+      const nav = nav11();
+      const wrong: string[] = [];
+      let origins = 0;
+      let outside = 0;
+      let worst = 0;
+      for (let x = -480; x <= 480; x += 20) {
+        for (let z = -480; z <= 480; z += 20) {
+          const from = { x, z };
+          if (!nav.navigable(from, margin)) continue;
+          origins++;
+          const path = nav.findPath(from, CENTER, margin);
+          const end = path[path.length - 1];
+          if (distance(end, CENTER) > 0.01) outside++;
+          const diff = Math.abs(pathLength(from, path) - pathLength(from, nav.findPath(from, end, margin)));
+          worst = Math.max(worst, diff);
+          if (diff > 0.01) wrong.push(`(${x}, ${z}): ${diff.toFixed(2)} m de más`);
+        }
+      }
+      console.log(`AC-172 (c) margen ${margin}: ${origins} orígenes, ${outside} acaban fuera del centro, ${wrong.length} con la ruta más larga (peor diferencia ${worst.toFixed(3)} m)`);
+      expect({ wrong: wrong.length, first: wrong.slice(0, 5) }).toEqual({ wrong: 0, first: [] });
+    },
+    120_000
+  );
+
   // AC-199 (e): el cliente calcula la ruta desde su posición interpolada para pintar el marcador en el mismo frame, así que
   // el punto alcanzable no puede depender del origen exacto, solo de la zona desde la que se llega
   test.each([16, 17])('AC-199 (e): con margen %i, el punto alcanzable que sustituye al centro del triángulo es el mismo desde orígenes distintos de la misma zona', (margin) => {
