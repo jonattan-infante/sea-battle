@@ -19,10 +19,15 @@ const server = (port: number, env: string) => ({
   stderr: 'pipe' as const
 });
 
-// Chrome del sistema con GPU (Metal en macOS): con SwiftShader el WebGL por software satura la CPU
+// Chrome del sistema con GPU (Metal en macOS): con SwiftShader el WebGL por software satura la CPU. En Linux (la CI de
+// GitHub) no hay GPU ni Metal: WebGL por SwiftShader, que Chrome ya solo da si se le pide (--enable-unsafe-swiftshader)
+const GPU_ARGS =
+  process.platform === 'darwin'
+    ? ['--use-angle=metal', '--enable-gpu-rasterization', '--ignore-gpu-blocklist']
+    : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'];
 export const chrome = {
   channel: 'chrome',
-  launchOptions: { args: ['--use-angle=metal', '--enable-gpu-rasterization', '--ignore-gpu-blocklist'] }
+  launchOptions: { args: GPU_ARGS }
 };
 
 export default defineConfig({
