@@ -137,6 +137,26 @@ def diff(a, b):
     return out
 
 
+def fallos(x):
+    """Los límites de la salida (a) que no pasa una variante, con los decimales que hacen falta para verlo (4,904 y no 4,9)."""
+    fam = {'gb': 'la británica', 'es': 'la española'}; out = []
+    for key, lim, k, mas, nom, pide in (('psnr', PSNR_MIN, 2, True, ' dB de fidelidad', f'se piden {dec(PSNR_MIN, 1)} dB o más'),
+                                        ('dE_atlas', BASE_MAX, 3, False, ' de media', f'se pide {dec(BASE_MAX, 2)} o menos'),
+                                        ('dE_atlas_p95', P95_MAX, 3, False, ' en los cantos', f'se pide {dec(P95_MAX, 1)} o menos')):
+        bad = [f for f in ('gb', 'es') if (x[f][key] < lim if mas else x[f][key] > lim)]
+        if bad: out.append(f"{'las 2 dan' if len(bad) == 2 else fam[bad[0]] + ' da'} {' y '.join(dec(x[f][key], k) for f in bad)}{nom} ({pide})")
+    return '; '.join(out) or 'pasa los límites de calidad'
+
+
+def alto(k):
+    """Lo que sube la española (clase_curvo.T_ES) en la clase k, para «Qué cambia»."""
+    c = CC.CLASES[k]; kinds = [t['kind'] for t in c['tiers']]
+    p = [x for x, ok in (('la camareta', bool(c['house'])), ('el alcázar', 'aft' in kinds), ('el castillo de proa', 'fore' in kinds)) if ok]
+    if not p: return ''
+    adj = 'altos' if len(p) > 1 else ('alta' if p[0].startswith('la ') else 'alto')
+    return f", y con {' y '.join(p)} {dec(CC.T_ES * 100, 0)} cm más {adj}"
+
+
 def psnr(a, b): return round(float(10 * np.log10(255 ** 2 / ((a.astype(float) - b.astype(float)) ** 2).mean())), 2)  # lamina_cadena.py
 def densidad(npz, A):
     """px por metro del atlas de lado A, por región de AT: la mediana (por área) de la dirección más estrecha de cada
@@ -260,7 +280,11 @@ if __name__ == '__main__':
 
     # --- lámina
     GAP = 30; colw = max(max(im.width for im in ims) for _, ims in shots)
-    SW = max(40 + 3 * colw + 2 * GAP + 40, sum(im.width for _, im, _ in sims) + GAP * (len(sims) - 1) + 80, 1600)
+    def pie(k):
+        s_ = SHIP[k]; req = 'gratis' if not s_['price'] else ((f"Nivel {s_['lvl']} · " if s_.get('lvl') else '') + f"{mil(s_['price'])} oro")  # el formato de producto
+        return f"{num(s_['L'])} × {num(manga(k))} m · {req}"
+    slot = [math.ceil(max(im.width, font(15).getlength(lab), font(14, 500).getlength(pie(k)))) for lab, im, k in sims]  # el rótulo no pisa al vecino
+    SW = max(40 + 3 * colw + 2 * GAP + 40, sum(slot) + GAP * (len(sims) - 1) + 80, 1600)
     sheet = Image.new('RGB', (SW, 9000), PAPER); d = ImageDraw.Draw(sheet)
 
     def para(x, y, txt, f, fill, width, lh):
@@ -285,15 +309,15 @@ if __name__ == '__main__':
         y += max(im.height for im in ims) + 26
     d.text((40, y), 'A la misma escala que los demás barcos del jugador (de lado, 6 px por metro), con su eslora y lo que piden', font=font(19), fill=TITLE); y += 32
     x = 40; hmax = max(im.height for _, im, _ in sims)
-    for lab, im, k in sims:
-        sheet.paste(im, (x, y + hmax - im.height)); s_ = SHIP[k]
+    for (lab, im, k), w in zip(sims, slot):
+        sheet.paste(im, (x, y + hmax - im.height))
         d.text((x, y + hmax + 8), lab, font=font(15), fill=INK if k == cls else SOFT)
-        req = 'gratis' if not s_['price'] else ((f"Nivel {s_['lvl']} · " if s_.get('lvl') else '') + f"{mil(s_['price'])} oro")  # el formato de producto
-        d.text((x, y + hmax + 30), f"{num(s_['L'])} × {num(manga(k))} m · {req}", font=font(14, 500), fill=SOFT); x += im.width + GAP
+        d.text((x, y + hmax + 30), pie(k), font=font(14, 500), fill=SOFT); x += w + GAP
     y += hmax + 70
     if pares:
-        quien = ', '.join(f'{art(k)} {NOMBRE[k]}' for k in PEERS[cls][:-1]) + f' y {art(PEERS[cls][-1])} {NOMBRE[PEERS[cls][-1]]}'
-        d.text((40, y), f'En el móvil, en 390×844 (2,8 px por metro), junto a {quien}: en color y en grises', font=font(19), fill=TITLE); y += 32
+        q = [f'{art(k)} {NOMBRE[k]}' for k in PEERS[cls]]; q[0] = ('al ' + q[0][3:]) if q[0].startswith('el ') else 'a ' + q[0]  # «junto al Navío»
+        quien = ', '.join(q[:-1]) + f' y {q[-1]}'
+        d.text((40, y), f'En el móvil, en 390×844 (2,8 px por metro), junto {quien}: en color y en grises', font=font(19), fill=TITLE); y += 32
         x = 40; hmax = max(im.height for _, im in pares)
         for lab, im in pares:
             if x + im.width > SW - 40: x = 40; y += hmax + 40
@@ -315,12 +339,13 @@ if __name__ == '__main__':
                 v = min(ok, key=lambda v: ok[v]['dos_B']); x = ok[v]
                 peso.append(f"Con la textura más comprimida (paleta acotada a {v[1:]} en lugar de 1024; es la salida (a) de producto), pesarían {dec(x['dos_B'] / 1000, 1)} KB" + (', y caben.' if x['dos_B'] <= obj else f", y seguirían pasándose en {mil(x['dos_B'] - obj)} bytes.") + f" Su fidelidad es de {dec(x['gb']['psnr'], 1)} y {dec(x['es']['psnr'], 1)} dB, y se aparta del dibujo {dec(x['gb']['dE_atlas'], 2)} y {dec(x['es']['dE_atlas'], 2)} de media y {dec(x['gb']['dE_atlas_p95'], 1)} y {dec(x['es']['dE_atlas_p95'], 1)} en los cantos: no baja de lo peor de los Navíos aprobados ({dec(PSNR_MIN, 1)} dB, {dec(BASE_MAX, 2)} y {dec(P95_MAX, 1)}).")
             else:
-                x = MED['salida_a']['a512']
-                peso.append(f"La textura más comprimida (salida (a) de producto) baja de la calidad de los Navíos aprobados: con la paleta acotada a 512, {dec(x['gb']['psnr'], 1)} y {dec(x['es']['psnr'], 1)} dB, {dec(x['gb']['dE_atlas'], 2)} y {dec(x['es']['dE_atlas'], 2)} de media y {dec(x['gb']['dE_atlas_p95'], 1)} y {dec(x['es']['dE_atlas_p95'], 1)} en los cantos (se piden {dec(PSNR_MIN, 1)} dB o más, {dec(BASE_MAX, 2)} o menos y {dec(P95_MAX, 1)} o menos), así que no se aplica.")
+                x5, x2 = MED['salida_a']['a512'], MED['salida_a']['a256']
+                def pesa(x): return f"las 2 pesarían {dec(x['dos_B'] / 1000, 1)} KB" + (', y cabrían' if x['dos_B'] <= obj else f", {mil(x['dos_B'] - obj)} bytes de más")
+                peso.append(f"La salida (a) de producto, comprimir más la textura, no se aplica. Con la paleta acotada a 512, {fallos(x5)}; y {pesa(x5)}. Con la de 256, {fallos(x2)}; y {pesa(x2)}.")
             peso.append('Se decide con la medida del piloto. Las vistas de arriba llevan la textura de la receta: lo que apruebas es cómo se ve, no el presupuesto.')
     BLOCKS = [
         ('Qué cambia', INK, [
-            'El casco: curvas, la popa con caída y el espejo con su fila de ventanas; la española, con tallas doradas, un friso de volutas y la camareta o los castillos 40 cm más altos.',
+            f'El casco: curvas, la popa con caída y el espejo con su fila de ventanas; la española, con tallas doradas y un friso de volutas{alto(cls)}.',
             'Los colores de cada familia: la británica, azul marino con la franja blanca y la Union Jack; la española, roja con la franja dorada, la rojigualda y la cruz de Borgoña en las velas cuadras.',
             'La bandera de la familia va en el pico de la vela de popa, y en la cubierta hay obenques, estays, el timón y, según la clase, botes, cabrestante y faroles.']),
         ('Lo que no cambia', INK, [
