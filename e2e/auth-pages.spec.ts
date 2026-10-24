@@ -69,16 +69,16 @@ const contrast = (a: Rgb, b: Rgb) => {
   return (l1 + 0.05) / (l2 + 0.05);
 };
 
-// La página está lista cuando sus imágenes y fuentes cargaron (y, en las de Clerk, cuando la tarjeta tiene su botón)
-async function settle(page: Page) {
+// La página está lista cuando sus imágenes cargaron, están decodificadas y pintadas, y sus fuentes cargaron (y, en las de Clerk, cuando la tarjeta tiene su botón). O-63: next/image pinta con decoding="async", así que `complete` no basta
+async function settle(page: Page, label: string) {
+  const atEntry = await settleEntry(page, label); // O-63: cuántas document.images hay al entrar (una lista vacía también da every = true)
   await page.waitForFunction(() => Array.from(document.images).every((i) => i.complete && i.naturalWidth > 0), null, { timeout: 20_000 });
-  await page.evaluate(() => document.fonts.ready);
-  await page.waitForTimeout(300);
+  await settleImages(page, label, atEntry); // decode() de cada imagen, fuentes y 2 frames (el que la pinta y uno más), con el estado de cada una en el log
 }
 
 // Los 4 píxeles a 8 px de las esquinas del viewport (AD-35 c)
 async function corners(page: Page, { w, h }: Size): Promise<Rgb[]> {
-  const png = (await page.screenshot()).toString('base64');
+  const png = (await attachLanding(page, await page.screenshot())).toString('base64');
   return page.evaluate(async ([data, pts]) => {
     const img = new Image();
     img.src = `data:image/png;base64,${data}`;
@@ -118,7 +118,7 @@ async function checkPage(page: Page, route: '/sign-in' | '/sign-up', size: Size,
   const where = `${route} ${size.label}`;
   await page.goto(`${AUTH}${route}`);
   await expect(page.locator('.cl-formButtonPrimary')).toBeVisible({ timeout: 30_000 });
-  await settle(page);
+  await settle(page, where);
   await capture(page, `${route.slice(1)}-${size.label}`);
 
   // (a) y (b): centrada en los dos ejes; en 844×390, arriba a 16 px y solo con scroll vertical
@@ -325,7 +325,7 @@ async function checkPasswordHint(page: Page, size: Size) {
 
 async function run(page: Page, size: Size) {
   await page.goto(`${AUTH}/`);
-  await settle(page);
+  await settle(page, `landing ${size.label}`);
   const landing = await corners(page, size);
   for (const route of ['/sign-in', '/sign-up'] as const) await checkPage(page, route, size, landing);
   await checkPasswordHint(page, size);
@@ -447,4 +447,84 @@ test.describe('D58 en el registro, con Testing Token', () => {
       await expectSpanish(page, where);
     }
   });
+});
+
+// O-63, diagnóstico de settle para el triaje de un rojo de las esquinas. Ninguna cadena con algo de Clerk llega al log: de las
+// URL solo va la ruta si son del servidor de la prueba («fuera» si no; la vuelta del handshake lleva el token en la query),
+// y cada línea pasa por safeLog
+function safeLog(s: string): string {
+  return /__session|eyJ|__clerk/i.test(s) ? 'O-63: línea tapada (llevaba algo de Clerk)' : s;
+}
+function pathOf(url: string, withQuery = false): string {
+  try {
+    const u = new URL(url);
+    return u.origin === AUTH ? u.pathname + (withQuery ? u.search : '') : 'fuera';
+  } catch {
+    return 'sin URL';
+  }
+}
+const lastSettle = new WeakMap<Page, { label: string; at: number }>();
+
+// La ventana de H5 de cada página medida va de su load a la captura de sus esquinas, que es la última de esa página. Desde
+// antes del 1.er goto de cada test se guardan las navegaciones del frame principal y el 1.er load tras la captura anterior
+// (el del goto del test); la captura de las esquinas lleva al log las de la ventana y vacía la lista
+type Watch = { navs: { at: number; to: string }[]; load?: { at: number; to: string } };
+const watches = new WeakMap<Page, Watch>();
+test.beforeEach(async ({ page }) => {
+  const w: Watch = { navs: [] };
+  watches.set(page, w);
+  page.on('framenavigated', (f) => {
+    if (f === page.mainFrame()) w.navs.push({ at: Date.now(), to: pathOf(f.url()) });
+  });
+  page.on('load', () => {
+    w.load ??= { at: Date.now(), to: pathOf(page.url()) };
+  });
+});
+function logWindow(page: Page) {
+  const [w, s, at] = [watches.get(page), lastSettle.get(page), Date.now()];
+  if (!w) return;
+  for (const n of w.load ? w.navs.filter((n) => n.at >= w.load!.at) : []) {
+    const settle = s ? `, ${n.at < s.at ? 'antes' : 'después'} de entrar en el settle de ${s.label}` : '';
+    console.log(safeLog(`O-63 navegación a ${n.to}, ${n.at - w.load!.at} ms después del load de ${w.load!.to}${settle}, ${at - n.at} ms antes de la captura de sus esquinas`));
+  }
+  [w.navs, w.load] = [[], undefined];
+}
+
+// Al entrar en settle: devuelve cuántas document.images hay
+async function settleEntry(page: Page, label: string): Promise<number> {
+  lastSettle.set(page, { label, at: Date.now() });
+  return page.evaluate(() => document.images.length);
+}
+
+// Con todas cargadas: decode() de cada document.images (lo que tardó o que se rechazó), las fuentes y 2 frames. Al log, de
+// cada imagen: currentSrc, complete, naturalWidth, display y su decode(). Un decode() rechazado falla, como antes
+async function settleImages(page: Page, label: string, atEntry: number) {
+  const images = await page.evaluate(() =>
+    Promise.all(
+      Array.from(document.images).map(async (i) => {
+        const t = performance.now();
+        const decode = await i.decode().then(() => `decode ${Math.round(performance.now() - t)} ms`, (e: Error) => `decode rechazado (${e.name})`);
+        return { src: i.currentSrc, complete: i.complete, width: i.naturalWidth, display: getComputedStyle(i).display, decode };
+      })
+    )
+  );
+  await page.evaluate(() => document.fonts.ready.then(() => {}));
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  const list = images.map((i) => `${pathOf(i.src, true)} complete=${i.complete} naturalWidth=${i.width} display=${i.display} ${i.decode}`);
+  console.log(safeLog(`O-63 settle de ${label}: ${atEntry} imágenes al entrar, ${images.length} al acabar [${list.join('; ')}]`));
+  expect(images.filter((i) => i.decode.startsWith('decode rechazado')), `${label}: decode() de las imágenes`).toEqual([]);
+}
+
+// La captura de las esquinas cierra la ventana de H5. La de la landing, la referencia de las esquinas, se guarda y va adjunta
+// al test solo si falla (faltaba en el rojo de QA-53; en verde serían ~1,7 MB por run sin uso)
+let landingPng: Buffer | undefined;
+async function attachLanding(page: Page, png: Buffer): Promise<Buffer> {
+  logWindow(page);
+  if (pathOf(page.url()) === '/') landingPng = png;
+  return png;
+}
+test.afterEach(async () => {
+  const [png, info] = [landingPng, test.info()];
+  landingPng = undefined;
+  if (png && info.status !== info.expectedStatus) await info.attach('landing.png', { body: png, contentType: 'image/png' });
 });
