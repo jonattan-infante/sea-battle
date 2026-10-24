@@ -73,28 +73,43 @@ describe('despliegue automático (DT-16)', () => {
   });
 });
 
-// El e2e de Playwright en los PR: la misma selección que `npm run test:e2e`, sin secretos ni escritura, cada shard cancela
-// solo su corrida anterior del mismo PR, y los artefactos (el repo es público) caducan a los 7 días
+// El e2e de Playwright en los PR: la selección de `npm run test:e2e` menos @gpu, el secreto de Clerk solo en el paso de
+// los tests, cada shard cancela solo su corrida anterior del mismo PR, y los artefactos (el repo es público) se tapan y se
+// comprueban antes de subirlos, y caducan a los 7 días
 describe('e2e de Playwright en los PR', () => {
   const PKG = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf8')) as { scripts: Record<string, string> };
   const steps = (name: string) => job(name).split(/\n {6}- /);
+  const step = (name: string, title: string) => {
+    const found = steps(name).filter((s) => s.startsWith(`name: ${title}`));
+    expect(found).toHaveLength(1);
+    return found[0];
+  };
 
-  test('la misma selección que npm run test:e2e, en tantos shards como la matriz, con un reintento', () => {
+  test('la selección de npm run test:e2e menos @gpu, en tantos shards como la matriz, con un reintento', () => {
     const e2e = job('e2e');
     const grep = PKG.scripts['test:e2e'].match(/--grep-invert "([^"]+)"/)?.[1];
-    expect(grep).toBeDefined();
-    expect(e2e).toContain(`--grep-invert "${grep}"`);
+    expect(grep).toBe('@perf|@capture|@soak'); // los turnos de QA en el Mac: @gpu sí corre allí
+    expect(e2e).toContain(`--grep-invert "${grep}|@gpu"`);
     const shards = e2e.match(/shard: \[([\d, ]+)\]/)?.[1].split(',').length;
     expect(e2e).toContain(`--shard=\${{ matrix.shard }}/${shards} `);
     expect(e2e).toContain('--retries=1');
   });
 
-  test('solo en PR (no al poner una etiqueta), sin secretos y con permiso de solo lectura', () => {
+  test('solo en PR (no al poner una etiqueta) y con permiso de solo lectura', () => {
     expect(job('e2e')).toContain("if: github.event_name == 'pull_request' && github.event.action != 'labeled'");
-    for (const name of ['e2e', 'e2e-report']) {
-      expect(job(name)).not.toMatch(/secrets\./);
-      expect(job(name)).toMatch(/permissions:\n\s+contents: read\n/);
-    }
+    for (const name of ['e2e', 'e2e-report']) expect(job(name)).toMatch(/permissions:\n\s+contents: read\n/);
+  });
+
+  test('el secreto de Clerk solo llega al paso de los tests, con la clave ficticia de reserva, y nunca a un echo', () => {
+    const e2e = job('e2e');
+    expect(job('e2e-report')).not.toMatch(/secrets\./);
+    expect([...e2e.matchAll(/secrets\.([A-Z0-9_]+)/g)].map((m) => m[1])).toEqual(['E2E_CLERK_SECRET_KEY', 'E2E_CLERK_SECRET_KEY', 'E2E_CLERK_SECRET_KEY']);
+    const withValue = steps('e2e').filter((s) => /&& secrets\.E2E_CLERK_SECRET_KEY \|\|/.test(s));
+    expect(withValue).toHaveLength(1);
+    expect(withValue[0]).toMatch(/^name: e2e \(shard/);
+    expect(withValue[0]).toContain("CLERK_SECRET_KEY: ${{ secrets.E2E_CLERK_SECRET_KEY != '' && vars.E2E_CLERK_PUBLISHABLE_KEY != '' && secrets.E2E_CLERK_SECRET_KEY || 'sk_live_dummy' }}");
+    expect(e2e).toMatch(/NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: \$\{\{ secrets\.E2E_CLERK_SECRET_KEY != '' && vars\.E2E_CLERK_PUBLISHABLE_KEY != '' && vars\.E2E_CLERK_PUBLISHABLE_KEY \|\| 'pk_live_[A-Za-z0-9]+' \}\}/);
+    expect(CODE).not.toMatch(/echo[^\n]*CLERK|set -x/);
   });
 
   test('cada shard tiene su grupo de concurrencia por PR y cancela la corrida anterior', () => {
@@ -102,9 +117,29 @@ describe('e2e de Playwright en los PR', () => {
     expect(job('e2e')).toMatch(/cancel-in-progress: true/);
   });
 
-  test('todos los artefactos del e2e caducan a los 7 días', () => {
-    const uploads = [...steps('e2e'), ...steps('e2e-report')].filter((s) => s.includes('actions/upload-artifact'));
-    expect(uploads).toHaveLength(3);
-    for (const step of uploads) expect(step).toMatch(/retention-days: 7\n/);
+  test('la salida de los tests pasa por redact_clerk.py, con pipefail para no perder su código de salida', () => {
+    const run = step('e2e', 'e2e (shard');
+    expect(run).toContain('shell: bash');
+    expect(run).toMatch(/2>&1 \| python3 -u scripts\/ci\/redact_clerk\.py stream$/m);
+  });
+
+  test('nada se sube sin tapar y comprobar antes, y todo caduca a los 7 días', () => {
+    const e2e = steps('e2e');
+    const check = e2e.findIndex((s) => s.includes('redact_clerk.py check blob-report test-results'));
+    expect(e2e.findIndex((s) => s.includes('redact_clerk.py redact blob-report test-results'))).toBe(check - 1);
+    expect(e2e[check]).toContain('id: clean');
+    const uploads = e2e.map((s, i) => [s, i] as const).filter(([s]) => s.includes('actions/upload-artifact'));
+    expect(uploads).toHaveLength(2);
+    for (const [s, i] of uploads) {
+      expect(i).toBeGreaterThan(check);
+      expect(s).toContain("steps.clean.outcome == 'success'");
+    }
+    const report = steps('e2e-report');
+    const reportCheck = report.findIndex((s) => s.includes('redact_clerk.py check playwright-report e2e-results.json'));
+    const reportUpload = report.findIndex((s) => s.includes('actions/upload-artifact'));
+    expect(reportCheck).toBeGreaterThan(-1);
+    expect(reportUpload).toBeGreaterThan(reportCheck);
+    expect(report[reportUpload]).not.toMatch(/\bif:/); // si la comprobación falla, el paso no corre
+    for (const [s] of [...uploads, [report[reportUpload], 0] as const]) expect(s).toMatch(/retention-days: 7$/m);
   });
 });

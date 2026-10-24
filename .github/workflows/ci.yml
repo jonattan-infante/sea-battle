@@ -53,14 +53,14 @@ jobs:
         run: npm run build
 
   # e2e de Playwright en cada PR, sin desplegar nada: los tests de `npm run test:e2e` (sin @perf, @capture ni @soak, que
-  # piden GPU real o son largos y siguen en el Mac). Cada shard es una máquina con su build y sus 4 servidores, y corre en
-  # serie como en el Mac (workers: 1). El runner no tiene GPU: WebGL por llvmpipe, el OpenGL por software de Mesa
-  # (playwright.config.ts). Un fallo se repite una vez y, si pasa, sale como «flaky» en el informe. No es un check
-  # obligatorio: eso lo decide Jonattan
+  # piden GPU real o son largos) menos los @gpu, que miden por frame y con WebGL por CPU no llegan a su presupuesto. Todos
+  # siguen corriendo en el Mac. Cada shard es una máquina con su build y sus 4 servidores, y corre en serie como en el Mac
+  # (workers: 1). El runner no tiene GPU: WebGL por llvmpipe, el OpenGL por software de Mesa (playwright.config.ts). Un
+  # fallo se repite una vez y, si pasa, sale como «flaky» en el informe. No es un check obligatorio: eso lo decide Jonattan
   e2e:
     if: github.event_name == 'pull_request' && github.event.action != 'labeled'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
     permissions:
       contents: read
     # Un push nuevo al PR cancela su e2e en curso, shard a shard. La etiqueta (labeled) no corre el e2e y va a un grupo
@@ -71,12 +71,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     env:
-      # Sin secretos: clave de Clerk de producción ficticia, de un host .invalid. El middleware ve «producción sin
-      # cookies» y no hace handshake; el navegador no llega a cargar clerk-js. Nada sale hacia Clerk
-      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_live_Y2xlcmsuZ2hhLWUyZS5zZWEtYmF0dGxlLmludmFsaWQk
-      CLERK_SECRET_KEY: sk_live_dummy
+      # Clerk de desarrollo, la misma instancia que el Mac (decisión de Jonattan del 2026-10-24): la clave pública es una
+      # variable del repo y la secreta solo llega al paso de los tests. Sin las dos (un PR desde un fork), clave de
+      # producción ficticia de un host .invalid: el middleware ve «producción sin cookies» y nada sale hacia Clerk
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.E2E_CLERK_SECRET_KEY != '' && vars.E2E_CLERK_PUBLISHABLE_KEY != '' && vars.E2E_CLERK_PUBLISHABLE_KEY || 'pk_live_Y2xlcmsuZ2hhLWUyZS5zZWEtYmF0dGxlLmludmFsaWQk' }}
       NEXT_TELEMETRY_DISABLED: '1'
       # llvmpipe por EGL sin pantalla (playwright.config.ts)
       EGL_PLATFORM: surfaceless
@@ -103,19 +103,33 @@ jobs:
           npx tsx scripts/ci/webgl-renderer.ts | tee "$RUNNER_TEMP/webgl.txt"
           grep -q llvmpipe "$RUNNER_TEMP/webgl.txt"
       - name: Build de e2e
+        env:
+          CLERK_SECRET_KEY: sk_test_solo_para_compilar
         run: npm run build:e2e
-      - name: e2e (shard ${{ matrix.shard }}/4)
-        run: npx playwright test --grep-invert "@perf|@capture|@soak" --shard=${{ matrix.shard }}/4 --retries=1 --reporter=blob,list
-      - name: Informe del shard (blob)
+      # La salida pasa por redact_clerk.py: el log del job también es público
+      - name: e2e (shard ${{ matrix.shard }}/8)
+        shell: bash
+        env:
+          CLERK_SECRET_KEY: ${{ secrets.E2E_CLERK_SECRET_KEY != '' && vars.E2E_CLERK_PUBLISHABLE_KEY != '' && secrets.E2E_CLERK_SECRET_KEY || 'sk_live_dummy' }}
+        run: npx playwright test --grep-invert "@perf|@capture|@soak|@gpu" --shard=${{ matrix.shard }}/8 --retries=1 --reporter=blob,list 2>&1 | python3 -u scripts/ci/redact_clerk.py stream
+      # El repo es público y sus artefactos también: antes de subir nada se tapan las cookies y los tokens de sesión de
+      # Clerk (también dentro de las trazas) y se comprueba que no queda ninguno. Si queda alguno, no se sube nada
+      - name: Tapar los datos de sesión de Clerk en el blob y las trazas
         if: ${{ !cancelled() }}
+        run: python3 scripts/ci/redact_clerk.py redact blob-report test-results
+      - name: Comprobar que no queda ninguno
+        id: clean
+        if: ${{ !cancelled() }}
+        run: python3 scripts/ci/redact_clerk.py check blob-report test-results
+      - name: Informe del shard (blob)
+        if: ${{ !cancelled() && steps.clean.outcome == 'success' }}
         uses: actions/upload-artifact@v4.6.2
         with:
           name: e2e-blob-${{ matrix.shard }}
           path: blob-report
           retention-days: 7
-      # El repo es público y sus artefactos también: solo las trazas de los fallos, 7 días
       - name: Trazas de los fallos (test-results)
-        if: ${{ failure() }}
+        if: ${{ failure() && steps.clean.outcome == 'success' }}
         uses: actions/upload-artifact@v4.6.2
         with:
           name: e2e-test-results-${{ matrix.shard }}
@@ -159,6 +173,11 @@ jobs:
             jq -r '.. | objects | select(has("specs")) | .specs[] | . as $s | .tests[] | select(.status == "unexpected" or .status == "flaky") | "\(.status)\t[\(.projectName)] \($s.file):\($s.line) \($s.title)"' e2e-results.json
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+      # Los blobs llegan tapados; se repite sobre el HTML (que lleva las trazas dentro) y el JSON antes de subirlos
+      - name: Tapar y comprobar el informe
+        run: |
+          python3 scripts/ci/redact_clerk.py redact playwright-report e2e-results.json
+          python3 scripts/ci/redact_clerk.py check playwright-report e2e-results.json
       - name: Informe HTML
         uses: actions/upload-artifact@v4.6.2
         with:
