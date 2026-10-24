@@ -69,11 +69,11 @@ const contrast = (a: Rgb, b: Rgb) => {
   return (l1 + 0.05) / (l2 + 0.05);
 };
 
-// La página está lista cuando sus imágenes y fuentes cargaron (y, en las de Clerk, cuando la tarjeta tiene su botón)
+// La página está lista cuando sus imágenes cargaron, están decodificadas y pintadas, y sus fuentes cargaron (y, en las de Clerk, cuando la tarjeta tiene su botón). O-63: next/image pinta con decoding="async", así que `complete` no basta
 async function settle(page: Page) {
   await page.waitForFunction(() => Array.from(document.images).every((i) => i.complete && i.naturalWidth > 0), null, { timeout: 20_000 });
-  await page.evaluate(() => document.fonts.ready);
-  await page.waitForTimeout(300);
+  await page.evaluate(() => Promise.all([...Array.from(document.images).map((i) => i.decode()), document.fonts.ready]).then(() => {}));
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); // 2 frames: el que la pinta y uno más
 }
 
 // Los 4 píxeles a 8 px de las esquinas del viewport (AD-35 c)
