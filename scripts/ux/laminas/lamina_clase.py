@@ -169,6 +169,17 @@ def cubierta(k):
     return ', '.join(p[:-1]) + f" y {p[-1]}; en la popa, {nl} {'farol' if nl == 1 else 'faroles'}"
 
 
+def cruces(k):
+    """En qué cuadras lleva la española la cruz de Borgoña en la clase k: las de CLASES['emblems'] frente a todas las del
+    aparejo (squares de la receta), para no decir «en las velas cuadras» si solo van en algunas."""
+    em = sorted(w for _, w, _, _ in CC.CLASES[k]['emblems'])
+    sq = sorted((s['w'] for mt in CC.rig_json(k)['recipe']['masts'] for s in mt.get('squares', [])), reverse=True)
+    n = len(em)
+    if n == len(sq): return 'en la vela cuadra' if n == 1 else f'en las {n} velas cuadras'
+    if em == sorted(sq[:n]): return 'en la vela cuadra más grande' if n == 1 else f'en las {n} velas cuadras más grandes'
+    return f"en {n} de las {len(sq)} velas cuadras"
+
+
 def psnr(a, b): return round(float(10 * np.log10(255 ** 2 / ((a.astype(float) - b.astype(float)) ** 2).mean())), 2)  # lamina_cadena.py
 def densidad(npz, A):
     """px por metro del atlas de lado A, por región de AT: la mediana (por área) de la dirección más estrecha de cada
@@ -361,7 +372,7 @@ if __name__ == '__main__':
     BLOCKS = [
         ('Qué cambia', INK, [
             f'El casco: curvas, la popa con caída y el espejo con su fila de ventanas; la española, con tallas doradas y un friso de volutas{alto(cls)}.',
-            'Los colores de cada familia: la británica, azul marino con la franja blanca y la Union Jack; la española, roja con la franja dorada, la rojigualda y la cruz de Borgoña en las velas cuadras.',
+            'Los colores de cada familia: la británica, azul marino con la franja blanca y la Union Jack; la española, roja con la franja dorada, la rojigualda y la cruz de Borgoña ' + cruces(cls) + '.',
             f'La bandera de la familia va en el pico de la vela de popa, y en la cubierta hay {cubierta(cls)}.']),
         ('Lo que no cambia', INK, [
             f"Lo que dice qué barco es: {num(c['L'])} × {num(c['B'])} m, {me['S2']} {'palo' if me['S2'] == 1 else 'palos'} con las velas de hoy, {me['S4']} y una franja de portas con {len(CC.rig_json(cls)['recipe']['cannonZ'])} cañones por banda. Las 2 familias son iguales en eso, y las velas siguen claras: es un barco del jugador.",
