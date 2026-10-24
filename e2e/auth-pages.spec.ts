@@ -150,7 +150,7 @@ async function checkPage(page: Page, route: '/sign-in' | '/sign-up', size: Size,
   const own = await corners(page, size);
   const dE = own.map((c, i) => deltaE(c, landing[i]));
   console.log(`AD-35 ${where}: ΔE76 de las esquinas frente a la landing ${dE.map((d) => d.toFixed(2)).join(' / ')}`);
-  for (const d of dE) expect(d, `${where}: esquina como la landing`).toBeLessThanOrEqual(3);
+  for (const d of dE) expect(d, `${where}: esquina como la landing`).toBeLessThanOrEqual(-1);
 
   // (d) Idioma en el paso inicial
   await expectSpanish(page, where);
@@ -510,6 +510,7 @@ async function settleImages(page: Page, label: string, atEntry: number) {
   );
   await page.evaluate(() => document.fonts.ready.then(() => {}));
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  await page.evaluate(() => history.replaceState(history.state, '', location.href)); // CONTROL O-63: navegación forzada dentro de la ventana, tras el load y antes de la captura
   const list = images.map((i) => `${pathOf(i.src, true)} complete=${i.complete} naturalWidth=${i.width} display=${i.display} ${i.decode}`);
   console.log(safeLog(`O-63 settle de ${label}: ${atEntry} imágenes al entrar, ${images.length} al acabar [${list.join('; ')}]`));
   expect(images.filter((i) => i.decode.startsWith('decode rechazado')), `${label}: decode() de las imágenes`).toEqual([]);
