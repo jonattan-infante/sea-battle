@@ -7,7 +7,7 @@ import { MAP_HALF_SIZE } from '../game/constants';
 export const FREE_VIEW = {
   dragPx: 12, // más de 12 px es arrastrar la vista; al soltar con ≤ 12 px, un clic (AC-116)
   arrowSpeed: 150, // m/s con una flecha pulsada (AC-118: 300 ±30 m en 2 s)
-  returnMs: 300, // transición al volver al seguimiento (AC-119)
+  returnMs: 450, // transición al volver al seguimiento (AC-119)
   sendEveryMs: 500 // viewAt ≤ 2/s (AC-123)
 } as const;
 
