@@ -1,4 +1,4 @@
-import { IslandDef, PirateSectorId, PlayerShipClass, ShipKind, UpgradeId } from './constants';
+import { IslandDef, Mooring, PirateSectorId, PlayerShipClass, ShipKind, UpgradeId } from './constants';
 import { Vec2 } from './vec';
 
 export type Upgrades = Record<UpgradeId, number>; // nivel 1..3
@@ -129,7 +129,8 @@ export interface World {
   players: Map<string, Player>;
   projectiles: Projectile[];
   wrecks: Wreck[];
-  islands: Island[];
+  islands: Island[]; // los círculos de las islas del mapa (cada isla, la unión de 1 a 5; AC-199)
+  moorings: readonly Mooring[]; // los amarres del puerto en los que aparecen los jugadores (AC-176): los da el mapa; sin ellos, el anillo
   events: GameEvent[];
   rng: () => number;
   nextId: number;
