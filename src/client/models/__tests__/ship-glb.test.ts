@@ -75,6 +75,24 @@ describe('ASSET-SPEC §13: GLB de un barco con el contrato de §1–§4', () => 
     expect([m.sockets.cannonsPort.length, m.sockets.cannonsStbd.length, m.extras.sb_length]).toEqual([8, 8, getShipModel('frigate').recipe.L]);
   });
 
+  // La Cañonera echa humo por 2 sockets (VFX-SPEC §6, D25). El segundo, socket_smoke_02, sale del GLB como los demás
+  // (BACKLOG :419): si no, perdería ese humo al pasar al GLB. Lo exige la clase cuya receta lo lleva; las demás no lo leen
+  test('socket_smoke_02: la Cañonera lo lee del GLB y sin él no vale; una clase sin segundo humo no lo lee', async () => {
+    const at = [0, 2.015, 5.6]; // el de la Cañonera de ux (ASSET-SPEC, fila de sus sockets), en otro sitio que el procedural
+    const m = shipModelFromGlb(await glb('gunboat', { edit: (g) => (node(g, 'socket_smoke_02').translation = at) }), 'gunboat');
+    expect(m.sockets.smoke2?.toArray()).toEqual(at);
+    expect(getShipModel('gunboat').sockets.smoke2!.y).not.toBe(at[1]); // no es el del procedural
+    const missing = await glb('gunboat', { edit: drop('socket_smoke_02') });
+    expect(() => shipModelFromGlb(missing, 'gunboat')).toThrow(new ShipGlbError('falta socket_smoke_02 (§3)'));
+    const extra = await glb('sloop', {
+      edit: (g) => {
+        nodes(g).push({ name: 'socket_smoke_02', translation: [0, 3, 1] });
+        nodes(g)[0].children!.push(nodes(g).length - 1);
+      }
+    });
+    expect(shipModelFromGlb(extra, 'sloop').sockets.smoke2).toBeUndefined();
+  });
+
   test('sin COLOR_0 pone blanco y sin NORMAL calcula las de pliegue de 40°', async () => {
     const m = shipModelFromGlb(await glb('sloop', { edit: (g) => (without('COLOR_0')(g), without('NORMAL')(g)) }), 'sloop');
     const g = m.lods[0];

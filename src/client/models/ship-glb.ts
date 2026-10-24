@@ -107,7 +107,8 @@ function lodOf(root: THREE.Object3D, id: string, lod: 0 | 1): { geometry: THREE.
   return { geometry, map: material.map ?? null };
 }
 
-function socketsOf(root: THREE.Object3D, cannons: number): ShipSockets {
+// smoke2: la clase echa humo también por socket_smoke_02 (la Cañonera, D25), que entonces es obligatorio
+function socketsOf(root: THREE.Object3D, cannons: number, smoke2: boolean): ShipSockets {
   const one = (name: string) => {
     const o = root.children.find((c) => c.name === name);
     if (!o) throw new ShipGlbError(`falta ${name} (§3)`);
@@ -126,6 +127,7 @@ function socketsOf(root: THREE.Object3D, cannons: number): ShipSockets {
     cannonsPort: numbered.cannon_port,
     cannonsStbd: numbered.cannon_stbd,
     smoke: one('socket_smoke'),
+    smoke2: smoke2 ? one('socket_smoke_02') : undefined,
     fire: numbered.fire,
     label: one('socket_label'),
     wake: one('socket_wake'),
@@ -152,7 +154,7 @@ export function shipModelFromGlb(scene: THREE.Object3D, classId: string): ShipMo
     sails: [[], []], // los rangos de vela y de tabla son del procedural (AS-V14, AS-V22)
     decks: [[], []],
     extras,
-    sockets: socketsOf(root, extras.sb_cannons_per_side),
+    sockets: socketsOf(root, extras.sb_cannons_per_side, !!base.recipe.smoke2),
     map: lod0.map
   };
 }
