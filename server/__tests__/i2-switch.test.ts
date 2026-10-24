@@ -82,6 +82,19 @@ describe('SEA_BATTLE_I2 (AC-187)', () => {
     expect([...game.world.ships.values()].some((s) => s.classId === CAPTAIN_CLASS)).toBe(false);
   });
 
+  // Punto 3 de dev-render (BACKLOG :425-:427): la bienvenida dice qué NPC pueden salir, y el cliente solo baja sus modelos
+  test.each([
+    [false, ['merchant', 'pirate']],
+    [true, ['captain', 'gunboat', 'merchant', 'pirate']]
+  ])('con el I2 %s, la bienvenida lista las clases de NPC que pueden salir: %j', async (i2, classes) => {
+    const url = await start(i2);
+    const c = ioClient(url, { transports: ['websocket'], reconnection: false, auth: { token: 'a' } });
+    sockets.push(c);
+    const welcome = new Promise<Welcome>((resolve) => c.once(S2C.welcome, resolve));
+    c.emit(C2S.join, { name: 'Ana' });
+    expect([...(await welcome).npcClasses].sort()).toEqual(classes);
+  });
+
   test('encendido (i2: true), el mismo disparador hace aparecer al Capitán', async () => {
     await start(true);
     expect(game.world.i2).toBe(true);

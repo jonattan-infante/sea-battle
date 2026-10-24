@@ -14,9 +14,12 @@ import {
   createGlbLoader,
   EntryGate,
   GlbLoader,
+  mapAnisotropyFor,
   OWN_GLB_WAIT_MS,
+  prefetchClasses,
   setShipMap,
   SHIP_GLB,
+  SHIP_GLB_STAGED,
   ShipGlbError,
   ShipGlbStore,
   shipModelFromGlb,
@@ -72,6 +75,24 @@ describe('ASSET-SPEC §13: GLB de un barco con el contrato de §1–§4', () => 
   test('vale para cualquier clase con su eslora: la Fragata con 8 cañones por banda', async () => {
     const m = shipModelFromGlb(await glb('frigate'), 'frigate');
     expect([m.sockets.cannonsPort.length, m.sockets.cannonsStbd.length, m.extras.sb_length]).toEqual([8, 8, getShipModel('frigate').recipe.L]);
+  });
+
+  // La Cañonera echa humo por 2 sockets (VFX-SPEC §6, D25). El segundo, socket_smoke_02, sale del GLB como los demás
+  // (BACKLOG :419): si no, perdería ese humo al pasar al GLB. Lo exige la clase cuya receta lo lleva; las demás no lo leen
+  test('socket_smoke_02: la Cañonera lo lee del GLB y sin él no vale; una clase sin segundo humo no lo lee', async () => {
+    const at = [0, 2.015, 5.6]; // el de la Cañonera de ux (ASSET-SPEC, fila de sus sockets), en otro sitio que el procedural
+    const m = shipModelFromGlb(await glb('gunboat', { edit: (g) => (node(g, 'socket_smoke_02').translation = at) }), 'gunboat');
+    expect(m.sockets.smoke2?.toArray()).toEqual(at);
+    expect(getShipModel('gunboat').sockets.smoke2!.y).not.toBe(at[1]); // no es el del procedural
+    const missing = await glb('gunboat', { edit: drop('socket_smoke_02') });
+    expect(() => shipModelFromGlb(missing, 'gunboat')).toThrow(new ShipGlbError('falta socket_smoke_02 (§3)'));
+    const extra = await glb('sloop', {
+      edit: (g) => {
+        nodes(g).push({ name: 'socket_smoke_02', translation: [0, 3, 1] });
+        nodes(g)[0].children!.push(nodes(g).length - 1);
+      }
+    });
+    expect(shipModelFromGlb(extra, 'sloop').sockets.smoke2).toBeUndefined();
   });
 
   test('sin COLOR_0 pone blanco y sin NORMAL calcula las de pliegue de 40°', async () => {
@@ -203,8 +224,8 @@ describe('AC-193 c: el procedural mientras carga, el propio primero y de uno en 
     const { calls, loader, fetchGlb } = fakeLoader();
     const store = new ShipGlbStore(manifest, () => loader, fetchGlb);
     store.request('brig', true);
-    store.prefetchAll();
-    store.prefetchAll(); // repetido: no duplica
+    store.prefetchAll(prefetchClasses(null));
+    store.prefetchAll(prefetchClasses(null)); // repetido: no duplica
     const classOf = (url: string) => Object.entries(manifest).find(([, u]) => u === url)![0];
     for (let i = 0; i < 3; i++) {
       store.pump(gl);
@@ -280,6 +301,54 @@ describe('AC-193 c: el procedural mientras carga, el propio primero y de uno en 
 // AC-193 c, opción B (producto, 2026-10-18): la entrada espera al GLB propio con un tope. Para que la espera sea corta, su
 // descarga empieza en cuanto se conoce la clase, sin esperar al renderer, y el cargador (sus módulos) en cuanto hay
 // manifiesto. El transcodificador de KTX2 no: con el respaldo (D90) baja después del GLB propio
+// BACKLOG :423-:427 (punto 3 de dev-render): el jugador no baja en segundo plano los modelos de barcos que no pueden salir en
+// su partida. prefetchAll solo encola las clases de la lista (las del jugador y las de NPC de la bienvenida), y sin GLB de
+// una clase del jugador la entrada no espera ni el cargador se crea antes de hacer falta, como sin manifiesto
+describe('BACKLOG :423-:427: solo se precargan los modelos de los barcos que pueden salir', () => {
+  const manifest = { sloop: '/models/ship_sloop.glb', gunboat: '/models/npc_pirate_gunboat.glb', captain: '/models/npc_pirate_captain.glb' };
+  const I2_OFF = { npcClasses: ['pirate', 'merchant'] };
+  const I2_ON = { npcClasses: ['pirate', 'merchant', 'gunboat', 'captain'] };
+
+  test('prefetchClasses: las clases del jugador y las de NPC de la bienvenida; sin bienvenida, solo las del jugador', () => {
+    expect(prefetchClasses(null)).toEqual(['sloop', 'brig', 'frigate']);
+    expect(prefetchClasses(I2_ON)).toEqual(['sloop', 'brig', 'frigate', 'pirate', 'merchant', 'gunboat', 'captain']);
+  });
+
+  test('con el I2 apagado no se encolan la Cañonera ni el Capitán; encendido, sí, una vez cada uno y detrás del propio', async () => {
+    const { calls, loader, fetchGlb } = fakeLoader();
+    const store = new ShipGlbStore(manifest, () => loader, fetchGlb);
+    store.request('sloop', true);
+    store.prefetchAll(prefetchClasses(I2_OFF));
+    store.pump(gl);
+    calls[0].resolve(await glb('sloop'));
+    await settle();
+    store.pump(gl);
+    expect(calls.map((c) => c.url)).toEqual(['/models/ship_sloop.glb']);
+    store.prefetchAll(prefetchClasses(I2_ON));
+    store.prefetchAll(prefetchClasses(I2_ON)); // repetido: no duplica
+    for (const classId of ['gunboat', 'captain']) {
+      store.pump(gl);
+      calls[calls.length - 1].resolve(await glb(classId));
+      await settle();
+    }
+    store.pump(gl);
+    expect(calls.map((c) => c.url)).toEqual(['/models/ship_sloop.glb', '/models/npc_pirate_gunboat.glb', '/models/npc_pirate_captain.glb']);
+    expect([store.loaded('gunboat'), store.loaded('captain')]).toEqual([true, true]);
+  });
+
+  test('con GLB solo de NPC, la entrada no espera y el cargador no se crea hasta que baja el primero, como sin manifiesto', () => {
+    const { calls, fetchGlb, make } = fakeLoader();
+    const store = new ShipGlbStore({ gunboat: manifest.gunboat, captain: manifest.captain }, make, fetchGlb);
+    store.warm();
+    store.predictOwn('sloop');
+    store.request('sloop', true);
+    expect([store.waiting(null), store.waiting('sloop'), make.mock.calls.length, calls.length]).toEqual([false, false, 0, 0]);
+    store.prefetchAll(prefetchClasses(I2_ON));
+    store.pump(gl);
+    expect([make.mock.calls.length, calls.map((c) => c.url)]).toEqual([1, ['/models/npc_pirate_gunboat.glb']]);
+  });
+});
+
 describe('AC-193 c, opción B: el GLB propio se empieza a bajar antes del primer frame', () => {
   const manifest = { sloop: '/models/ship_sloop.glb', brig: '/models/ship_brig.glb' };
 
@@ -375,7 +444,7 @@ describe('AC-193 c, opción A: el GLB de la clase propia predicha, antes de la b
     store.predictOwn('sloop');
     expect(order).toEqual(['/models/ship_sloop.glb', 'cargador']);
     store.request('sloop', true);
-    store.prefetchAll();
+    store.prefetchAll(prefetchClasses(null));
     expect(f.calls.map((c) => c.url)).toEqual(['/models/ship_sloop.glb']);
     f.calls[0].resolve(await glb('sloop'));
     store.pump(gl);
@@ -393,7 +462,7 @@ describe('AC-193 c, opción A: el GLB de la clase propia predicha, antes de la b
       ['/models/ship_frigate.glb', true],
       ['/models/ship_sloop.glb', undefined]
     ]);
-    store.prefetchAll();
+    store.prefetchAll(prefetchClasses(null));
     f.calls[1].resolve(await glb('sloop'));
     store.pump(gl);
     await settle();
@@ -428,6 +497,35 @@ describe('AC-193 c, opción A: el GLB de la clase propia predicha, antes de la b
     store.predictOwn('frigate');
     store.dispose();
     expect(f.calls.map((c) => c.signal?.aborted)).toEqual([true]);
+  });
+
+  // La sonda QA-31 (BACKLOG :1821; scratchpad/qa-pr31-cf0ee5f.log, etapa SONDA): otro barco de la clase predicha entra antes
+  // que el propio y el pump toma la descarga predicha; al llegar la clase real, el aborto no puede dejar esa clase fallida
+  // hasta recargar. La predicha se aborta, la real se carga antes, y la predicha vuelve a la cola y acaba cargada, sin
+  // quedar fallida (waiting) y sin aviso
+  test('si el pump ya tomó la descarga predicha, el aborto la vuelve a encolar al final, sin marcarla fallida ni avisar', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const f = fakeLoader();
+    const store = new ShipGlbStore(manifest, f.make, f.fetchGlb);
+    const order: string[] = [];
+    const loadedNow = () => ['sloop', 'frigate'].filter((c) => store.loaded(c) && !order.includes(c)).forEach((c) => order.push(c));
+    store.predictOwn('frigate');
+    store.request('frigate'); // un barco de la Fragata, antes que el propio
+    store.pump(gl); // toma la descarga predicha
+    store.request('sloop', true); // la clase real: aborta la predicha
+    await settle();
+    expect([f.calls[0].signal?.aborted, store.waiting('frigate'), warn.mock.calls]).toEqual([true, true, []]);
+    f.calls[1].resolve(await glb('sloop'));
+    store.pump(gl);
+    await settle();
+    loadedNow();
+    store.pump(gl); // la predicha, desde cero
+    expect(f.calls.map((c) => c.url)).toEqual(['/models/ship_frigate.glb', '/models/ship_sloop.glb', '/models/ship_frigate.glb']);
+    f.calls[2].resolve(await glb('frigate'));
+    await settle();
+    loadedNow();
+    expect([order, store.waiting('frigate'), warn.mock.calls]).toEqual([['sloop', 'frigate'], false, []]);
+    warn.mockRestore();
   });
 });
 
@@ -567,12 +665,27 @@ describe('§13: los GLB de public/models llevan el hash de su contenido', () => 
     }
   });
 
-  test('public/models no tiene GLB sin hash, y SHIP_GLB solo apunta a GLB con hash que existen', () => {
+  const badUrl = (url: string | undefined) =>
+    !url || !/^\/models\/[^/]+$/.test(url) || !HASHED_GLB.test(path.basename(url)) || path.basename(url).startsWith(E2E_PREFIX) || !fs.existsSync(path.join(ROOT, 'public', url));
+
+  test('public/models no tiene GLB sin hash, y SHIP_GLB y SHIP_GLB_STAGED solo apuntan a GLB con hash que existen', () => {
     expect(unhashedModels(path.join(ROOT, 'public', 'models'))).toEqual([]);
-    const bad = Object.values(SHIP_GLB).filter(
-      (url) => !url || !/^\/models\/[^/]+$/.test(url) || !HASHED_GLB.test(path.basename(url)) || path.basename(url).startsWith(E2E_PREFIX) || !fs.existsSync(path.join(ROOT, 'public', url))
-    );
-    expect(bad).toEqual([]);
+    expect([Object.values(SHIP_GLB).filter(badUrl), Object.values(SHIP_GLB_STAGED).filter(badUrl)]).toEqual([[], []]);
+  });
+
+  // La Cañonera, sin entrada en SHIP_GLB (producto, BACKLOG :421: el Capitán entra solo): su GLB sigue en public/models,
+  // pero el store del juego no lo pide ni con el I2 encendido, y la clase se queda en su procedural
+  test('SHIP_GLB_STAGED: ninguna de sus clases está en SHIP_GLB, y el store del juego no las pide con el I2 encendido', async () => {
+    expect([Object.keys(SHIP_GLB_STAGED), Object.keys(SHIP_GLB_STAGED).filter((c) => SHIP_GLB[c])]).toEqual([['gunboat'], []]);
+    const { calls, fetchGlb, make } = fakeLoader();
+    const store = new ShipGlbStore(undefined, make, fetchGlb);
+    store.prefetchAll(prefetchClasses({ npcClasses: ['pirate', 'merchant', 'gunboat', 'captain'] }));
+    store.pump(gl);
+    calls[0].resolve(await glb('captain'));
+    await settle();
+    store.pump(gl);
+    expect(calls.map((c) => c.url)).toEqual([SHIP_GLB.captain]);
+    expect([store.loaded('captain'), store.loaded('gunboat'), store.model('gunboat')]).toEqual([true, false, getShipModel('gunboat')]);
   });
 });
 
@@ -649,6 +762,44 @@ function fakeTextureLoaders() {
   } as unknown as THREE.Loader;
   return { ktx2, images, ktx2Texture, imageTexture, calls, urls, init, release };
 }
+
+// La Cañonera de la 2.ª vuelta y el Capitán de la receta (D91), aprobados por Jonattan y entregados por ux (ASSET-SPEC §13,
+// sus filas), en public/models con el paso 4c. Se leen como en el juego, con un KTX2Loader falso porque sin navegador no hay
+// transcodificador, y dan el modelo de su clase con los números de la entrega: triángulos, extras y sockets. El Capitán, de
+// SHIP_GLB; la Cañonera, de SHIP_GLB_STAGED (sin entrada en SHIP_GLB: BACKLOG :421)
+describe('Los GLB de la Cañonera y el Capitán de D91 (ASSET-SPEC §13)', () => {
+  const read = async (classId: string) => {
+    (globalThis as unknown as { self?: unknown }).self ??= globalThis; // GLTFLoader crea la URL de la imagen con self.URL
+    const texture = new THREE.CompressedTexture([], 1024, 1024);
+    const asked: string[] = [];
+    const ktx2 = { load: (url: string, onLoad: (t: THREE.Texture) => void) => (asked.push(url), onLoad(texture)) } as unknown as KTX2Loader;
+    const url = (SHIP_GLB[classId] ?? SHIP_GLB_STAGED[classId])!;
+    const file = fs.readFileSync(path.join(ROOT, 'public', url));
+    const scene = await new Promise<THREE.Object3D>((resolve, reject) =>
+      new GLTFLoader()
+        .setMeshoptDecoder(MeshoptDecoder)
+        .setKTX2Loader(ktx2)
+        .parse(file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) as ArrayBuffer, THREE.LoaderUtils.extractUrlBase(url), (g) => resolve(g.scene), reject)
+    );
+    return { m: shipModelFromGlb(scene, classId), asked, texture };
+  };
+  const at = (v: THREE.Vector3 | undefined) => v?.toArray().map((x) => Math.round(x * 1000) / 1000);
+
+  test('la Cañonera: 1 988 / 465 triángulos, su palo de 18,15 m, los 2 humos de D25 y los fuegos de AS-V17, con la KTX2 de al lado', async () => {
+    const { m, asked, texture } = await read('gunboat');
+    expect([m.extras.sb_id, m.triangles, m.extras.sb_mast_height, m.extras.sb_radius, m.extras.sb_pick]).toEqual(['npc_pirate_gunboat', [1988, 465], 18.15, 14, [5.5, 18.15, 13]]);
+    expect([at(m.sockets.smoke), at(m.sockets.smoke2), m.sockets.fire.map(at)]).toEqual([[0, 2.009, -4.2], [0, 2.015, 5.6], [[1.2, 1.832, 7.1], [-1.8, 1.8, 0], [0, 1.827, -6.6]]]);
+    expect([m.sockets.cannonsPort.length, m.sockets.cannonsStbd.length, m.recipe]).toEqual([6, 6, getShipModel('gunboat').recipe]);
+    expect([m.map, asked]).toEqual([texture, ['/models/npc_pirate_gunboat_atlas.12e7f712.ktx2']]);
+  });
+
+  test('el Capitán: 2 383 / 511 triángulos, su palo de 24 m y un solo humo', async () => {
+    const { m, asked } = await read('captain');
+    expect([m.extras.sb_id, m.triangles, m.extras.sb_mast_height, m.extras.sb_radius, m.extras.sb_pick]).toEqual(['npc_pirate_captain', [2383, 511], 24, 16, [6, 24, 15]]);
+    expect([at(m.sockets.smoke), m.sockets.smoke2, m.sockets.fire.map(at)]).toEqual([[0, 3.316, -4.5], undefined, [[1.6, 3.205, 7.4], [-1.6, 3.1, 0], [1.4, 4.796, -9]]]);
+    expect([m.sockets.cannonsPort.length, m.recipe, asked]).toEqual([6, getShipModel('captain').recipe, ['/models/npc_pirate_captain_atlas.5455a0a6.ktx2']]);
+  });
+});
 
 describe('D90: KHR_texture_basisu con respaldo, sin esperar al transcodificador (salida 1 de AC-193 c)', () => {
   beforeAll(() => {
@@ -789,6 +940,29 @@ describe('D90: KHR_texture_basisu con respaldo, sin esperar al transcodificador 
     }
     warn.mockRestore();
   });
+
+  // Tanda B (BACKLOG :421; ASSET-SPEC, AS-V19): el anisótropo del mapa de los GLB. El runtime lo pone al tener renderer, antes
+  // de la primera carga; el e2e lo cambia para medir con él y sin él
+  test('el nivel es el máximo del renderizador hasta 16, y al menos 1; el respaldo y la KTX2 llevan el anisótropo del store; cambiarlo vuelve a subir los mapas cargados', async () => {
+    expect([32, 16, 8, 0].map((max) => mapAnisotropyFor(max))).toEqual([16, 16, 8, 1]); // 0: sin la extensión
+    const { calls, loader, fetchGlb } = fakeLoader();
+    const store = new ShipGlbStore(manifest, () => loader, fetchGlb);
+    store.setMapAnisotropy(16);
+    const g = withFallback();
+    store.request('sloop', true);
+    store.pump(gl);
+    calls[0].resolve(g.scene, g.upgrades);
+    await settle();
+    expect([store.model('sloop').map === g.fallback, g.fallback.anisotropy]).toEqual([true, 16]);
+    g.deliver([[g.fallback, g.ktx2]]);
+    await settle();
+    expect([store.model('sloop').map === g.ktx2, g.ktx2.anisotropy]).toEqual([true, 16]);
+    const version = g.ktx2.version;
+    store.setMapAnisotropy(1);
+    expect([g.ktx2.anisotropy, g.ktx2.version > version]).toEqual([1, true]);
+    store.setMapAnisotropy(1); // sin cambio, no se vuelve a subir
+    expect(g.ktx2.version).toBe(version + 1);
+  });
 });
 
 describe('AS-V10 (D90): cada textura KTX2 de un GLB lleva su respaldo', () => {
@@ -810,7 +984,9 @@ describe('AS-V10 (D90): cada textura KTX2 de un GLB lleva su respaldo', () => {
     const table = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'glb', 'respaldo-tamanos.json'), 'utf8')) as Record<string, { lado: number; mimeType: string }>;
     expect(Object.entries(table).flatMap(([k, v]) => (k.startsWith('_') ? [] : [[k, v.lado, v.mimeType]]))).toEqual([
       ['ship_line_es', 256, 'image/png'],
-      ['ship_line_gb', 256, 'image/png']
+      ['ship_line_gb', 256, 'image/png'],
+      ['npc_pirate_gunboat', 128, 'image/png'], // la medida de ux, en ASSET-SPEC §13 (la Cañonera y el Capitán de la receta)
+      ['npc_pirate_captain', 128, 'image/png']
     ]);
     const line = (fallback: Uint8Array, sbId: string | null = 'ship_line_es', mimeType = 'image/png') => {
       const ext = externalizeKtx2(addFallback(fixture(), fallback), 'ship_line_es');

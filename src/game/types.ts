@@ -216,4 +216,5 @@ export interface Welcome {
   tickRate: number;
   snapshotRate: number;
   interestRadius: number;
+  npcClasses: string[]; // las clases de NPC que pueden salir (world.ts, npcClasses): el cliente solo precarga sus modelos
 }

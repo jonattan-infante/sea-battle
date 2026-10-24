@@ -7,20 +7,42 @@
 // material del barco, clonado por instancia (§6). La geometría y la textura se comparten entre los barcos de la clase
 import * as THREE from 'three';
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { PLAYER_SHIP_ORDER } from '../../game/constants';
+import type { Welcome } from '../../game/types';
 import { creaseNormals } from './geometry-utils';
 import { getShipModel, LOD_PX, ShipExtras, ShipModel, ShipSockets } from './ship-geometry';
 
-// Clase → URL del GLB (/models/<id>.<hash de su contenido>.glb, servido con caché de un año: next.config.ts). Vacío hasta el
-// piloto: sin entrada, la clase usa el procedural y no se descarga nada
-export const SHIP_GLB: Partial<Record<string, string>> = {};
+// Clase → URL del GLB (/models/<id>.<hash de su contenido>.glb, servido con caché de un año: next.config.ts). Sin entrada,
+// la clase usa el procedural y no se descarga nada. Cada GLB entra aprobado y con el paso 4c (scripts/glb/stage-model.ts)
+export const SHIP_GLB: Partial<Record<string, string>> = {
+  captain: '/models/npc_pirate_captain.73eb940c.glb' // el Capitán de D91 (ASSET-SPEC §13; sha256 7a9b694c…ef92)
+};
+// GLB aprobados y en public/models con el paso 4c, pero sin entrada en SHIP_GLB: el runtime no los lee y la clase sigue en
+// su procedural. Los tests leen de aquí sus archivos. La Cañonera: el Capitán entra solo (producto, BACKLOG :421), y ella se
+// queda en su procedural hasta que producto la pase a SHIP_GLB
+export const SHIP_GLB_STAGED: Partial<Record<string, string>> = {
+  gunboat: '/models/npc_pirate_gunboat.36e700c2.glb' // la Cañonera de D91, 2.ª vuelta (ASSET-SPEC §13; sha256 7912ea8a…7055)
+};
 // Transcodificador de KTX2 (basis_transcoder.js y .wasm, copiados de three/examples/jsm/libs/basis), en una carpeta con el
 // hash de los dos: se sirve con caché de un año, y al subir three cambia de URL (lo comprueba ship-glb.test.ts)
 export const BASIS_PATH = '/basis/dc5e5d6a/';
 const CREASE = (40 * Math.PI) / 180; // D23: normales con pliegue de 40° si el GLB no trae NORMAL
 // AC-193 c, opción B: lo más que la entrada espera al GLB del barco propio, sobre la de hoy (el primer frame)
 export const OWN_GLB_WAIT_MS = 500;
+// Tanda B (BACKLOG :421; ASSET-SPEC, AS-V19): tope del anisótropo del mapa de los GLB. Los costados y la cubierta se ven en
+// ángulo y, sin él, la GPU muestrea los mips 3–4 del atlas; el runtime pone el máximo del renderizador hasta este tope. Los
+// procedurales no tienen mapa
+export const SHIP_MAP_ANISOTROPY = 16;
+// El nivel que pone el runtime: el máximo del renderizador hasta el tope, y al menos 1 (sin la extensión, three da 0)
+export const mapAnisotropyFor = (max: number) => Math.max(1, Math.min(SHIP_MAP_ANISOTROPY, max));
 
 export class ShipGlbError extends Error {}
+
+// Las clases que pueden salir en la partida, para prefetchAll (BACKLOG :423-:427): las del jugador y las de NPC que da la
+// bienvenida. Sin bienvenida (una escena sintética), solo las del jugador. La regla de la Goleta y el Navío (AC-201) va aquí
+export function prefetchClasses(welcome: Pick<Welcome, 'npcClasses'> | null): string[] {
+  return [...PLAYER_SHIP_ORDER, ...(welcome?.npcClasses ?? [])];
+}
 
 const SOCKET = /^socket_(cannon_port|cannon_stbd|fire)_(\d{2})$/;
 const NUMBER_KEYS = ['sb_length', 'sb_beam', 'sb_freeboard', 'sb_draft', 'sb_mast_height', 'sb_radius', 'sb_cannons_per_side'] as const;
@@ -99,7 +121,8 @@ function lodOf(root: THREE.Object3D, id: string, lod: 0 | 1): { geometry: THREE.
   return { geometry, map: material.map ?? null };
 }
 
-function socketsOf(root: THREE.Object3D, cannons: number): ShipSockets {
+// smoke2: la clase echa humo también por socket_smoke_02 (la Cañonera, D25), que entonces es obligatorio
+function socketsOf(root: THREE.Object3D, cannons: number, smoke2: boolean): ShipSockets {
   const one = (name: string) => {
     const o = root.children.find((c) => c.name === name);
     if (!o) throw new ShipGlbError(`falta ${name} (§3)`);
@@ -118,6 +141,7 @@ function socketsOf(root: THREE.Object3D, cannons: number): ShipSockets {
     cannonsPort: numbered.cannon_port,
     cannonsStbd: numbered.cannon_stbd,
     smoke: one('socket_smoke'),
+    smoke2: smoke2 ? one('socket_smoke_02') : undefined,
     fire: numbered.fire,
     label: one('socket_label'),
     wake: one('socket_wake'),
@@ -144,7 +168,7 @@ export function shipModelFromGlb(scene: THREE.Object3D, classId: string): ShipMo
     sails: [[], []], // los rangos de vela y de tabla son del procedural (AS-V14, AS-V22)
     decks: [[], []],
     extras,
-    sockets: socketsOf(root, extras.sb_cannons_per_side),
+    sockets: socketsOf(root, extras.sb_cannons_per_side, !!base.recipe.smoke2),
     map: lod0.map
   };
 }
@@ -227,9 +251,11 @@ export class ShipGlbStore {
   private readonly early = new Map<string, Promise<ArrayBuffer>>(); // descargas del propio que el pump aún no tomó
   private predicted: { classId: string; abort: AbortController | null } | null = null; // opción A: la clase propia predicha
   private ownKnown = false; // ya llegó la clase real del barco propio
+  private requeue: string | null = null; // la clase predicha cuya descarga, ya en el pump, abortó la clase real
   private loading: string | null = null;
   private loader: GlbLoader | null = null;
   private disposed = false;
+  private mapAnisotropy = 1;
 
   constructor(
     manifest: Partial<Record<string, string>> = SHIP_GLB,
@@ -247,18 +273,25 @@ export class ShipGlbStore {
     return this.ready.has(classId);
   }
 
-  // Si la entrada tiene que esperar al GLB del barco propio (AC-193 c, opción B): con manifiesto, mientras no se conozca
-  // su clase (null) o su GLB no haya llegado ni fallado. Sin manifiesto, nunca: se entra como hoy
+  // Si hay GLB de alguna clase del jugador, que es la del barco propio. Sin él (sin manifiesto, o solo con barcos NPC), ni la
+  // entrada espera ni el cargador se crea antes de hacer falta: se entra como hoy
+  private ownGlb(): boolean {
+    return PLAYER_SHIP_ORDER.some((classId) => !!this.manifest[classId]);
+  }
+
+  // Si la entrada tiene que esperar al GLB del barco propio (AC-193 c, opción B): con GLB de una clase del jugador, mientras
+  // no se conozca su clase (null) o su GLB no haya llegado ni fallado. Sin él, nunca: se entra como hoy
   waiting(classId: string | null): boolean {
-    if (!Object.values(this.manifest).some(Boolean)) return false;
+    if (!this.ownGlb()) return false;
     if (classId === null) return true;
     return !!this.manifest[classId] && !this.ready.has(classId) && !this.failed.has(classId);
   }
 
-  // Con manifiesto, crea ya el cargador: sus módulos empiezan a bajar (lo llama el runtime al crearse, antes de conectar).
-  // El transcodificador de KTX2 no: lo pide la primera KTX2 (createGlbLoader)
+  // Con GLB de una clase del jugador, crea ya el cargador: sus módulos empiezan a bajar (lo llama el runtime al crearse, antes
+  // de conectar). Con solo GLB de NPC, lo crea el pump con el primero. El transcodificador de KTX2 no: lo pide la primera
+  // KTX2 (createGlbLoader)
   warm(): void {
-    if (!this.disposed && !this.loader && Object.values(this.manifest).some(Boolean)) this.loader = this.makeLoader();
+    if (!this.disposed && !this.loader && this.ownGlb()) this.loader = this.makeLoader();
   }
 
   // Opción A de AC-193 c (BACKLOG :1745): antes de la bienvenida, el GLB de la clase propia predicha (la última del
@@ -283,12 +316,14 @@ export class ShipGlbStore {
   }
 
   // Llega la clase real del barco propio: si la predicha era otra y ya bajaba, se aborta para que no compita con la buena.
-  // Su clase sigue en el manifiesto: prefetchAll la vuelve a pedir, desde cero
+  // Su clase sigue en el manifiesto: prefetchAll la vuelve a pedir, desde cero. Si el pump ya la había tomado (otro barco de
+  // esa clase entró antes), queda apuntada para que su catch la vuelva a encolar sin marcarla fallida (BACKLOG :1821)
   private settlePrediction(classId: string): void {
     this.ownKnown = true;
     const p = this.predicted;
     this.predicted = null;
     if (!p || p.classId === classId || !p.abort) return;
+    if (this.loading === p.classId) this.requeue = p.classId;
     p.abort.abort();
     this.early.delete(p.classId);
   }
@@ -312,10 +347,11 @@ export class ShipGlbStore {
     else this.queue.push(classId);
   }
 
-  // Encola detrás de lo pedido todas las clases del manifiesto: al entrar, el propio va el primero y los demás se descargan
-  // en segundo plano, sin esperar a que un barco de su clase entre en el área de interés (AC-193 c)
-  prefetchAll(): void {
-    for (const classId of Object.keys(this.manifest)) this.request(classId);
+  // Encola detrás de lo pedido las clases del manifiesto que pueden salir (`classes`, de prefetchClasses): al entrar, el propio
+  // va el primero y los demás se descargan en segundo plano, sin esperar a que un barco de su clase entre en el área de
+  // interés (AC-193 c). Los de barcos que no pueden salir no se bajan (BACKLOG :423)
+  prefetchAll(classes: readonly string[]): void {
+    for (const classId of Object.keys(this.manifest)) if (classes.includes(classId)) this.request(classId);
   }
 
   // Cambia el GLB de una clase (vista previa de ux y e2e): vuelve a cargarse la próxima vez que se pida
@@ -331,6 +367,17 @@ export class ShipGlbStore {
       this.predicted.abort = null;
       this.startPredicted();
       this.warm();
+    }
+  }
+
+  // El anisótropo de los mapas de los GLB (tanda B): el runtime lo pone al tener renderer, antes de la primera carga, y el
+  // e2e lo cambia para medir con él y sin él. Los mapas ya cargados se vuelven a subir a la GPU (needsUpdate)
+  setMapAnisotropy(level: number): void {
+    this.mapAnisotropy = level;
+    for (const { map } of this.ready.values()) {
+      if (!map || map.anisotropy === level) continue;
+      map.anisotropy = level;
+      map.needsUpdate = true;
     }
   }
 
@@ -355,15 +402,22 @@ export class ShipGlbStore {
           throw e;
         }
         disposeScene(scene, model.map ?? null);
+        if (model.map) model.map.anisotropy = this.mapAnisotropy;
         if (this.disposed || this.manifest[classId] !== url) this.release(model);
         else this.ready.set(classId, model);
         this.upgrade(classId, url, model, upgrades);
       })
       .catch((e: Error) => {
+        // El aborto de la predicción no es un fallo: la clase vuelve al final de la cola, detrás del propio
+        if (this.requeue === classId) {
+          if (!this.disposed && this.manifest[classId] === url && !this.queue.includes(classId)) this.queue.push(classId);
+          return;
+        }
         if (this.manifest[classId] === url) this.failed.add(classId);
         console.warn(`[ship-glb] ${classId} (${url}): ${e.message}; se queda el procedural`);
       })
       .finally(() => {
+        if (this.requeue === classId) this.requeue = null;
         this.loading = null;
       });
   }
@@ -389,6 +443,7 @@ export class ShipGlbStore {
           ktx2.colorSpace = fallback.colorSpace;
           ktx2.channel = fallback.channel;
         }
+        ktx2.anisotropy = this.mapAnisotropy;
         this.ready.set(classId, { ...model!, map: ktx2 });
         fallback?.dispose();
       }

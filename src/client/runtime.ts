@@ -16,7 +16,8 @@ import { buildBuoyGeometry, buildIslands, buildLootGeometry, buildPalmGeometry, 
 import { createOceanGeometry, createOceanMaterial } from './models/ocean-material';
 import { measureSailVisibility, measureShipValues, SailVisibility, ShipValues } from './models/sail-visibility';
 import { createShipMaterial, LOD_PX, ShipMaterial, ShipModel } from './models/ship-geometry';
-import { EntryGate, setShipMap, ShipGlbStore } from './models/ship-glb';
+import { EntryGate, mapAnisotropyFor, prefetchClasses, setShipMap, ShipGlbStore } from './models/ship-glb';
+import { ShipShadows } from './models/ship-shadow';
 import { FloatingTextLayer, LabelLayer, LabelTarget, OverlayHost, ReloadState, ScreenPoint } from './overlays';
 import { DAMAGE_FX, Effects, RENDER_ORDER, rgba } from './vfx/effects';
 import { makeRing, RING_MODE, RingSpec } from './vfx/rings';
@@ -672,6 +673,9 @@ export class GameRuntime implements OverlayHost, ChipHost {
   readonly views = new Map<string, ShipView>();
   // GLB de las clases (ASSET-SPEC §13): el procedural se pinta mientras carga y si falla
   readonly shipGlb = new ShipGlbStore();
+  private shipMapAnisotropy = 0; // el de los mapas de los GLB, al tener renderer (tanda B)
+  // Sombra en el agua de los barcos con su GLB de la receta, con atlas (palanca 4 de D91; ASSET-SPEC §13, fila 6)
+  readonly shipShadows = new ShipShadows();
   // AC-193 c, opción B: la entrada espera al GLB del barco propio, con tope. Hasta que se abre, la portada «Izando velas…»
   // (la crea GameApp) tapa el juego
   readonly entry = new EntryGate();
@@ -756,7 +760,7 @@ export class GameRuntime implements OverlayHost, ChipHost {
   private readonly hullOut: number[] = [];
 
   // ownClass: la clase propia predicha antes de la bienvenida (opción A de AC-193 c; own-ship-memory.ts)
-  constructor(client: GameClient, ownClass?: string) {
+  constructor(client: GameClient, ownClass?: string | null) {
     this.client = client;
     this.src = client;
     // Los viewAt solo salen con el cliente real (no con las escenas sintéticas de QA); el botón Centrar lee el modo del store
@@ -800,7 +804,7 @@ export class GameRuntime implements OverlayHost, ChipHost {
     this.loot.count = 0;
     this.loot.frustumCulled = false;
     this.loot.renderOrder = RENDER_ORDER.islands;
-    this.scene.add(this.ocean, this.islandMesh, this.palms, this.buoys, this.loot, this.effects.group);
+    this.scene.add(this.ocean, this.shipShadows.group, this.islandMesh, this.palms, this.buoys, this.loot, this.effects.group);
 
     this.director = new VfxDirector(this);
     this.subscribe(client);
@@ -1174,13 +1178,14 @@ export class GameRuntime implements OverlayHost, ChipHost {
   // myShipId: barco "propio" de la escena (placa propia con recarga, AC-107); por defecto, el de la escena.
   // cannonLevel: nivel de cañón con el que se encuadra (VFX-09b se mide con N1 y con N3, D29); por defecto, N1.
   // La escena estándar se compone en metros con la densidad de N3 en 1440×900 (5,04 px/m) y se renderiza con
-  // cualquier nivel: rellenar la pantalla con el ppm de N1 juntaría los barcos un 19 % (Q23, D31)
-  startScene(name: SceneName, options: { myShipId?: string; cannonLevel?: number } = {}): SyntheticSource {
+  // cualquier nivel: rellenar la pantalla con el ppm de N1 juntaría los barcos un 19 % (Q23, D31).
+  // i2: la escena estándar con la población del I2 (AC-89, la variante de producto)
+  startScene(name: SceneName, options: { myShipId?: string; cannonLevel?: number; i2?: boolean } = {}): SyntheticSource {
     this.sceneCannonLevel = options.cannonLevel ?? 1;
     const view = name === 'standard'
       ? { w: 1440, h: 900, ppm: computePpm0(1440, 900, MAX_CANNON_RANGE), sinT: this.sinT }
       : { w: this.viewW, h: this.viewH, ppm: this.targetPpm(), sinT: this.sinT };
-    const spec = name === 'hero' ? heroScene(view) : name === 'showcase' ? showcaseScene() : name === 'damage' ? damageScene() : name === 'gallery' ? galleryScene() : standardScene(view);
+    const spec = name === 'hero' ? heroScene(view) : name === 'showcase' ? showcaseScene() : name === 'damage' ? damageScene() : name === 'gallery' ? galleryScene() : standardScene(view, { i2: options.i2 });
     const source = new SyntheticSource(options.myShipId ? { ...spec, myShipId: options.myShipId } : spec);
     this.setSource(source);
     return source;
@@ -1214,11 +1219,13 @@ export class GameRuntime implements OverlayHost, ChipHost {
     const t = u.uTime.value;
     for (const v of shown) v.mesh.visible = false;
     this.effects.group.visible = false;
+    this.shipShadows.group.visible = false;
     u.uTime.value = time;
     const png = this.captureImage('image/png');
     const uniforms = Object.fromEntries(Object.entries(u).map(([k, { value }]) => [k, plainUniform(value)]));
     u.uTime.value = t;
     this.effects.group.visible = vfx;
+    this.shipShadows.group.visible = true;
     for (const v of shown) v.mesh.visible = true;
     if (!png) return null;
     const corners = [[0, 0], [this.viewW, 0], [0, this.viewH], [this.viewW, this.viewH]].map(([x, y]) => this.screenToWorld(x, y)!);
@@ -1279,6 +1286,7 @@ export class GameRuntime implements OverlayHost, ChipHost {
       this.chips?.frame(now);
       return;
     }
+    if (!this.shipMapAnisotropy) this.shipGlb.setMapAnisotropy((this.shipMapAnisotropy = mapAnisotropyFor(state.gl.capabilities.getMaxAnisotropy())));
     this.shipGlb.pump(state.gl);
     this.src.update(now);
     if (this.src !== this.client) this.client.update(now); // drena sus eventos aunque no se dibuje
@@ -1440,9 +1448,9 @@ export class GameRuntime implements OverlayHost, ChipHost {
 
   private createView(ship: RenderShip): ShipView {
     const model = this.shipGlb.model(ship.classId);
-    // AC-193 c: el GLB del barco propio, el primero; al entrar, los demás del manifiesto en segundo plano
+    // AC-193 c: el GLB del barco propio, el primero; al entrar, los demás que pueden salir, en segundo plano (BACKLOG :423)
     this.shipGlb.request(ship.classId, ship.id === this.src.myShipId);
-    if (ship.id === this.src.myShipId) this.shipGlb.prefetchAll();
+    if (ship.id === this.src.myShipId) this.shipGlb.prefetchAll(prefetchClasses(this.src.welcome));
     const material = this.materialPool.pop() ?? createShipMaterial();
     setShipMap(material, model.map ?? null);
     const lod: 0 | 1 = model.recipe.L * this.ppm >= LOD_PX[0] ? 0 : 1;
@@ -1464,6 +1472,7 @@ export class GameRuntime implements OverlayHost, ChipHost {
   private updateShips(now: number): void {
     const t = (now - this.t0) / 1000;
     const serverTime = this.src.serverTime();
+    this.shipShadows.begin();
     for (const view of this.views.values()) {
       const s = view.ship;
       // Cambio de clase o llegada del GLB de la clase: misma vista y mismo LOD, con la geometría y la textura nuevas
@@ -1509,6 +1518,8 @@ export class GameRuntime implements OverlayHost, ChipHost {
       mesh.position.set(s.x, y, s.z);
       mesh.rotation.set(pitch, s.heading, roll);
       mesh.updateMatrix();
+      // La sombra, solo con el GLB de la receta puesto (con atlas): el procedural, también mientras carga, no la lleva (U1)
+      if (mesh.visible && view.model.map) this.shipShadows.push(view.model.lods[1], mesh.matrix);
 
       // Uniforms: destello de impacto (120 ms), oscurecimiento por daño y brillo de protección
       const fx = mesh.material.userData.fx;
@@ -1521,6 +1532,7 @@ export class GameRuntime implements OverlayHost, ChipHost {
       const pulse = 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(2 * Math.PI * 2 * t)); // VFX §12
       fx.uShield.value = prot ? pulse : Math.max(0, 1 - (now - view.shieldEnd) / 300) * pulse;
     }
+    this.shipShadows.end();
   }
 
   private pushRing(x: number, z: number, radius: number, strokePx: number, hex: string, alpha: number, dashes = 0, fill = 1, phase = 0, outlinePx = 0, outlineAlpha = 0, mode: number = RING_MODE.ring): void {
@@ -1784,6 +1796,7 @@ export class GameRuntime implements OverlayHost, ChipHost {
     this.buoys.geometry.dispose();
     this.loot.geometry.dispose();
     this.staticMaterial.dispose();
+    this.shipShadows.dispose();
     this.shipGlb.dispose();
     this.scene.clear();
   }
@@ -1805,7 +1818,7 @@ function ringRgb(hex: string): Float32Array {
   return c;
 }
 
-export function createRuntime(client: GameClient, ownClass?: string): GameRuntime {
+export function createRuntime(client: GameClient, ownClass?: string | null): GameRuntime {
   return new GameRuntime(client, ownClass);
 }
 

@@ -4,7 +4,7 @@
 import { GUNBOAT_CLASS, ISLANDS, MERCHANT_RING, PIRATE_RING, PlayerShipClass, TICK_RATE } from '../constants';
 import { GameEvent, Ship, Upgrades, World } from '../types';
 import { createRng, distance, headingTo } from '../vec';
-import { attack, createWorld, maxHpFor, moveTo, shipOfPlayer, spawnGunboat } from '../world';
+import { attack, createWorld, maxHpFor, moveTo, npcClasses, shipOfPlayer, spawnCaptain, spawnGunboat } from '../world';
 import { DT, i2World, median, placeGunboat, placePlayer, run } from './helpers';
 
 // GDD §9, «IA de la cañonera pirata»: «si la distancia al objetivo es > 64 m, se acerca a velocidad máxima; entre 55 y
@@ -46,6 +46,19 @@ describe('H-306 — Población con el I2 encendido (AC-51)', () => {
       const r = distance(m.pos, PORT);
       expect(r >= MERCHANT_RING.min && r <= MERCHANT_RING.max).toBe(true);
     }
+  });
+});
+
+// Punto 3 de dev-render (BACKLOG :425-:427): la bienvenida lista las clases de NPC que pueden salir, y el cliente solo baja
+// los modelos de esas. La lista es entera y sin nada de más: las de la población, la reaparición de la cañonera y el Capitán
+// puesto a mano, con el I2 apagado y encendido
+describe('Las clases de NPC que pueden salir (BACKLOG :427)', () => {
+  test.each([false, true])('con el I2 %s, npcClasses son las clases de los NPC que el mundo puede crear, ni una más', (i2) => {
+    const world = createWorld({ seed: 1, i2 });
+    spawnGunboat(world, 0);
+    spawnCaptain(world, OPEN);
+    const made = [...new Set([...world.ships.values()].filter((s) => s.kind !== 'player').map((s) => s.classId))].sort();
+    expect([[...npcClasses(world)].sort(), made]).toEqual([made, i2 ? ['captain', 'gunboat', 'merchant', 'pirate'] : ['merchant', 'pirate']]);
   });
 });
 

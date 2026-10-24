@@ -219,14 +219,15 @@ export default function GameCanvas({ runtime, onWaterClick, onShipClick, onShipD
           siempre con alfa (WebGLRenderer.js:345); lo que deja el alfa del framebuffer en 1 son blendSrcAlpha y
           blendDstAlpha de las capas con CustomBlending (VFX §0.2). El renderer es el mismo que R3F crea con el objeto
           de props (new WebGLRenderer({ ...defaults, ...gl })); se crea aquí para avisar al runtime si no hay WebGL:
-          sin frames, la entrada no se abriría nunca y la portada debe irse, como en la 1.0.3 (AC-193 c) */}
+          sin frames, la entrada no se abriría nunca y la portada debe irse, como en la 1.0.3 (AC-193 c). stencil: la sombra
+          en el agua de los GLB oscurece cada píxel una sola vez (ship-shadow.ts); three r180 no lo pide por defecto */}
       <Canvas
         orthographic
         flat
         dpr={runtime.mobile ? LIGHTING.dprMobile : LIGHTING.dprDesktop}
         gl={(defaults) => {
           try {
-            return new THREE.WebGLRenderer({ ...defaults, antialias: true, alpha: false, powerPreference: 'high-performance' });
+            return new THREE.WebGLRenderer({ ...defaults, antialias: true, alpha: false, stencil: true, powerPreference: 'high-performance' });
           } catch (e) {
             runtime.rendererFailed();
             throw e;

@@ -38,6 +38,7 @@ import {
   disconnectPlayer,
   drainEvents,
   moveTo,
+  npcClasses,
   planBuy,
   planSelectShip,
   playerView,
@@ -224,7 +225,8 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
         islands: world.islands,
         tickRate,
         snapshotRate: tickRate / snapshotEvery,
-        interestRadius: INTEREST_RADIUS
+        interestRadius: INTEREST_RADIUS,
+        npcClasses: npcClasses(world)
       };
       socket.emit(S2C.welcome, welcome);
       sendFrame(client, []); // snapshot completo inmediato

@@ -25,6 +25,7 @@ const URL_EXT = '/models/test/ship_sloop_ext.glb';
 // limitada por CDP se aplique a su descarga; con page.route no pasaría por la red
 const SERVED_URL = `/models/${E2E_PREFIX}ship_sloop.${contentHash(fs.readFileSync(FIXTURE))}.glb`;
 const URL_FRIGATE = '/models/test/ship_frigate.glb';
+const URL_SCHOONER = '/models/test/ship_schooner.glb';
 
 // La hora de la bienvenida (el primer instante en que el cliente conoce su barco), sondeada cada 5 ms, en __WELCOME_AT__
 const probeWelcome = (page: Page) =>
@@ -166,7 +167,7 @@ test.describe('Barcos en GLB (ASSET-SPEC §13)', () => {
 
   // AC-193 c, opción B (producto, 2026-10-18): la entrada espera al GLB propio, como mucho 0,5 s sobre la de hoy (el primer
   // frame). Los tiempos de SwiftShader no valen como cifra: se comprueba en qué frame se abre, que no depende de su duración
-  test('AC-193 c (B): sin GLB en el manifiesto se entra en el primer frame, como hoy', async ({ page }) => {
+  test('AC-193 c (B): sin ningún GLB que pueda salir (ninguno de una clase del jugador y el I2 apagado) se entra en el primer frame, como hoy', async ({ page }) => {
     await enterGame(page);
     const entry = await entryOf(page);
     console.log(`AC-193 c entrada sin GLB: ${JSON.stringify(entry)}`);
@@ -176,10 +177,10 @@ test.describe('Barcos en GLB (ASSET-SPEC §13)', () => {
 
   // Sin WebGL no hay frames que abran la entrada. En la 1.0.3 se ve el canvas vacío con el HUD: R3F crea el renderer
   // dentro de una promesa (configure, react-three-fiber.esm.js:68-69), así que el error de three no desmonta el árbol.
-  // La entrada debe hacer lo mismo, con y sin GLB en el manifiesto (producto, AC-193 c): sin manifiesto la portada se
-  // quita al conectarla; con él, GameCanvas avisa al runtime (rendererFailed) de que three no pudo crear el renderer
+  // La entrada debe hacer lo mismo, con y sin GLB en el manifiesto (producto, AC-193 c): sin GLB que pueda salir la portada
+  // se quita al conectarla; con él, GameCanvas avisa al runtime (rendererFailed) de que three no pudo crear el renderer
   for (const withGlb of [false, true]) {
-    test(`AC-193 c (B): sin WebGL y ${withGlb ? 'con' : 'sin'} GLB en el manifiesto, la portada no se queda: se ve el HUD, como en la 1.0.3`, async ({ page }) => {
+    test(`AC-193 c (B): sin WebGL y ${withGlb ? 'con GLB en el manifiesto' : 'sin ningún GLB que pueda salir (ninguno de una clase del jugador y el I2 apagado)'}, la portada no se queda: se ve el HUD, como en la 1.0.3`, async ({ page }) => {
       await page.addInitScript(() => {
         const getContext = HTMLCanvasElement.prototype.getContext as (this: HTMLCanvasElement, type: string, ...rest: unknown[]) => unknown;
         (HTMLCanvasElement.prototype as unknown as { getContext: typeof getContext }).getContext = function (type, ...rest) {
@@ -200,9 +201,9 @@ test.describe('Barcos en GLB (ASSET-SPEC §13)', () => {
     });
   }
 
-  // Sin manifiesto, la entrada es la de hoy también antes del primer frame: la portada se quita al conectarla, sin
+  // Sin GLB que pueda salir, la entrada es la de hoy también antes del primer frame: la portada se quita al conectarla, sin
   // esperar a ninguno. Con requestAnimationFrame parado no llega ningún frame aunque haya WebGL
-  test('AC-193 c (B): sin GLB en el manifiesto la portada no espera a ningún frame, como hoy', async ({ page }) => {
+  test('AC-193 c (B): sin ningún GLB que pueda salir (ninguno de una clase del jugador y el I2 apagado) la portada no espera a ningún frame, como hoy', async ({ page }) => {
     await page.addInitScript(() => {
       window.requestAnimationFrame = () => 0;
     });
@@ -490,5 +491,66 @@ test.describe('Barcos en GLB (ASSET-SPEC §13)', () => {
     release();
     // La petición abortada la puede contar el navegador como error de red; el juego no añade ninguno
     expect(errors.filter((e) => !e.includes('ERR_ABORTED'))).toEqual([]);
+  });
+
+  // Punto 3 de dev-render (BACKLOG :1821): solo se predicen las clases que existen siempre (la Balandra, el Bergantín y la
+  // Fragata), porque la predicción va antes de la bienvenida y no conoce los interruptores. Con una Goleta guardada no se
+  // predice nada: antes de la bienvenida no se baja ni su GLB ni el de la Balandra, y el propio se pide al llegar. En el
+  // candidato no hay Goleta: AC-201 está apagado por construcción, y su GLB lo pone la trampa. Se guarda 'schooner', su id
+  // de GDD §13. Las descargas las apunta un fetch envuelto en la página, y la bienvenida, onWelcome del cliente
+  test('AC-193 c, opción A: con una Goleta guardada no se predice nada: ningún modelo se descarga antes de la bienvenida', async ({ page }) => {
+    test.setTimeout(120_000);
+    const guestId = `e2eg${Date.now().toString(36).slice(-6)}`;
+    await page.addInitScript((id) => {
+      localStorage.setItem('sea-battle-guest-id', id);
+      localStorage.setItem(`sea-battle-last-ship:guest:${id}`, 'schooner');
+    }, guestId);
+    const bytes = fs.readFileSync(FIXTURE);
+    for (const url of [URL_OK, URL_SCHOONER]) await page.route(`**${url}`, (route) => route.fulfill({ body: bytes, contentType: 'model/gltf-binary' }));
+    const errors: string[] = [];
+    page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+    await page.addInitScript(
+      ([ok, schooner]) => {
+        const w = window as unknown as { __FETCHES__: [string, number][]; __WELCOME_AT__: number; __WELCOME_BEFORE_TRAP__: boolean };
+        w.__FETCHES__ = [];
+        w.__WELCOME_AT__ = 0;
+        const fetch0 = window.fetch;
+        window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+          w.__FETCHES__.push([new URL(url, location.href).pathname, performance.now()]);
+          return fetch0(input, init);
+        };
+        let debug: unknown;
+        Object.defineProperty(window, '__SEA_BATTLE__', {
+          configurable: true,
+          get: () => debug,
+          set: (v: { runtime(): unknown }) => {
+            if (!debug) {
+              const rt = v.runtime() as { useShipGlb(c: string, url: string): void; entry: { waitMs: number }; client: { welcome: unknown; onWelcome(l: () => void): void } };
+              // Primero la bienvenida: si ya hubiera llegado, onWelcome la daría ahora y la precondición lo dice
+              w.__WELCOME_BEFORE_TRAP__ = rt.client.welcome !== null;
+              rt.client.onWelcome(() => {
+                if (!w.__WELCOME_AT__) w.__WELCOME_AT__ = performance.now();
+              });
+              rt.useShipGlb('sloop', ok);
+              rt.useShipGlb('schooner', schooner);
+              rt.entry.waitMs = 10_000;
+            }
+            debug = v;
+          }
+        });
+      },
+      [URL_OK, URL_SCHOONER] as const
+    );
+    await enterGame(page);
+    await expect.poll(async () => (await ownView(page)).modelMap, { timeout: 15_000 }).toBe(16); // la Balandra, con su GLB
+    const got = await page.evaluate(() => {
+      const w = window as unknown as { __FETCHES__: [string, number][]; __WELCOME_AT__: number; __WELCOME_BEFORE_TRAP__: boolean };
+      return { welcomeBeforeTrap: w.__WELCOME_BEFORE_TRAP__, welcomeAt: Math.round(w.__WELCOME_AT__), models: w.__FETCHES__.filter(([p]) => p.startsWith('/models/')).map(([p, t]) => [p, t < w.__WELCOME_AT__ ? 'antes' : 'después', Math.round(t)]) };
+    });
+    console.log(`AC-193 c opción A, con una Goleta guardada: ${JSON.stringify(got)}`);
+    expect([got.welcomeBeforeTrap, got.welcomeAt > 0]).toEqual([false, true]); // la trampa llegó antes que la bienvenida
+    expect(got.models.map(([p, when]) => [p, when])).toEqual([[URL_OK, 'después']]);
+    expect(errors).toEqual([]);
   });
 });
