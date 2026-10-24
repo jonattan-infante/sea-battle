@@ -9,7 +9,7 @@
     "dev": "tsx server/index.ts",
     "dev:guest": "AUTH_BYPASS=1 tsx server/index.ts",
     "build": "next build && tsc -p tsconfig.server.json",
-    "build:e2e": "NEXT_DIST_DIR=.next-e2e next build && tsc -p tsconfig.server.json",
+    "build:e2e": "tsx scripts/glb/stage-e2e-models.ts && NEXT_DIST_DIR=.next-e2e next build && tsc -p tsconfig.server.json",
     "start": "NODE_ENV=production node dist/server/index.js",
     "typecheck": "tsc --noEmit",
     "test": "jest",
@@ -22,7 +22,7 @@
     "qa:hero": "npm run build:e2e && node scripts/qa-hero.mjs",
     "icons": "node scripts/icons/generate.mjs",
     "test:remote": "playwright test -c playwright.remote.config.ts",
-    "test:scripts": "python3 -B -m unittest discover -s scripts/railway -p 'test_*.py' && python3 -B -m unittest discover -s scripts/release -p 'test_*.py'",
+    "test:scripts": "python3 -B -m unittest discover -s scripts/railway -p 'test_*.py' && python3 -B -m unittest discover -s scripts/release -p 'test_*.py' && python3 -B -m unittest discover -s scripts/ci -p 'test_*.py'",
     "verify": "npm run typecheck && npm test && npm run test:scripts && npm run build"
   },
   "dependencies": {
@@ -68,7 +68,7 @@
       "**/__tests__/**/*.test.ts"
     ],
     "transform": {
-      "^.+\\.ts$": [
+      "^.+\\.tsx?$": [
         "ts-jest",
         {
           "tsconfig": {
@@ -80,13 +80,29 @@
               "ES2021",
               "DOM"
             ],
+            "jsx": "react-jsx",
+            "skipLibCheck": true
+          }
+        }
+      ],
+      "^.+/node_modules/three/examples/jsm/.+\\.js$": [
+        "ts-jest",
+        {
+          "tsconfig": {
+            "allowJs": true,
+            "module": "commonjs",
+            "target": "ES2020",
             "skipLibCheck": true
           }
         }
       ]
     },
+    "transformIgnorePatterns": [
+      "/node_modules/(?!three/examples/jsm/)"
+    ],
     "moduleFileExtensions": [
       "ts",
+      "tsx",
       "js",
       "json"
     ],

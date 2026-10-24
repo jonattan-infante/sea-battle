@@ -7,9 +7,11 @@ import {
   parseRepair,
   parseSelectShip,
   parseShopItem,
+  parseViewAt,
   sanitizeName,
   shopItemId
 } from '../protocol';
+import { MAP_HALF_SIZE } from '../constants';
 
 // AC-05: tipo desconocido, NaN, Infinity, texto > 256, campos extra → se descarta
 const GARBAGE: unknown[] = [undefined, null, 0, 1, true, 'x', [], [1, 2], () => 1, Symbol('s')];
@@ -30,6 +32,24 @@ describe('Protocolo — validación estricta de intenciones (AC-05)', () => {
       { x: 1e6, z: 0 }
     ]) {
       expect(parseMoveTo(bad)).toBeNull();
+    }
+  });
+
+  test('parseViewAt (E13) acepta {x, z} finitos, ajustados a ±MAP_HALF_SIZE, o null para volver al seguimiento', () => {
+    expect(parseViewAt({ x: 120.5, z: -300 })).toEqual({ center: { x: 120.5, z: -300 } });
+    expect(parseViewAt({ x: 9000, z: -MAP_HALF_SIZE - 1 })).toEqual({ center: { x: MAP_HALF_SIZE, z: -MAP_HALF_SIZE } }); // AC-120
+    expect(parseViewAt(null)).toEqual({ center: null });
+    for (const bad of [
+      ...GARBAGE.filter((g) => g !== null),
+      {},
+      { x: 1 },
+      { x: NaN, z: 0 },
+      { x: 0, z: Infinity },
+      { x: '1', z: 2 },
+      { x: 1, z: 2, extra: true },
+      { x: 1e6, z: 0 }
+    ]) {
+      expect(parseViewAt(bad)).toBeNull();
     }
   });
 

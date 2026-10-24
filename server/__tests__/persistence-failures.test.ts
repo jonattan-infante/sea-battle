@@ -12,10 +12,11 @@ import { shipOfPlayer } from '../../src/game/world';
 import { migrate } from '../db/migrate';
 import { createPool } from '../db/pool';
 import { createGameServer, GameServer, GameServerOptions } from '../game-server';
-import { createPersistence, createPgStore, ProgressStore } from '../persistence';
+import { createPersistence, createPgStore, ProgressStore, StoredProgress } from '../persistence';
 import { SavedProgress } from '../progress';
 import { PgProxy, startPgProxy } from './fixtures/pg-proxy';
 import { connectGame, joinGame, Joined, sleep, waitFor } from './fixtures/game-socket';
+import { rowV1 } from './fixtures/progress-rows';
 import { createTestDb, TestDb } from './pg/test-db';
 
 jest.setTimeout(30_000);
@@ -77,9 +78,9 @@ async function startServer(opts: Partial<GameServerOptions> = {}): Promise<void>
 
 const world = () => game!.world;
 const join = (userId: string): Promise<Joined> => joinGame(url, { token: userId }, userId, sockets);
-const SLOOP_ONLY: SavedProgress = { gold: 100, upgrades: { cannons: 1, hull: 1, sails: 1 }, ownedShips: ['sloop'], activeShip: 'sloop' };
-const FRIGATE: SavedProgress = { gold: 1234, upgrades: { cannons: 2, hull: 3, sails: 1 }, ownedShips: ['sloop', 'brig', 'frigate'], activeShip: 'frigate' };
-const fields = (v: PlayerView): SavedProgress => ({ gold: v.gold, upgrades: v.upgrades, ownedShips: v.ownedShips, activeShip: v.activeShip });
+const SLOOP_ONLY: SavedProgress = { gold: 100, upgrades: { cannons: 1, hull: 1, sails: 1 }, ownedShips: ['sloop'], activeShip: 'sloop', xp: 0 };
+const FRIGATE: SavedProgress = { gold: 1234, upgrades: { cannons: 2, hull: 3, sails: 1 }, ownedShips: ['sloop', 'brig', 'frigate'], activeShip: 'frigate', xp: 0 };
+const fields = (v: PlayerView): SavedProgress => ({ gold: v.gold, upgrades: v.upgrades, ownedShips: v.ownedShips, activeShip: v.activeShip, xp: v.xp });
 const texts = (j: Joined) => j.notices().map((n: Notice) => n.text);
 
 async function seed(userId: string, state: unknown): Promise<void> {
@@ -131,7 +132,7 @@ const lastView = (c: ClientSocket) => {
 
 describe('AC-131: si no se puede cargar el progreso, no se entra con un estado por defecto', () => {
   test('BD parada: «No podemos cargar tu progreso ahora mismo», no entra y la fila queda igual byte a byte; al volver la BD, Reintentar entra con su progreso', async () => {
-    await seed('u-ana', { v: 1, ...FRIGATE });
+    await seed('u-ana', rowV1(FRIGATE));
     const before = await rawRow('u-ana');
     await startServer();
     proxy.cut();
@@ -152,7 +153,7 @@ describe('AC-131: si no se puede cargar el progreso, no se entra con un estado p
   });
 
   test('BD colgada: tras 3 s sin respuesta sale el mismo aviso; la fila queda igual; al volver, Reintentar entra', async () => {
-    await seed('u-bea', { v: 1, ...FRIGATE });
+    await seed('u-bea', rowV1(FRIGATE));
     const before = await rawRow('u-bea');
     await startServer();
     proxy.hang();
@@ -173,9 +174,9 @@ describe('AC-131: si no se puede cargar el progreso, no se entra con un estado p
   });
 
   test.each([
-    ['oro negativo', { v: 1, ...FRIGATE, gold: -5 }],
-    ['nivel 4', { v: 1, ...FRIGATE, upgrades: { cannons: 4, hull: 1, sails: 1 } }],
-    ['barco activo que no posee', { v: 1, ...FRIGATE, ownedShips: ['sloop'], activeShip: 'frigate' }]
+    ['oro negativo', rowV1({ ...FRIGATE, gold: -5 })],
+    ['nivel 4', rowV1({ ...FRIGATE, upgrades: { cannons: 4, hull: 1, sails: 1 } })],
+    ['barco activo que no posee', rowV1({ ...FRIGATE, ownedShips: ['sloop'], activeShip: 'frigate' })]
   ])('registro corrupto (%s): el aviso, la fila intacta aunque reintente; reparada la fila, entra con ella', async (_label, corrupt) => {
     await seed('u-cai', corrupt);
     const before = await rawRow('u-cai');
@@ -187,7 +188,7 @@ describe('AC-131: si no se puede cargar el progreso, no se entra con un estado p
     expect(await rawRow('u-cai')).toBe(before);
     expect(world().players.has('u-cai')).toBe(false);
 
-    await db.admin.query('UPDATE player_progress SET state = $2 WHERE user_id = $1', ['u-cai', { v: 1, ...FRIGATE }]);
+    await db.admin.query('UPDATE player_progress SET state = $2 WHERE user_id = $1', ['u-cai', rowV1(FRIGATE)]);
     const view = lastView(c);
     expect((await tryJoin(c)).welcome).toBeDefined();
     await waitFor(() => view() !== null, 3000, 'la vista privada');
@@ -195,7 +196,7 @@ describe('AC-131: si no se puede cargar el progreso, no se entra con un estado p
   });
 
   test('los reintentos gastan fichas: un cliente que martillea «Reintentar» no pasa del límite de intenciones (ráfaga de 20 y 10/s)', async () => {
-    await seed('u-dan', { v: 1, ...SLOOP_ONLY, gold: -1 });
+    await seed('u-dan', rowV1({ ...SLOOP_ONLY, gold: -1 }));
     let loads = 0;
     const inner = createPgStore(pool);
     const store: ProgressStore = { ...inner, load: (id) => (loads++, inner.load(id)) };
@@ -254,8 +255,8 @@ describe('AC-132: con la BD caída en partida se sigue jugando, con aviso y sin 
   test.each([5, 60])(
     'corte de %i s: aviso para los dos jugadores con cuenta (con y sin cambios) y no para el invitado; 0 escrituras y ≤ 1 consulta ligera/s durante el corte; tienda cerrada; al volver la BD, el aviso se va en ≤ 5 s y el oro está escrito',
     async (seconds) => {
-      await seed('u-ana', { v: 1, ...SLOOP_ONLY });
-      await seed('u-bea', { v: 1, ...SLOOP_ONLY, gold: 5000, ownedShips: ['sloop', 'brig'] });
+      await seed('u-ana', rowV1(SLOOP_ONLY));
+      await seed('u-bea', rowV1({ ...SLOOP_ONLY, gold: 5000, ownedShips: ['sloop', 'brig'] }));
       const counter = countingStore(createPgStore(pool));
       await startServer({ store: counter.store }); // tiempos reales: guardado cada 2 s y sondeo cada 1 s
       const a = await join('u-ana');
@@ -310,8 +311,8 @@ describe('AC-132: con la BD caída en partida se sigue jugando, con aviso y sin 
 
   // H-24 (decisión de game-product): en reposo no se consulta la BD, así que el corte se detecta con la primera escritura
   test('H-24: con todos en reposo, 15 s de corte sin ninguna consulta ni aviso; la primera compra se rechaza sin cambiar nada y desde ahí los dos jugadores con cuenta ven el aviso; al volver la BD, se va en ≤ 5 s y la fila sigue igual', async () => {
-    await seed('u-ana', { v: 1, ...SLOOP_ONLY });
-    await seed('u-bea', { v: 1, ...SLOOP_ONLY, gold: 5000, ownedShips: ['sloop', 'brig'] });
+    await seed('u-ana', rowV1(SLOOP_ONLY));
+    await seed('u-bea', rowV1({ ...SLOOP_ONLY, gold: 5000, ownedShips: ['sloop', 'brig'] }));
     const queries = countQueries(pool);
     await startServer(); // tiempos reales: guardado cada 2 s y sondeo cada 1 s
     const a = await join('u-ana');
@@ -351,7 +352,7 @@ describe('AC-132: con la BD caída en partida se sigue jugando, con aviso y sin 
   }, 60_000);
 
   test('BD colgada (no contesta): también sale el aviso y la partida sigue', async () => {
-    await seed('u-fer', { v: 1, ...SLOOP_ONLY });
+    await seed('u-fer', rowV1(SLOOP_ONLY));
     await startServer({ saveIntervalMs: 200, probeIntervalMs: 200 });
     const f = await join('u-fer');
     proxy.hang();
@@ -363,7 +364,7 @@ describe('AC-132: con la BD caída en partida se sigue jugando, con aviso y sin 
   });
 
   test('AC-129: con la BD caída al desconectar, al volver con la BD ya disponible el oro está intacto', async () => {
-    await seed('u-gil', { v: 1, ...SLOOP_ONLY });
+    await seed('u-gil', rowV1(SLOOP_ONLY));
     await startServer({ autoStart: false, saveIntervalMs: 200, probeIntervalMs: 200 });
     const gil = await join('u-gil');
     world().players.get('u-gil')!.gold = 777;
@@ -385,7 +386,7 @@ describe('AC-132: con la BD caída en partida se sigue jugando, con aviso y sin 
   });
 
   test('AC-129: con la confirmación de la escritura lenta, el jugador sigue en memoria hasta que llega', async () => {
-    await seed('u-gil', { v: 1, ...SLOOP_ONLY });
+    await seed('u-gil', rowV1(SLOOP_ONLY));
     // La confirmación de cada escritura llega 300 ms después de que la fila ya está en la BD (un runner lento)
     const inner = createPgStore(pool);
     const slow: ProgressStore = {
@@ -435,7 +436,7 @@ describe('AC-132: con la BD caída no se insiste con escrituras', () => {
     };
     let gold = 100;
     const p = createPersistence({ store, read: () => ({ ...SLOOP_ONLY, gold }), onConflict: () => {}, saveIntervalMs: 20, probeIntervalMs: 100 });
-    p.track('u', { progress: SLOOP_ONLY, carry: { v: 1 }, revision: 1 });
+    p.track('u', { progress: SLOOP_ONLY, carry: { newShips: [] }, revision: 1 });
     gold = 150;
     await waitFor(() => p.isDegraded(), 1000, 'el estado degradado');
     const t0 = Date.now();
@@ -452,6 +453,280 @@ describe('AC-132: con la BD caída no se insiste con escrituras', () => {
     down = false;
     await waitFor(() => !p.isDegraded(), 1000, 'la recuperación');
     expect(saves).toBe(2); // al responder, se escribe lo pendiente
+    p.close();
+  });
+});
+
+// O-42: cada escritura acaba guardada, fallida (se reintenta) o en conflicto con otro proceso (ni se reintenta ni se pisa).
+// (b) Tras un intento fallido, una revisión que no cuadra puede ser la de ese mismo intento, que llegó a la BD aunque el
+// plazo venciera en el cliente: se lee la fila y, si está en r+1 con la huella de uno de esos intentos, era nuestra
+describe('O-42: tres resultados por escritura, y un intento vencido pero aplicado no es un conflicto', () => {
+  const rowOf = async (userId: string) => {
+    const { rows } = await db.admin.query('SELECT state, revision FROM player_progress WHERE user_id = $1', [userId]);
+    return { gold: rows[0]?.state.gold, cannons: rows[0]?.state.upgrades.cannons, revision: Number(rows[0]?.revision) };
+  };
+
+  // El ejemplo de producto: las respuestas de la BD llegan 5 s tarde, así que el guardado periódico con 350 se aplica (r+1)
+  // pero vence en el cliente; el jugador llega a 360 y, al volver la BD, el sondeo escribe 360 con la revisión r y no
+  // encuentra fila. La fila está en r+1 con la huella del intento de 350: era nuestra, se adopta y 360 queda en r+2
+  test('el guardado con 350 vence pero se aplica y el jugador llega a 360: el sondeo adopta r+1, escribe 360 en r+2 y nadie recibe kicked', async () => {
+    await seed('u-ivo', rowV1(SLOOP_ONLY)); // revisión 1
+    await startServer({ saveIntervalMs: 200, probeIntervalMs: 200 });
+    const ivo = await join('u-ivo');
+    const kicked: unknown[] = [];
+    ivo.c.on(S2C.kicked, (k: unknown) => kicked.push(k));
+    proxy.delayReplies(5000);
+    world().players.get('u-ivo')!.gold = 350;
+    await waitFor(() => ivo.me().unsaved === true || kicked.length > 0, 8000, 'el aviso: el guardado venció en el cliente');
+    expect(await rowOf('u-ivo')).toEqual({ gold: 350, cannons: 1, revision: 2 }); // ...pero llegó a la BD
+    world().players.get('u-ivo')!.gold = 360;
+    proxy.delayReplies(0);
+    await waitFor(() => ivo.me().unsaved === undefined || kicked.length > 0, 8000, 'que el aviso se vaya al volver la BD (o el kicked)');
+    expect(kicked).toEqual([]);
+    expect(world().players.has('u-ivo')).toBe(true);
+    expect(await rowOf('u-ivo')).toEqual({ gold: 360, cannons: 1, revision: 3 });
+  });
+
+  // (4) y (c4) de producto: una compra cuyo commit vence pero se aplica. El jugador la ve rechazada, y así queda: el commit
+  // deja la huella de su intento (pasa por el mismo save) y el primer guardado con la BD respondiendo (aquí, el sondeo, con
+  // los tiempos reales: 1 s) comprueba la fila aunque el jugador no haya cambiado nada, adopta r+1 y escribe la memoria,
+  // sin kicked. Repetida, la fila tiene la compra una vez y con el oro descontado una vez
+  test('una compra que vence pero se aplica, sin ningún otro cambio: el primer sondeo con la BD respondiendo la deshace en la fila, sin kicked; repetida, queda una vez', async () => {
+    await seed('u-eva', rowV1({ ...SLOOP_ONLY, gold: 5000 })); // revisión 1
+    await startServer(); // tiempos reales: guardado cada 2 s y sondeo cada 1 s
+    const eva = await join('u-eva');
+    const kicked: unknown[] = [];
+    eva.c.on(S2C.kicked, (k: unknown) => kicked.push(k));
+    const player = world().players.get('u-eva')!;
+    proxy.delayReplies(5000);
+    eva.c.emit(C2S.buy, { itemId: 'cannons:2' });
+    await waitFor(() => texts(eva).includes('La tienda no está disponible: no podemos guardar'), 8000, 'el rechazo de la compra');
+    const late = await rowOf('u-eva');
+    expect({ gold: player.gold, cannons: player.upgrades.cannons }).toEqual({ gold: 5000, cannons: 1 }); // rechazada en el juego...
+    expect({ cannons: late.cannons, revision: late.revision }).toEqual({ cannons: 2, revision: 2 }); // ...pero aplicada en la BD
+    const price = 5000 - late.gold;
+    expect(price).toBeGreaterThan(0);
+
+    proxy.delayReplies(0);
+    await waitFor(() => eva.me().unsaved === undefined || kicked.length > 0, 8000, 'el primer sondeo con la BD respondiendo (o el kicked)');
+    expect(kicked).toEqual([]);
+    expect(await rowOf('u-eva')).toEqual({ gold: 5000, cannons: 1, revision: 3 });
+
+    eva.c.emit(C2S.buy, { itemId: 'cannons:2' });
+    await waitFor(() => texts(eva).includes('Compra realizada') || kicked.length > 0, 5000, 'la compra repetida');
+    expect(kicked).toEqual([]);
+    expect({ gold: player.gold, cannons: player.upgrades.cannons }).toEqual({ gold: 5000 - price, cannons: 2 });
+    expect(await rowOf('u-eva')).toEqual({ gold: 5000 - price, cannons: 2, revision: 4 });
+  });
+
+  // (c4) con desconexión: el jugador se va sin cambiar nada tras la compra vencida pero aplicada. Mientras la fila no se
+  // compruebe, sigue en memoria aunque pase el margen de reconexión (si saliera, nadie la comprobaría y al volver tendría
+  // la compra que vio rechazada); al volver la BD, el sondeo la deshace y entonces sale
+  test('una compra que vence pero se aplica y el jugador se va sin más cambios: sigue en memoria hasta que el sondeo deshace la compra en la fila; al volver, sin la compra', async () => {
+    await seed('u-leo', rowV1({ ...SLOOP_ONLY, gold: 5000 })); // revisión 1
+    const logs: string[] = [];
+    await startServer({ autoStart: false, probeIntervalMs: 200, log: (msg) => void logs.push(msg) }); // ticks a mano
+    const leo = await join('u-leo');
+    proxy.delayReplies(5000);
+    leo.c.emit(C2S.buy, { itemId: 'cannons:2' });
+    await waitFor(() => logs.some((l) => l.includes('La BD no responde')), 8000, 'el fallo de la compra');
+    expect(await rowOf('u-leo')).toMatchObject({ cannons: 2, revision: 2 }); // aplicada en la BD
+    leo.c.disconnect();
+    await sleep(200);
+    for (let i = 0; i < Math.round((DISCONNECT_GRACE + 0.5) * TICK_RATE); i++) game!.tick();
+    expect(world().players.has('u-leo')).toBe(true); // la fila aún no está comprobada: no sale de la memoria
+
+    proxy.delayReplies(0);
+    await waitFor(() => logs.some((l) => l.startsWith('✅ La BD responde de nuevo')), 5000, 'el sondeo con la BD respondiendo');
+    expect(await rowOf('u-leo')).toEqual({ gold: 5000, cannons: 1, revision: 3 });
+    await waitFor(() => {
+      game!.tick();
+      return !world().players.has('u-leo');
+    }, 2000, 'que el servidor suelte al jugador con la fila comprobada');
+    await join('u-leo');
+    expect({ gold: world().players.get('u-leo')!.gold, cannons: world().players.get('u-leo')!.upgrades.cannons }).toEqual({ gold: 5000, cannons: 1 });
+  });
+
+  // (5) de producto, (c5): las huellas solo se borran con una escritura confirmada o al adoptar, nunca al leer la fila en r.
+  // Un intento vencido puede aplicarse después de esa lectura; como el proxy descarta lo que no reenvió, aquí lo aplica
+  // tarde un almacén envoltorio. La siguiente escritura lo ve en r+1 con su huella, lo adopta y escribe la memoria
+  test('(c5) un intento vencido que se aplica después de leer la fila en r: la siguiente escritura lo adopta, la fila acaba sin él y nadie recibe kicked', async () => {
+    await seed('u-max', rowV1({ ...SLOOP_ONLY, gold: 5000 })); // revisión 1
+    const inner = createPgStore(pool);
+    const held: { late?: () => Promise<unknown> } = {}; // en un objeto: tsc no estrecha a null lo que asigna un cierre
+    let holdNext = false;
+    const store: ProgressStore = {
+      ...inner,
+      save: async (...args: Parameters<ProgressStore['save']>) => {
+        if (!holdNext) return inner.save(...args);
+        holdNext = false;
+        held.late = () => inner.save(...args); // 1. vence sin aplicarse: el UPDATE sigue en camino
+        throw new Error('Query read timeout');
+      }
+    };
+    const logs: string[] = [];
+    await startServer({ store, saveIntervalMs: 200, probeIntervalMs: 200, log: (msg) => void logs.push(msg) });
+    const max = await join('u-max');
+    const kicked: unknown[] = [];
+    max.c.on(S2C.kicked, (k: unknown) => kicked.push(k));
+    holdNext = true;
+    max.c.emit(C2S.buy, { itemId: 'cannons:2' });
+    await waitFor(() => texts(max).includes('La tienda no está disponible: no podemos guardar'), 5000, 'el rechazo de la compra');
+    await waitFor(() => logs.some((l) => l.startsWith('✅ La BD responde de nuevo')), 5000, 'el sondeo, que lee la fila');
+    expect(await rowOf('u-max')).toEqual({ gold: 5000, cannons: 1, revision: 1 }); // 2. la lectura vio r
+    await held.late!(); // 3. el intento llega tarde y se aplica
+    expect(await rowOf('u-max')).toMatchObject({ cannons: 2, revision: 2 });
+    world().players.get('u-max')!.gold += 10; // 4. la siguiente escritura
+    await waitFor(async () => (await rowOf('u-max')).gold === 5010 || kicked.length > 0, 5000, 'la siguiente escritura (o el kicked)');
+    expect(kicked).toEqual([]);
+    expect(await rowOf('u-max')).toEqual({ gold: 5010, cannons: 1, revision: 3 });
+    expect(logs.filter((l) => l.includes('cambió en otro proceso'))).toEqual([]);
+  });
+
+  // (6) de producto, (c6): la compra vence sin aplicarse y el jugador se va sin otro cambio. Desde el fallo, la fila se lee
+  // una sola vez (al volver la BD: sigue en r, nada que escribir) y el jugador sale de la memoria, aunque sus huellas se
+  // queden (c5). La fila queda igual byte a byte
+  test('(c6) la compra vence sin aplicarse y el jugador se va sin más: una sola lectura de la fila desde el fallo, sale de la memoria y la fila queda igual byte a byte', async () => {
+    await seed('u-noa', rowV1({ ...SLOOP_ONLY, gold: 5000 }));
+    const inner = createPgStore(pool);
+    let failNext = false;
+    let loadsSinceFailure: number | null = null;
+    const store: ProgressStore = {
+      ...inner,
+      load: (userId) => {
+        if (loadsSinceFailure !== null) loadsSinceFailure++;
+        return inner.load(userId);
+      },
+      save: async (...args: Parameters<ProgressStore['save']>) => {
+        if (!failNext) return inner.save(...args);
+        failNext = false;
+        loadsSinceFailure = 0;
+        throw new Error('Query read timeout'); // vence sin aplicarse
+      }
+    };
+    const logs: string[] = [];
+    await startServer({ store, autoStart: false, probeIntervalMs: 200, log: (msg) => void logs.push(msg) }); // ticks a mano
+    const noa = await join('u-noa');
+    const before = await rawRow('u-noa');
+    failNext = true;
+    noa.c.emit(C2S.buy, { itemId: 'cannons:2' });
+    await waitFor(() => logs.some((l) => l.includes('La BD no responde')), 5000, 'el fallo de la compra');
+    noa.c.disconnect();
+    await waitFor(() => logs.some((l) => l.startsWith('✅ La BD responde de nuevo')), 5000, 'el sondeo, que lee la fila');
+    for (let i = 0; i < Math.round((DISCONNECT_GRACE + 0.5) * TICK_RATE); i++) game!.tick();
+    await sleep(600); // unos cuantos sondeos y guardados periódicos más: ninguno tiene que volver a leerla
+    game!.tick();
+    expect({ loads: loadsSinceFailure, inMemory: world().players.has('u-noa') }).toEqual({ loads: 1, inMemory: false });
+    expect(await rawRow('u-noa')).toBe(before);
+  });
+
+  // Solo un intento nuestro pudo aplicarse, y deja la fila en r+1: con el mismo estado en otra revisión, escribió otro
+  test('la fila con el estado de un intento fallido pero en una revisión que no es r+1 es de otro proceso: conflicto', async () => {
+    let row: StoredProgress = { progress: SLOOP_ONLY, carry: { newShips: [] }, revision: 1 };
+    let timeoutNext = true;
+    const conflicts: string[] = [];
+    const store: ProgressStore = {
+      load: async () => row,
+      save: async (_userId, progress, revision, carry) => {
+        if (revision !== row.revision) return null;
+        row = { progress, carry, revision: row.revision + 1 };
+        if (timeoutNext) {
+          timeoutNext = false;
+          throw new Error('Query read timeout'); // se aplicó, pero el plazo venció en el cliente
+        }
+        return row.revision;
+      },
+      ping: async () => {}
+    };
+    const p = createPersistence({ store, read: () => ({ ...SLOOP_ONLY, gold: 150 }), onConflict: (userId) => conflicts.push(userId), saveIntervalMs: 20, probeIntervalMs: 200 });
+    p.track('u', { progress: SLOOP_ONLY, carry: { newShips: [] }, revision: 1 });
+    await waitFor(() => p.isDegraded(), 1000, 'el estado degradado');
+    row = { ...row, revision: row.revision + 1 }; // otro proceso vuelve a escribir el mismo estado: r+2
+    await waitFor(() => conflicts.length > 0 || !p.isDegraded(), 2000, 'el sondeo');
+    expect(conflicts).toEqual(['u']);
+    p.close();
+  });
+
+  test('sin un intento fallido antes, una revisión que no cuadra es otro proceso: no se lee la fila y se suelta al jugador', async () => {
+    let loads = 0;
+    const conflicts: string[] = [];
+    const store: ProgressStore = {
+      load: async () => (loads++, { progress: { ...SLOOP_ONLY, gold: 150 }, carry: { newShips: [] }, revision: 2 }), // el mismo estado: aun así, no se mira
+      save: async () => null,
+      ping: async () => {}
+    };
+    const p = createPersistence({ store, read: () => ({ ...SLOOP_ONLY, gold: 150 }), onConflict: (userId) => conflicts.push(userId), saveIntervalMs: 20 });
+    p.track('u', { progress: SLOOP_ONLY, carry: { newShips: [] }, revision: 1 });
+    await waitFor(() => conflicts.length > 0, 1000, 'el conflicto');
+    expect({ conflicts, loads }).toEqual({ conflicts: ['u'], loads: 0 });
+    p.close();
+  });
+
+  // Una fila en memoria con su revisión, que otro proceso puede reescribir (state.row); con failNext, el próximo intento
+  // vence sin aplicarse
+  const memoryRow = () => {
+    const state = { row: { progress: SLOOP_ONLY, carry: { newShips: [] }, revision: 1 } as StoredProgress, failNext: true };
+    const store: ProgressStore = {
+      load: async () => state.row,
+      save: async (_userId, progress, revision, carry) => {
+        if (state.failNext) {
+          state.failNext = false;
+          throw new Error('Query read timeout'); // vence sin aplicarse
+        }
+        if (revision !== state.row.revision) return null;
+        state.row = { progress, carry, revision: state.row.revision + 1 };
+        return state.row.revision;
+      },
+      ping: async () => {}
+    };
+    return { state, store };
+  };
+
+  // (b): «en cualquier otro caso es un conflicto de verdad». La fila en r+1 tras un intento nuestro no basta: si su estado
+  // no tiene la huella de uno de nuestros intentos, la escribió otro proceso, y no se adopta ni se pisa
+  test('(b) tras un intento fallido que no se aplicó, otro proceso escribe otro estado en r+1: conflicto, y su fila no se pisa', async () => {
+    const { state, store } = memoryRow();
+    const conflicts: string[] = [];
+    const p = createPersistence({ store, read: () => ({ ...SLOOP_ONLY, gold: 150 }), onConflict: (userId) => conflicts.push(userId), saveIntervalMs: 20, probeIntervalMs: 200 });
+    p.track('u', { progress: SLOOP_ONLY, carry: { newShips: [] }, revision: 1 });
+    await waitFor(() => p.isDegraded(), 1000, 'el estado degradado'); // el intento con 150 vence sin aplicarse y deja su huella
+    state.row = { progress: { ...SLOOP_ONLY, gold: 999 }, carry: { newShips: [] }, revision: 2 }; // otro proceso, con otro estado
+    await waitFor(() => conflicts.length > 0 || !p.isDegraded(), 2000, 'el sondeo');
+    expect({ conflicts, gold: state.row.progress.gold, revision: state.row.revision }).toEqual({ conflicts: ['u'], gold: 999, revision: 2 });
+    p.close();
+  });
+
+  // (c5): las huellas se borran con la escritura confirmada. Después, el estado de aquel intento en r+1 ya no puede ser
+  // nuestro: lo escribió otro proceso, y es un conflicto
+  test('(c5) tras un intento fallido y una escritura confirmada, otro proceso escribe en r+1 el estado de aquel intento: conflicto', async () => {
+    const { state, store } = memoryRow();
+    let gold = 150;
+    const conflicts: string[] = [];
+    const p = createPersistence({ store, read: () => ({ ...SLOOP_ONLY, gold }), onConflict: (userId) => conflicts.push(userId), saveIntervalMs: 20, probeIntervalMs: 200 });
+    p.track('u', { progress: SLOOP_ONLY, carry: { newShips: [] }, revision: 1 });
+    await waitFor(() => p.isDegraded(), 1000, 'el estado degradado'); // el intento con 150 vence sin aplicarse y deja su huella
+    await waitFor(() => !p.isDegraded(), 2000, 'el sondeo'); // escribe 150 sobre r1: confirmada, en r2
+    expect({ gold: state.row.progress.gold, revision: state.row.revision }).toEqual({ gold: 150, revision: 2 });
+    state.row = { progress: { ...SLOOP_ONLY, gold: 150 }, carry: { newShips: [] }, revision: 3 }; // otro proceso, con el estado de aquel intento
+    gold = 200;
+    await waitFor(() => conflicts.length > 0 || state.row.revision > 3, 2000, 'el guardado periódico');
+    expect({ conflicts, gold: state.row.progress.gold, revision: state.row.revision }).toEqual({ conflicts: ['u'], gold: 150, revision: 3 });
+    p.close();
+  });
+
+  test('flush cuenta las fallidas y los conflictos; unsaved, los que quedan sin confirmar (sin contar los soltados)', async () => {
+    const store: ProgressStore = {
+      load: async () => null,
+      save: async (userId) => {
+        if (userId === 'falla') throw new Error('caída');
+        return userId === 'choca' ? null : 2;
+      },
+      ping: async () => {}
+    };
+    const p = createPersistence({ store, read: () => ({ ...SLOOP_ONLY, gold: 150 }), onConflict: () => {}, saveIntervalMs: 60_000 });
+    for (const userId of ['guarda', 'falla', 'choca']) p.track(userId, { progress: SLOOP_ONLY, carry: { newShips: [] }, revision: 1 });
+    expect(await p.flush()).toEqual({ failed: 1, conflicts: 1 });
+    expect(p.unsaved()).toBe(1);
     p.close();
   });
 });

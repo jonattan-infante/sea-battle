@@ -17,7 +17,7 @@ import { joinGame, sleep } from './fixtures/game-socket';
 // clase 'captain' con kind 'pirate', y su aparición y su hundimiento son los eventos 'captain' y 'captainDown')
 const PRE_I2_CLASSES = ['sloop', 'brig', 'frigate', 'pirate', 'merchant'];
 const PRE_I2_KINDS = ['player', 'pirate', 'merchant'];
-const PRE_I2_EVENTS = ['volley', 'impact', 'sunk', 'loot', 'respawn', 'wreck', 'wreckGone'];
+const PRE_I2_EVENTS = ['volley', 'impact', 'sunk', 'loot', 'xp', 'respawn', 'wreck', 'wreckGone']; // 'xp' es de la 1.1 (E14), no de I2
 const I2_TEXT = /capit[aá]n|cañonera/i;
 
 const SIM_SECONDS = 10 * 60;

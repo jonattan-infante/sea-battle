@@ -2,10 +2,12 @@ import { createServer, Server as HttpServer } from 'http';
 import { AddressInfo } from 'net';
 import { Server } from 'socket.io';
 import { io as ioClient, Socket as ClientSocket } from 'socket.io-client';
-import { MAX_PLAYERS, TICK_RATE } from '../../src/game/constants';
+import { captainSpawnText } from '../../src/client/hud-logic';
+import { CAPTAIN_CLASS, CAPTAIN_KILLS_TO_SPAWN, CAPTAIN_LAIR_RADIUS, INTEREST_RADIUS, MAX_PLAYERS, PIRATE_SECTORS, TICK_RATE } from '../../src/game/constants';
 import { C2S, S2C } from '../../src/game/protocol';
 import { GameEvent, Notice, ServerFrame, ShipDelta, Welcome } from '../../src/game/types';
-import { shipOfPlayer, spawnMerchant } from '../../src/game/world';
+import { createRng, distance } from '../../src/game/vec';
+import { shipOfPlayer, spawnCaptain, spawnMerchant, spawnPirate } from '../../src/game/world';
 import { authenticateHandshake } from '../auth';
 import { createGameServer, GameServer, GameServerOptions } from '../game-server';
 
@@ -308,10 +310,15 @@ describe('Servidor — red y conexión', () => {
     expect(events.some((e) => e.type === 'impact' && e.byShipId === ship.id)).toBe(true);
   });
 
-  test('AC-88: con 20 clientes y 20 NPC en combate, cada cliente recibe ≤ 10 mensajes/s y ≤ 12 KB/s (30 s)', async () => {
-    await start({ spawnNpcs: true });
+  // Servidor lleno (GDD §13: 20 + 20 + 1 jefe, que se envía a todos con el I2 encendido) en combate durante 30 s; con viewOf,
+  // cada cliente mira además otra zona en vista libre (E13). Devuelve el peor cliente y las andanadas vistas
+  async function fullServerRates(viewOf?: (i: number) => { x: number; z: number }) {
+    await start({ spawnNpcs: true, i2: true });
+    expect(spawnCaptain(game.world)).not.toBeNull();
     const bots: Joined[] = [];
     for (let i = 0; i < MAX_PLAYERS; i++) bots.push(await join(`bot${i}`, `Bot ${i}`));
+    if (viewOf) bots.forEach((b, i) => b.c.emit(C2S.viewAt, viewOf(i)));
+    await flush();
     const baseline = bots.map((b) => ({ frames: b.frames.length, bytes: b.bytes() }));
     await advance(30, (tick) => {
       if (tick % (2 * TICK_RATE) !== 0) return;
@@ -340,9 +347,250 @@ describe('Servidor — red y conexión', () => {
     }));
     const worst = { msgs: Math.max(...rates.map((r) => r.msgs)), kbps: Math.max(...rates.map((r) => r.kbps)) };
     const volleys = bots.reduce((n, b) => n + eventsOf(b.frames).filter((e) => e.type === 'volley').length, 0);
-    console.log(`AC-88: peor cliente ${worst.msgs.toFixed(2)} msg/s, ${worst.kbps.toFixed(2)} KB/s; media ${(rates.reduce((a, r) => a + r.kbps, 0) / rates.length).toFixed(2)} KB/s; andanadas vistas ${volleys}`);
+    const mean = rates.reduce((a, r) => a + r.kbps, 0) / rates.length;
+    return { worst, mean, volleys };
+  }
+
+  test('AC-88: con 20 clientes, 20 NPC y el jefe en combate, cada cliente recibe ≤ 10 mensajes/s y ≤ 12 KB/s (30 s)', async () => {
+    const { worst, mean, volleys } = await fullServerRates();
+    console.log(`AC-88: peor cliente ${worst.msgs.toFixed(2)} msg/s, ${worst.kbps.toFixed(2)} KB/s; media ${mean.toFixed(2)} KB/s; andanadas vistas ${volleys}`);
     expect(volleys).toBeGreaterThan(50); // hubo combate de verdad
     expect(worst.msgs).toBeLessThanOrEqual(10);
     expect(worst.kbps).toBeLessThanOrEqual(12);
   }, 60_000);
+
+  test('AC-123: lo mismo con cada cliente en vista libre sobre otra zona: ≤ 10 mensajes/s y ≤ 16 KB/s (30 s)', async () => {
+    const zones = [{ x: 300, z: 300 }, { x: -300, z: 300 }, { x: 300, z: -300 }, { x: -300, z: -300 }];
+    const { worst, mean, volleys } = await fullServerRates((i) => zones[i % zones.length]);
+    console.log(`AC-123: peor cliente ${worst.msgs.toFixed(2)} msg/s, ${worst.kbps.toFixed(2)} KB/s; media ${mean.toFixed(2)} KB/s; andanadas vistas ${volleys}`);
+    expect(volleys).toBeGreaterThan(50);
+    expect(worst.msgs).toBeLessThanOrEqual(10);
+    expect(worst.kbps).toBeLessThanOrEqual(16);
+  }, 60_000);
+});
+
+describe('Servidor — vista libre (E13): el centro de la vista suma su área de interés', () => {
+  beforeEach(() => start());
+
+  // Un pirata quieto lejos del jugador (el jugador aparece a 60–90 m del puerto, en el centro del mapa)
+  const farPirate = (x: number, z: number) => {
+    const p = spawnPirate(game.world, 0);
+    p.pos = { x, z };
+    p.ai!.origin = { x, z };
+    p.ai!.wait = 1e9;
+    return p;
+  };
+  const removedOf = (frames: ServerFrame[]) => frames.flatMap((f) => f.r ?? []);
+
+  test('AC-122: con viewAt entra lo que hay a ≤ 300 m del centro de la vista, y con viewAt(null) vuelve a ser solo el barco', async () => {
+    const a = await join('a');
+    const pirate = farPirate(400, 400);
+    await advance(0.2);
+    expect(distance(game.world.ships.get(a.welcome.shipId)!.pos, pirate.pos)).toBeGreaterThan(INTEREST_RADIUS);
+    expect(deltasOf(a.frames, pirate.id)).toEqual([]);
+
+    a.c.emit(C2S.viewAt, { x: 380, z: 360 });
+    await flush();
+    await advance(0.2);
+    expect(deltasOf(a.frames, pirate.id)[0]).toMatchObject({ id: pirate.id, k: 'pirate' }); // entra completo
+
+    const n = a.frames.length;
+    a.c.emit(C2S.viewAt, null);
+    await flush();
+    await advance(0.2);
+    expect(removedOf(a.frames.slice(n))).toContain(pirate.id);
+  });
+
+  test('manda el último viewAt: la vista que se va deja de sumar área', async () => {
+    const a = await join('a');
+    const east = farPirate(420, 0);
+    const west = farPirate(-420, 0);
+    a.c.emit(C2S.viewAt, { x: 420, z: 0 });
+    await flush();
+    await advance(0.2);
+    const n = a.frames.length;
+    a.c.emit(C2S.viewAt, { x: -420, z: 0 });
+    await flush();
+    await advance(0.2);
+    const fresh = a.frames.slice(n);
+    expect(removedOf(fresh)).toContain(east.id);
+    expect(deltasOf(fresh, west.id)[0]).toMatchObject({ id: west.id, k: 'pirate' }); // entra completo
+  });
+});
+
+describe('Servidor — Capitán pirata (AC-111), con el I2 encendido (AC-187)', () => {
+  test('AC-111: al aparecer, todos reciben en el siguiente snapshot el aviso con el sector y el barco del capitán aunque esté fuera de su área de interés, y lo siguen recibiendo; al hundirse, todos reciben los 3 primeros por daño y "y N más"', async () => {
+    await start({ i2: true });
+    const a = await join('a', 'Ana');
+    const b = await join('b', 'Bea');
+    const c = await join('c', 'Caro');
+    const d = await join('d', 'Dani');
+    const ship = (j: Joined) => game.world.ships.get(j.welcome.shipId)!;
+    // Repartidos por el oeste (SO y NO) y lejos de cualquier guarida del este
+    ship(a).pos = { x: -200, z: 200 };
+    ship(b).pos = { x: -200, z: -200 };
+    ship(c).pos = { x: -300, z: 300 };
+    ship(d).pos = { x: -450, z: 0 };
+    for (const j of [a, b, c, d]) ship(j).protectedUntil = 0;
+    await advance(0.2);
+
+    // El 10.º pirata hundido: A hunde uno con 1 de vida
+    game.world.killsSinceBoss = 9;
+    const pirate = spawnPirate(game.world, 2);
+    pirate.pos = { x: -200, z: 230 };
+    pirate.ai = null;
+    pirate.hp = 1;
+    game.world.rng = () => 0;
+    a.c.emit(C2S.attack, { targetId: pirate.id });
+    await flush();
+    const before = [a, b, c, d].map((j) => j.frames.length);
+    let spawnTick = -1;
+    for (let i = 0; i < 2 * TICK_RATE && spawnTick < 0; i++) {
+      game.tick();
+      if ([...game.world.ships.values()].some((s) => s.classId === CAPTAIN_CLASS)) spawnTick = i;
+    }
+    expect(spawnTick).toBeGreaterThanOrEqual(0);
+    game.world.rng = createRng(5);
+    const cap = [...game.world.ships.values()].find((s) => s.classId === CAPTAIN_CLASS)!;
+    // El siguiente snapshot sale como mucho 2 ticks después (10 Hz)
+    game.tick();
+    game.tick();
+    await flush(60);
+    const sector = cap.pos.x > 0 ? (cap.pos.z < 0 ? 'NE' : 'SE') : cap.pos.z < 0 ? 'NO' : 'SO';
+    [a, b, c, d].forEach((j, i) => {
+      const fresh = j.frames.slice(before[i]);
+      const minDist = distance(ship(j).pos, cap.pos);
+      expect(minDist).toBeGreaterThan(INTEREST_RADIUS); // fuera de su área de interés
+      expect(eventsOf(fresh)).toContainEqual(expect.objectContaining({ type: 'captain', shipId: cap.id, sector }));
+      expect(deltasOf(fresh, cap.id)[0]).toMatchObject({ id: cap.id, k: 'pirate', c: CAPTAIN_CLASS, n: 'Capitán pirata', hp: 1800, mhp: 1800 });
+    });
+    console.log(`AC-111: capitán en el sector ${sector} (${cap.pos.x.toFixed(0)}, ${cap.pos.z.toFixed(0)}); distancias ${[a, b, c, d].map((j) => distance(ship(j).pos, cap.pos).toFixed(0)).join(', ')} m`);
+
+    // Sigue llegando a todos mientras patrulla (marcador del minimapa desde cualquier punto)
+    const mid = [a, b, c, d].map((j) => j.frames.length);
+    await advance(12);
+    [a, b, c, d].forEach((j, i) => expect(deltasOf(j.frames.slice(mid[i]), cap.id).some((s) => s.x !== undefined || s.z !== undefined)).toBe(true));
+
+    // Hundimiento: Dani, Bea y Caro le hicieron daño en los últimos 60 s, en orden inverso al daño (el feed ordena por daño,
+    // no por quién dañó primero); Ana le da la última andanada
+    const now = game.world.time;
+    cap.damage = [
+      { playerId: 'd', shipId: ship(d).id, amount: 1000, at: now, firstAt: now - 10 },
+      { playerId: 'b', shipId: ship(b).id, amount: 600, at: now, firstAt: now - 20 },
+      { playerId: 'c', shipId: ship(c).id, amount: 300, at: now, firstAt: now - 30 }
+    ];
+    cap.hp = 1;
+    ship(a).pos = { x: cap.pos.x - 40, z: cap.pos.z };
+    game.world.rng = () => 0;
+    a.c.emit(C2S.attack, { targetId: cap.id });
+    await flush();
+    const beforeDown = [a, b, c, d].map((j) => j.frames.length);
+    await advance(1);
+    [a, b, c, d].forEach((j, i) => {
+      expect(eventsOf(j.frames.slice(beforeDown[i]))).toContainEqual(expect.objectContaining({ type: 'captainDown', shipId: cap.id, names: ['Dani', 'Bea', 'Caro'], more: 1 }));
+    });
+    expect(distance(ship(d).pos, cap.pos)).toBeGreaterThan(INTEREST_RADIUS + 60); // también le llega a quien está lejos
+    // Termina de hundirse y sale del mundo para todos
+    await advance(3.5);
+    [a, b, c, d].forEach((j) => expect(j.frames.some((f) => f.r?.includes(cap.id))).toBe(true));
+    expect(game.world.ships.has(cap.id)).toBe(false);
+  }, 30_000);
+
+  // AC-111 (3): el aviso es del momento en que aparece; quien entra después lo ve solo por el marcador (el barco del
+  // capitán, que el snapshot completo de entrada trae aunque esté fuera de su área de interés)
+  test('AC-111 (3): quien entra con el capitán ya vivo recibe su barco en el snapshot completo de entrada y no recibe el aviso', async () => {
+    await start({ i2: true });
+    const a = await join('a', 'Ana');
+    const ship = (j: Joined) => game.world.ships.get(j.welcome.shipId)!;
+    ship(a).pos = { x: -60, z: 60 };
+    await advance(0.2);
+    game.world.killsSinceBoss = CAPTAIN_KILLS_TO_SPAWN;
+    await advance(0.3);
+    const cap = [...game.world.ships.values()].find((s) => s.classId === CAPTAIN_CLASS)!;
+    expect(cap).toBeDefined();
+    expect(eventsOf(a.frames).filter((e) => e.type === 'captain')).toHaveLength(1); // quien estaba, sí
+
+    const b = await join('b', 'Bea');
+    await advance(3);
+    const full = b.frames.find((f) => f.full);
+    expect(full).toBeDefined();
+    expect(distance(ship(b).pos, cap.pos)).toBeGreaterThan(INTEREST_RADIUS);
+    expect(deltasOf([full!], cap.id)[0]).toMatchObject({ id: cap.id, k: 'pirate', c: CAPTAIN_CLASS, n: 'Capitán pirata' });
+    expect(eventsOf(b.frames).filter((e) => e.type === 'captain')).toEqual([]);
+    expect(deltasOf(b.frames, cap.id).length).toBeGreaterThan(1); // y lo sigue recibiendo mientras patrulla
+  }, 30_000);
+
+  // AC-111 (4): el feed nombra exactamente a quienes cobran (GDD §10). Eva le hizo 1 de daño, así que su parte del reparto
+  // redondea a 0 (600 · 1 / ~1 900): no cobra y no sale; cada nombrado recibe su botín (el botín solo le llega a su dueño)
+  test('AC-111 (4): los nombres del feed son exactamente los de quienes reciben su botín del capitán', async () => {
+    await start({ i2: true });
+    const who = [['a', 'Ana'], ['b', 'Bea'], ['c', 'Caro'], ['d', 'Dani'], ['e', 'Eva']] as const;
+    const js: Joined[] = [];
+    for (const [id, name] of who) js.push(await join(id, name));
+    const ship = (j: Joined) => game.world.ships.get(j.welcome.shipId)!;
+    js.forEach((j, i) => {
+      ship(j).pos = { x: -200 - 20 * i, z: 200 };
+      ship(j).protectedUntil = 0;
+    });
+    await advance(0.2);
+    const cap = spawnCaptain(game.world, { x: -200, z: 260 })!;
+    cap.ai = null;
+    const now = game.world.time;
+    const [, b, c, d, e] = js;
+    cap.damage = [
+      { playerId: 'd', shipId: ship(d).id, amount: 1000, at: now, firstAt: now - 10 },
+      { playerId: 'b', shipId: ship(b).id, amount: 600, at: now, firstAt: now - 20 },
+      { playerId: 'c', shipId: ship(c).id, amount: 300, at: now, firstAt: now - 30 },
+      { playerId: 'e', shipId: ship(e).id, amount: 1, at: now, firstAt: now - 40 }
+    ];
+    cap.hp = 1;
+    game.world.rng = () => 0;
+    const before = js.map((j) => j.frames.length);
+    js[0].c.emit(C2S.attack, { targetId: cap.id });
+    await flush();
+    await advance(1);
+    game.world.rng = createRng(5);
+    const after = js.map((j, i) => j.frames.slice(before[i]));
+    const down = eventsOf(after[0]).find((x): x is Extract<GameEvent, { type: 'captainDown' }> => x.type === 'captainDown');
+    expect(down).toBeDefined();
+    const looted = who.filter((_, i) => eventsOf(after[i]).some((x) => x.type === 'loot' && x.source === 'kill' && x.playerId === who[i][0])).map(([, name]): string => name);
+    console.log(`AC-111 (4): cobran ${looted.join(', ')}; feed ${down!.names.join(', ')} y ${down!.more} más`);
+    expect(looted).toEqual(['Ana', 'Bea', 'Caro', 'Dani']);
+    expect({ names: down!.names, more: down!.more }).toEqual({ names: ['Dani', 'Bea', 'Caro'], more: 1 }); // y 1 más: Ana
+    expect(down!.names.every((n) => looted.includes(n)) && down!.names.length + down!.more === looted.length).toBe(true);
+  }, 30_000);
+
+  // D49: el aviso que pinta el cliente sale del evento (cuadrante y punto de la guarida) con captainSpawnText. Un jugador
+  // en la zona segura de cada uno de los otros 3 cuadrantes deja libre solo el del caso, y la guarida queda en su punto
+  // de 45° del arco de 440 m (a ≥ 150 m de todos)
+  test.each([
+    ['NE', '¡Capitán pirata en el noreste, sector I2!'],
+    ['NO', '¡Capitán pirata en el noroeste, sector B2!'],
+    ['SO', '¡Capitán pirata en el suroeste, sector B9!'],
+    ['SE', '¡Capitán pirata en el sureste, sector I9!']
+  ] as const)('AC-111 (D49): con la guarida en el %s, todos reciben el evento y el aviso dice «%s»', async (quadrant, text) => {
+    await start({ i2: true });
+    const others = PIRATE_SECTORS.filter((s) => s.id !== quadrant);
+    const joined: Joined[] = [];
+    for (const s of others) {
+      const j = await join(`p-${s.id}`);
+      game.world.ships.get(j.welcome.shipId)!.pos = { x: 60 * s.sx, z: 60 * s.sz };
+      joined.push(j);
+    }
+    await advance(0.2);
+    const before = joined.map((j) => j.frames.length);
+    game.world.killsSinceBoss = CAPTAIN_KILLS_TO_SPAWN;
+    await advance(0.3);
+    const cap = [...game.world.ships.values()].find((s) => s.classId === CAPTAIN_CLASS)!;
+    expect(cap).toBeDefined();
+    const { sx, sz } = PIRATE_SECTORS.find((s) => s.id === quadrant)!;
+    expect(cap.ai!.origin.x).toBeCloseTo(sx * CAPTAIN_LAIR_RADIUS * Math.SQRT1_2, 6);
+    expect(cap.ai!.origin.z).toBeCloseTo(sz * CAPTAIN_LAIR_RADIUS * Math.SQRT1_2, 6);
+    joined.forEach((j, i) => {
+      const spawn = eventsOf(j.frames.slice(before[i])).filter((e) => e.type === 'captain');
+      expect(spawn).toHaveLength(1);
+      const e = spawn[0] as Extract<GameEvent, { type: 'captain' }>;
+      expect([e.sector, captainSpawnText(e.sector, e.pos)]).toEqual([quadrant, text]);
+    });
+  }, 30_000);
 });

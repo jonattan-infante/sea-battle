@@ -9,6 +9,8 @@ import type { GameServer } from './game-server';
 
 // Por debajo de los 15 s de drenaje, con la BD colgada se sale igual (scripts/railway/check_deploy.py exige ≥ esto + 2 s)
 export const SHUTDOWN_FLUSH_MS = 10_000;
+// O-42: entre un guardado fallido y el siguiente, para no reintentar en bucle si la BD rechaza al instante
+export const FLUSH_RETRY_PAUSE_MS = 250;
 
 export interface ShutdownDeps {
   game: GameServer;
@@ -18,10 +20,11 @@ export interface ShutdownDeps {
   log: (msg: string) => void;
   exit?: (code: number) => void;
   flushTimeoutMs?: number;
+  retryPauseMs?: number;
   now?: () => number; // reloj de los logs (ms desde epoch); los tests lo fijan
 }
 
-export function createShutdown({ game, io, httpServer, pool, log, exit = (code) => process.exit(code), flushTimeoutMs = SHUTDOWN_FLUSH_MS, now = Date.now }: ShutdownDeps) {
+export function createShutdown({ game, io, httpServer, pool, log, exit = (code) => process.exit(code), flushTimeoutMs = SHUTDOWN_FLUSH_MS, retryPauseMs = FLUSH_RETRY_PAUSE_MS, now = Date.now }: ShutdownDeps) {
   let running: Promise<void> | null = null;
   return (signal: string): Promise<void> => {
     running ??= (async () => {
@@ -31,13 +34,34 @@ export function createShutdown({ game, io, httpServer, pool, log, exit = (code) 
       const at = (t: number) => `${new Date(t).toISOString()} (+${t - t0} ms)`;
       log(`🛑 ${signal}: guardando el progreso antes de cerrar ${new Date(t0).toISOString()}`);
       game.stop(); // sin ticks ni entradas nuevas: el estado ya no cambia
+      // O-42: con la BD lenta pero viva, una escritura que pasa de su plazo (3 s, DB_TIMEOUT_MS) no se da por perdida: se
+      // vuelve a escribir lo que falló mientras quede plazo. No se empieza un intento que no quepa (se supone que dura como
+      // el que acaba de fallar): el pool espera a sus conexiones al cerrarse, y hay que salir antes del SIGKILL. Un
+      // conflicto (otro proceso escribió antes) no se reintenta ni cuenta como guardado
       let timer: ReturnType<typeof setTimeout> | undefined;
-      const flushed = await Promise.race([
-        game.flushProgress(),
-        new Promise<boolean>((resolve) => (timer = setTimeout(() => resolve(false), flushTimeoutMs)))
-      ]);
+      const timeUp = new Promise<null>((resolve) => (timer = setTimeout(() => resolve(null), flushTimeoutMs)));
+      const deadline = Date.now() + flushTimeoutMs;
+      let conflicts = 0;
+      let flushed = false;
+      for (let attempt = 1; ; attempt++) {
+        const started = Date.now();
+        const result = await Promise.race([game.flushProgress(), timeUp]);
+        if (!result) break; // se acabó el plazo con la escritura en curso
+        conflicts += result.conflicts;
+        if (result.failed === 0) {
+          flushed = conflicts === 0;
+          break;
+        }
+        if (Date.now() + retryPauseMs + (Date.now() - started) > deadline) break;
+        await new Promise((resolve) => setTimeout(resolve, retryPauseMs));
+        log(`🔁 Intento ${attempt + 1} del guardado ${at(now())}`);
+      }
       clearTimeout(timer);
-      log(flushed ? `💾 Progreso guardado ${at(now())}` : `⚠️  El progreso no se pudo guardar en ${flushTimeoutMs} ms ${at(now())}`);
+      // «💾» solo si se guardaron todos; si no, el aviso con los ms reales y, detrás del (+N ms) que lee check_deploy.py,
+      // cuántos jugadores quedaron sin guardar (los del conflicto ya se soltaron: se suman aparte)
+      const unsaved = conflicts + game.unsavedProgress();
+      const end = now();
+      log(flushed ? `💾 Progreso guardado ${at(end)}` : `⚠️  El progreso no se pudo guardar en ${end - t0} ms ${at(end)} · ${unsaved} ${unsaved === 1 ? 'jugador' : 'jugadores'} sin guardar`);
       await new Promise<void>((resolve) => io.close(() => resolve())); // ahora sí: los clientes reconectan al nuevo
       log(`🔌 Sockets cerrados ${at(now())}`);
       httpServer.close();
@@ -48,8 +72,18 @@ export function createShutdown({ game, io, httpServer, pool, log, exit = (code) 
   };
 }
 
+// AC-203: si desaparece quien lee los logs, escribir en stdout o stderr da EPIPE, y sin un listener de 'error' Node lo
+// lanza como uncaughtException. Sin listener eso tumba el proceso antes de guardar; con el de Next (15.5.28:
+// node_modules/next/dist/server/next-server.js:216, que solo hace console.error) entra en bucle y el apagado no termina.
+// Va en los streams y no en uncaughtException porque Next borra los listeners de ese evento (next-server.js:184-189).
+// Se pierde el log, no el juego ni el apagado
+export function ignoreStdioErrors(streams: NodeJS.WriteStream[] = [process.stdout, process.stderr]): void {
+  for (const stream of streams) stream.on('error', () => {});
+}
+
 // SIGTERM (Railway) y SIGINT (Ctrl-C en local) disparan el mismo apagado; lo usan server/index.ts y el proceso de los tests
 export function installShutdown(deps: ShutdownDeps): (signal: string) => Promise<void> {
+  ignoreStdioErrors();
   const shutdown = createShutdown(deps);
   process.once('SIGTERM', () => void shutdown('SIGTERM'));
   process.once('SIGINT', () => void shutdown('SIGINT'));
