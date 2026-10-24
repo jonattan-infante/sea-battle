@@ -55,7 +55,9 @@ jobs:
   # e2e de Playwright en cada PR, sin desplegar nada: los tests de `npm run test:e2e` (sin @perf, @capture ni @soak, que
   # piden GPU real o son largos) menos los @gpu, que miden por frame y con WebGL por CPU no llegan a su presupuesto. Todos
   # siguen corriendo en el Mac. Cada shard es una máquina con su build y sus 4 servidores, y corre en serie como en el Mac
-  # (workers: 1). El runner no tiene GPU: WebGL por llvmpipe, el OpenGL por software de Mesa (playwright.config.ts). Un
+  # (workers: 1). Playwright reparte los archivos por número de tests, no por duración: con las duraciones del run
+  # 40070721224, con 9 shards el más largo se queda en ~7,4 min de tests (con 8, 9 min; con 10, también 9). Al añadir
+  # specs largos, revisar el reparto. El runner no tiene GPU: WebGL por llvmpipe, el OpenGL por software de Mesa (playwright.config.ts). Un
   # fallo se repite una vez y, si pasa, sale como «flaky» en el informe. No es un check obligatorio: eso lo decide Jonattan
   e2e:
     if: github.event_name == 'pull_request' && github.event.action != 'labeled'
@@ -71,7 +73,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9]
     env:
       # Clerk de desarrollo, la misma instancia que el Mac (decisión de Jonattan del 2026-10-24): la clave pública es una
       # variable del repo y la secreta solo llega al paso de los tests. Sin las dos (un PR desde un fork), clave de
@@ -107,11 +109,11 @@ jobs:
           CLERK_SECRET_KEY: sk_test_solo_para_compilar
         run: npm run build:e2e
       # La salida pasa por redact_clerk.py: el log del job también es público
-      - name: e2e (shard ${{ matrix.shard }}/8)
+      - name: e2e (shard ${{ matrix.shard }}/9)
         shell: bash
         env:
           CLERK_SECRET_KEY: ${{ secrets.E2E_CLERK_SECRET_KEY != '' && vars.E2E_CLERK_PUBLISHABLE_KEY != '' && secrets.E2E_CLERK_SECRET_KEY || 'sk_live_dummy' }}
-        run: npx playwright test --grep-invert "@perf|@capture|@soak|@gpu" --shard=${{ matrix.shard }}/8 --retries=1 --reporter=blob,list 2>&1 | python3 -u scripts/ci/redact_clerk.py stream
+        run: npx playwright test --grep-invert "@perf|@capture|@soak|@gpu" --shard=${{ matrix.shard }}/9 --retries=1 --reporter=blob,list 2>&1 | python3 -u scripts/ci/redact_clerk.py stream
       # El repo es público y sus artefactos también: antes de subir nada se tapan las cookies y los tokens de sesión de
       # Clerk (también dentro de las trazas) y se comprueba que no queda ninguno. Si queda alguno, no se sube nada
       - name: Tapar los datos de sesión de Clerk en el blob y las trazas
@@ -185,6 +187,55 @@ jobs:
           path: |
             playwright-report
             e2e-results.json
+          retention-days: 7
+
+  # TEMPORAL (PR #45, se quita antes de fusionar): trazas de verdad de los specs que pasan por Clerk, siempre grabadas,
+  # para comprobar que redact_clerk.py las tapa antes de subirlas. Mismo filtro y misma comprobación que el job e2e
+  e2e-trace-probe:
+    if: github.event_name == 'pull_request' && github.event.action != 'labeled'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.E2E_CLERK_SECRET_KEY != '' && vars.E2E_CLERK_PUBLISHABLE_KEY != '' && vars.E2E_CLERK_PUBLISHABLE_KEY || 'pk_live_Y2xlcmsuZ2hhLWUyZS5zZWEtYmF0dGxlLmludmFsaWQk' }}
+      NEXT_TELEMETRY_DISABLED: '1'
+      EGL_PLATFORM: surfaceless
+    steps:
+      - uses: actions/checkout@v4.4.0
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: OpenGL por software de Mesa (llvmpipe)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends libegl1 libegl-mesa0 libgl1-mesa-dri
+      - name: Build de e2e
+        env:
+          CLERK_SECRET_KEY: sk_test_solo_para_compilar
+        run: npm run build:e2e
+      - name: Specs con Clerk, con traza siempre
+        shell: bash
+        env:
+          CLERK_SECRET_KEY: ${{ secrets.E2E_CLERK_SECRET_KEY != '' && vars.E2E_CLERK_PUBLISHABLE_KEY != '' && secrets.E2E_CLERK_SECRET_KEY || 'sk_live_dummy' }}
+        run: npx playwright test e2e/auth-gate.spec.ts e2e/auth-pages.spec.ts e2e/clerk-js.spec.ts e2e/app-icon.spec.ts --trace on --retries=0 --reporter=blob,list 2>&1 | python3 -u scripts/ci/redact_clerk.py stream
+      - name: Tapar los datos de sesión de Clerk en el blob y las trazas
+        if: ${{ !cancelled() }}
+        run: python3 scripts/ci/redact_clerk.py redact blob-report test-results
+      - name: Comprobar que no queda ninguno
+        id: clean
+        if: ${{ !cancelled() }}
+        run: python3 scripts/ci/redact_clerk.py check blob-report test-results
+      - name: Blob y trazas tapados
+        if: ${{ !cancelled() && steps.clean.outcome == 'success' }}
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: e2e-trace-probe
+          path: |
+            blob-report
+            test-results
           retention-days: 7
 
   # DT-16: un PR hacia main desde una rama de este repo (nunca un fork: el secreto no debe llegar a código ajeno) se
