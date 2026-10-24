@@ -19,7 +19,6 @@ import {
   prefetchClasses,
   setShipMap,
   SHIP_GLB,
-  SHIP_GLB_STAGED,
   ShipGlbError,
   ShipGlbStore,
   shipModelFromGlb,
@@ -665,27 +664,12 @@ describe('§13: los GLB de public/models llevan el hash de su contenido', () => 
     }
   });
 
-  const badUrl = (url: string | undefined) =>
-    !url || !/^\/models\/[^/]+$/.test(url) || !HASHED_GLB.test(path.basename(url)) || path.basename(url).startsWith(E2E_PREFIX) || !fs.existsSync(path.join(ROOT, 'public', url));
-
-  test('public/models no tiene GLB sin hash, y SHIP_GLB y SHIP_GLB_STAGED solo apuntan a GLB con hash que existen', () => {
+  test('public/models no tiene GLB sin hash, y SHIP_GLB solo apunta a GLB con hash que existen', () => {
     expect(unhashedModels(path.join(ROOT, 'public', 'models'))).toEqual([]);
-    expect([Object.values(SHIP_GLB).filter(badUrl), Object.values(SHIP_GLB_STAGED).filter(badUrl)]).toEqual([[], []]);
-  });
-
-  // La Cañonera, sin entrada en SHIP_GLB (producto, BACKLOG :421: el Capitán entra solo): su GLB sigue en public/models,
-  // pero el store del juego no lo pide ni con el I2 encendido, y la clase se queda en su procedural
-  test('SHIP_GLB_STAGED: ninguna de sus clases está en SHIP_GLB, y el store del juego no las pide con el I2 encendido', async () => {
-    expect([Object.keys(SHIP_GLB_STAGED), Object.keys(SHIP_GLB_STAGED).filter((c) => SHIP_GLB[c])]).toEqual([['gunboat'], []]);
-    const { calls, fetchGlb, make } = fakeLoader();
-    const store = new ShipGlbStore(undefined, make, fetchGlb);
-    store.prefetchAll(prefetchClasses({ npcClasses: ['pirate', 'merchant', 'gunboat', 'captain'] }));
-    store.pump(gl);
-    calls[0].resolve(await glb('captain'));
-    await settle();
-    store.pump(gl);
-    expect(calls.map((c) => c.url)).toEqual([SHIP_GLB.captain]);
-    expect([store.loaded('captain'), store.loaded('gunboat'), store.model('gunboat')]).toEqual([true, false, getShipModel('gunboat')]);
+    const bad = Object.values(SHIP_GLB).filter(
+      (url) => !url || !/^\/models\/[^/]+$/.test(url) || !HASHED_GLB.test(path.basename(url)) || path.basename(url).startsWith(E2E_PREFIX) || !fs.existsSync(path.join(ROOT, 'public', url))
+    );
+    expect(bad).toEqual([]);
   });
 });
 
@@ -763,17 +747,16 @@ function fakeTextureLoaders() {
   return { ktx2, images, ktx2Texture, imageTexture, calls, urls, init, release };
 }
 
-// La Cañonera de la 2.ª vuelta y el Capitán de la receta (D91), aprobados por Jonattan y entregados por ux (ASSET-SPEC §13,
-// sus filas), en public/models con el paso 4c. Se leen como en el juego, con un KTX2Loader falso porque sin navegador no hay
-// transcodificador, y dan el modelo de su clase con los números de la entrega: triángulos, extras y sockets. El Capitán, de
-// SHIP_GLB; la Cañonera, de SHIP_GLB_STAGED (sin entrada en SHIP_GLB: BACKLOG :421)
+// La Cañonera con las velas de D97 (lámina v6) y el Capitán de la receta (D91), aprobados por Jonattan y entregados por ux
+// (ASSET-SPEC §13, sus filas), en public/models con el paso 4c. Se leen como en el juego, con un KTX2Loader falso porque sin
+// navegador no hay transcodificador, y dan el modelo de su clase con los números de la entrega: triángulos, extras y sockets
 describe('Los GLB de la Cañonera y el Capitán de D91 (ASSET-SPEC §13)', () => {
   const read = async (classId: string) => {
     (globalThis as unknown as { self?: unknown }).self ??= globalThis; // GLTFLoader crea la URL de la imagen con self.URL
     const texture = new THREE.CompressedTexture([], 1024, 1024);
     const asked: string[] = [];
     const ktx2 = { load: (url: string, onLoad: (t: THREE.Texture) => void) => (asked.push(url), onLoad(texture)) } as unknown as KTX2Loader;
-    const url = (SHIP_GLB[classId] ?? SHIP_GLB_STAGED[classId])!;
+    const url = SHIP_GLB[classId]!;
     const file = fs.readFileSync(path.join(ROOT, 'public', url));
     const scene = await new Promise<THREE.Object3D>((resolve, reject) =>
       new GLTFLoader()
@@ -790,7 +773,7 @@ describe('Los GLB de la Cañonera y el Capitán de D91 (ASSET-SPEC §13)', () =>
     expect([m.extras.sb_id, m.triangles, m.extras.sb_mast_height, m.extras.sb_radius, m.extras.sb_pick]).toEqual(['npc_pirate_gunboat', [1988, 465], 18.15, 14, [5.5, 18.15, 13]]);
     expect([at(m.sockets.smoke), at(m.sockets.smoke2), m.sockets.fire.map(at)]).toEqual([[0, 2.009, -4.2], [0, 2.015, 5.6], [[1.2, 1.832, 7.1], [-1.8, 1.8, 0], [0, 1.827, -6.6]]]);
     expect([m.sockets.cannonsPort.length, m.sockets.cannonsStbd.length, m.recipe]).toEqual([6, 6, getShipModel('gunboat').recipe]);
-    expect([m.map, asked]).toEqual([texture, ['/models/npc_pirate_gunboat_atlas.12e7f712.ktx2']]);
+    expect([m.map, asked]).toEqual([texture, ['/models/npc_pirate_gunboat_atlas.0baf1e61.ktx2']]);
   });
 
   test('el Capitán: 2 383 / 511 triángulos, su palo de 24 m y un solo humo', async () => {

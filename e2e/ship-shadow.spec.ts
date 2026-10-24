@@ -9,8 +9,7 @@ import { SHADOW_Y } from '../src/client/models/ship-shadow';
 import { enterGame } from './helpers';
 
 const HEADINGS = [45, 135, 225, 315];
-// El Capitán de D91. La Cañonera, sin entrada en SHIP_GLB (BACKLOG :421: el Capitán entra solo), es un procedural más
-const GLB_CLASSES = ['captain'] as const;
+const GLB_CLASSES = ['gunboat', 'captain'] as const;
 
 // Retiene los GLB de las clases hasta release()
 async function hold(page: Page, classes: readonly string[]): Promise<() => void> {
@@ -65,7 +64,7 @@ const shadows = (page: Page) =>
 test.describe('Sombra en el agua de los GLB (U1–U4)', () => {
   test.setTimeout(180_000);
 
-  test('U1: los procedurales (también la Cañonera) no proyectan sombra, el Capitán tampoco mientras carga su GLB, y con él sí, una; el lienzo tiene stencil', async ({ page }) => {
+  test('U1: los procedurales no proyectan sombra, la Cañonera y el Capitán tampoco mientras carga su GLB, y con él sí, una cada uno; el lienzo tiene stencil', async ({ page }) => {
     const release = await hold(page, GLB_CLASSES);
     await enterGame(page);
     const stencil = await page.evaluate(() => (window.__SEA_BATTLE__!.runtime() as unknown as { gl: { getContext(): WebGL2RenderingContext } }).gl.getContext().getContextAttributes()?.stencil);
@@ -81,7 +80,7 @@ test.describe('Sombra en el agua de los GLB (U1–U4)', () => {
     const loaded = await shadows(page);
     console.log(`U1: sombras con los GLB retenidos ${JSON.stringify(loading)} · con los GLB ${JSON.stringify(loaded)}`);
     expect(loading).toEqual([]);
-    expect(loaded).toEqual(['captain×1']);
+    expect(loaded).toEqual(['captain×1', 'gunboat×1']);
   });
 
   // U2 con U8 de ux (ASSET-SPEC :825): (a) la razón de luminancia lineal de cada píxel con y sin la sombra, en el mismo frame
@@ -90,7 +89,7 @@ test.describe('Sombra en el agua de los GLB (U1–U4)', () => {
   // un píxel del borde cuenta si la sombra cubre ≥ 50 %) a ±10 % de la del modelo: el LOD1 de la vista recortado en y = 0 y
   // proyectado por sunDir a y = SHADOW_Y, rasterizado aquí por el centro de cada píxel del lienzo, menos lo que tapa el
   // barco. Distancias en px de lienzo con 8 vecinos
-  test('U2: la sombra del Capitán en los 4 rumbos deja el agua a 0,60 ± 0,03 de su luz y cubre el área del modelo (±10 %)', async ({ page }) => {
+  test('U2: la sombra de la Cañonera y del Capitán en los 4 rumbos deja el agua a 0,60 ± 0,03 de su luz y cubre el área del modelo (±10 %)', async ({ page }) => {
     await enterGame(page);
     const { focus, pose } = await startGallery(page);
     await glbLoaded(page, GLB_CLASSES);
