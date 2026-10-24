@@ -90,7 +90,7 @@ test.describe('Cámara', () => {
     expect(Math.abs(f.ppm0 - 2.82)).toBeLessThanOrEqual(0.01);
   });
 
-  test('AC-24: al comprar el cañón N2 y luego el N3, ppm₀ pasa a 5,76 y a 5,04 al cerrar la tienda, en 600 ms', async ({ page }) => {
+  test('AC-24: al comprar el cañón N2 y luego el N3, ppm₀ pasa a 5,76 y a 5,04 al cerrar la tienda, en 600 ms @gpu', async ({ page }) => {
     await buyCannonsAndCheckFrame(page, 'escritorio', 6.2, [5.76, 5.04], {
       open: () => page.keyboard.press('KeyP'),
       close: () => page.keyboard.press('Escape')

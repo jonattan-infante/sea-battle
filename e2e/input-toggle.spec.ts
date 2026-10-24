@@ -296,7 +296,7 @@ function report(label: string, results: Result[], targets: string) {
 test.describe('Doble pulsación con el estado del servidor en camino', () => {
   test.beforeEach(serve('targets'));
 
-  test('AC-125: Espacio ×2 a Δ ∈ {80, 120, 200, 300} ms con 0 y 100 ms de retardo → exactamente attack → cancelAttack, el servidor sin ataque y el HUD al día en ≤ 50 ms sin desdecirse', async ({ page }) => {
+  test('AC-125: Espacio ×2 a Δ ∈ {80, 120, 200, 300} ms con 0 y 100 ms de retardo → exactamente attack → cancelAttack, el servidor sin ataque y el HUD al día en ≤ 50 ms sin desdecirse @gpu', async ({ page }) => {
     test.setTimeout(300_000);
     await instrument(page);
     const net = trackSocket(page);
@@ -333,7 +333,7 @@ test.describe('Doble pulsación con el estado del servidor en camino', () => {
     for (const r of results) expect.soft(r.ok, `Espacio ×2, retardo ${r.delay} ms, Δ ${r.gap} ms: ${r.intents}, servidor ${r.server}, HUD ${r.hud}`).toBe(true);
   });
 
-  test('AC-125: Esc ×2 a Δ ∈ {80, 120, 200, 300} ms con 0 y 100 ms de retardo → 1 cancelAttack, la 2.ª deselecciona sin red y el HUD al día en ≤ 50 ms sin desdecirse', async ({ page }) => {
+  test('AC-125: Esc ×2 a Δ ∈ {80, 120, 200, 300} ms con 0 y 100 ms de retardo → 1 cancelAttack, la 2.ª deselecciona sin red y el HUD al día en ≤ 50 ms sin desdecirse @gpu', async ({ page }) => {
     test.setTimeout(360_000);
     await instrument(page);
     const net = trackSocket(page);
@@ -407,7 +407,7 @@ test.describe('Doble pulsación con el estado del servidor en camino', () => {
     expect.soft(stop.sent, 'S mantenida').toEqual(['stop']);
   });
 
-  test('AC-128 (c): con el casco intacto y un objetivo atacado, R con 0 y 100 ms de retardo → repair(true) rechazado por el servidor, el ataque sigue y el HUD no sale de "atacando"', async ({ page }) => {
+  test('AC-128 (c): con el casco intacto y un objetivo atacado, R con 0 y 100 ms de retardo → repair(true) rechazado por el servidor, el ataque sigue y el HUD no sale de "atacando" @gpu', async ({ page }) => {
     test.setTimeout(180_000);
     await instrument(page);
     const net = trackSocket(page);
@@ -464,7 +464,7 @@ test.describe('Doble pulsación con el estado del servidor en camino', () => {
 test.describe('Doble toque en Atacar @mobile', () => {
   test.beforeEach(serve('targets'));
 
-  test('AC-125: en 390×844, el botón Atacar ×2 a Δ ∈ {80, 120, 200, 300} ms con 0 y 100 ms de retardo → exactamente attack → cancelAttack, el servidor sin ataque y el HUD al día en ≤ 50 ms sin desdecirse', async ({ page }) => {
+  test('AC-125: en 390×844, el botón Atacar ×2 a Δ ∈ {80, 120, 200, 300} ms con 0 y 100 ms de retardo → exactamente attack → cancelAttack, el servidor sin ataque y el HUD al día en ≤ 50 ms sin desdecirse @gpu', async ({ page }) => {
     test.setTimeout(360_000);
     await instrument(page);
     const net = trackSocket(page);
@@ -510,7 +510,7 @@ test.describe('Doble toque en Atacar @mobile', () => {
 test.describe('Reparar y atacar cruzados con el casco dañado (AC-128)', () => {
   test.beforeEach(serve('repair'));
 
-  test('AC-128 (a): con un objetivo atacado, R y luego Espacio a Δ ∈ {80, 120, 200} ms con 0 y 100 ms de retardo → exactamente repair(true) → attack, el servidor atacando sin reparar y el HUD al día en ≤ 50 ms sin desdecirse', async ({ page }) => {
+  test('AC-128 (a): con un objetivo atacado, R y luego Espacio a Δ ∈ {80, 120, 200} ms con 0 y 100 ms de retardo → exactamente repair(true) → attack, el servidor atacando sin reparar y el HUD al día en ≤ 50 ms sin desdecirse @gpu', async ({ page }) => {
     test.setTimeout(300_000);
     await instrument(page);
     const net = trackSocket(page);
@@ -553,7 +553,7 @@ test.describe('Reparar y atacar cruzados con el casco dañado (AC-128)', () => {
   // Un test por retardo: reparar cura 32 de vida/s y cada ronda repara ~2,5 s, así que cada servidor nuevo (casco al
   // 10 %) da para 3 rondas y sus reintentos sin pasar del 90 %
   for (const delay of DELAYS) {
-    test(`AC-128 (b): reparando y con un objetivo seleccionado sin atacar, Espacio y luego R a Δ ∈ {80, 120, 200} ms con ${delay} ms de retardo → exactamente attack → repair(true), el servidor reparando sin ataque y el HUD al día en ≤ 50 ms sin desdecirse`, async ({ page }) => {
+    test(`AC-128 (b): reparando y con un objetivo seleccionado sin atacar, Espacio y luego R a Δ ∈ {80, 120, 200} ms con ${delay} ms de retardo → exactamente attack → repair(true), el servidor reparando sin ataque y el HUD al día en ≤ 50 ms sin desdecirse @gpu`, async ({ page }) => {
       test.setTimeout(240_000);
       await instrument(page);
       const net = trackSocket(page);
@@ -616,7 +616,7 @@ test.describe('Reparar, navegar y reparar con el casco dañado (AC-128 d)', () =
   }
 
   for (const delay of DELAYS) {
-    test(`AC-128 (d): R → clic en el agua → R a Δ ∈ {80, 120, 200} ms con ${delay} ms de retardo → exactamente repair(true) → moveTo → repair(true), el servidor reparando y el HUD al día en ≤ 50 ms sin desdecirse`, async ({ page }) => {
+    test(`AC-128 (d): R → clic en el agua → R a Δ ∈ {80, 120, 200} ms con ${delay} ms de retardo → exactamente repair(true) → moveTo → repair(true), el servidor reparando y el HUD al día en ≤ 50 ms sin desdecirse @gpu`, async ({ page }) => {
       test.setTimeout(180_000);
       await instrument(page);
       const net = trackSocket(page);

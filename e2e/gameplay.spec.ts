@@ -54,7 +54,7 @@ test.describe('Partida como invitado', () => {
     await expect(page.getByTestId('shop')).toHaveCount(0);
   });
 
-  test('AC-14 (a, c): marcador ≤ 50 ms y la posición renderizada cambia en ≤ 350 ms en 10 de 10 corridas', async ({ page }) => {
+  test('AC-14 (a, c): marcador ≤ 50 ms y la posición renderizada cambia en ≤ 350 ms en 10 de 10 corridas @gpu', async ({ page }) => {
     test.setTimeout(120_000);
     // O-56: el barco de un jugador que sale de otro test sigue 10 s en el mundo (DISCONNECT_GRACE) y, si caía bajo el clic,
     // el clic lo seleccionaba en vez de navegar. Cada clic va a un punto de agua libre, elegido justo antes de lanzarlo como

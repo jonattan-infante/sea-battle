@@ -73,7 +73,7 @@ test.describe('Humo y fuego de daño en móvil', () => {
 
 // La Cañonera echa humo también por socket_smoke_02 (VFX-SPEC §6, D25): su huella L·B es grande para su mástil
 test.describe('Humo de daño de la Cañonera', () => {
-  test('D25: al 40 % echa humo por sus 2 sockets, cada uno con la tasa completa (2 × 10–11 bocanadas vivas)', async ({ page }) => {
+  test('D25: al 40 % echa humo por sus 2 sockets, cada uno con la tasa completa (2 × 10–11 bocanadas vivas) @gpu', async ({ page }) => {
     await enterGame(page);
     await page.evaluate(() => {
       const rt = window.__SEA_BATTLE__!.runtime();
