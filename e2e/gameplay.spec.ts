@@ -54,7 +54,7 @@ test.describe('Partida como invitado', () => {
     await expect(page.getByTestId('shop')).toHaveCount(0);
   });
 
-  test('AC-14 (a, c): marcador ≤ 50 ms y la posición renderizada cambia en ≤ 350 ms en 10 de 10 corridas', async ({ page }) => {
+  test('AC-14 (a, c): marcador ≤ 50 ms y la posición renderizada cambia en ≤ 350 ms en 10 de 10 corridas @gpu', async ({ page }) => {
     test.setTimeout(120_000);
     await enterGame(page);
     const markers: number[] = [];

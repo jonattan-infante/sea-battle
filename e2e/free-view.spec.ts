@@ -196,7 +196,7 @@ test.describe('Vista libre (E13)', () => {
     expect(back).toEqual([{ name: C2S.viewAt, data: null }]);
   });
 
-  test('AC-119 (daño, muerte y reaparición): cada uno devuelve la cámara al barco en ≤ 300 ms', async ({ page }) => {
+  test('AC-119 (daño, muerte y reaparición): cada uno devuelve la cámara al barco en ≤ 300 ms @gpu', async ({ page }) => {
     test.setTimeout(120_000);
     const server = await startOwnServer({ SEA_BATTLE_NPCS: '0', SEA_BATTLE_SCENARIO: 'view-return' });
     try {
