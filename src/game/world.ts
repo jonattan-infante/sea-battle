@@ -139,6 +139,13 @@ export function createWorld(options: CreateWorldOptions = {}): World {
   return world;
 }
 
+// Las clases de NPC que pueden salir en este mundo, para la bienvenida (BACKLOG :425-:427): el cliente solo baja en segundo
+// plano los modelos de los barcos que puede ver. La Cañonera y el Capitán, solo con el I2, que es la única compuerta de
+// spawnGunboat y spawnCaptain (AC-187)
+export function npcClasses(world: World): string[] {
+  return world.i2 ? ['pirate', 'merchant', GUNBOAT_CLASS, CAPTAIN_CLASS] : ['pirate', 'merchant'];
+}
+
 // ---------- Utilidades de reglas ----------
 
 const rand = (world: World, min: number, max: number) => min + world.rng() * (max - min);
