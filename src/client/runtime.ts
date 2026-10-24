@@ -1300,7 +1300,16 @@ export class GameRuntime implements OverlayHost, ChipHost {
     this.floating?.frame(now);
     this.chips?.frame(now);
     this.adaptQuality(state, dt, now);
+    const c = this.vfxClock; // O-66: el step de este frame es el que usaron los emisores de director.updateShips
+    c.dts[c.frames % c.dts.length] = dt;
+    c.frames++;
+    c.step += step;
   }
+
+  // Reloj de la simulación de efectos para los e2e de D32 (O-66): frames, Σ step (s) y los últimos dt (s) en un anillo.
+  // Solo cuenta: ni el step ni lo que se emite cambian. Va aquí, tras frame(), para no mover las líneas de arriba que citan
+  // QA-59 y O-66
+  readonly vfxClock = { frames: 0, step: 0, dts: new Float64Array(256) };
 
   // Antes de updateShips: si el GLB propio acaba de llegar, el frame que abre la entrada ya lo pinta
   private updateEntry(now: number): void {
