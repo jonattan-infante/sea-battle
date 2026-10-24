@@ -478,6 +478,35 @@ describe('AC-193 c, opción A: el GLB de la clase propia predicha, antes de la b
     store.dispose();
     expect(f.calls.map((c) => c.signal?.aborted)).toEqual([true]);
   });
+
+  // La sonda QA-31 (BACKLOG :1821; scratchpad/qa-pr31-cf0ee5f.log, etapa SONDA): otro barco de la clase predicha entra antes
+  // que el propio y el pump toma la descarga predicha; al llegar la clase real, el aborto no puede dejar esa clase fallida
+  // hasta recargar. La predicha se aborta, la real se carga antes, y la predicha vuelve a la cola y acaba cargada, sin
+  // quedar fallida (waiting) y sin aviso
+  test('si el pump ya tomó la descarga predicha, el aborto la vuelve a encolar al final, sin marcarla fallida ni avisar', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const f = fakeLoader();
+    const store = new ShipGlbStore(manifest, f.make, f.fetchGlb);
+    const order: string[] = [];
+    const loadedNow = () => ['sloop', 'frigate'].filter((c) => store.loaded(c) && !order.includes(c)).forEach((c) => order.push(c));
+    store.predictOwn('frigate');
+    store.request('frigate'); // un barco de la Fragata, antes que el propio
+    store.pump(gl); // toma la descarga predicha
+    store.request('sloop', true); // la clase real: aborta la predicha
+    await settle();
+    expect([f.calls[0].signal?.aborted, store.waiting('frigate'), warn.mock.calls]).toEqual([true, true, []]);
+    f.calls[1].resolve(await glb('sloop'));
+    store.pump(gl);
+    await settle();
+    loadedNow();
+    store.pump(gl); // la predicha, desde cero
+    expect(f.calls.map((c) => c.url)).toEqual(['/models/ship_frigate.glb', '/models/ship_sloop.glb', '/models/ship_frigate.glb']);
+    f.calls[2].resolve(await glb('frigate'));
+    await settle();
+    loadedNow();
+    expect([order, store.waiting('frigate'), warn.mock.calls]).toEqual([['sloop', 'frigate'], false, []]);
+    warn.mockRestore();
+  });
 });
 
 // Hoy el juego se muestra en el primer frame. Con el GLB propio pendiente, en el primer frame en que llega o falla, o en el

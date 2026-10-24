@@ -235,6 +235,7 @@ export class ShipGlbStore {
   private readonly early = new Map<string, Promise<ArrayBuffer>>(); // descargas del propio que el pump aún no tomó
   private predicted: { classId: string; abort: AbortController | null } | null = null; // opción A: la clase propia predicha
   private ownKnown = false; // ya llegó la clase real del barco propio
+  private requeue: string | null = null; // la clase predicha cuya descarga, ya en el pump, abortó la clase real
   private loading: string | null = null;
   private loader: GlbLoader | null = null;
   private disposed = false;
@@ -298,12 +299,14 @@ export class ShipGlbStore {
   }
 
   // Llega la clase real del barco propio: si la predicha era otra y ya bajaba, se aborta para que no compita con la buena.
-  // Su clase sigue en el manifiesto: prefetchAll la vuelve a pedir, desde cero
+  // Su clase sigue en el manifiesto: prefetchAll la vuelve a pedir, desde cero. Si el pump ya la había tomado (otro barco de
+  // esa clase entró antes), queda apuntada para que su catch la vuelva a encolar sin marcarla fallida (BACKLOG :1821)
   private settlePrediction(classId: string): void {
     this.ownKnown = true;
     const p = this.predicted;
     this.predicted = null;
     if (!p || p.classId === classId || !p.abort) return;
+    if (this.loading === p.classId) this.requeue = p.classId;
     p.abort.abort();
     this.early.delete(p.classId);
   }
@@ -376,10 +379,16 @@ export class ShipGlbStore {
         this.upgrade(classId, url, model, upgrades);
       })
       .catch((e: Error) => {
+        // El aborto de la predicción no es un fallo: la clase vuelve al final de la cola, detrás del propio
+        if (this.requeue === classId) {
+          if (!this.disposed && this.manifest[classId] === url && !this.queue.includes(classId)) this.queue.push(classId);
+          return;
+        }
         if (this.manifest[classId] === url) this.failed.add(classId);
         console.warn(`[ship-glb] ${classId} (${url}): ${e.message}; se queda el procedural`);
       })
       .finally(() => {
+        if (this.requeue === classId) this.requeue = null;
         this.loading = null;
       });
   }
