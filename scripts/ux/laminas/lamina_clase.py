@@ -45,7 +45,8 @@ TOPE = dict(lod0=5000, lod1=1200, suma=630930)  # producto, 2026-10-19 (BACKLOG 
 APROBADAS = ('sloop', 'brig')  # láminas D95 aprobadas por Jonattan el 2026-10-20 (ART-DIRECTION, fila D95)
 BALANDRA_B, BERGANTIN_B = 110955, 139308; APROBADO_B = BALANDRA_B + BERGANTIN_B  # sus 4 combinaciones (ASSET-SPEC §13, turnos K)
 # lo que producto deja a la clase (2026-10-20): a la Fragata, lo que queda menos lo que pesa el Bergantín, para la Goleta
-OBJETIVO = {'frigate': TOPE['suma'] - APROBADO_B - BERGANTIN_B}
+OBJETIVO = {'frigate': TOPE['suma'] - APROBADO_B - BERGANTIN_B, 'schooner': BERGANTIN_B}  # la Goleta: producto, 2026-10-24 (BACKLOG :361)
+FRAGATA_B = 131058 + 140277  # la Fragata nueva, aún sin aprobar (frigate-medidas.json del turno FR2 de fb8979a; la v4 solo cambia el texto)
 # salida (a) de producto (BACKLOG :361): la KTX2 más comprimida vale si no baja de lo peor de los Navíos aprobados, en
 # fidelidad del atlas (D91: 30,5 dB) y en la diferencia de la propia KTX2 con el atlas en el render del juego (D90: 1,01)
 # (producto, 2026-10-20: también el p95, 4,9, porque el error de la ETC1S está en los cantos finos; y el respaldo se mide
@@ -358,7 +359,11 @@ if __name__ == '__main__':
     peso = []
     if cls in OBJETIVO:
         dos, obj = MED['dos_B'], MED['objetivo_B']
-        peso.append(f"Las 2 juntas pesan {dec(dos / 1000, 1)} KB. Para que a la Goleta le quede lo mismo que pesa el Bergantín, las 2 {NAME[cls]}s tienen que quedarse en {dec(obj / 1000, 1)} KB como mucho" + ('.' if dos <= obj else f': se pasan en {mil(dos - obj)} bytes.'))
+        if cls == 'frigate': peso.append(f"Las 2 juntas pesan {dec(dos / 1000, 1)} KB. Para que a la Goleta le quede lo mismo que pesa el Bergantín, las 2 {NAME[cls]}s tienen que quedarse en {dec(obj / 1000, 1)} KB como mucho" + ('.' if dos <= obj else f': se pasan en {mil(dos - obj)} bytes.'))
+        else:  # la Goleta: su tope y lo que suman las 8, con la parte del exceso que es de la Fragata (producto, BACKLOG :361)
+            s8, fx = APROBADO_B + FRAGATA_B + dos, FRAGATA_B - OBJETIVO['frigate']
+            peso.append(f"Las 2 juntas pesan {dec(dos / 1000, 1)} KB. Producto les deja lo que pesa el Bergantín, {dec(obj / 1000, 1)} KB como mucho" + ('.' if dos <= obj else f': se pasan en {mil(dos - obj)} bytes.'))
+            peso.append(f"Con la Fragata nueva, aún sin aprobar ({dec(FRAGATA_B / 1000, 1)} KB las 2), las 8 combinaciones sumarían {dec(s8 / 1000, 1)} KB de los {dec(TOPE['suma'] / 1000, 1)} KB" + (f", y caben: sobran {mil(TOPE['suma'] - s8)} bytes." if s8 <= TOPE['suma'] else f": se pasan en {mil(s8 - TOPE['suma'])} bytes. La Fragata se pasa {mil(fx)} bytes de su parte" + (f", y la Goleta, {mil(dos - obj)} de la suya." if dos > obj else f", y la Goleta ahorra {mil(obj - dos)} de la suya.")))
         if dos > obj:
             ok = {v: x for v, x in MED['salida_a'].items() if x['dentro']}
             if ok:
@@ -368,14 +373,14 @@ if __name__ == '__main__':
                 x5, x2 = MED['salida_a']['a512'], MED['salida_a']['a256']
                 def pesa(x): return f"las 2 pesarían {dec(x['dos_B'] / 1000, 1)} KB" + (', y cabrían' if x['dos_B'] <= obj else f", {mil(x['dos_B'] - obj)} bytes de más")
                 peso.append(f"La salida (a) de producto, comprimir más la textura, no se aplica. Con la paleta acotada a 512, {fallos(x5)}; y {pesa(x5)}. Con la de 256, {fallos(x2)}; y {pesa(x2)}.")
-            peso.append('Se decide con la medida del piloto. Las vistas de arriba llevan la textura de la receta: lo que apruebas es cómo se ve, no el presupuesto.')
+            peso.append(('' if ok else 'Se decide con la medida del piloto. ') + 'Las vistas de arriba llevan la textura de la receta: lo que apruebas es cómo se ve, no el presupuesto.')
     BLOCKS = [
         ('Qué cambia', INK, [
             f'El casco: curvas, la popa con caída y el espejo con su fila de ventanas; la española, con tallas doradas y un friso de volutas{alto(cls)}.',
             'Los colores de cada familia: la británica, azul marino con la franja blanca y la Union Jack; la española, roja con la franja dorada, la rojigualda y la cruz de Borgoña ' + cruces(cls) + '.',
             f'La bandera de la familia va en el pico de la vela de popa, y en la cubierta hay {cubierta(cls)}.']),
         ('Lo que no cambia', INK, [
-            f"Lo que dice qué barco es: {num(c['L'])} × {num(c['B'])} m, {me['S2']} {'palo' if me['S2'] == 1 else 'palos'} con las velas de hoy, {me['S4']} y una franja de portas con {len(CC.rig_json(cls)['recipe']['cannonZ'])} cañones por banda. Las 2 familias son iguales en eso, y las velas siguen claras: es un barco del jugador.",
+            f"Lo que dice qué barco es: {num(c['L'])} × {num(c['B'])} m, {me['S2']} {'palo' if me['S2'] == 1 else 'palos'} con las velas de hoy, {me['S4'] if me['S4'] != 'ninguno' else 'sin camareta ni castillos'} y una franja de portas con {len(CC.rig_json(cls)['recipe']['cannonZ'])} cañones por banda. Las 2 familias son iguales en eso, y las velas siguen claras: es un barco del jugador.",
             f'Lo que pide: {pide}.']),
         ('Lo que cuesta', INK, [
             f"Triángulos de cerca y de lejos: británica {mil(g['lod0'])} y {mil(g['lod1'])}, española {mil(e['lod0'])} y {mil(e['lod1'])} (hoy, {mil(MED['hoy']['lod0'])} y {mil(MED['hoy']['lod1'])}; tope, {mil(TOPE['lod0'])} y {mil(TOPE['lod1'])}).",
@@ -386,7 +391,8 @@ if __name__ == '__main__':
         ('En contra', RED, [
             'Las velas son las de hoy: el detalle nuevo está en el casco, la cubierta y la bandera. De lejos, lo que más se ve sigue siendo el aparejo.',
             *(['La textura va a 512 × 512 para que quepa la descarga: con el zoom más cercano se ve algo menos nítida que la de los Navíos, que va a 1024 × 1024.'] if c['A'] < 1024 else []),
-            *([f"Pesa más de lo previsto: las 2 se pasan en {dec((MED['dos_B'] - MED['objetivo_B']) / 1000, 1)} KB de lo que dejaría a la Goleta lo mismo que al Bergantín. Si la medida del piloto no sube la cota de 1 MB, a las 2 Goletas les quedarían {dec(resto / 1000, 1)} KB, {'menos' if resto < BALANDRA_B else 'más'} de lo que pesan las 2 Balandras ({dec(BALANDRA_B / 1000, 1)} KB). " + (f"Bajarle la textura no lo arregla: a {mitad} × {mitad} se queda en {dec(MED['densidad_mitad'][0], 1)} px por metro, y se piden 18." if MED['densidad_mitad'][0] < 18 else f"Con la textura a {mitad} × {mitad} se quedaría en {dec(MED['densidad_mitad'][0], 1)} px por metro (se piden 18), y se vería algo menos nítida.")] if cls in OBJETIVO and MED['dos_B'] > MED['objetivo_B'] else [])]),
+            *([f"Pesa más de lo previsto: las 2 se pasan en {dec((MED['dos_B'] - MED['objetivo_B']) / 1000, 1)} KB de lo que dejaría a la Goleta lo mismo que al Bergantín. Si la medida del piloto no sube la cota de 1 MB, a las 2 Goletas les quedarían {dec(resto / 1000, 1)} KB, {'menos' if resto < BALANDRA_B else 'más'} de lo que pesan las 2 Balandras ({dec(BALANDRA_B / 1000, 1)} KB). " + (f"Bajarle la textura no lo arregla: a {mitad} × {mitad} se queda en {dec(MED['densidad_mitad'][0], 1)} px por metro, y se piden 18." if MED['densidad_mitad'][0] < 18 else f"Con la textura a {mitad} × {mitad} se quedaría en {dec(MED['densidad_mitad'][0], 1)} px por metro (se piden 18), y se vería algo menos nítida.")] if cls == 'frigate' and MED['dos_B'] > MED['objetivo_B'] else []),
+            *([f"Pesa más de lo previsto: las 2 se pasan en {dec((MED['dos_B'] - MED['objetivo_B']) / 1000, 1)} KB de lo que pesa el Bergantín, que es lo que producto les deja. " + ('Con la textura más comprimida (salida (a)) caben.' if any(x['dentro'] for x in MED['salida_a'].values()) else 'Se decide con la medida del piloto.')] if cls == 'schooner' and MED['dos_B'] > MED['objetivo_B'] else [])]),
     ]
     for title, colr, lines in BLOCKS:
         d.text((40, y), title, font=font(19), fill=TITLE if colr == INK else RED); y += 30
