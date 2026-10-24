@@ -58,9 +58,11 @@ test.describe('Partida como invitado', () => {
     test.setTimeout(120_000);
     // O-56: el barco de un jugador que sale de otro test sigue 10 s en el mundo (DISCONNECT_GRACE) y, si caía bajo el clic,
     // el clic lo seleccionaba en vez de navegar. Cada clic va a un punto de agua libre, elegido justo antes de lanzarlo como
-    // waterPoint() de input-toggle.spec.ts: sobre el lienzo y sin barcos ajenos a < 60 px. El primer candidato de cada lado
-    // es el punto de siempre, a 120 px del barco
-    const FREE_PX = 60;
+    // waterPoint() de input-toggle.spec.ts: sobre el lienzo y donde runtime.pick no coge ningún barco (O-61). Es la misma
+    // prueba que hace el clic (GameCanvas.tsx, act), con touch = false porque el clic es de ratón; una distancia fija en px
+    // no vale, porque pick coge la Balandra hasta a 104–105 px de su centro en algún rumbo (QA-47). La distancia al barco
+    // ajeno más cercano solo va al log. El primer candidato de cada lado es el punto de siempre, a 120 px del barco
+    const TOUCH = false;
     const OFFSETS_X = [0, -100, 100, -200, 200];
     const px = (v: number) => (v === Infinity ? 'ninguno en pantalla' : `${v.toFixed(0)} px`);
     await enterGame(page);
@@ -85,10 +87,10 @@ test.describe('Partida como invitado', () => {
       // Alterna arriba y abajo para quedarse cerca del puerto
       const dy = run % 2 === 0 ? -120 : 120;
       const t = await page.evaluate(
-        ({ offY, freePx, offsets }) =>
-          new Promise<{ marker: number; move: number; point: { x: number; y: number; nearest: number } | null; tried: { x: number; y: number; nearest: number; onCanvas: boolean }[] }>((resolve) => {
+        ({ offY, touch, offsets }) =>
+          new Promise<{ marker: number; move: number; point: { x: number; y: number; nearest: number } | null; tried: { x: number; y: number; nearest: number; onCanvas: boolean; picked: string | null }[] }>((resolve) => {
             const dbg = window.__SEA_BATTLE__!;
-            const rt = dbg.runtime() as unknown as { clickMarker: unknown };
+            const rt = dbg.runtime() as unknown as { clickMarker: unknown; pick(x: number, y: number, touch: boolean): string | null };
             type Seen = { id: string; x: number; z: number; screen: { sx: number; sy: number } | null };
             const me0 = dbg.me() as Seen;
             const others = (dbg.ships() as Seen[]).filter((s) => s.id !== me0.id && s.screen).map((s) => s.screen!);
@@ -96,9 +98,10 @@ test.describe('Partida como invitado', () => {
               const x = me0.screen!.sx + dx;
               const y = me0.screen!.sy + offY;
               const nearest = Math.min(Infinity, ...others.map((o) => Math.hypot(o.sx - x, o.sy - y)));
-              return { x, y, nearest, onCanvas: document.elementFromPoint(x, y)?.tagName === 'CANVAS' };
+              const onCanvas = document.elementFromPoint(x, y)?.tagName === 'CANVAS';
+              return { x, y, nearest, onCanvas, picked: onCanvas ? rt.pick(x, y, touch) : null };
             });
-            const free = tried.find((c) => c.onCanvas && c.nearest >= freePx);
+            const free = tried.find((c) => c.onCanvas && c.picked === null);
             if (!free) return resolve({ marker: -1, move: Infinity, point: null, tried });
             const point = { x: free.x, y: free.y, nearest: free.nearest };
             const canvas = document.querySelector('canvas')!;
@@ -117,15 +120,15 @@ test.describe('Partida como invitado', () => {
             };
             requestAnimationFrame(poll);
           }),
-        { offY: dy, freePx: FREE_PX, offsets: OFFSETS_X }
+        { offY: dy, touch: TOUCH, offsets: OFFSETS_X }
       );
       const side = dy < 0 ? 'norte' : 'sur';
       if (t.point) {
-        console.log(`AC-14 corrida ${run + 1}: ${side}, clic en (${t.point.x.toFixed(0)}, ${t.point.y.toFixed(0)}) · barco ajeno más cercano: ${px(t.point.nearest)}`);
+        console.log(`AC-14 corrida ${run + 1}: ${side}, clic en (${t.point.x.toFixed(0)}, ${t.point.y.toFixed(0)}) · pick null · barco ajeno más cercano: ${px(t.point.nearest)}`);
       } else {
-        console.log(`AC-14 corrida ${run + 1}: ${side}, sin punto libre · candidatos ${t.tried.map((c) => `(${c.x.toFixed(0)}, ${c.y.toFixed(0)}) ${c.onCanvas ? px(c.nearest) : 'fuera del lienzo'}`).join(' · ')}`);
+        console.log(`AC-14 corrida ${run + 1}: ${side}, sin punto libre · candidatos ${t.tried.map((c) => `(${c.x.toFixed(0)}, ${c.y.toFixed(0)}) ${c.onCanvas ? `pick ${c.picked} · ${px(c.nearest)}` : 'fuera del lienzo'}`).join(' · ')}`);
       }
-      expect(t.point, `AC-14: sin punto de agua libre (sobre el lienzo y sin barcos ajenos a < ${FREE_PX} px) en la corrida ${run + 1}`).not.toBeNull();
+      expect(t.point, `AC-14: sin punto de agua libre (sobre el lienzo y sin barco que coja runtime.pick) en la corrida ${run + 1}`).not.toBeNull();
       markers.push(t.marker);
       moves.push(t.move);
     }
