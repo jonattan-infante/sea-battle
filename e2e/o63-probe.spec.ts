@@ -4,7 +4,8 @@
 //   de cada una currentSrc, complete y naturalWidth; la esquina de arriba a la izquierda con el settle de antes (complete,
 //   fuentes y 300 ms) y tras decode() y 2 frames; cuánto tarda el decode() de cada imagen justo después de la 1.ª captura
 //   (unos pocos ms = ya estaba decodificada), y las navegaciones del frame principal. Si las 2 esquinas difieren, adjunta
-//   las 2 capturas.
+//   las 2 capturas. Para H5, en el reloj del documento: su load, la entrada en settle, las 2 capturas, las llamadas a
+//   history.pushState/replaceState y las navegaciones, y si el documento cambió entre la entrada y una captura.
 // - Control A: la imagen del fondo de /sign-in retenida 2 s con page.route. ¿Cae la esquina frente a la landing?
 // - Control B: decode() de las imágenes del fondo envuelto para resolver a los 1,5 s, con el fondo oculto hasta entonces.
 //   Con el settle de antes la esquina tiene que salir sin la imagen, y tras decode() y 2 frames, con ella.
@@ -59,16 +60,42 @@ async function shot(page: Page): Promise<{ png: Buffer; rgb: Rgb }> {
   return { png, rgb };
 }
 
+// O-63, H5: el reloj de la página (ms desde el performance.timeOrigin de su documento) y el timeOrigin, que cambia si el
+// documento se sustituye
+type Clock = { origin: number; now: number };
+const clock = (page: Page): Promise<Clock> => page.evaluate(() => ({ origin: performance.timeOrigin, now: performance.now() }));
+const onClock = (c: Clock, entry: Clock) => (c.origin === entry.origin ? `+${Math.round(c.now)}` : `+${Math.round(c.now)} en otro documento (timeOrigin ${Math.round(c.origin - entry.origin)} ms después)`);
+
+// Las llamadas a history.pushState/replaceState (navegaciones dentro del mismo documento), con su hora en el reloj de la
+// página, y sin la URL
+async function hookHistory(page: Page) {
+  await page.addInitScript(() => {
+    const log: string[] = [];
+    (window as unknown as { __o63: string[] }).__o63 = log;
+    for (const k of ['pushState', 'replaceState'] as const) {
+      const f = history[k].bind(history);
+      history[k] = (...a: Parameters<History['pushState']>) => {
+        log.push(`${k} +${Math.round(performance.now())}`);
+        return f(...a);
+      };
+    }
+  });
+}
+
 // Una página: lo que hay en document.images al entrar en settle y cuando acaba, la esquina con el settle de antes, el
-// decode() de cada imagen justo después y la esquina tras decode() y 2 frames
-async function measure(page: Page, label: string, info: TestInfo) {
+// decode() de cada imagen justo después y la esquina tras decode() y 2 frames. Al final, en el reloj del documento en el
+// que entró en settle: su load, la entrada en settle, las 2 capturas, sus llamadas a history y las navegaciones del frame
+// principal desde la página anterior
+async function measure(page: Page, label: string, info: TestInfo, navs: Nav[]) {
   const atEntry = await page.evaluate(() => document.images.length);
+  const entry = await clock(page);
   const t = Date.now();
   await page.waitForFunction(() => Array.from(document.images).every((i) => i.complete && i.naturalWidth > 0), null, { timeout: 20_000 });
   const waited = Date.now() - t;
   const images = await page.evaluate(() => Array.from(document.images).map((i) => ({ src: i.currentSrc, complete: i.complete, w: i.naturalWidth, h: i.naturalHeight, display: getComputedStyle(i).display })));
   await page.evaluate(() => document.fonts.ready.then(() => {}));
   await page.waitForTimeout(300);
+  const atOld = await clock(page);
   const old = await shot(page);
   const decodeMs = await page.evaluate(() =>
     Promise.all(
@@ -79,21 +106,30 @@ async function measure(page: Page, label: string, info: TestInfo) {
     )
   );
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  const atFixed = await clock(page);
   const fixed = await shot(page);
+  const doc = await page.evaluate(() => {
+    const n = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
+    return { load: n ? Math.round(n.loadEventEnd) : -1, type: n?.type ?? 'sin entrada', history: (window as unknown as { __o63?: string[] }).__o63 ?? [] };
+  });
+  const navList = navs.splice(0).map((n) => `+${Math.round(n.at - entry.origin)} ${n.to}`);
+  const timeline = `reloj del documento: load +${doc.load} (0 = aún no), entrada en settle +${Math.round(entry.now)}, captura del settle de antes ${onClock(atOld, entry)}, captura tras decode ${onClock(atFixed, entry)} · tipo ${doc.type} · history [${doc.history.join(', ')}] · navegaciones [${navList.join(', ')}]`;
   const dE = deltaE(old.rgb, fixed.rgb);
   if (dE > 3) {
     await info.attach(`${label.replace('/', '')}-settle-de-antes.png`, { body: old.png, contentType: 'image/png' });
     await info.attach(`${label.replace('/', '')}-tras-decode.png`, { body: fixed.png, contentType: 'image/png' });
   }
   const list = images.map((i, n) => `${where(i.src, true)} complete=${i.complete} ${i.w}×${i.h} ${i.display} decode ${decodeMs[n]} ms`).join('; ');
-  const text = `${label}: ${atEntry} imágenes al entrar en settle (esperó ${waited} ms), ${images.length} al acabar [${list}] · esquina con el settle de antes rgb(${old.rgb.join(',')}), tras decode y 2 frames rgb(${fixed.rgb.join(',')}), ΔE76 ${dE.toFixed(2)}`;
+  const text = `${label}: ${atEntry} imágenes al entrar en settle (esperó ${waited} ms), ${images.length} al acabar [${list}] · esquina con el settle de antes rgb(${old.rgb.join(',')}), tras decode y 2 frames rgb(${fixed.rgb.join(',')}), ΔE76 ${dE.toFixed(2)} · ${timeline}`;
   return { text, old: old.rgb, fixed: fixed.rgb };
 }
 
-function trackNavigations(page: Page, t0: number): string[] {
-  const navs: string[] = [];
+// Las navegaciones del frame principal, con la hora de Node (epoch, como performance.timeOrigin) y solo la ruta
+type Nav = { at: number; to: string };
+function trackNavigations(page: Page): Nav[] {
+  const navs: Nav[] = [];
   page.on('framenavigated', (f) => {
-    if (f === page.mainFrame()) navs.push(`+${Date.now() - t0} ${where(f.url())}`);
+    if (f === page.mainFrame()) navs.push({ at: Date.now(), to: where(f.url()) });
   });
   return navs;
 }
@@ -101,14 +137,14 @@ function trackNavigations(page: Page, t0: number): string[] {
 for (let run = 1; run <= RUNS; run++) {
   test(`O-63 sonda #${run}: landing y /sign-in en un contexto nuevo @mobile`, async ({ page }, info) => {
     test.setTimeout(90_000);
-    const navs = trackNavigations(page, Date.now());
+    await hookHistory(page);
+    const navs = trackNavigations(page);
     await page.goto(`${AUTH}/`);
-    const landing = await measure(page, 'landing', info);
-    const navsLanding = navs.splice(0).join(', ');
+    const landing = await measure(page, 'landing', info, navs);
     await page.goto(`${AUTH}/sign-in`);
     await page.locator('.cl-formButtonPrimary').waitFor({ state: 'visible', timeout: 30_000 });
-    const signIn = await measure(page, '/sign-in', info);
-    console.log(safe(`O-63 sonda #${run} · ${landing.text} · navegaciones [${navsLanding}] · ${signIn.text} · navegaciones [${navs.join(', ')}]`));
+    const signIn = await measure(page, '/sign-in', info, navs);
+    console.log(safe(`O-63 sonda #${run} · ${landing.text} · ${signIn.text}`));
   });
 }
 
@@ -117,6 +153,8 @@ const versusLanding = (signIn: { old: Rgb; fixed: Rgb }, landing: { fixed: Rgb }
 
 test('O-63 control A: la imagen del fondo de /sign-in retenida 2 s con page.route @mobile', async ({ page }, info) => {
   test.setTimeout(90_000);
+  await hookHistory(page);
+  const navs = trackNavigations(page);
   // Sin caché, para que /sign-in vuelva a pedir la imagen; solo se retienen las peticiones que salen con /sign-in abierta
   await page.route('**/_next/image**', async (route) => {
     const res = await route.fetch();
@@ -124,17 +162,19 @@ test('O-63 control A: la imagen del fondo de /sign-in retenida 2 s con page.rout
     await route.fulfill({ response: res, headers: { ...res.headers(), 'cache-control': 'no-store' } });
   });
   await page.goto(`${AUTH}/`);
-  const landing = await measure(page, 'landing', info);
+  const landing = await measure(page, 'landing', info, navs);
   await page.goto(`${AUTH}/sign-in`);
   await page.locator('.cl-formButtonPrimary').waitFor({ state: 'visible', timeout: 30_000 });
-  const signIn = await measure(page, '/sign-in', info);
+  const signIn = await measure(page, '/sign-in', info, navs);
   console.log(safe(`O-63 control A · ${landing.text} · ${signIn.text} · ${versusLanding(signIn, landing)}`));
 });
 
 test('O-63 control B: decode() del fondo a los 1,5 s, con el fondo oculto hasta entonces @mobile', async ({ page }, info) => {
   test.setTimeout(90_000);
+  await hookHistory(page);
+  const navs = trackNavigations(page);
   await page.goto(`${AUTH}/`);
-  const landing = await measure(page, 'landing', info);
+  const landing = await measure(page, 'landing', info, navs);
   await page.addInitScript(() => {
     const hide = new CSSStyleSheet();
     hide.replaceSync('.landing__bg img { visibility: hidden !important; }');
@@ -148,6 +188,6 @@ test('O-63 control B: decode() del fondo a los 1,5 s, con el fondo oculto hasta 
   });
   await page.goto(`${AUTH}/sign-in`);
   await page.locator('.cl-formButtonPrimary').waitFor({ state: 'visible', timeout: 30_000 });
-  const signIn = await measure(page, '/sign-in', info);
+  const signIn = await measure(page, '/sign-in', info, navs);
   console.log(safe(`O-63 control B · ${landing.text} · ${signIn.text} · ${versusLanding(signIn, landing)}`));
 });
