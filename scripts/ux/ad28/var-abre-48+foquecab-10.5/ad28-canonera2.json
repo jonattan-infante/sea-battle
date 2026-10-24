@@ -1,0 +1,368 @@
+{
+ "ppm_lienzo": 4.2299999999999995,
+ "firmas": {
+  "pirata": {
+   "45": {
+    "area": 2558,
+    "L_medio": 26.23,
+    "clara": 0.0,
+    "media": 0.0004
+   },
+   "135": {
+    "area": 2237,
+    "L_medio": 25.91,
+    "clara": 0.0,
+    "media": 0.0
+   },
+   "225": {
+    "area": 2381,
+    "L_medio": 27.63,
+    "clara": 0.0,
+    "media": 0.0008
+   },
+   "315": {
+    "area": 2195,
+    "L_medio": 27.31,
+    "clara": 0.0,
+    "media": 0.0005
+   }
+  },
+  "capitan": {
+   "45": {
+    "area": 5248,
+    "L_medio": 30.05,
+    "clara": 0.0575,
+    "media": 0.0391
+   },
+   "135": {
+    "area": 5122,
+    "L_medio": 31.56,
+    "clara": 0.0246,
+    "media": 0.0592
+   },
+   "225": {
+    "area": 4891,
+    "L_medio": 32.12,
+    "clara": 0.062,
+    "media": 0.037
+   },
+   "315": {
+    "area": 5456,
+    "L_medio": 28.67,
+    "clara": 0.0255,
+    "media": 0.0504
+   }
+  },
+  "canonera_hoy": {
+   "45": {
+    "area": 4738,
+    "L_medio": 37.88,
+    "clara": 0.0002,
+    "media": 0.4544
+   },
+   "135": {
+    "area": 4819,
+    "L_medio": 37.6,
+    "clara": 0.0002,
+    "media": 0.4613
+   },
+   "225": {
+    "area": 4681,
+    "L_medio": 41.15,
+    "clara": 0.0002,
+    "media": 0.5486
+   },
+   "315": {
+    "area": 4822,
+    "L_medio": 37.73,
+    "clara": 0.0002,
+    "media": 0.4548
+   }
+  },
+  "canonera2": {
+   "45": {
+    "area": 5386,
+    "L_medio": 27.81,
+    "clara": 0.0013,
+    "media": 0.1389
+   },
+   "135": {
+    "area": 5042,
+    "L_medio": 32.03,
+    "clara": 0.0034,
+    "media": 0.2658
+   },
+   "225": {
+    "area": 6379,
+    "L_medio": 30.92,
+    "clara": 0.0009,
+    "media": 0.2228
+   },
+   "315": {
+    "area": 5164,
+    "L_medio": 33.71,
+    "clara": 0.0008,
+    "media": 0.3003
+   }
+  },
+  "canonera2_sin_sombra": {
+   "45": {
+    "area": 4640,
+    "L_medio": 27.4,
+    "clara": 0.0015,
+    "media": 0.1612
+   },
+   "135": {
+    "area": 4605,
+    "L_medio": 32.13,
+    "clara": 0.0037,
+    "media": 0.291
+   },
+   "225": {
+    "area": 5472,
+    "L_medio": 31.03,
+    "clara": 0.0011,
+    "media": 0.2597
+   },
+   "315": {
+    "area": 4801,
+    "L_medio": 33.94,
+    "clara": 0.0008,
+    "media": 0.3231
+   }
+  },
+  "canonera2_lod1": {
+   "45": {
+    "area": 5354,
+    "L_medio": 29.17,
+    "clara": 0.0009,
+    "media": 0.1554
+   },
+   "135": {
+    "area": 5005,
+    "L_medio": 34.19,
+    "clara": 0.0032,
+    "media": 0.3091
+   },
+   "225": {
+    "area": 6277,
+    "L_medio": 32.39,
+    "clara": 0.0005,
+    "media": 0.2487
+   },
+   "315": {
+    "area": 5004,
+    "L_medio": 35.76,
+    "clara": 0.0006,
+    "media": 0.3399
+   }
+  }
+ },
+ "pares": {
+  "pirata–capitan": {
+   "por_rumbo": {
+    "45": [
+     "area",
+     "clara",
+     "media"
+    ],
+    "135": [
+     "area",
+     "clara",
+     "media"
+    ],
+    "225": [
+     "area",
+     "clara",
+     "media"
+    ],
+    "315": [
+     "area",
+     "clara",
+     "media"
+    ]
+   },
+   "minimo": 3,
+   "pasa": true
+  },
+  "pirata–canonera_hoy": {
+   "por_rumbo": {
+    "45": [
+     "area",
+     "L_medio",
+     "media"
+    ],
+    "135": [
+     "area",
+     "L_medio",
+     "media"
+    ],
+    "225": [
+     "area",
+     "L_medio",
+     "media"
+    ],
+    "315": [
+     "area",
+     "media"
+    ]
+   },
+   "minimo": 2,
+   "pasa": true
+  },
+  "capitan–canonera_hoy": {
+   "por_rumbo": {
+    "45": [
+     "clara",
+     "media"
+    ],
+    "135": [
+     "clara",
+     "media"
+    ],
+    "225": [
+     "clara",
+     "media"
+    ],
+    "315": [
+     "clara",
+     "media"
+    ]
+   },
+   "minimo": 2,
+   "pasa": true
+  },
+  "pirata–canonera2": {
+   "por_rumbo": {
+    "45": [
+     "area",
+     "media"
+    ],
+    "135": [
+     "area",
+     "media"
+    ],
+    "225": [
+     "area",
+     "media"
+    ],
+    "315": [
+     "area",
+     "media"
+    ]
+   },
+   "minimo": 2,
+   "pasa": true
+  },
+  "capitan–canonera2": {
+   "por_rumbo": {
+    "45": [
+     "clara",
+     "media"
+    ],
+    "135": [
+     "clara",
+     "media"
+    ],
+    "225": [
+     "clara",
+     "media"
+    ],
+    "315": [
+     "clara",
+     "media"
+    ]
+   },
+   "minimo": 2,
+   "pasa": true
+  },
+  "pirata–canonera2_sin_sombra": {
+   "por_rumbo": {
+    "45": [
+     "area",
+     "media"
+    ],
+    "135": [
+     "area",
+     "media"
+    ],
+    "225": [
+     "area",
+     "media"
+    ],
+    "315": [
+     "area",
+     "media"
+    ]
+   },
+   "minimo": 2,
+   "pasa": true
+  },
+  "capitan–canonera2_sin_sombra": {
+   "por_rumbo": {
+    "45": [
+     "clara",
+     "media"
+    ],
+    "135": [
+     "clara",
+     "media"
+    ],
+    "225": [
+     "clara",
+     "media"
+    ],
+    "315": [
+     "clara",
+     "media"
+    ]
+   },
+   "minimo": 2,
+   "pasa": true
+  },
+  "pirata–canonera2_lod1": {
+   "por_rumbo": {
+    "45": [
+     "area",
+     "media"
+    ],
+    "135": [
+     "area",
+     "media"
+    ],
+    "225": [
+     "area",
+     "media"
+    ],
+    "315": [
+     "area",
+     "media"
+    ]
+   },
+   "minimo": 2,
+   "pasa": true
+  },
+  "capitan–canonera2_lod1": {
+   "por_rumbo": {
+    "45": [
+     "clara",
+     "media"
+    ],
+    "135": [
+     "clara",
+     "media"
+    ],
+    "225": [
+     "clara",
+     "media"
+    ],
+    "315": [
+     "clara",
+     "media"
+    ]
+   },
+   "minimo": 2,
+   "pasa": true
+  }
+ }
+}

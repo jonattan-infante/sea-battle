@@ -1,0 +1,399 @@
+{
+ "rumbo": 225,
+ "captura": 1,
+ "iou": 0.8669,
+ "fase": [
+  0.875,
+  0.0
+ ],
+ "desplazamiento": [
+  599,
+  325
+ ],
+ "modelo": 8,
+ "modelo_canones": 8,
+ "modelo_canones_cana": 8,
+ "min_cana": 6,
+ "modelo_16_fases": [
+  8,
+  8,
+  8,
+  8,
+  8,
+  8,
+  8,
+  8,
+  8,
+  8,
+  8,
+  8,
+  8,
+  8,
+  8,
+  8
+ ],
+ "juego_log": 6,
+ "manchas_modelo": [
+  {
+   "feret": 1.0,
+   "px": 2,
+   "canon": false,
+   "cureña": false,
+   "canones": [],
+   "principal": null,
+   "cana_px": {},
+   "centro": [
+    95.5,
+    78.0
+   ]
+  },
+  {
+   "feret": 0.0,
+   "px": 1,
+   "canon": false,
+   "cureña": false,
+   "canones": [],
+   "principal": null,
+   "cana_px": {},
+   "centro": [
+    101.0,
+    80.0
+   ]
+  },
+  {
+   "feret": 0.0,
+   "px": 1,
+   "canon": false,
+   "cureña": false,
+   "canones": [],
+   "principal": null,
+   "cana_px": {},
+   "centro": [
+    103.0,
+    81.0
+   ]
+  },
+  {
+   "feret": 0.0,
+   "px": 1,
+   "canon": false,
+   "cureña": false,
+   "canones": [],
+   "principal": null,
+   "cana_px": {},
+   "centro": [
+    89.0,
+    90.0
+   ]
+  },
+  {
+   "feret": 0.0,
+   "px": 1,
+   "canon": false,
+   "cureña": false,
+   "canones": [],
+   "principal": null,
+   "cana_px": {},
+   "centro": [
+    89.0,
+    93.0
+   ]
+  },
+  {
+   "feret": 0.0,
+   "px": 1,
+   "canon": false,
+   "cureña": false,
+   "canones": [],
+   "principal": null,
+   "cana_px": {},
+   "centro": [
+    85.0,
+    94.0
+   ]
+  },
+  {
+   "feret": 0.0,
+   "px": 1,
+   "canon": false,
+   "cureña": false,
+   "canones": [],
+   "principal": null,
+   "cana_px": {},
+   "centro": [
+    91.0,
+    94.0
+   ]
+  },
+  {
+   "feret": 0.0,
+   "px": 1,
+   "canon": false,
+   "cureña": false,
+   "canones": [],
+   "principal": null,
+   "cana_px": {},
+   "centro": [
+    89.0,
+    95.0
+   ]
+  },
+  {
+   "feret": 0.0,
+   "px": 1,
+   "canon": false,
+   "cureña": false,
+   "canones": [],
+   "principal": null,
+   "cana_px": {},
+   "centro": [
+    74.0,
+    96.0
+   ]
+  },
+  {
+   "feret": 7.28,
+   "px": 19,
+   "canon": true,
+   "cureña": true,
+   "canones": [
+    6
+   ],
+   "principal": 6,
+   "cana_px": {
+    "6": 8
+   },
+   "centro": [
+    126.5,
+    105.5
+   ]
+  },
+  {
+   "feret": 2.0,
+   "px": 4,
+   "canon": true,
+   "cureña": true,
+   "canones": [
+    6
+   ],
+   "principal": 6,
+   "cana_px": {
+    "6": 2
+   },
+   "centro": [
+    131.2,
+    103.0
+   ]
+  },
+  {
+   "feret": 13.34,
+   "px": 116,
+   "canon": false,
+   "cureña": false,
+   "canones": [],
+   "principal": null,
+   "cana_px": {},
+   "centro": [
+    107.4,
+    110.5
+   ]
+  },
+  {
+   "feret": 1.41,
+   "px": 2,
+   "canon": false,
+   "cureña": false,
+   "canones": [],
+   "principal": null,
+   "cana_px": {},
+   "centro": [
+    114.5,
+    105.5
+   ]
+  },
+  {
+   "feret": 8.54,
+   "px": 44,
+   "canon": true,
+   "cureña": true,
+   "canones": [
+    11
+   ],
+   "principal": 11,
+   "cana_px": {
+    "11": 18
+   },
+   "centro": [
+    83.1,
+    109.4
+   ]
+  },
+  {
+   "feret": 8.54,
+   "px": 45,
+   "canon": true,
+   "cureña": true,
+   "canones": [
+    9
+   ],
+   "principal": 9,
+   "cana_px": {
+    "9": 17
+   },
+   "centro": [
+    92.6,
+    118.2
+   ]
+  },
+  {
+   "feret": 7.62,
+   "px": 43,
+   "canon": true,
+   "cureña": true,
+   "canones": [
+    7
+   ],
+   "principal": 7,
+   "cana_px": {
+    "7": 18
+   },
+   "centro": [
+    102.7,
+    126.3
+   ]
+  },
+  {
+   "feret": 4.12,
+   "px": 14,
+   "canon": true,
+   "cureña": true,
+   "canones": [
+    0
+   ],
+   "principal": 0,
+   "cana_px": {
+    "0": 9
+   },
+   "centro": [
+    155.8,
+    130.4
+   ]
+  },
+  {
+   "feret": 7.62,
+   "px": 42,
+   "canon": true,
+   "cureña": true,
+   "canones": [
+    5
+   ],
+   "principal": 5,
+   "cana_px": {
+    "5": 16
+   },
+   "centro": [
+    112.7,
+    134.4
+   ]
+  },
+  {
+   "feret": 0.0,
+   "px": 1,
+   "canon": false,
+   "cureña": false,
+   "canones": [],
+   "principal": null,
+   "cana_px": {},
+   "centro": [
+    141.0,
+    133.0
+   ]
+  },
+  {
+   "feret": 0.0,
+   "px": 1,
+   "canon": false,
+   "cureña": false,
+   "canones": [],
+   "principal": null,
+   "cana_px": {},
+   "centro": [
+    141.0,
+    135.0
+   ]
+  },
+  {
+   "feret": 0.0,
+   "px": 1,
+   "canon": false,
+   "cureña": false,
+   "canones": [],
+   "principal": null,
+   "cana_px": {},
+   "centro": [
+    143.0,
+    137.0
+   ]
+  },
+  {
+   "feret": 0.0,
+   "px": 1,
+   "canon": false,
+   "cureña": false,
+   "canones": [],
+   "principal": null,
+   "cana_px": {},
+   "centro": [
+    141.0,
+    138.0
+   ]
+  },
+  {
+   "feret": 8.54,
+   "px": 46,
+   "canon": true,
+   "cureña": true,
+   "canones": [
+    3
+   ],
+   "principal": 3,
+   "cana_px": {
+    "3": 20
+   },
+   "centro": [
+    122.6,
+    142.6
+   ]
+  },
+  {
+   "feret": 0.0,
+   "px": 1,
+   "canon": false,
+   "cureña": false,
+   "canones": [],
+   "principal": null,
+   "cana_px": {},
+   "centro": [
+    141.0,
+    140.0
+   ]
+  },
+  {
+   "feret": 8.54,
+   "px": 30,
+   "canon": true,
+   "cureña": true,
+   "canones": [
+    1
+   ],
+   "principal": 1,
+   "cana_px": {
+    "1": 17
+   },
+   "centro": [
+    132.3,
+    149.5
+   ]
+  }
+ ]
+}

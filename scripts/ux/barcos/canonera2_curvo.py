@@ -9,7 +9,7 @@
 #     más estrecho (perfil `chato_popa`), con ventanas encendidas, tallas doradas y la calavera; en los costados del
 #     alcázar, paneles tallados. El castillo de proa, bajo, con un bauprés de 6 m;
 #   - las velas: 2 palos con velas al tercio altas y negras (amura, puño de driza, pico y escota, como la cangreja de
-#     ASSET-SPEC §8.2, con la apertura de 25° de D12 y la panza de 0,08·|AD|), con las vergas muy inclinadas y el pico por
+#     ASSET-SPEC §8.2, con la apertura de 48° de D97 (el resto de la flota, 25°, D12) y la panza de 0,08·|AD|), con las vergas muy inclinadas y el pico por
 #     encima del tope, y un foque; la bandera pirata, en el pico de la mayor. Lona con los 3 tonos de la paleta pirata
 #     (§8.2.1) en paños de 0,5 m pintados en el atlas, remiendos y, en la mayor, la calavera desvaída. Sin muescas: son la
 #     seña del Pirata (ART-DIRECTION §10; D48);
@@ -42,7 +42,7 @@ PAL = dict(hull='#2A2523', band='#B3261E', bottom='#1C1817', rail='#3A2A20', inn
 SAIL = ('#4A494D', '#303033', '#171619')  # sail / sail.mid / sail.alt de la paleta pirata (ASSET-SPEC §8.2.1)
 CANNON_Z = (-7.0, -4.2, -1.4, 1.4, 4.2, 7.0); MORTAR_Z = 3.5
 MAIN_Z, FORE_Z = -2.6, 6.0; MAIN_TOP, FORE_TOP = 14.0, 12.4
-OPEN = math.radians(25)  # apertura de las velas de cuchillo (D12), hacia estribor
+OPEN = math.radians(48)  # apertura de las velas de cuchillo, hacia estribor: 48° en la Cañonera (D97, AD-28 con el balanceo); el resto de la flota, 25° (D12)
 BOW_END = (0.0, 19.6)    # punta del bauprés (z), 6 m por delante de la roda
 
 
@@ -122,8 +122,8 @@ def rigging(m, H, lod):
             for side in (1, -1):  # 2 obenques por banda hasta la regala
                 for dz in (-0.9, 0.9):
                     zz = z_m + dz; line(m, (0, 0.72 * top, z_m), (side * (H.x_at(zz, H.top(zz)) - 0.1), H.top(zz), zz), 0.06, dark)
-    # foque: del tope del trinquete a la punta del bauprés, con la escota a estribor
-    head = np.array([0.0, FORE_TOP - 0.3, FORE_Z]); tack = np.array([0.0, ys + 1.5, BOW_END[1] - 0.3]); clew = np.array([-1.6, 3.4, 10.2])
+    # foque: desde 10,5 m en el trinquete (D97; antes, del tope, a FORE_TOP − 0,3) hasta la punta del bauprés, con la escota a estribor
+    head = np.array([0.0, 10.5, FORE_Z]); tack = np.array([0.0, ys + 1.5, BOW_END[1] - 0.3]); clew = np.array([-1.6, 3.4, 10.2])
     if lod == 0:
         n_u, n_v = 4, 5
         G = [[head + (tack + (clew - tack) * (i / n_u) - head) * (1 - j / n_v) for i in range(n_u + 1)] for j in range(n_v + 1)]
