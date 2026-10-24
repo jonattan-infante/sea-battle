@@ -20,11 +20,35 @@ game-product (GDD + criterios AC-xx) ──► game-ux (imágenes + specs) ─�
         └──────────── game-qa (reporte con evidencia, veredicto por AC) ◄──────┘
 ```
 
-- **Todo diseño de `game-ux` sale con al menos una imagen** (PNG en `docs/game/art/`, citada desde su spec): `game-developer` implementa contra la imagen y los números, y `game-qa` compara su captura con ella. Un diseño sin imagen no está listo para desarrollo (Jonattan, 2026-10-18).
-- **Jonattan aprueba siempre cada diseño antes de construirlo** («A partir de ahora siempre debe aprobar los diseños», 2026-10-18). Lo aprueba en la página «Diseños de Sea Battle» (https://claude.ai/artifact/Bq7w2iRU2AxB19NwwHqiuh), que guarda su decisión con la huella sha256 de la lámina; el lead la lee de allí y producto la anota en el registro de AC-192. Si la lámina cambia, vuelve a pedirse. Ni `game-product` ni `game-ux` aprueban una lámina en su lugar.
+- **Todo diseño pasa por el «Flujo de láminas»** (abajo): sale con su imagen y Jonattan lo aprueba antes de construirlo.
 - Un ítem del backlog está **hecho** solo cuando `game-qa` lo marca APROBADO con evidencia y `game-product` lo acepta.
-- **Qué entra y qué sale lo deciden `game-product` (alcance y mecánicas) y `game-ux` (arte)**, sin esperar la aprobación de Jonattan (delegación de Jonattan del 2026-10-17). Siguen siendo suyos el deploy a prod (ver «Deploys a producción») y, desde el 2026-10-18, el visto bueno a cada lámina de diseño (ver arriba).
+- **Qué entra y qué sale lo deciden `game-product` (alcance y mecánicas) y `game-ux` (arte)**, sin esperar la aprobación de Jonattan (delegación de Jonattan del 2026-10-17). Siguen siendo suyos el deploy a prod (ver «Deploys a producción») y, desde el 2026-10-18, el visto bueno a cada lámina de diseño (ver «Flujo de láminas»).
 - Cada hallazgo de QA vuelve al backlog con severidad (P0–P3) y criterio de aceptación.
+
+## Flujo de láminas (diseño → aprobación → construcción)
+
+Todo lo que se ve en el juego (barcos, NPC, islas, puerto, HUD, pantallas y VFX) sigue este flujo. Lo fijó Jonattan el 2026-10-20, a partir de las reglas del 2026-10-18 («A partir de ahora siempre debe aprobar los diseños»).
+
+1. **Pedido.** Jonattan pide o comenta algo. `game-product` fija el alcance y el criterio, y `game-ux` diseña. La frase literal de Jonattan acompaña a la lámina.
+2. **Lámina.** `game-ux` entrega una PNG en `docs/game/art/`, citada desde su spec. Un diseño sin imagen no está listo para desarrollo. La lámina enseña:
+   - el diseño como en el juego, a tamaño real, en escritorio y en móvil;
+   - las vistas que hagan falta (de cerca, de lado, desde arriba) y en grises;
+   - el antes y el después frente a lo de hoy;
+   - lo que cuesta (triángulos, KB, rendimiento) y lo que tiene en contra.
+
+   Las cifras salen de un script, y las frases se cotejan antes de mandarla: glifos, fila o columna, «N veces». Los renders pesados piden turno de máquina al lead.
+3. **Entrega al lead:** la ruta, el sha256 y el texto de la página, en cuatro partes: qué es, júzgalo por, en contra y lo que te pido. Si producto puso condiciones, van medidas antes de enseñarla.
+4. **Publicación.** El lead mira la lámina entera y la publica en la página «Diseños de Sea Battle» (https://claude.ai/artifact/Bq7w2iRU2AxB19NwwHqiuh), con la cita de Jonattan. Si sustituye una lámina ya publicada, la sube con otro nombre de archivo, para que el navegador no enseñe la vieja.
+5. **Decisión de Jonattan,** en la página: «Aprobar» o «Pedir cambios» con un comentario.
+   - La decisión se guarda con la huella sha256 de la lámina. Si la lámina cambia, la pieza vuelve como «Lámina nueva» y se pide otra vez.
+   - Ni `game-product`, ni `game-ux`, ni el lead aprueban en su lugar.
+6. **Cambios.** `game-ux` hace otra vuelta que responde al comentario, y vuelve al paso 3.
+7. **Errores después de publicar.** Si una cifra o una frase está mal, el lead corrige el texto de la página en el acto y `game-ux` rehace la lámina, que vuelve a pedir aprobación.
+8. **Construcción,** solo con la lámina aprobada:
+   - `game-product` la anota en el registro de AC-192 y ordena su construcción;
+   - el lead commitea la PNG, sus fuentes y las filas de la spec;
+   - `game-developer` construye contra la lámina y sus números;
+   - `game-qa` compara su captura con ella.
 
 ## Harnesses (comandos)
 
