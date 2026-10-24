@@ -11,7 +11,13 @@
 #                              (atlas viejo | nuevo | ΔE76, a 512 px) y ao-cambios.json
 #   sockets <a.json> <b.json>  los 2 JSON de sockets, clave a clave (se anota; las condiciones las pone repro_glb.py)
 #   kb <entrega vieja.json> <entrega nueva.json>   los bytes de la textura (KTX2 y respaldo) y del GLB (dentro y 4c), con gzip
+#   vistas <nueva.png> <aprobada.png> <cajas.json> <salida>   por cada vista (caja) que no salga idéntica: px distintos,
+#                              ΔE76 medio y máximo, y vista-NN.png (aprobada | nueva | ΔE76, a ×2), para que producto vea dónde
+#   regla <barrido.json>       la regla (a) de producto (BACKLOG :421): mínimos de cañones distintos con caña ≥ 6 en las 400
+#                              posturas, 225° ≥ 10, 45° ≥ 9, 135° ≥ 10 y 315° ≥ 10 (con la AO vieja, 10 / 9 / 11 / 11)
+#   firmas <ad28-canonera2.json>   O-62 en verde: los 9 pares pasan, y los 6 de la Cañonera, con su mínimo de firmas en los 4 rumbos
 import sys, os, json, hashlib
+sys.dont_write_bytecode = True
 import numpy as np
 from PIL import Image
 
@@ -109,6 +115,43 @@ def c_kb(a, b):
     return 0
 
 
+def c_vistas(new, old, cj, out):
+    os.makedirs(out, exist_ok=True)
+    N, O = (np.asarray(Image.open(p).convert('RGB')).astype(int) for p in (new, old)); boxes = json.load(open(cj))['cajas']
+    if N.shape != O.shape: say('VISTAS tamaño distinto', N.shape, O.shape); return 2
+    nd = 0
+    for i, (x, y, w, h) in enumerate(boxes):
+        a, b = O[y:y + h, x:x + w], N[y:y + h, x:x + w]; d = (a != b).any(-1)
+        if not d.any(): say(f'VISTA {i + 1:2d} {(x, y, w, h)} idéntica'); continue
+        nd += 1; e = np.linalg.norm(lab(a) - lab(b), axis=-1)
+        say(f'VISTA {i + 1:2d} {(x, y, w, h)} · px distintos {int(d.sum())} de {d.size} · ΔE76 medio {float(e[d].mean()):.2f} y máximo {float(e.max()):.2f} sobre ellos · vista-{i + 1:02d}.png')
+        heat = np.clip(e / 10.0, 0, 1); hm = np.stack([255 * np.ones_like(heat), 255 * (1 - heat), 255 * (1 - heat)], -1).astype(np.uint8)  # blanco = 0, rojo = 10 o más
+        im = Image.new('RGB', (3 * w + 16, h), (245, 241, 230))
+        for j, t in enumerate((a, b, hm)): im.paste(Image.fromarray(np.asarray(t, np.uint8)), (j * (w + 8), 0))
+        im.resize((im.width * 2, im.height * 2), Image.NEAREST).save(os.path.join(out, f'vista-{i + 1:02d}.png'))
+    say(f'VISTAS {nd} de {len(boxes)} cambian (en vista-NN.png: aprobada | nueva | ΔE76, blanco = 0, rojo = 10 o más)')
+    return 0
+
+
+def c_regla(bj):
+    r = json.load(open(bj))['res']; need = {'225': 10, '45': 9, '135': 10, '315': 10}; ok = True
+    for h, n in need.items():
+        c = r[h]['canones6']; m = c['min']; ok &= m >= n
+        say(f'REGLA (a) {h:>3}° · mínimo {m} (máximo {c["max"]}) frente a ≥ {n} · {"CUMPLE" if m >= n else "NO CUMPLE"} · posturas en el mínimo {c["hist"][str(m)]} de 400')
+    say('REGLA (a)', 'CUMPLE' if ok else 'NO CUMPLE: antes del PR, ux mide qué cambia la AO en esos montajes (la diferencia de la AO sobre las cañas) y producto decide; el umbral no baja')
+    return 0 if ok else 2
+
+
+def c_firmas(fj):
+    P = json.load(open(fj))['pares']; ok = all(v['pasa'] for v in P.values())
+    for k, v in P.items(): say(f'FIRMAS {k:30s} pasa {v["pasa"]}' + (f' · por rumbo {v["por_rumbo"]} · mínimo {v["minimo"]}' if 'por_rumbo' in v else ''))
+    c2 = {k: v for k, v in P.items() if 'canonera2' in k}
+    rumbos = all(len(v['por_rumbo'][h]) >= 2 for v in c2.values() for h in ('45', '135', '225', '315'))  # ≥ 2 firmas distintas en cada rumbo
+    ok &= len(P) == 9 and len(c2) == 6 and rumbos
+    say(f'FIRMAS {sum(v["pasa"] for v in P.values())} de {len(P)} pares; los {len(c2)} de la Cañonera, en los 4 rumbos: {rumbos} ·', 'CUMPLE' if ok else 'NO CUMPLE')
+    return 0 if ok else 2
+
+
 if __name__ == '__main__':
     cmd, args = sys.argv[1], sys.argv[2:]
-    sys.exit(dict(npz=c_npz, iguales=c_iguales, ao=c_ao, sockets=c_sockets, kb=c_kb)[cmd](*args))
+    sys.exit(dict(npz=c_npz, iguales=c_iguales, ao=c_ao, sockets=c_sockets, kb=c_kb, vistas=c_vistas, regla=c_regla, firmas=c_firmas)[cmd](*args))
