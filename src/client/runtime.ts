@@ -756,7 +756,7 @@ export class GameRuntime implements OverlayHost, ChipHost {
   private readonly hullOut: number[] = [];
 
   // ownClass: la clase propia predicha antes de la bienvenida (opción A de AC-193 c; own-ship-memory.ts)
-  constructor(client: GameClient, ownClass?: string) {
+  constructor(client: GameClient, ownClass?: string | null) {
     this.client = client;
     this.src = client;
     // Los viewAt solo salen con el cliente real (no con las escenas sintéticas de QA); el botón Centrar lee el modo del store
@@ -1796,7 +1796,7 @@ function ringRgb(hex: string): Float32Array {
   return c;
 }
 
-export function createRuntime(client: GameClient, ownClass?: string): GameRuntime {
+export function createRuntime(client: GameClient, ownClass?: string | null): GameRuntime {
   return new GameRuntime(client, ownClass);
 }
 
