@@ -2,6 +2,7 @@
 // cliente solo lo que cambió dentro de su área de interés, a 10 Hz y en un único mensaje por envío.
 import type { Server, Socket } from 'socket.io';
 import {
+  CAPTAIN_CLASS,
   INTENT_BURST,
   INTENT_RATE_PER_SECOND,
   INTEREST_RADIUS,
@@ -19,7 +20,8 @@ import {
   parseJoin,
   parseMoveTo,
   parseRepair,
-  parseSelectShip
+  parseSelectShip,
+  parseViewAt
 } from '../src/game/protocol';
 import { GameEvent, Notice, ServerFrame, ShipDelta, ShipSnapshot, Welcome, World } from '../src/game/types';
 import { distance } from '../src/game/vec';
@@ -36,6 +38,7 @@ import {
   disconnectPlayer,
   drainEvents,
   moveTo,
+  npcClasses,
   planBuy,
   planSelectShip,
   playerView,
@@ -48,9 +51,10 @@ import {
   step,
   stop
 } from '../src/game/world';
+import { drainPvpLog } from '../src/game/xp';
 import type { Identity } from './auth';
 import { createServerMetrics } from './metrics';
-import { createPersistence, ProgressStore, StoredProgress } from './persistence';
+import { createPersistence, FlushResult, ProgressStore, StoredProgress } from './persistence';
 import { progressOf, SavedProgress } from './progress';
 
 export interface GameServerOptions {
@@ -68,6 +72,7 @@ export interface GameServerOptions {
   probeIntervalMs?: number; // con la BD caída, cada cuánto se comprueba si volvió (por defecto 1 s)
   metrics?: boolean; // AC-142: el proceso registra sus métricas cada minuto con jugadores (server/metrics.ts)
   metricsIntervalMs?: number; // por defecto 60 s (los tests lo acortan)
+  i2?: boolean; // AC-187: I2 encendido (SEA_BATTLE_I2=1, server/features.ts); apagado por defecto
 }
 
 export interface GameServer {
@@ -75,7 +80,8 @@ export interface GameServer {
   onlinePlayers: () => number;
   tick: () => void;
   stop: () => void;
-  flushProgress: () => Promise<boolean>; // escribe ya todo el progreso que cambió y espera; false si algo no se pudo escribir
+  flushProgress: () => Promise<FlushResult>; // escribe ya todo el progreso que cambió y espera: cuántas fallaron y cuántas chocaron
+  unsavedProgress: () => number; // jugadores con cuenta cuyo progreso aún no está confirmado en la BD
 }
 
 const KICKED_TEXT = 'Has abierto el juego en otra pestaña'; // AC-133
@@ -90,18 +96,21 @@ interface ClientState {
   lastView: string;
   notices: Notice[];
   needsFull: boolean;
+  viewCenter: Point | null; // vista libre (E13): el centro de la vista, que suma su propia área de interés
 }
+
+type Point = { x: number; z: number };
 
 // Margen para que un evento en el borde del área (p. ej. una andanada desde fuera) llegue a quien lo ve
 const EVENT_MARGIN = 60;
-const SNAPSHOT_KEYS: (keyof ShipSnapshot)[] = ['k', 'c', 'n', 'o', 'x', 'z', 'h', 's', 'hp', 'mhp', 'st', 't', 'r', 'pu'];
+const SNAPSHOT_KEYS: (keyof ShipSnapshot)[] = ['k', 'c', 'n', 'o', 'x', 'z', 'h', 's', 'hp', 'mhp', 'st', 't', 'r', 'pu', 'lv'];
 
 export function createGameServer(io: Server, options: GameServerOptions): GameServer {
   const tickRate = options.tickRate ?? TICK_RATE;
   const snapshotEvery = Math.max(1, Math.round(tickRate / (options.snapshotRate ?? SNAPSHOT_RATE)));
   const log = options.log ?? (() => {});
   const now = options.now ?? Date.now;
-  const world = createWorld({ seed: options.seed, spawnNpcs: options.spawnNpcs });
+  const world = createWorld({ seed: options.seed, spawnNpcs: options.spawnNpcs, i2: options.i2 });
   options.setup?.(world);
   const clients = new Map<string, ClientState>(); // por userId: una sola pestaña por usuario
   let ticks = 0;
@@ -206,7 +215,7 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
       const player = addPlayer(world, userId, name ?? existing?.name ?? defaultName(userId), stored?.progress);
       if (stored !== undefined) persistence?.track(userId, stored);
       departing.delete(userId);
-      client = { socket, userId, known: new Map(), lastView: '', notices: [], needsFull: true };
+      client = { socket, userId, known: new Map(), lastView: '', notices: [], needsFull: true, viewCenter: null };
       clients.set(userId, client);
       const welcome: Welcome = {
         playerId: userId,
@@ -216,7 +225,8 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
         islands: world.islands,
         tickRate,
         snapshotRate: tickRate / snapshotEvery,
-        interestRadius: INTEREST_RADIUS
+        interestRadius: INTEREST_RADIUS,
+        npcClasses: npcClasses(world)
       };
       socket.emit(S2C.welcome, welcome);
       sendFrame(client, []); // snapshot completo inmediato
@@ -296,6 +306,7 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
       return commit(c, { ...progressOf(player), activeShip: classId }, () => applySelectShip(world, userId, classId), null);
     });
     on(C2S.respawn, parseEmpty, () => respawn(world, userId));
+    on(C2S.viewAt, parseViewAt, ({ center }, c) => void (c.viewCenter = center)); // manda el último (≤ 2/s desde el cliente)
 
     socket.on('disconnect', () => {
       if (!client || clients.get(userId) !== client) return;
@@ -307,14 +318,20 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
     });
   });
 
+  // Área de interés de un cliente (§13): 300 m alrededor de cada uno de sus centros (su barco y, en la vista libre de E13,
+  // también el centro de la vista) y, además, lo que se envía siempre: su barco y el Capitán pirata vivo (AC-111)
+  function inInterest(snap: ShipSnapshot, centers: Point[], ownShipId: string | null): boolean {
+    if (snap.id === ownShipId || snap.c === CAPTAIN_CLASS) return true;
+    return centers.some((c) => Math.hypot(snap.x - c.x, snap.z - c.z) <= INTEREST_RADIUS);
+  }
+
   // Delta de un cliente: barcos que entran (completos), campos que cambiaron y barcos que salen
-  function diffShips(client: ClientState, current: Map<string, ShipSnapshot>, center: { x: number; z: number } | null, ownShipId: string | null) {
+  function diffShips(client: ClientState, current: Map<string, ShipSnapshot>, centers: Point[], ownShipId: string | null) {
     const s: ShipDelta[] = [];
     const r: string[] = [];
     const visible = new Set<string>();
     for (const snap of current.values()) {
-      const inside = snap.id === ownShipId || (center !== null && Math.hypot(snap.x - center.x, snap.z - center.z) <= INTEREST_RADIUS);
-      if (!inside) continue;
+      if (!inInterest(snap, centers, ownShipId)) continue;
       visible.add(snap.id);
       const prev = client.known.get(snap.id);
       if (!prev || client.needsFull) {
@@ -343,15 +360,19 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
     return { s, r };
   }
 
-  function eventVisible(e: GameEvent, client: ClientState, center: { x: number; z: number } | null): boolean {
+  function eventVisible(e: GameEvent, client: ClientState, centers: Point[]): boolean {
     const radius = INTEREST_RADIUS + EVENT_MARGIN;
-    const near = (p: { x: number; z: number }) => center !== null && distance(p, center) <= radius;
+    const near = (p: Point) => centers.some((c) => distance(p, c) <= radius);
     switch (e.type) {
       case 'loot':
+      case 'xp':
         return e.playerId === client.userId;
       case 'wreck':
       case 'wreckGone':
         return true; // raros y pequeños: todos mantienen la lista de restos al día
+      case 'captain':
+      case 'captainDown':
+        return true; // aviso y feed del Capitán pirata para todos, estén donde estén (AC-111)
       case 'volley':
         return near(e.from) || near(e.to);
       case 'respawn': {
@@ -365,15 +386,16 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
 
   function sendFrame(client: ClientState, events: GameEvent[], current = snapshotAll()) {
     const own = shipOfPlayer(world, client.userId);
-    const center = own ? own.pos : null;
+    const centers: Point[] = own ? [own.pos] : [];
+    if (client.viewCenter) centers.push(client.viewCenter);
     const full = client.needsFull;
-    const { s, r } = diffShips(client, current, center, own && own.state !== 'dead' ? own.id : null);
+    const { s, r } = diffShips(client, current, centers, own && own.state !== 'dead' ? own.id : null);
     client.needsFull = false;
     const frame: ServerFrame = { t: world.time };
     if (full) frame.full = true;
     if (s.length) frame.s = s;
     if (r.length) frame.r = r;
-    const visibleEvents = full ? [] : events.filter((e) => eventVisible(e, client, center));
+    const visibleEvents = full ? [] : events.filter((e) => eventVisible(e, client, centers));
     if (visibleEvents.length) frame.e = visibleEvents;
     if (full) frame.w = world.wrecks.map((w) => ({ id: w.id, x: w.pos.x, z: w.pos.z, gold: w.gold, expiresAt: w.expiresAt }));
     const view = playerView(world, client.userId);
@@ -433,6 +455,11 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
     metrics?.step(performance.now() - stepStart);
     if (departing.size) releaseDeparted();
     pendingEvents.push(...drainEvents(world));
+    // Hundimientos entre jugadores con la hora, sus niveles y la XP dada, sin nombres ni userId: producto revisa con ellos
+    // Q30 (AC-148). La hora es la del proceso: los sellos de los logs de Railway llegan en lote
+    for (const sink of drainPvpLog(world)) {
+      log(`⚔️  PvP ${JSON.stringify({ at: new Date(now()).toISOString(), victim: sink.victimLevel, attackers: sink.attackers })}`);
+    }
     ticks++;
     if (ticks % snapshotEvery === 0) broadcast();
   }
@@ -468,7 +495,8 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
       metrics?.stop();
       persistence?.close();
     },
-    flushProgress: () => persistence?.flush() ?? Promise.resolve(true)
+    flushProgress: () => persistence?.flush() ?? Promise.resolve({ failed: 0, conflicts: 0 }),
+    unsavedProgress: () => persistence?.unsaved() ?? 0
   };
 }
 
