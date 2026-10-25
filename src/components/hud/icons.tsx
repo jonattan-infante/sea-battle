@@ -1,6 +1,6 @@
 // Iconos de línea 24×24, trazo de 2 px y currentColor (ART-DIRECTION §13). Sin dependencias. Swords copia el de
 // Lucide (ISC) y Coins y Wrench siguen su construcción; el resto son dibujos propios. CloudOff copia el de Lucide (ISC,
-// lucide-static 0.469.0): progreso sin guardar (D50).
+// lucide-static 0.469.0): progreso sin guardar (D50). Bomb copia el de Lucide (ISC, lucide-static 0.469.0): la Cañonera.
 import React from 'react';
 
 type IconProps = { size?: number; className?: string; title?: string };
@@ -39,6 +39,23 @@ export const Skull = (p: IconProps) => (
     <circle cx="9" cy="11.5" r="1.6" />
     <circle cx="15" cy="11.5" r="1.6" />
     <path d="M10 20v-2.5M14 20v-2.5" />
+  </Svg>
+);
+
+// Corona del Capitán pirata (ART-DIRECTION §13: SVG propio)
+export const Crown = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 18 2 7l5 5 5-8 5 8 5-5-2 11Z" />
+    <path d="M5 21h14" />
+  </Svg>
+);
+
+// Bomba de la Cañonera pirata (ART-DIRECTION §4.3): copia el de Lucide (ISC, lucide-static 0.469.0)
+export const Bomb = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="11" cy="13" r="9" />
+    <path d="M14.35 4.65 16.3 2.7a2.41 2.41 0 0 1 3.4 0l1.6 1.6a2.4 2.4 0 0 1 0 3.4l-1.95 1.95" />
+    <path d="m22 2-1.5 1.5" />
   </Svg>
 );
 
@@ -114,6 +131,17 @@ export const Target = (p: IconProps) => (
 export const Close = (p: IconProps) => (
   <Svg {...p}>
     <path d="M6 6l12 12M18 6 6 18" />
+  </Svg>
+);
+
+// Centrar (vista libre, ART-DIRECTION §12.8, D89; dibujo propio): las 4 esquinas de un visor con la estrella del barco
+// propio a 0,58 dentro, con el mismo trazo de 2 (3,45 × 0,58). Enlaza el botón con el chip propio, que lleva la estrella
+export const Recenter = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3" />
+    <g transform="translate(12 12) scale(0.58) translate(-12 -11.5)" strokeWidth={3.45}>
+      <path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9Z" />
+    </g>
   </Svg>
 );
 

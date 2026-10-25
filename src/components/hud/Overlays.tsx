@@ -159,9 +159,9 @@ export function ConnectionOverlay({ actions }: { actions: HudActions }) {
   );
 }
 
-export function Connecting() {
+export function Connecting({ ref }: { ref?: React.Ref<HTMLDivElement> }) {
   return (
-    <div className="connecting" data-testid="loading">
+    <div ref={ref} className="connecting" data-testid="loading">
       <Compass size={64} />
       <span>Izando velas…</span>
     </div>
