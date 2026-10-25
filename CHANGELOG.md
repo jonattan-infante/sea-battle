@@ -6,6 +6,19 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-25
+
+### Añadido
+
+- **Experiencia y niveles.** Hundir barcos da experiencia: 10 un mercante y 30 un pirata, repartidos según el daño que hizo cada jugador, igual que el oro. Hundir a otro jugador da 100, repartidos igual, con un 10 % más por cada nivel que te saque (hasta un 50 % más) y un 25 % menos por cada nivel que tú le saques. Si vuelves a hundir al mismo jugador en los 30 minutos siguientes, da la mitad, y a partir de la tercera vez, nada. Quien se hunde no pierde experiencia. Hay 20 niveles; pasado el 20, la experiencia se sigue sumando.
+- **Rangos e insignias.** Cada 4 niveles subes de rango: Grumete (desde el nivel 1), Marinero (5), Contramaestre (9), Teniente (13) y Almirante (17). Tu insignia se ve en tu panel y sobre tu barco. La de los demás jugadores se ve sobre sus barcos y, con su nivel, en el panel del objetivo. Al subir de nivel, un aviso te lo dice, por ejemplo «¡Nivel 5! Ahora eres Marinero».
+- **Barra de experiencia** en tu panel, con tu nivel. Al pasar el ratón por encima ves cuánta llevas en tu nivel y cuánta pide el siguiente.
+- **Vista libre.** Puedes mover la vista por el mar sin que el clic deje de servir para navegar: arrastra en el agua, haz clic o arrastra en el minimapa o, en escritorio, usa las flechas. Si haces clic en el agua, tu barco va hasta allí aunque esté lejos. `C` o **Centrar** devuelven la vista a tu barco, y también vuelve sola cuando te dañan. Si tu barco queda fuera de la pantalla, una flecha en el borde te dice dónde está, y otra te avisa de quién te dispara aunque no lo veas.
+
+### Cambiado
+
+- **Tu experiencia se guarda** con tu oro, tus mejoras y tus barcos. Si vienes de la 1.0, entras con todo lo que tenías y 0 de experiencia. Si hubiera que volver a la 1.0.3, tu experiencia se queda guardada y la recuperas al volver a la 1.1.
+
 ## [1.0.4] - 2026-10-23
 
 ### Seguridad
