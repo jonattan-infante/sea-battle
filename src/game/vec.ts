@@ -6,8 +6,11 @@ export interface Vec2 {
 
 export const vec = (x: number, z: number): Vec2 => ({ x, z });
 
+// La misma Math.hypot, leída una vez: distance está en el bucle del A* (O-43, como en nav.ts)
+const { hypot } = Math;
+
 export function distance(a: Vec2, b: Vec2): number {
-  return Math.hypot(a.x - b.x, a.z - b.z);
+  return hypot(a.x - b.x, a.z - b.z);
 }
 
 // Rumbo 0 = proa hacia +Z; crece hacia +X (igual que rotation.y en three.js)

@@ -20,8 +20,12 @@ export const PORT_POSITION = { x: 0, z: 0 };
 export const PORT_RADIUS = 30;
 export const SAFE_ZONE_RADIUS = 110;
 export const RESPAWN_RING = { min: 60, max: 90 };
+// Punto de último recurso de la aparición, si los 50 intentos en el anillo fallan: navegable para las 5 clases del jugador
+// con el puerto de D92 (GDD §4, «Aparición de respaldo»; AC-176 iii, O-58)
+export const RESPAWN_FALLBACK = { x: 0, z: 75 };
 export const MERCHANT_RING = { min: 150, max: 330 };
 export const PIRATE_RING = { min: 300, max: 460 };
+export const GUNBOAT_RING = { min: 400, max: 470 }; // cañoneras de I2 (§9)
 export const PIRATE_PORT_EXCLUSION = 130; // un pirata nunca entra en este radio (§9)
 
 export interface IslandDef {
@@ -41,6 +45,106 @@ export const ISLANDS: IslandDef[] = [
   { id: 'I6', x: -410, z: -30, radius: 28 }
 ];
 
+// Cada isla es la unión de 1 a 5 círculos (AC-199, opción B). La navegación y la colisión trabajan con la lista plana de
+// los círculos de todas las formas (`islands`, un IslandDef por círculo), así que una isla de varios círculos no cambia
+// el código: solo los datos
+export type IslandArchetype = 'port' | 'tropical' | 'rocky' | 'reef' | 'cove';
+export interface IslandShape {
+  id: string;
+  archetype: IslandArchetype;
+  circles: { x: number; z: number; radius: number }[];
+}
+// Un amarre del puerto (GDD §4; AC-176): Q = (x, z), el punto del muelle en el borde de la unión, y ψ, el rumbo hacia
+// fuera en grados (0 = +Z, 90 = +X). El barco atracado tiene el centro a L/2 + 2 m (su margen) de Q en el rumbo ψ, con la
+// popa hacia el muelle y la proa hacia fuera
+export interface Mooring {
+  x: number;
+  z: number;
+  psiDeg: number;
+}
+export interface MapDef {
+  id: string;
+  shapes: IslandShape[];
+  islands: IslandDef[]; // los círculos de todas las formas: con uno, el id de la forma; con varios, «id.k»
+  moorings: readonly Mooring[]; // los jugadores aparecen en un amarre libre del puerto (AC-176); sin amarres, en el anillo de la 1.0
+}
+
+export function mapOf(id: string, shapes: IslandShape[], moorings: readonly Mooring[]): MapDef {
+  const islands = shapes.flatMap((s) => s.circles.map((c, k) => ({ id: s.circles.length > 1 ? `${s.id}.${k}` : s.id, ...c })));
+  return { id, shapes, islands, moorings };
+}
+
+// El mapa del juego: el de la 1.0 (con los arquetipos que la 1.1 da a sus 7 formas). Comparte la lista ISLANDS, y con
+// ella el navegador y sus grafos (world.ts)
+const ARCHETYPES_1_0: Record<string, IslandArchetype> = { PORT: 'port', I1: 'tropical', I2: 'rocky', I3: 'rocky', I4: 'rocky', I5: 'tropical', I6: 'tropical' };
+export const MAP_1_0: MapDef = {
+  ...mapOf('1.0', ISLANDS.map((i) => ({ id: i.id, archetype: ARCHETYPES_1_0[i.id], circles: [{ x: i.x, z: i.z, radius: i.radius }] })), []),
+  islands: ISLANDS
+};
+
+// ---- Mapa de la 1.1 ----
+// Puerto con forma de isla (D92, aprobado por Jonattan el 2026-10-19; GDD §4, tabla de círculos): 7 círculos, la ciudad
+// este, la ciudad oeste, el fuerte, el muelle este, el palmar, la roca y el islote. Sus 12 amarres, en MOORINGS_1_1
+export const PORT_SHAPE_1_1: IslandShape = {
+  id: 'PORT',
+  archetype: 'port',
+  circles: [
+    { x: 14, z: 8, radius: 22 },
+    { x: -12, z: 8, radius: 22 },
+    { x: 0, z: -22, radius: 15 },
+    { x: 31, z: -6, radius: 17 },
+    { x: -31, z: -4, radius: 17 },
+    { x: -16, z: -30, radius: 9 },
+    { x: -39, z: -31, radius: 4.5 }
+  ]
+};
+
+// Islas de la 1.1 (D83, aprobada por Jonattan el 2026-10-18; GDD §4, ASSET-SPEC §9.7): uniones de círculos (AC-199,
+// opción B). Las 6 islas de la 1.0 conservan su círculo o crecen alrededor de él, T1 y T2 son nuevas, E1 son los 3
+// escollos y G1–G4 las 4 calas: con el puerto de D92, 50 círculos en 16 formas, la tabla de scripts/ux/mapa/circulos.py. Todavía no es el mapa
+// del juego: lo usan los tests de la lógica del mapa nuevo con createWorld({ map: MAP_1_1 })
+export const ISLAND_SHAPES_1_1: IslandShape[] = [
+  PORT_SHAPE_1_1,
+  { id: 'I1', archetype: 'tropical', circles: [{ x: 260, z: 200, radius: 45 }, { x: 212, z: 214, radius: 30 }, { x: 305, z: 182, radius: 28 }, { x: 225, z: 150, radius: 8 }, { x: 275, z: 255, radius: 7 }] },
+  { id: 'I2', archetype: 'rocky', circles: [{ x: -305, z: 160, radius: 28 }, { x: -282, z: 188, radius: 18 }, { x: -318, z: 186, radius: 13 }, { x: -336, z: 138, radius: 6 }] },
+  { id: 'I3', archetype: 'rocky', circles: [{ x: -220, z: -280, radius: 55 }, { x: -175, z: -250, radius: 30 }, { x: -158, z: -312, radius: 9 }] },
+  { id: 'I4', archetype: 'rocky', circles: [{ x: 250, z: -260, radius: 40 }, { x: 212, z: -232, radius: 24 }, { x: 262, z: -218, radius: 18 }, { x: 205, z: -282, radius: 8 }] },
+  { id: 'I5', archetype: 'tropical', circles: [{ x: 20, z: 360, radius: 30 }, { x: -14, z: 340, radius: 18 }, { x: 56, z: 338, radius: 8 }] },
+  { id: 'I6', archetype: 'tropical', circles: [{ x: -413, z: -36, radius: 21 }, { x: -400, z: -18, radius: 12 }, { x: -368, z: -62, radius: 9 }] },
+  { id: 'T1', archetype: 'tropical', circles: [{ x: 150, z: -150, radius: 22 }, { x: 128, z: -168, radius: 14 }, { x: 170, z: -132, radius: 12 }] },
+  { id: 'T2', archetype: 'tropical', circles: [{ x: -170, z: 150, radius: 22 }, { x: -190, z: 132, radius: 14 }, { x: -150, z: 168, radius: 12 }] },
+  { id: 'E1a', archetype: 'reef', circles: [{ x: 140, z: 260, radius: 7 }] },
+  { id: 'E1b', archetype: 'reef', circles: [{ x: 117.5, z: 299, radius: 7 }] },
+  { id: 'E1c', archetype: 'reef', circles: [{ x: 162.5, z: 299, radius: 7 }] },
+  { id: 'G1', archetype: 'cove', circles: [{ x: 373.66, z: -373.66, radius: 13 }, { x: 355.27, z: -375.07, radius: 9 }, { x: 375.07, z: -355.27, radius: 9 }] },
+  { id: 'G2', archetype: 'cove', circles: [{ x: -373.66, z: -373.66, radius: 13 }, { x: -375.07, z: -355.27, radius: 9 }, { x: -355.27, z: -375.07, radius: 9 }] },
+  { id: 'G3', archetype: 'cove', circles: [{ x: -373.66, z: 373.66, radius: 13 }, { x: -355.27, z: 375.07, radius: 9 }, { x: -375.07, z: 355.27, radius: 9 }] },
+  { id: 'G4', archetype: 'cove', circles: [{ x: 373.66, z: 373.66, radius: 13 }, { x: 375.07, z: 355.27, radius: 9 }, { x: 355.27, z: 375.07, radius: 9 }] }
+];
+// Los 12 amarres de D92 (GDD §4, «Amarres de D92»: los de puerto-forma-v3.json, la variante de la lámina aprobada), con Q
+// 2 cm más fuera en ψ que en la lámina y a 2 decimales. La lámina los pone a su margen con 0,00 m de sobra, y al redondear
+// Q a 2 decimales los amarres 4, 5 y 9 quedaban 2–5 mm dentro de su círculo; con los 2 cm, el centro atracado de cada
+// clase queda ≥ 14 mm fuera de su margen (dev-npc, 2026-10-19)
+export const MOORINGS_1_1: readonly Mooring[] = [
+  { x: 14.0, z: 30.02, psiDeg: 0 },
+  { x: 25.67, z: 26.68, psiDeg: 32 },
+  { x: 34.12, z: 16.96, psiDeg: 66 },
+  { x: 45.74, z: 2.51, psiDeg: 60 },
+  { x: 47.85, z: -8.37, psiDeg: 98 },
+  { x: 42.82, z: -18.24, psiDeg: 136 },
+  { x: 32.78, z: -22.93, psiDeg: 174 },
+  { x: -45.89, z: -12.25, psiDeg: 241 },
+  { x: -47.58, z: -0.18, psiDeg: 283 },
+  { x: -39.77, z: 10.59, psiDeg: 329 },
+  { x: -24.94, z: 25.82, psiDeg: 324 },
+  { x: -12.0, z: 30.02, psiDeg: 0 }
+];
+export const MAP_1_1: MapDef = mapOf('1.1', ISLAND_SHAPES_1_1, MOORINGS_1_1);
+
+// Un amarre está libre (AC-176) si ningún barco vivo, de cualquier clase, tiene el centro a < freeRadius m de su eje: el
+// segmento de Q a Q + length m en el rumbo ψ (46 = 2 + 42 + 2: el Navío entero, con 2 m de holgura a cada lado)
+export const MOORING_AXIS = { length: 46, freeRadius: 12 } as const;
+
 // Sectores piratas en pantalla: NE = (x+, z−), NO = (x−, z−), SO = (x−, z+), SE = (x+, z+)
 export const PIRATE_SECTORS = [
   { id: 'NE', sx: 1, sz: -1 },
@@ -48,6 +152,7 @@ export const PIRATE_SECTORS = [
   { id: 'SO', sx: -1, sz: 1 },
   { id: 'SE', sx: 1, sz: 1 }
 ] as const;
+export type PirateSectorId = (typeof PIRATE_SECTORS)[number]['id'];
 
 // ---- Navegación (§6) ----
 export const ARRIVE_DISTANCE = 2;
@@ -122,8 +227,25 @@ export const SHIP_CLASSES: Record<string, ShipClassStats> = {
     id: 'merchant', label: 'Mercante', kind: 'merchant', length: 22, radius: 7, maxHp: 300,
     patrolSpeed: 7, maxSpeed: 9, accel: 2.5, brake: 4, turnRate: 50 * deg, cannonsPerSide: 0, price: 0,
     cannon: null, reward: 60, wreck: 15, respawnTime: 20
+  },
+  // Jefe de I2 (§9): facción pirata (mismas reglas de hostilidad); no reaparece por tiempo, sino tras CAPTAIN_KILLS_TO_SPAWN.
+  // Aceleración y frenado no figuran en el GDD: los del Mercante, el otro NPC pesado
+  captain: {
+    id: 'captain', label: 'Capitán pirata', kind: 'pirate', length: 30, radius: 9, maxHp: 1800,
+    patrolSpeed: 6, maxSpeed: 10, accel: 2.5, brake: 4, turnRate: 60 * deg, cannonsPerSide: 6, price: 0,
+    cannon: { damage: 28, accuracy: 0.65, range: 65, reload: 4.0 }, reward: 600, wreck: 150, respawnTime: 0
+  },
+  // Cañonera pirata de I2 (§9): facción pirata, con su IA propia (mantener la distancia, HOSTILE_AI.gunboat.keepAway)
+  gunboat: {
+    id: 'gunboat', label: 'Cañonera pirata', kind: 'pirate', length: 28, radius: 8, maxHp: 900,
+    patrolSpeed: 5, maxSpeed: 8, accel: 2.5, brake: 4, turnRate: 50 * deg, cannonsPerSide: 6, price: 0,
+    cannon: { damage: 20, accuracy: 0.55, range: 65, reload: 5.0 }, reward: 210, wreck: 50, respawnTime: 45
   }
 };
+
+// El Capitán pirata se identifica por su clase: su kind es 'pirate' porque es de la facción hostil
+export const CAPTAIN_CLASS = 'captain';
+export const GUNBOAT_CLASS = 'gunboat';
 
 export function navClearance(classId: string): number {
   return SHIP_CLASSES[classId].length / 2 + NAV_CLEARANCE_EXTRA;
@@ -135,6 +257,10 @@ export const STARTING_SHIP: PlayerShipClass = 'sloop';
 
 export const NPC_POPULATION = { pirate: 12, merchant: 8 } as const;
 export const PIRATES_PER_SECTOR = 3;
+// Con el I2 encendido (AC-51), 4 cañoneras sustituyen a 4 piratas y la población sigue en 20. Apagado, la de arriba
+export const NPC_POPULATION_I2 = { pirate: 8, gunboat: 4, merchant: 8 } as const;
+export const PIRATES_PER_SECTOR_I2 = 2;
+export const GUNBOATS_PER_SECTOR = 1;
 
 // ---- Combate (§7) ----
 export const CANNONBALL_SPEED = 120; // m/s
@@ -162,6 +288,9 @@ export const PIRATE_DISENGAGE_TARGET = 110;
 export const PIRATE_LEASH = 200;
 export const PIRATE_ORBIT_RADIUS = 45;
 export const PIRATE_ORBIT_SPEED = 8;
+// La órbita apunta a un punto adelantado este ángulo sobre el círculo (rad). Perseguirlo recorta la cuerda: el radio de
+// ese círculo se compensa con 1 / cos(ORBIT_LEAD) para que la órbita real sea la nominal (GDD §9, «Órbita real = nominal»)
+export const ORBIT_LEAD = 0.45;
 export const PIRATE_PATROL_RADIUS = 120;
 export const PIRATE_PATROL_WAIT = { min: 2, max: 5 };
 export const PIRATE_RETURN_ARRIVE = 10;
@@ -169,6 +298,35 @@ export const THREAT_WINDOW = 10; // s para elegir al que más daño hizo
 export const MERCHANT_FLEE_TIME = 12;
 export const MERCHANT_ROUTE_POINTS = { min: 4, max: 6 };
 export const NPC_RESPAWN_MIN_PLAYER_DISTANCE = 100;
+
+// IA de los hostiles por clase (§9): detección, objetivo perdido, correa alrededor del origen, órbita y patrulla
+export interface HostileAiStats {
+  aggro: number; // m: entra en combate con un jugador atacable a esta distancia
+  disengage: number; // m: objetivo perdido más allá
+  leash: number; // m alrededor del origen (la guarida del capitán)
+  orbitRadius: number;
+  orbitSpeed: number;
+  patrolRadius: number;
+  // Mantener la distancia (cañonera): por encima de `approach` se acerca a velocidad máxima, por debajo de `flee` se aleja a
+  // velocidad máxima sin dejar de disparar y entre los dos orbita. Sin él, se acerca por encima de orbitRadius + 6 y orbita
+  keepAway?: { approach: number; flee: number };
+}
+export const HOSTILE_AI: Record<string, HostileAiStats> = {
+  pirate: { aggro: PIRATE_AGGRO_RADIUS, disengage: PIRATE_DISENGAGE_TARGET, leash: PIRATE_LEASH, orbitRadius: PIRATE_ORBIT_RADIUS, orbitSpeed: PIRATE_ORBIT_SPEED, patrolRadius: PIRATE_PATROL_RADIUS },
+  // El GDD fija detección, órbita y correa; objetivo perdido, velocidad de órbita y patrulla son "como el pirata"
+  captain: { aggro: 90, disengage: PIRATE_DISENGAGE_TARGET, leash: 150, orbitRadius: 50, orbitSpeed: PIRATE_ORBIT_SPEED, patrolRadius: PIRATE_PATROL_RADIUS },
+  // Detección (80 m), órbita (62 m a 6 m/s), correa (200 m) y bandas (64 / 55 m) del GDD; objetivo perdido (110 m) y
+  // patrulla, "igual que el pirata"
+  gunboat: {
+    aggro: 80, disengage: PIRATE_DISENGAGE_TARGET, leash: PIRATE_LEASH, orbitRadius: 62, orbitSpeed: 6, patrolRadius: PIRATE_PATROL_RADIUS,
+    keepAway: { approach: 64, flee: 55 }
+  }
+};
+
+// ---- Capitán pirata (§9, I2) ----
+export const CAPTAIN_KILLS_TO_SPAWN = 10; // piratas o cañoneras hundidos desde su última muerte o desde el arranque
+export const CAPTAIN_LAIR_RADIUS = 440; // punto exterior del sector: su guarida
+export const CAPTAIN_SPAWN_MIN_PLAYER_DISTANCE = 150;
 
 // ---- Botín y economía (§10) ----
 export const STARTING_GOLD = 100;
@@ -198,3 +356,28 @@ export const SPAWN_PROTECTION = 15;
 
 // ---- Validación de entradas ----
 export const MAX_NAME_LENGTH = 16;
+
+// ---- Experiencia, niveles e insignias (§10b, 1.1) ----
+// XP de cada NPC por id de clase: vida / 15 si es hostil y vida / 30 si es pasivo, ×2 si es de evento (Capitán, Galeón).
+// Toda clase NPC de SHIP_CLASSES necesita su fila (lo exige xp.test.ts)
+export const NPC_XP: Record<string, number> = { merchant: 10, pirate: 30, gunboat: 60, captain: 240, galleon: 160 };
+export const PVP_XP = 100; // por hundir a un jugador, repartida por daño como la de un NPC
+// Factor de nivel en % (Δ = nivel de la víctima − nivel del atacante): +10 por nivel de más hasta +5 niveles (×1,5);
+// −25 por nivel de menos, con suelo 0 (a −4 o menos no da nada)
+export const XP_LEVEL_FACTOR = { upPercentPerLevel: 10, upMaxLevels: 5, downPercentPerLevel: 25 };
+// Factor de repetición por pareja atacante → víctima: en los 30 min que siguen al primer hundimiento con XP, el 1.º al
+// 100 %, el 2.º al 50 % y los siguientes a 0; pasada la ventana, la pareja vuelve a empezar
+export const XP_REPEAT_WINDOW = 30 * 60; // s
+export const XP_REPEAT_PERCENT = [100, 50];
+export const XP_CAP = 9_999_999;
+// XP total para llegar a cada nivel: LEVEL_XP[n − 1] es la del nivel n (1 a 20)
+export const LEVEL_XP = [0, 60, 150, 300, 500, 800, 1200, 1700, 2400, 3300, 4500, 6000, 8000, 10500, 13500, 17000, 21000, 25500, 30500, 36000];
+export const MAX_LEVEL = LEVEL_XP.length;
+// Insignias en orden (rango 1 a 5) con el primer nivel de cada una
+export const RANKS = [
+  { label: 'Grumete', fromLevel: 1 },
+  { label: 'Marinero', fromLevel: 5 },
+  { label: 'Contramaestre', fromLevel: 9 },
+  { label: 'Teniente', fromLevel: 13 },
+  { label: 'Almirante', fromLevel: 17 }
+] as const;
