@@ -52,6 +52,143 @@ jobs:
       - name: Build (Next + servidor)
         run: npm run build
 
+  # e2e de Playwright en cada PR, sin desplegar nada: los tests de `npm run test:e2e` (sin @perf, @capture ni @soak, que
+  # piden GPU real o son largos) menos los @gpu, que miden por frame y con WebGL por CPU no llegan a su presupuesto. Todos
+  # siguen corriendo en el Mac. Cada shard es una máquina con su build y sus 4 servidores, y corre en serie como en el Mac
+  # (workers: 1). Playwright reparte los archivos por número de tests, no por duración: con las duraciones del run
+  # 40070721224, con 9 shards el más largo se queda en ~7,4 min de tests (con 8, 9 min; con 10, también 9). Al añadir
+  # specs largos, revisar el reparto. El runner no tiene GPU: WebGL por llvmpipe, el OpenGL por software de Mesa (playwright.config.ts). Un
+  # fallo se repite una vez y, si pasa, sale como «flaky» en el informe. No es un check obligatorio: eso lo decide Jonattan
+  e2e:
+    if: github.event_name == 'pull_request' && github.event.action != 'labeled'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    # Un push nuevo al PR cancela su e2e en curso, shard a shard. La etiqueta (labeled) no corre el e2e y va a un grupo
+    # propio, para no cancelar el de la última cabeza
+    concurrency:
+      group: ${{ github.event.action == 'labeled' && format('e2e-labeled-{0}-{1}', github.run_id, matrix.shard) || format('e2e-pr-{0}-{1}', github.event.pull_request.number, matrix.shard) }}
+      cancel-in-progress: true
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    env:
+      # Clerk de desarrollo, la misma instancia que el Mac (decisión de Jonattan del 2026-10-24): la clave pública es una
+      # variable del repo y la secreta solo llega al paso de los tests. Sin las dos (un PR desde un fork), clave de
+      # producción ficticia de un host .invalid: el middleware ve «producción sin cookies» y nada sale hacia Clerk
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.E2E_CLERK_SECRET_KEY != '' && vars.E2E_CLERK_PUBLISHABLE_KEY != '' && vars.E2E_CLERK_PUBLISHABLE_KEY || 'pk_live_Y2xlcmsuZ2hhLWUyZS5zZWEtYmF0dGxlLmludmFsaWQk' }}
+      NEXT_TELEMETRY_DISABLED: '1'
+      # llvmpipe por EGL sin pantalla (playwright.config.ts)
+      EGL_PLATFORM: surfaceless
+    steps:
+      - uses: actions/checkout@v4.4.0
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: OpenGL por software de Mesa (llvmpipe)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends libegl1 libegl-mesa0 libgl1-mesa-dri
+      # Chrome del runner (channel: 'chrome'), su WebGL, que tiene que ser llvmpipe, y los binarios de Postgres para el
+      # clúster temporal de los specs de persistencia (server/__tests__/pg/cluster.ts lee PG_BIN)
+      - name: Chrome, WebGL y Postgres del runner
+        run: |
+          google-chrome --version
+          pg_bin="$(printf '%s\n' /usr/lib/postgresql/*/bin | sort -V | tail -1)"
+          test -x "${pg_bin}/initdb"
+          "${pg_bin}/postgres" --version
+          echo "PG_BIN=${pg_bin}" >> "$GITHUB_ENV"
+          npx tsx scripts/ci/webgl-renderer.ts | tee "$RUNNER_TEMP/webgl.txt"
+          grep -q llvmpipe "$RUNNER_TEMP/webgl.txt"
+      - name: Build de e2e
+        env:
+          CLERK_SECRET_KEY: sk_test_solo_para_compilar
+        run: npm run build:e2e
+      # La salida pasa por redact_clerk.py: el log del job también es público
+      - name: e2e (shard ${{ matrix.shard }}/9)
+        shell: bash
+        env:
+          CLERK_SECRET_KEY: ${{ secrets.E2E_CLERK_SECRET_KEY != '' && vars.E2E_CLERK_PUBLISHABLE_KEY != '' && secrets.E2E_CLERK_SECRET_KEY || 'sk_live_dummy' }}
+        run: npx playwright test --grep-invert "@perf|@capture|@soak|@gpu" --shard=${{ matrix.shard }}/9 --retries=1 --reporter=blob,list 2>&1 | python3 -u scripts/ci/redact_clerk.py stream
+      # El repo es público y sus artefactos también: antes de subir nada se tapan las cookies y los tokens de sesión de
+      # Clerk (también dentro de las trazas) y se comprueba que no queda ninguno. Si queda alguno, no se sube nada
+      - name: Tapar los datos de sesión de Clerk en el blob y las trazas
+        if: ${{ !cancelled() }}
+        run: python3 scripts/ci/redact_clerk.py redact blob-report test-results
+      - name: Comprobar que no queda ninguno
+        id: clean
+        if: ${{ !cancelled() }}
+        run: python3 scripts/ci/redact_clerk.py check blob-report test-results
+      - name: Informe del shard (blob)
+        if: ${{ !cancelled() && steps.clean.outcome == 'success' }}
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: e2e-blob-${{ matrix.shard }}
+          path: blob-report
+          retention-days: 7
+      - name: Trazas de los fallos (test-results)
+        if: ${{ failure() && steps.clean.outcome == 'success' }}
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: e2e-test-results-${{ matrix.shard }}
+          path: test-results
+          retention-days: 7
+
+  # Junta los blobs de los shards en un informe HTML (con las trazas de los fallos) y un resumen en la página del run
+  e2e-report:
+    needs: e2e
+    if: ${{ !cancelled() && needs.e2e.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    concurrency:
+      group: ${{ github.event.action == 'labeled' && format('e2e-report-labeled-{0}', github.run_id) || format('e2e-report-pr-{0}', github.event.pull_request.number) }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4.4.0
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@v4.3.0
+        with:
+          pattern: e2e-blob-*
+          path: all-blob-reports
+          merge-multiple: true
+      - name: Juntar los informes
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: e2e-results.json
+        run: npx playwright merge-reports --reporter=html,json all-blob-reports
+      - name: Resumen
+        run: |
+          {
+            echo '### e2e'
+            jq -r '.stats | "Pasan \(.expected), fallan \(.unexpected), flaky \(.flaky), saltados \(.skipped); duración según el informe \(.duration / 1000 | floor) s"' e2e-results.json
+            echo
+            echo '```'
+            jq -r '.. | objects | select(has("specs")) | .specs[] | . as $s | .tests[] | select(.status == "unexpected" or .status == "flaky") | "\(.status)\t[\(.projectName)] \($s.file):\($s.line) \($s.title)"' e2e-results.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      # Los blobs llegan tapados; se repite sobre el HTML (que lleva las trazas dentro) y el JSON antes de subirlos
+      - name: Tapar y comprobar el informe
+        run: |
+          python3 scripts/ci/redact_clerk.py redact playwright-report e2e-results.json
+          python3 scripts/ci/redact_clerk.py check playwright-report e2e-results.json
+      - name: Informe HTML
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: e2e-html-report
+          path: |
+            playwright-report
+            e2e-results.json
+          retention-days: 7
+
   # DT-16: un PR hacia main desde una rama de este repo (nunca un fork: el secreto no debe llegar a código ajeno) se
   # despliega en staging tras verify solo si tiene la etiqueta «staging»: al ponerla y en cada push posterior. Sin ella,
   # solo verify, para que varios PR abiertos no se pisen staging. Un despliegue a medias no se cancela; si llegan varios,

@@ -57,6 +57,10 @@ export const TOP_FACE = {
   // Los 2 tonos alternos de D36 (±7 de L*), que conserva el Capitán (paleta pirata) hasta medir AD-28 en I2 (§8.2.2)
   deckD36Pirate: { albedo: '#78563C', target: '#805C40' },
   deckAltD36Pirate: { albedo: '#56371F', target: '#5C3B21' },
+  // Cubierta propia de la Cañonera (ASSET-SPEC §8.4, I2): tablas a ±7 de L* de #9A8466 y su media lisa en LOD1
+  deckGunboat: { albedo: '#A28D72', target: '#AD9678' },
+  deckAltGunboat: { albedo: '#7E6B51', target: '#877255' },
+  deckMeanGunboat: { albedo: '#907C61', target: '#9A8466' },
   cargo: { albedo: '#A5723B', target: PALETTE.cargo }
 } as const;
 
@@ -227,11 +231,14 @@ export const LABEL = {
   // (histéresis) con el fundido fade-in de 150 ms
   hudHidePx: 8,
   hudShowPx: 16,
-  hudFadeMs: 150
+  hudFadeMs: 150,
+  // §11.5 (D69): insignia de rango de 12 px en la 2.ª fila de las placas de jugador, a 3 px de la barra
+  badgePx: 12 as const,
+  badgeGapPx: 3
 };
 
 // ---- VFX §9 Números flotantes (tiempos; color, tamaño y peso por tipo en world-overlays.css) ----
-export type DamageTextKind = 'dealt' | 'heavy' | 'taken' | 'others' | 'miss' | 'repair' | 'gold';
+export type DamageTextKind = 'dealt' | 'heavy' | 'taken' | 'others' | 'miss' | 'repair' | 'gold' | 'xp';
 
 export const DAMAGE_TEXT = {
   poolDesktop: 24,
@@ -242,7 +249,10 @@ export const DAMAGE_TEXT = {
   stackMs: 250,
   stackPx: 18,
   heavyRatio: 0.15, // golpe fuerte: ≥ 15 % de la vida máxima del objetivo
-  opacity: { dealt: 1, heavy: 1, taken: 1, others: 0.75, miss: 1, repair: 1, gold: 1 } as Record<DamageTextKind, number>
+  // Recompensas (oro y, en la 1.1, XP; D70): duran 1 200 ms y suben 48 px
+  rewardDurationMs: 1200,
+  rewardRisePx: 48,
+  opacity: { dealt: 1, heavy: 1, taken: 1, others: 0.75, miss: 1, repair: 1, gold: 1, xp: 1 } as Record<DamageTextKind, number>
 };
 
 // ---- VFX §10–12, §14 Anillos ----

@@ -318,7 +318,7 @@ function expectAd32(results: PathResult[], commitDelta: number, desktop: boolean
 }
 
 test.describe('Placas y HUD', () => {
-  test('AD-32 (1440×900): ninguna placa se cruza con el minimapa, su pie del sector, la barra de acciones ni los avisos (también uno que entra); vuelve en ≤ 250 ms', async ({ page }) => {
+  test('AD-32 (1440×900): ninguna placa se cruza con el minimapa, su pie del sector, la barra de acciones ni los avisos (también uno que entra); vuelve en ≤ 250 ms @gpu', async ({ page }) => {
     test.setTimeout(150_000);
     await setup(page);
     const c0 = await commits(page);
@@ -331,7 +331,7 @@ test.describe('Placas y HUD', () => {
     expectEntering(entering);
   });
 
-  test('AD-32 con movimiento reducido (1440×900): la placa vuelve sin fundido', async ({ page }) => {
+  test('AD-32 con movimiento reducido (1440×900): la placa vuelve sin fundido @gpu', async ({ page }) => {
     test.setTimeout(60_000);
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await setup(page);

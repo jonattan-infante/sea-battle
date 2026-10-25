@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
+import * as THREE from 'three';
 import { CAMERA, LIGHTING, PALETTE } from '../../client/art';
 import { GameRuntime } from '../../client/runtime';
 import World from './World';
@@ -14,7 +15,6 @@ export interface GameCanvasProps {
 }
 
 const DOUBLE_CLICK_MS = 350;
-const TAP_SLOP_PX = 12;
 const WHEEL_STEP = 40; // px acumulados por nivel de zoom (trackpads emiten deltas pequeños)
 const WHEEL_COOLDOWN_MS = 220;
 const PINCH_IN = 1.25;
@@ -82,26 +82,45 @@ export default function GameCanvas({ runtime, onWaterClick, onShipClick, onShipD
       return Math.hypot(a.x - b.x, a.y - b.y);
     };
 
+    // Vista libre (E13, GDD §5): pulsar y arrastrar más de 12 px desplaza la vista; soltar antes es un clic, que navega o
+    // selecciona al soltar (con ratón, antes se hacía al pulsar). Dos dedos son zoom, nunca desplazamiento
+    const view = runtime.freeView;
+    const toWorld = (dx: number, dy: number) => runtime.screenDeltaToWorld(dx, dy);
+    let mouseDown = false;
+    // Un PointerEvent sintético (los e2e de AC-14 y AC-136) no es un puntero activo y setPointerCapture lanzaría
+    const capture = (e: PointerEvent) => {
+      try {
+        el.setPointerCapture?.(e.pointerId);
+      } catch {
+        // sin captura: el arrastre funciona igual mientras el puntero siga sobre el lienzo
+      }
+    };
     const onPointerDown = (e: PointerEvent) => {
       const p = local(e);
       if (e.pointerType === 'mouse') {
-        if (e.button === 0) act(p.x, p.y, false);
+        if (e.button !== 0) return;
+        mouseDown = true;
+        view.pointerDown(p.x, p.y);
+        capture(e);
         return;
       }
       touches.set(e.pointerId, p);
-      el.setPointerCapture?.(e.pointerId);
+      capture(e);
       if (touches.size === 1) {
         tap = p;
         pinched = false;
+        view.pointerDown(p.x, p.y);
       } else if (touches.size === 2) {
         pinchBase = pinchDistance();
         pinched = true;
         tap = null;
+        view.cancelPress();
       }
     };
     const onPointerMove = (e: PointerEvent) => {
       const p = local(e);
       if (e.pointerType === 'mouse') {
+        if (mouseDown && view.pointerMove(p.x, p.y, toWorld, performance.now())) return;
         const now = performance.now();
         if (now - hoverAt < HOVER_MS) return;
         hoverAt = now;
@@ -111,7 +130,7 @@ export default function GameCanvas({ runtime, onWaterClick, onShipClick, onShipD
       }
       if (!touches.has(e.pointerId)) return;
       touches.set(e.pointerId, p);
-      if (tap && Math.hypot(p.x - tap.x, p.y - tap.y) > TAP_SLOP_PX) tap = null;
+      if (touches.size === 1 && !pinched && view.pointerMove(p.x, p.y, toWorld, performance.now())) tap = null;
       if (touches.size === 2 && pinchBase > 0) {
         const ratio = pinchDistance() / pinchBase;
         if (ratio > PINCH_IN) {
@@ -124,17 +143,24 @@ export default function GameCanvas({ runtime, onWaterClick, onShipClick, onShipD
       }
     };
     const onPointerUp = (e: PointerEvent) => {
-      if (e.pointerType === 'mouse') return;
       const p = local(e);
+      if (e.pointerType === 'mouse') {
+        if (e.button !== 0 || !mouseDown) return;
+        mouseDown = false;
+        if (view.pointerUp() === 'click') act(p.x, p.y, false);
+        return;
+      }
       touches.delete(e.pointerId);
       if (touches.size === 0) {
-        if (tap && !pinched) act(p.x, p.y, true);
+        if (view.pointerUp() === 'click' && tap && !pinched) act(p.x, p.y, true);
         tap = null;
         pinched = false;
         pinchBase = 0;
       }
     };
     const onPointerCancel = (e: PointerEvent) => {
+      if (e.pointerType === 'mouse') mouseDown = false;
+      view.cancelPress();
       touches.delete(e.pointerId);
       if (touches.size === 0) {
         tap = null;
@@ -191,12 +217,22 @@ export default function GameCanvas({ runtime, onWaterClick, onShipClick, onShipD
     >
       {/* flat = sin tone mapping (D2). alpha: false solo fija el alfa de borrado en 1: three r180 crea el contexto
           siempre con alfa (WebGLRenderer.js:345); lo que deja el alfa del framebuffer en 1 son blendSrcAlpha y
-          blendDstAlpha de las capas con CustomBlending (VFX §0.2) */}
+          blendDstAlpha de las capas con CustomBlending (VFX §0.2). El renderer es el mismo que R3F crea con el objeto
+          de props (new WebGLRenderer({ ...defaults, ...gl })); se crea aquí para avisar al runtime si no hay WebGL:
+          sin frames, la entrada no se abriría nunca y la portada debe irse, como en la 1.0.3 (AC-193 c). stencil: la sombra
+          en el agua de los GLB oscurece cada píxel una sola vez (ship-shadow.ts); three r180 no lo pide por defecto */}
       <Canvas
         orthographic
         flat
         dpr={runtime.mobile ? LIGHTING.dprMobile : LIGHTING.dprDesktop}
-        gl={{ antialias: true, alpha: false, powerPreference: 'high-performance' }}
+        gl={(defaults) => {
+          try {
+            return new THREE.WebGLRenderer({ ...defaults, antialias: true, alpha: false, stencil: true, powerPreference: 'high-performance' });
+          } catch (e) {
+            runtime.rendererFailed();
+            throw e;
+          }
+        }}
         camera={{ near: CAMERA.near, far: CAMERA.far, zoom: 5, position: [0, CAMERA.distance * Math.sin(CAMERA.elevation), CAMERA.distance * Math.cos(CAMERA.elevation)] }}
         onCreated={({ gl }) => {
           gl.shadowMap.enabled = false;

@@ -4,6 +4,7 @@ import { HINTS } from '../src/client/hints';
 import { SHIP_CLASSES } from '../src/game/constants';
 import { AMBUSH_POINT, BLIND_GUNNER_POINT, SHOWCASE_POINT } from '../server/scenarios';
 import { clickWater, dialogsOf, enterGame, hud, me, ships, trackSocket, waitFor } from './helpers';
+import { intentNames } from './net';
 import { OwnServer, startOwnServer } from './own-server';
 
 test.describe('Landing', () => {
@@ -53,8 +54,17 @@ test.describe('Partida como invitado', () => {
     await expect(page.getByTestId('shop')).toHaveCount(0);
   });
 
-  test('AC-14 (a, c): marcador ≤ 50 ms y la posición renderizada cambia en ≤ 350 ms en 10 de 10 corridas', async ({ page }) => {
+  test('AC-14 (a, c): marcador ≤ 50 ms y la posición renderizada cambia en ≤ 350 ms en 10 de 10 corridas @gpu', async ({ page }) => {
     test.setTimeout(120_000);
+    // O-56: el barco de un jugador que sale de otro test sigue 10 s en el mundo (DISCONNECT_GRACE) y, si caía bajo el clic,
+    // el clic lo seleccionaba en vez de navegar. Cada clic va a un punto de agua libre, elegido justo antes de lanzarlo como
+    // waterPoint() de input-toggle.spec.ts: sobre el lienzo y donde runtime.pick no coge ningún barco (O-61). Es la misma
+    // prueba que hace el clic (GameCanvas.tsx, act), con touch = false porque el clic es de ratón; una distancia fija en px
+    // no vale, porque pick coge la Balandra hasta a 104–105 px de su centro en algún rumbo (QA-47). La distancia al barco
+    // ajeno más cercano solo va al log. El primer candidato de cada lado es el punto de siempre, a 120 px del barco
+    const TOUCH = false;
+    const OFFSETS_X = [0, -100, 100, -200, 200];
+    const px = (v: number) => (v === Infinity ? 'ninguno en pantalla' : `${v.toFixed(0)} px`);
     await enterGame(page);
     const markers: number[] = [];
     const moves: number[] = [];
@@ -74,18 +84,29 @@ test.describe('Partida como invitado', () => {
         10_000,
         0
       );
-      const start = (await me(page))!;
       // Alterna arriba y abajo para quedarse cerca del puerto
       const dy = run % 2 === 0 ? -120 : 120;
       const t = await page.evaluate(
-        ([x, y]) =>
-          new Promise<{ marker: number; move: number }>((resolve) => {
+        ({ offY, touch, offsets }) =>
+          new Promise<{ marker: number; move: number; point: { x: number; y: number; nearest: number } | null; tried: { x: number; y: number; nearest: number; onCanvas: boolean; picked: string | null }[] }>((resolve) => {
             const dbg = window.__SEA_BATTLE__!;
-            const rt = dbg.runtime() as unknown as { clickMarker: unknown };
-            const me0 = dbg.me() as { x: number; z: number };
+            const rt = dbg.runtime() as unknown as { clickMarker: unknown; pick(x: number, y: number, touch: boolean): string | null };
+            type Seen = { id: string; x: number; z: number; screen: { sx: number; sy: number } | null };
+            const me0 = dbg.me() as Seen;
+            const others = (dbg.ships() as Seen[]).filter((s) => s.id !== me0.id && s.screen).map((s) => s.screen!);
+            const tried = offsets.map((dx) => {
+              const x = me0.screen!.sx + dx;
+              const y = me0.screen!.sy + offY;
+              const nearest = Math.min(Infinity, ...others.map((o) => Math.hypot(o.sx - x, o.sy - y)));
+              const onCanvas = document.elementFromPoint(x, y)?.tagName === 'CANVAS';
+              return { x, y, nearest, onCanvas, picked: onCanvas ? rt.pick(x, y, touch) : null };
+            });
+            const free = tried.find((c) => c.onCanvas && c.picked === null);
+            if (!free) return resolve({ marker: -1, move: Infinity, point: null, tried });
+            const point = { x: free.x, y: free.y, nearest: free.nearest };
             const canvas = document.querySelector('canvas')!;
             const t0 = performance.now();
-            const opts = { clientX: x, clientY: y, bubbles: true, pointerType: 'mouse', button: 0, isPrimary: true };
+            const opts = { clientX: point.x, clientY: point.y, bubbles: true, pointerType: 'mouse', button: 0, isPrimary: true };
             canvas.dispatchEvent(new PointerEvent('pointerdown', opts));
             canvas.dispatchEvent(new PointerEvent('pointerup', opts));
             let marker = -1;
@@ -93,14 +114,21 @@ test.describe('Partida como invitado', () => {
               const now = performance.now();
               if (marker < 0 && rt.clickMarker) marker = now - t0;
               const m = dbg.me() as { x: number; z: number };
-              if (Math.hypot(m.x - me0.x, m.z - me0.z) > 0.01) return resolve({ marker, move: now - t0 });
-              if (now - t0 > 3000) return resolve({ marker, move: Infinity });
+              if (Math.hypot(m.x - me0.x, m.z - me0.z) > 0.01) return resolve({ marker, move: now - t0, point, tried });
+              if (now - t0 > 3000) return resolve({ marker, move: Infinity, point, tried });
               requestAnimationFrame(poll);
             };
             requestAnimationFrame(poll);
           }),
-        [start.screen!.sx, start.screen!.sy + dy]
+        { offY: dy, touch: TOUCH, offsets: OFFSETS_X }
       );
+      const side = dy < 0 ? 'norte' : 'sur';
+      if (t.point) {
+        console.log(`AC-14 corrida ${run + 1}: ${side}, clic en (${t.point.x.toFixed(0)}, ${t.point.y.toFixed(0)}) · pick null · barco ajeno más cercano: ${px(t.point.nearest)}`);
+      } else {
+        console.log(`AC-14 corrida ${run + 1}: ${side}, sin punto libre · candidatos ${t.tried.map((c) => `(${c.x.toFixed(0)}, ${c.y.toFixed(0)}) ${c.onCanvas ? `pick ${c.picked} · ${px(c.nearest)}` : 'fuera del lienzo'}`).join(' · ')}`);
+      }
+      expect(t.point, `AC-14: sin punto de agua libre (sobre el lienzo y sin barco que coja runtime.pick) en la corrida ${run + 1}`).not.toBeNull();
       markers.push(t.marker);
       moves.push(t.move);
     }
@@ -155,13 +183,17 @@ test.describe('Partida como invitado', () => {
   });
 
   test('Tab selecciona y Esc deselecciona sin generar tráfico de red', async ({ page }) => {
+    // Antes de entrar: page.on('websocket') solo avisa de los sockets nuevos, y el del juego se abre al conectar
+    const net = trackSocket(page);
     await enterGame(page);
     // Navegar hacia los mercantes hasta tener alguno a ≤ 150 m
     await page.evaluate(() => {
       const rt = window.__SEA_BATTLE__!.runtime() as unknown as { client: { moveTo: (x: number, z: number) => void } };
       rt.client.moveTo(0, 200);
     });
-    const net = trackSocket(page); // después del moveTo: desde aquí el cliente no debe enviar nada
+    // Tras ver salir el moveTo se vacía el registro: desde aquí el cliente no debe enviar nada
+    await waitFor(async () => intentNames(net), (names) => names.includes('moveTo'), 3000, 50);
+    net.reset();
     const target = await waitFor(
       async () => {
         await page.keyboard.press('Tab');

@@ -41,13 +41,25 @@ def clerk_redirects(variables):
     return False, ' · '.join(problems)
 
 
+def railpack_banner(messages):
+    """El banner de Railpack de los mensajes del log del build, sin colores, o '' si no está (H-27). Antes llegaba entero
+    en un solo mensaje; con Railpack 0.43.0 (prod b55345f, 2026-10-23; staging, 2026-10-24) llega una línea por mensaje
+    y el que nombra a Railpack es solo el título del recuadro: se juntan desde él hasta el final, para que start_check
+    vea la sección Deploy (O-60)."""
+    lines = [re.sub(r'\x1b\[[0-9;]*m', '', m) for m in messages]
+    start = next((i for i, m in enumerate(lines) if 'Railpack' in m), None)
+    return '' if start is None else '\n'.join(lines[start:])
+
+
 def start_check(setting, manifest_start, banner):
-    """Arranque: el ajuste y el manifest dicen START y, si el build trae el banner de Railpack, su plan también. H-27
-    (QA-13 §5): hay builds sin banner en sus logs (el de prod de la 1.0.0); entonces el plan no se puede comprobar y no
-    cuenta como FALLA, pero un banner con otro plan (p. ej. npm start) sí."""
-    plan = re.findall(r'Deploy\s+─+\s+\$ ([^\n]+)', banner) if banner else None
-    ok = setting == START and manifest_start == START and (plan is None or plan == [START])
-    shown = 'no comprobable (el build no trae el banner en sus logs)' if plan is None else plan
+    """Arranque: el ajuste y el manifest dicen START y, si el banner de Railpack trae la línea del plan, su plan también.
+    Sin banner en los logs (H-27, QA-13 §5: el build de prod de la 1.0.0) o con un banner sin la línea del plan (O-60: lo
+    que este script leía del build de b55345f), el plan no se puede comprobar y no cuenta como FALLA; un plan con otro
+    arranque (p. ej. npm start) sí."""
+    plan = re.findall(r'Deploy\s+─+\s+\$ ([^\n]+)', banner) if banner else []
+    ok = setting == START and manifest_start == START and (not plan or plan == [START])
+    why = 'el build no trae el banner en sus logs' if not banner else 'el banner de Railpack no trae la línea del plan'
+    shown = plan or f'no comprobable ({why})'
     return ok, f'ajuste {setting!r} · manifest {manifest_start!r} · plan de Railpack {shown}'
 
 
@@ -106,7 +118,7 @@ def main():
     manifest = (dep['meta'].get('serviceManifest') or {}).get('deploy') or {}
     ev = gql('query($id:String!){ deploymentEvents(id:$id, first:50){ edges { node { step createdAt completedAt } } } }', {'id': dep['id']})
     steps = {e['node']['step']: e['node'] for e in ev['deploymentEvents']['edges']}
-    banner = next((re.sub(r'\x1b\[[0-9;]*m', '', l['message']) for l in logs(dep['id'], 'buildLogs') if 'Railpack' in l['message']), '')
+    banner = railpack_banner([l['message'] for l in logs(dep['id'], 'buildLogs')])
 
     print(f"Railway · {args.project}/{args.service} · entorno {args.env}")
     print(f"  ajustes: {json.dumps(si)}")

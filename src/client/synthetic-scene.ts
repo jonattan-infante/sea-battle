@@ -24,6 +24,7 @@ export interface SceneShip {
   orbit: number; // radio del círculo que describe (0 = línea recta)
   targetId?: string; // objetivo fijo (si no, el del duelo)
   protectedFor?: number; // s de protección desde el inicio de la escena
+  level?: number; // nivel de un jugador (1.1, la insignia de su placa); por defecto, el 1
 }
 
 export interface SceneDuel {
@@ -92,7 +93,8 @@ export class SyntheticSource implements RenderSource {
       const ship: RenderShip = {
         id: s.id, kind: s.kind, classId: s.classId, name: s.name, ownerId: s.kind === 'player' ? `owner-${s.id}` : null,
         x: s.x, z: s.z, heading: s.heading, speed: s.speed, hp: Math.round(maxHp * s.hp), maxHp, state: 'alive',
-        targetId: s.targetId ?? targets.get(s.id) ?? null, repairing: false, protectedUntil: s.protectedFor ?? 0, sinkingSince: 0
+        targetId: s.targetId ?? targets.get(s.id) ?? null, repairing: false, protectedUntil: s.protectedFor ?? 0, sinkingSince: 0,
+        level: s.kind === 'player' ? s.level ?? 1 : null
       };
       this.ships.push(ship);
       this.byId.set(s.id, ship);
@@ -248,17 +250,20 @@ export function heroScene(view: SceneView): SceneSpec {
 }
 
 // AC-89: 20 barcos de jugadores + 20 NPC (12 piratas y 8 mercantes) + 1 Fragata en lugar del jefe (P2), todos en
-// pantalla con el zoom por defecto, una isla en una esquina, 8 duelos simultáneos y daño variado (humo y fuego)
-export function standardScene(view: SceneView): SceneSpec {
+// pantalla con el zoom por defecto, una isla en una esquina, 8 duelos simultáneos y daño variado (humo y fuego).
+// i2: la población del I2 de GDD §0 (8 piratas, 4 Cañoneras y 8 mercantes) con el Capitán en el sitio de la Fragata, en las
+// mismas posiciones, rumbos, vidas y duelos (producto, P2 del punto 3 de dev-render)
+export function standardScene(view: SceneView, options: { i2?: boolean } = {}): SceneSpec {
   const rng = createRng(89);
   const isle = island('I1');
   const focus = focusFor(view, isle, 0.94, 0.1);
   const players = ['sloop', 'brig', 'frigate'];
   const roster: { kind: ShipKind; classId: string; name: string }[] = [];
   for (let i = 0; i < 20; i++) roster.push({ kind: 'player', classId: players[i % 3], name: `Capitán ${i + 1}` });
-  for (let i = 0; i < 12; i++) roster.push({ kind: 'pirate', classId: 'pirate', name: 'Pirata' });
+  const npc = (classId: string) => ({ kind: 'pirate' as const, classId, name: SHIP_CLASSES[classId].label });
+  for (let i = 0; i < 12; i++) roster.push(options.i2 && i >= 8 ? npc('gunboat') : { kind: 'pirate', classId: 'pirate', name: 'Pirata' });
   for (let i = 0; i < 8; i++) roster.push({ kind: 'merchant', classId: 'merchant', name: 'Mercante' });
-  roster.push({ kind: 'player', classId: 'frigate', name: 'Capitán 21' });
+  roster.push(options.i2 ? npc('captain') : { kind: 'player', classId: 'frigate', name: 'Capitán 21' });
 
   // Rejilla que salta las celdas pegadas a cualquier isla visible; con más columnas si no caben los 41
   const clear = (p: { x: number; z: number }) => ISLANDS.every((i) => Math.hypot(p.x - i.x, p.z - i.z) >= i.radius + 22);
@@ -318,7 +323,7 @@ export function showcaseScene(): SceneSpec {
 export function galleryScene(): SceneSpec {
   const fx = -120;
   const fz = 260;
-  const classes: [string, ShipKind][] = [['sloop', 'player'], ['brig', 'player'], ['frigate', 'player'], ['pirate', 'pirate'], ['merchant', 'merchant'], ['captain', 'pirate']];
+  const classes: [string, ShipKind][] = [['sloop', 'player'], ['brig', 'player'], ['frigate', 'player'], ['pirate', 'pirate'], ['merchant', 'merchant'], ['captain', 'pirate'], ['gunboat', 'pirate']];
   return {
     name: 'gallery',
     focus: { x: fx, z: fz },
