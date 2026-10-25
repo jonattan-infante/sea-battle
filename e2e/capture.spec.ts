@@ -1,11 +1,11 @@
 // Capturas estándar para QA y UX (ART-DIRECTION §18) sobre el escenario determinista "showcase"
-// (server/scenarios.ts): pirata a 45 m, mercante a 40 m, pirata junto a la isla I5 y restos. La de legibilidad (AC-72)
-// va en su propio servidor con el escenario "legibility".
+// (server/scenarios.ts): pirata a 45 m, mercante a 40 m, pirata junto a la isla I5 y restos. Las de legibilidad (AC-72 y,
+// con el I2, AC-115) van en su propio servidor con los escenarios "legibility" y "legibility-i2".
 import { Browser, expect, Page, test } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 import { PORTS } from '../playwright.config';
-import { LEGIBILITY } from '../server/scenarios';
+import { DANGER, LEGIBILITY, LEGIBILITY_I2 } from '../server/scenarios';
 import { enterGame, me, ships, waitFor } from './helpers';
 import { startOwnServer } from './own-server';
 
@@ -54,6 +54,30 @@ const shot = (page: Page, vp: Vp, name: string) => page.screenshot({ path: path.
 // ---- AC-72 (D57, ART-DIRECTION §18.1): captura de legibilidad y su verdad de terreno ----
 const LEG_GAP = 16; // D57 b: px CSS entre las cajas de dos barcos
 const ROLES = ['self', 'player', 'pirate', 'merchant'];
+
+// Escena de legibilidad: la de AC-72 (D57) o la del I2 de AC-115 (ART-DIRECTION §18.2). Con `byClass`, el rol de un hostil
+// sale de su clase, porque la cañonera y el Capitán también son kind 'pirate'. `questions` va al JSON como la lista de
+// roles de rejilla.py (D71); sin ella, rejilla.py usa la de AC-72
+interface LegibilityScene {
+  name: string; // de la captura y del JSON
+  ac: string;
+  roles: string[]; // los que tienen que salir
+  selected: string[]; // rol del objetivo seleccionado; ninguno en AC-115
+  selectedLabel: string;
+  byClass: boolean;
+  questions?: [string, string][];
+}
+const AC72: LegibilityScene = { name: 'legibility', ac: 'AC-72', roles: ROLES, selected: ['pirate'], selectedLabel: 'un solo objetivo, el pirata', byClass: false };
+const AC115: LegibilityScene = {
+  name: 'legibility-i2',
+  ac: 'AC-115',
+  roles: ['self', 'player', 'pirate', 'gunboat', 'captain', 'merchant'],
+  selected: [],
+  selectedLabel: 'sin objetivo seleccionado',
+  byClass: true,
+  // La instrucción de §18.2: «un pirata, una cañonera pirata, el capitán pirata, un mercante y otro jugador»
+  questions: [['pirate', 'un pirata'], ['gunboat', 'una cañonera pirata'], ['captain', 'el capitán pirata'], ['merchant', 'un mercante'], ['player', 'otro jugador']]
+};
 
 type Box = [number, number, number, number]; // x, y, ancho, alto en px CSS
 interface Legible {
@@ -137,6 +161,13 @@ const legibleFrame = (page: Page) =>
     return { viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio }, elements };
   });
 
+// Clase de cada barco del runtime (RenderShip.classId), por id
+const classIds = (page: Page) =>
+  page.evaluate(() => {
+    const rt = window.__SEA_BATTLE__!.runtime() as unknown as { views: Map<string, { ship: { classId: string } }> };
+    return Object.fromEntries([...rt.views.entries()].map(([id, v]) => [id, v.ship.classId])) as Record<string, string>;
+  });
+
 // Separación entre dos cajas en el eje en que más se separan (D57 b); negativa si se cruzan
 const separation = (a: Box, b: Box) => Math.max(b[0] - (a[0] + a[2]), a[0] - (b[0] + b[2]), b[1] - (a[1] + a[3]), a[1] - (b[1] + b[3]));
 const inside = (b: Box, vp: { width: number; height: number }) => b[0] >= 0 && b[1] >= 0 && b[0] + b[2] <= vp.width && b[1] + b[3] <= vp.height;
@@ -188,26 +219,28 @@ async function shipPixels(page: Page, png: Buffer, ships: Box[]): Promise<(Box |
 
 // Captura de legibilidad y, junto a ella, el JSON de cajas de D57 (px CSS; `imagePx`, en px de la imagen), del mismo
 // frame congelado. Comprueba la verdad de terreno contra los píxeles de la propia captura
-async function legibilityShot(page: Page, vp: Vp) {
+async function legibilityShot(page: Page, vp: Vp, scene: LegibilityScene = AC72) {
   await freeze(page);
-  const frame = await legibleFrame(page);
-  const png = await shot(page, vp, 'legibility');
+  const classes = scene.byClass ? await classIds(page) : null;
+  const roleOf = (f: Frame): Frame => (classes ? { ...f, elements: f.elements.map((e) => (e.role === 'pirate' ? { ...e, role: classes[e.id] } : e)) } : f);
+  const frame = roleOf(await legibleFrame(page));
+  const png = await shot(page, vp, scene.name);
   const fromPixels = await shipPixels(page, png, frame.elements.map((e) => e.ship));
-  const after = await legibleFrame(page);
+  const after = roleOf(await legibleFrame(page));
   await thaw(page);
 
   const dpr = frame.viewport.dpr;
   const px = (b: Box | null) => b && (b.map((v) => Math.round(v * dpr)) as Box);
-  const json = { ...frame, elements: frame.elements.map((e) => ({ ...e, imagePx: { ship: px(e.ship), plate: px(e.plate), ring: px(e.ring) } })) };
-  fs.writeFileSync(path.join(OUT, `${vp.name}-legibility.json`), JSON.stringify(json, null, 1).replace(/\[\s+([\d.,\s-]+?)\s+\]/g, (_, v: string) => `[${v.replace(/\s+/g, ' ')}]`));
+  const json = { ...frame, ...(scene.questions ? { roles: scene.questions } : {}), elements: frame.elements.map((e) => ({ ...e, imagePx: { ship: px(e.ship), plate: px(e.plate), ring: px(e.ring) } })) };
+  fs.writeFileSync(path.join(OUT, `${vp.name}-${scene.name}.json`), JSON.stringify(json, null, 1).replace(/\[\s+([\d.,\s-]+?)\s+\]/g, (_, v: string) => `[${v.replace(/\s+/g, ' ')}]`));
   const edges = (b: Box) => [b[0], b[1], b[0] + b[2], b[1] + b[3]];
   const misfit = frame.elements.map((e, i) => (fromPixels[i] ? Math.max(...edges(e.ship).map((v, j) => Math.abs(v - edges(fromPixels[i]!)[j]))) : Infinity));
   for (const [i, e] of frame.elements.entries())
-    console.log(`AC-72 ${vp.name}: ${e.role}${e.selected ? ' (objetivo)' : ''} ${e.id} · barco [${e.ship.join(', ')}] · en la captura [${fromPixels[i]?.map((v) => v.toFixed(1)).join(', ') ?? '—'}] (borde peor ${misfit[i].toFixed(1)} px) · placa ${e.plate ? `[${e.plate.join(', ')}]` : '—'}${e.ring ? ` · anillo [${e.ring.join(', ')}]` : ''}`);
+    console.log(`${scene.ac} ${vp.name}: ${e.role}${e.selected ? ' (objetivo)' : ''} ${e.id} · barco [${e.ship.join(', ')}] · en la captura [${fromPixels[i]?.map((v) => v.toFixed(1)).join(', ') ?? '—'}] (borde peor ${misfit[i].toFixed(1)} px) · placa ${e.plate ? `[${e.plate.join(', ')}]` : '—'}${e.ring ? ` · anillo [${e.ring.join(', ')}]` : ''}`);
 
   expect(after, 'las cajas son las del frame de la captura (el frame congelado no cambió)').toEqual(frame);
-  expect(frame.elements.map((e) => e.role), 'los 4 tipos de AC-72').toEqual(expect.arrayContaining(ROLES));
-  expect(frame.elements.filter((e) => e.selected).map((e) => e.role), 'un solo objetivo, el pirata').toEqual(['pirate']);
+  expect(frame.elements.map((e) => e.role), `los ${scene.roles.length} tipos de ${scene.ac}`).toEqual(expect.arrayContaining(scene.roles));
+  expect(frame.elements.filter((e) => e.selected).map((e) => e.role), scene.selectedLabel).toEqual(scene.selected);
   for (const e of frame.elements) {
     for (const [name, b] of [['barco', e.ship], ['placa', e.plate], ['anillo', e.ring]] as const)
       if (b) expect.soft(inside(b, frame.viewport), `${e.role} ${e.id}: ${name} dentro del viewport`).toBe(true);
@@ -288,9 +321,22 @@ test.describe('Capturas @capture', () => {
     });
   }
 
+  // Los dos jugadores, cada uno en su puesto de la escena, quietos y sin la protección de la salida. Sin las pistas de
+  // primera sesión, para que la imagen sea la de una partida normal
+  async function toPosts(page: Page, other: Page, url: string, self: { x: number; z: number }, otherPost: { x: number; z: number }) {
+    for (const p of [page, other]) await p.addInitScript(() => localStorage.setItem('sea-battle-hints', '3')); // pistas vistas
+    await enterGame(page, url);
+    await enterGame(other, url);
+    await moveTo(page, self.x, self.z);
+    await moveTo(other, otherPost.x, otherPost.z);
+    for (const [p, post] of [[page, self], [other, otherPost]] as const)
+      await waitFor(() => p.evaluate(() => ({ s: window.__SEA_BATTLE__!.me() as { x: number; z: number; protectedUntil: number } | null, t: window.__SEA_BATTLE__!.serverTime() })), ({ s, t }) => !!s && Math.hypot(s.x - post.x, s.z - post.z) < 2 && s.protectedUntil <= t, 60_000, 250);
+    await waitFor(() => ships(page), (list) => list.filter((s) => s.kind === 'player').length === 2, 30_000, 250);
+    await page.waitForTimeout(700); // el barco termina de frenar
+  }
+
   // AC-72 (D57): los 5 elementos (barco propio, otro jugador, pirata, mercante y el pirata como objetivo) en la pose fija
-  // del escenario "legibility", en un servidor propio sin más NPC. Sin las pistas de primera sesión ni la protección
-  // de la salida, para que la imagen sea la de una partida normal
+  // del escenario "legibility", en un servidor propio sin más NPC
   for (const vp of VIEWPORTS) {
     test(`legibilidad en ${vp.name} (AC-72)`, async ({ browser }) => {
       test.setTimeout(150_000);
@@ -298,20 +344,53 @@ test.describe('Capturas @capture', () => {
       const page = await newPage(browser, vp);
       const other = await newPage(browser, vp);
       try {
-        for (const p of [page, other]) await p.addInitScript(() => localStorage.setItem('sea-battle-hints', '3')); // pistas vistas
-        await enterGame(page, server.url);
-        await enterGame(other, server.url);
-        await moveTo(page, LEGIBILITY.self.x, LEGIBILITY.self.z);
-        await moveTo(other, LEGIBILITY.other.x, LEGIBILITY.other.z);
-        for (const [p, post] of [[page, LEGIBILITY.self], [other, LEGIBILITY.other]] as const)
-          await waitFor(() => p.evaluate(() => ({ s: window.__SEA_BATTLE__!.me() as { x: number; z: number; protectedUntil: number } | null, t: window.__SEA_BATTLE__!.serverTime() })), ({ s, t }) => !!s && Math.hypot(s.x - post.x, s.z - post.z) < 2 && s.protectedUntil <= t, 60_000, 250);
-        await waitFor(() => ships(page), (list) => list.filter((s) => s.kind === 'player').length === 2, 30_000, 250);
-        await page.waitForTimeout(700); // el barco termina de frenar
+        await toPosts(page, other, server.url, LEGIBILITY.self, LEGIBILITY.other);
         await selectNear(page, vp, 'pirate', LEGIBILITY.pirate.x, LEGIBILITY.pirate.z);
         await legibilityShot(page, vp);
       } finally {
         await page.context().close();
         await other.context().close();
+        await server.kill();
+      }
+    });
+  }
+
+  // AC-115 (ART-DIRECTION §18.2): la escena del I2 para los evaluadores-agente, con el escenario "legibility-i2" en un
+  // servidor propio con el I2 encendido y sin más NPC: pirata, cañonera, Capitán y mercante quietos con los rumbos de AD-28,
+  // y los dos jugadores. Sin objetivo seleccionado
+  for (const vp of VIEWPORTS) {
+    test(`legibilidad del I2 en ${vp.name} (AC-115)`, async ({ browser }) => {
+      test.setTimeout(150_000);
+      const server = await startOwnServer({ SEA_BATTLE_NPCS: '0', SEA_BATTLE_I2: '1', SEA_BATTLE_SCENARIO: 'legibility-i2' });
+      const page = await newPage(browser, vp);
+      const other = await newPage(browser, vp);
+      try {
+        await toPosts(page, other, server.url, LEGIBILITY_I2.self, LEGIBILITY_I2.other);
+        await legibilityShot(page, vp, AC115);
+      } finally {
+        await page.context().close();
+        await other.context().close();
+        await server.kill();
+      }
+    });
+  }
+
+  // AC-189 (ART-DIRECTION §12.10, D77): la cañonera seleccionada con la Balandra N1 y la marca «Demasiado fuerte para tu
+  // barco» en el panel del objetivo, con el escenario "danger" en un servidor propio con el I2 encendido. El e2e de AC-189
+  // (e2e/danger-mark.spec.ts) mide los 3 tamaños; esto es la imagen para ux, también en 844×390
+  for (const vp of [...VIEWPORTS, { name: 'landscape', width: 844, height: 390, mobile: true }]) {
+    test(`marca de peligro en ${vp.name} (AC-189)`, async ({ browser }) => {
+      test.setTimeout(120_000);
+      const server = await startOwnServer({ SEA_BATTLE_NPCS: '0', SEA_BATTLE_I2: '1', SEA_BATTLE_SCENARIO: 'danger' });
+      const page = await newPage(browser, vp);
+      try {
+        await enterGame(page, server.url);
+        await sailTo(page, 0, 100); // dentro de la zona segura, a 54 m de la cañonera y del pirata
+        expect(await selectNear(page, vp, 'pirate', DANGER.gunboat.x, DANGER.gunboat.z), 'la cañonera está en pantalla').toBe(true);
+        await expect(page.getByTestId('target-type')).toHaveText('Demasiado fuerte para tu barco');
+        await shot(page, vp, 'danger-mark');
+      } finally {
+        await page.context().close();
         await server.kill();
       }
     });

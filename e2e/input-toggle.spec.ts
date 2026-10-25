@@ -65,9 +65,12 @@ async function instrument(page: Page) {
     document.addEventListener('click', (e) => {
       if ((e.target as Element | null)?.closest?.('[data-testid="m-attack"]')) w.__INPUT__.push({ t: performance.now(), code: 'm-attack', repeat: false });
     }, true);
-    // Clic en el agua (AC-128 d): el lienzo del juego recibe el puntero
-    document.addEventListener('pointerdown', (e) => {
-      if ((e.target as Element | null)?.tagName === 'CANVAS') w.__INPUT__.push({ t: performance.now(), code: 'water', repeat: false });
+    // Clic en el agua (AC-128 d): el lienzo del juego recibe el puntero. Desde la vista libre (D89) el clic navega al soltar,
+    // así que su hora es la del pointerup (AC-14 a, BACKLOG; decidido por producto el 2026-10-18). El pointerup capturado
+    // (setPointerCapture del envoltorio, GameCanvas.tsx) tiene por objetivo el envoltorio y no el lienzo: se mira qué hay
+    // bajo el puntero
+    document.addEventListener('pointerup', (e) => {
+      if (document.elementFromPoint(e.clientX, e.clientY)?.tagName === 'CANVAS') w.__INPUT__.push({ t: performance.now(), code: 'water', repeat: false });
     }, true);
     let last: string | null | undefined;
     new MutationObserver(() => {
@@ -293,7 +296,7 @@ function report(label: string, results: Result[], targets: string) {
 test.describe('Doble pulsación con el estado del servidor en camino', () => {
   test.beforeEach(serve('targets'));
 
-  test('AC-125: Espacio ×2 a Δ ∈ {80, 120, 200, 300} ms con 0 y 100 ms de retardo → exactamente attack → cancelAttack, el servidor sin ataque y el HUD al día en ≤ 50 ms sin desdecirse', async ({ page }) => {
+  test('AC-125: Espacio ×2 a Δ ∈ {80, 120, 200, 300} ms con 0 y 100 ms de retardo → exactamente attack → cancelAttack, el servidor sin ataque y el HUD al día en ≤ 50 ms sin desdecirse @gpu', async ({ page }) => {
     test.setTimeout(300_000);
     await instrument(page);
     const net = trackSocket(page);
@@ -330,7 +333,7 @@ test.describe('Doble pulsación con el estado del servidor en camino', () => {
     for (const r of results) expect.soft(r.ok, `Espacio ×2, retardo ${r.delay} ms, Δ ${r.gap} ms: ${r.intents}, servidor ${r.server}, HUD ${r.hud}`).toBe(true);
   });
 
-  test('AC-125: Esc ×2 a Δ ∈ {80, 120, 200, 300} ms con 0 y 100 ms de retardo → 1 cancelAttack, la 2.ª deselecciona sin red y el HUD al día en ≤ 50 ms sin desdecirse', async ({ page }) => {
+  test('AC-125: Esc ×2 a Δ ∈ {80, 120, 200, 300} ms con 0 y 100 ms de retardo → 1 cancelAttack, la 2.ª deselecciona sin red y el HUD al día en ≤ 50 ms sin desdecirse @gpu', async ({ page }) => {
     test.setTimeout(360_000);
     await instrument(page);
     const net = trackSocket(page);
@@ -404,7 +407,7 @@ test.describe('Doble pulsación con el estado del servidor en camino', () => {
     expect.soft(stop.sent, 'S mantenida').toEqual(['stop']);
   });
 
-  test('AC-128 (c): con el casco intacto y un objetivo atacado, R con 0 y 100 ms de retardo → repair(true) rechazado por el servidor, el ataque sigue y el HUD no sale de "atacando"', async ({ page }) => {
+  test('AC-128 (c): con el casco intacto y un objetivo atacado, R con 0 y 100 ms de retardo → repair(true) rechazado por el servidor, el ataque sigue y el HUD no sale de "atacando" @gpu', async ({ page }) => {
     test.setTimeout(180_000);
     await instrument(page);
     const net = trackSocket(page);
@@ -461,7 +464,7 @@ test.describe('Doble pulsación con el estado del servidor en camino', () => {
 test.describe('Doble toque en Atacar @mobile', () => {
   test.beforeEach(serve('targets'));
 
-  test('AC-125: en 390×844, el botón Atacar ×2 a Δ ∈ {80, 120, 200, 300} ms con 0 y 100 ms de retardo → exactamente attack → cancelAttack, el servidor sin ataque y el HUD al día en ≤ 50 ms sin desdecirse', async ({ page }) => {
+  test('AC-125: en 390×844, el botón Atacar ×2 a Δ ∈ {80, 120, 200, 300} ms con 0 y 100 ms de retardo → exactamente attack → cancelAttack, el servidor sin ataque y el HUD al día en ≤ 50 ms sin desdecirse @gpu', async ({ page }) => {
     test.setTimeout(360_000);
     await instrument(page);
     const net = trackSocket(page);
@@ -507,7 +510,7 @@ test.describe('Doble toque en Atacar @mobile', () => {
 test.describe('Reparar y atacar cruzados con el casco dañado (AC-128)', () => {
   test.beforeEach(serve('repair'));
 
-  test('AC-128 (a): con un objetivo atacado, R y luego Espacio a Δ ∈ {80, 120, 200} ms con 0 y 100 ms de retardo → exactamente repair(true) → attack, el servidor atacando sin reparar y el HUD al día en ≤ 50 ms sin desdecirse', async ({ page }) => {
+  test('AC-128 (a): con un objetivo atacado, R y luego Espacio a Δ ∈ {80, 120, 200} ms con 0 y 100 ms de retardo → exactamente repair(true) → attack, el servidor atacando sin reparar y el HUD al día en ≤ 50 ms sin desdecirse @gpu', async ({ page }) => {
     test.setTimeout(300_000);
     await instrument(page);
     const net = trackSocket(page);
@@ -550,7 +553,7 @@ test.describe('Reparar y atacar cruzados con el casco dañado (AC-128)', () => {
   // Un test por retardo: reparar cura 32 de vida/s y cada ronda repara ~2,5 s, así que cada servidor nuevo (casco al
   // 10 %) da para 3 rondas y sus reintentos sin pasar del 90 %
   for (const delay of DELAYS) {
-    test(`AC-128 (b): reparando y con un objetivo seleccionado sin atacar, Espacio y luego R a Δ ∈ {80, 120, 200} ms con ${delay} ms de retardo → exactamente attack → repair(true), el servidor reparando sin ataque y el HUD al día en ≤ 50 ms sin desdecirse`, async ({ page }) => {
+    test(`AC-128 (b): reparando y con un objetivo seleccionado sin atacar, Espacio y luego R a Δ ∈ {80, 120, 200} ms con ${delay} ms de retardo → exactamente attack → repair(true), el servidor reparando sin ataque y el HUD al día en ≤ 50 ms sin desdecirse @gpu`, async ({ page }) => {
       test.setTimeout(240_000);
       await instrument(page);
       const net = trackSocket(page);
@@ -600,20 +603,41 @@ test.describe('Reparar y atacar cruzados con el casco dañado (AC-128)', () => {
 test.describe('Reparar, navegar y reparar con el casco dañado (AC-128 d)', () => {
   test.beforeEach(serve('repair'));
 
-  // Un punto de agua en pantalla: el lienzo bajo el puntero, sin barcos a < 60 px ni elementos del HUD
+  // Un punto de agua en pantalla: el lienzo bajo el puntero, sin elementos del HUD, y donde runtime.pick no coge ningún
+  // barco, la misma prueba que hace el clic (GameCanvas.tsx, act; touch = false, porque el clic es de ratón). Una distancia
+  // fija en px no vale: pick coge la Balandra hasta a 104–105 px de su centro en algún rumbo (O-61, QA-47). La distancia
+  // al barco ajeno más cercano solo va al log
   async function waterPoint(page: Page): Promise<{ x: number; y: number }> {
-    const mine = (await me(page))!;
-    const others = (await ships(page)).filter((s) => s.screen).map((s) => s.screen!);
-    const candidates = [[-160, -110], [160, -110], [-160, 110], [160, 110], [0, -160], [0, 160]].map(([dx, dy]) => ({ x: mine.screen!.sx + dx, y: mine.screen!.sy + dy }));
-    for (const c of candidates) {
-      const onCanvas = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.tagName === 'CANVAS', [c.x, c.y]);
-      if (onCanvas && others.every((o) => Math.hypot(o.sx - c.x, o.sy - c.y) >= 60)) return c;
+    const offsets = [[-160, -110], [160, -110], [-160, 110], [160, 110], [0, -160], [0, 160]];
+    const r = await page.evaluate(
+      ({ offsets, touch }) => {
+        const dbg = window.__SEA_BATTLE__!;
+        const rt = dbg.runtime() as unknown as { pick(x: number, y: number, touch: boolean): string | null };
+        type Seen = { id: string; screen: { sx: number; sy: number } | null };
+        const me0 = dbg.me() as Seen;
+        const others = (dbg.ships() as Seen[]).filter((s) => s.id !== me0.id && s.screen).map((s) => s.screen!);
+        const tried = offsets.map(([dx, dy]) => {
+          const x = me0.screen!.sx + dx;
+          const y = me0.screen!.sy + dy;
+          const onCanvas = document.elementFromPoint(x, y)?.tagName === 'CANVAS';
+          return { x, y, onCanvas, picked: onCanvas ? rt.pick(x, y, touch) : null, nearest: Math.min(Infinity, ...others.map((o) => Math.hypot(o.sx - x, o.sy - y))) };
+        });
+        return { point: tried.find((c) => c.onCanvas && c.picked === null) ?? null, tried };
+      },
+      { offsets, touch: false }
+    );
+    const px = (v: number) => (v === Infinity ? 'ninguno en pantalla' : `${v.toFixed(0)} px`);
+    if (r.point) {
+      console.log(`AC-128 (d) punto de agua: (${r.point.x.toFixed(0)}, ${r.point.y.toFixed(0)}) · pick null · barco ajeno más cercano: ${px(r.point.nearest)}`);
+    } else {
+      console.log(`AC-128 (d) sin punto de agua · candidatos ${r.tried.map((c) => `(${c.x.toFixed(0)}, ${c.y.toFixed(0)}) ${c.onCanvas ? `pick ${c.picked} · ${px(c.nearest)}` : 'fuera del lienzo'}`).join(' · ')}`);
     }
-    throw new Error('sin un punto de agua libre en pantalla');
+    expect(r.point, 'AC-128 (d): sin punto de agua libre en pantalla (sobre el lienzo y sin barco que coja runtime.pick)').not.toBeNull();
+    return { x: r.point!.x, y: r.point!.y };
   }
 
   for (const delay of DELAYS) {
-    test(`AC-128 (d): R → clic en el agua → R a Δ ∈ {80, 120, 200} ms con ${delay} ms de retardo → exactamente repair(true) → moveTo → repair(true), el servidor reparando y el HUD al día en ≤ 50 ms sin desdecirse`, async ({ page }) => {
+    test(`AC-128 (d): R → clic en el agua → R a Δ ∈ {80, 120, 200} ms con ${delay} ms de retardo → exactamente repair(true) → moveTo → repair(true), el servidor reparando y el HUD al día en ≤ 50 ms sin desdecirse @gpu`, async ({ page }) => {
       test.setTimeout(180_000);
       await instrument(page);
       const net = trackSocket(page);

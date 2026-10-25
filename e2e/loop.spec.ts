@@ -208,6 +208,9 @@ test.describe('Selección y ataque', () => {
     expect(intentNames(net).filter((n) => n === 'attack')).toHaveLength(1);
     expect(intentNames(net).filter((n) => n !== 'attack' && n !== 'moveTo')).toEqual([]);
     await expect(page.getByTestId('action-state')).toHaveAttribute('data-state', 'firing');
+    // En el DOM, con un objetivo atacable: desde la 1.1 es el único e2e que ve «✓ En alcance», porque AC-67 usa un jugador
+    // en la zona segura, que dice «✕ No atacable» (AC-153)
+    await expect(page.getByTestId('target-range')).toHaveText('· ✓ En alcance');
     await page.keyboard.press('Escape');
   });
 });
@@ -325,7 +328,8 @@ test.describe('Puerto', () => {
       expect(await goldOf(a, 'player-gold')).toBe(2000);
 
       // B se coloca a 65 m de A en el mismo anillo del puerto (zona segura): fuera del alcance N1 (60 m) y dentro del
-      // N2 (70 m). Así el alcance nuevo se ve en el panel del objetivo de A
+      // N2 (70 m). Así el alcance nuevo se ve en el panel del objetivo de A. 1.1 (AC-153): B, en la zona segura, no es
+      // atacable, y su fila dice «✕ No atacable» con cualquier alcance; el alcance se lee del objetivo del HUD (inRange)
       const r = Math.hypot(meA.x, meA.z);
       const phi = 2 * Math.asin(65 / (2 * r));
       const spot = { x: meA.x * Math.cos(phi) - meA.z * Math.sin(phi), z: meA.x * Math.sin(phi) + meA.z * Math.cos(phi) };
@@ -338,7 +342,8 @@ test.describe('Puerto', () => {
       expect(gap).toBeLessThan(69);
       await a.mouse.click(seen.screen!.sx, seen.screen!.sy);
       await expect(a.getByTestId('target-frame')).toHaveAttribute('data-target-id', meB.id);
-      await expect(a.getByTestId('target-range')).toHaveText('· ✕ Fuera de alcance');
+      await expect(a.getByTestId('target-range')).toHaveText('· ✕ No atacable');
+      expect(((await hud(a)).target as { inRange: boolean }).inRange).toBe(false);
 
       // Compra con clic real en el botón Puerto y en Mejorar
       await a.getByTestId('btn-port').click();
@@ -356,7 +361,8 @@ test.describe('Puerto', () => {
       expect(intents(netA)).toEqual([{ name: 'buy', data: { itemId: 'cannons:2' } }]);
       await a.keyboard.press('Escape');
       await expect(a.getByTestId('shop')).toHaveCount(0);
-      await expect(a.getByTestId('target-range')).toHaveText('· ✓ En alcance');
+      await waitFor(() => hud(a), (h) => (h.target as { inRange: boolean }).inRange, 3000, 50);
+      await expect(a.getByTestId('target-range')).toHaveText('· ✕ No atacable');
       console.log(`AC-67: B a ${gap.toFixed(1)} m de A · oro 2000 → 1500 · intenciones ${JSON.stringify(intents(netA))}`);
 
       // B se queda con 400 (Casco N2 + N3 = 1 600): Cañones N2 cuesta 500
