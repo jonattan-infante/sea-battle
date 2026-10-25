@@ -27,6 +27,7 @@ export interface RenderShip {
   repairing: boolean;
   protectedUntil: number; // tiempo de servidor (s); protegido si > client.serverTime()
   sinkingSince: number; // performance.now() en que empezó a hundirse (0 si no)
+  level: number | null; // nivel del jugador (1.1, `lv`): la insignia de la placa y del objetivo; null en los NPC
 }
 
 interface Sample {
@@ -262,6 +263,16 @@ export class GameClient {
   respawn(): void {
     this.socket.emit(C2S.respawn);
   }
+  // Vista libre (E13): el centro de la vista mientras se desplaza (FreeView lo limita a 2/s) o null al volver al seguimiento
+  viewAt(center: { x: number; z: number } | null): void {
+    this.socket.emit(C2S.viewAt, center && { x: Math.round(center.x * 100) / 100, z: Math.round(center.z * 100) / 100 });
+  }
+  // El barco propio en el último estado recibido, sin el retraso de interpolación: la vista libre vuelve al seguimiento con
+  // el daño, la muerte o la reaparición (AC-119)
+  ownSample(): { hp: number; classId: string; state: ShipState } | null {
+    const s = this.latestOwn();
+    return s ? { hp: s.hp, classId: s.c, state: s.st } : null;
+  }
 
   get myShipId(): string | null {
     return this.player?.shipId ?? this.welcome?.shipId ?? null;
@@ -442,7 +453,8 @@ function toRender(s: ShipSnapshot): RenderShip {
     targetId: s.t,
     repairing: s.r,
     protectedUntil: s.pu,
-    sinkingSince: 0
+    sinkingSince: 0,
+    level: s.lv ?? null
   };
 }
 
@@ -472,6 +484,7 @@ function interpolate(entity: Entity, renderTime: number, nowMs: number): void {
   render.targetId = s.t;
   render.repairing = s.r;
   render.protectedUntil = s.pu;
+  render.level = s.lv ?? null;
   if (s.st === 'sinking' && render.state !== 'sinking') render.sinkingSince = nowMs;
   if (s.st === 'alive') render.sinkingSince = 0;
   render.state = s.st;

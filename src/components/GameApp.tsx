@@ -6,9 +6,33 @@ import { useAuth, useUser } from '@clerk/nextjs';
 import { PlayerShipClass } from '../game/constants';
 import { GameEvent, Welcome } from '../game/types';
 import { probeServerOnce } from '../client/exit-probe';
+import type { Arrow } from '../client/free-view';
 import { GameClient } from '../client/game-client';
-import { canAttackClient, cannonFor, classLabel, cycleTarget, hudSignals, inSafeZone, portBlock, relationOf } from '../client/hud-logic';
+import {
+  canAttackClient,
+  cannonFor,
+  captainDownText,
+  captainSpawnText,
+  classLabel,
+  cycleTarget,
+  hudSignals,
+  inCannonRange,
+  inSafeZone,
+  levelUpOf,
+  levelUpText,
+  portBlock,
+  pushGoldReward,
+  pushKillReward,
+  pushXpReward,
+  relationOf,
+  RewardDraft,
+  rewardLines,
+  rewardText,
+  targetDanger,
+  targetDistance
+} from '../client/hud-logic';
 import { MeHud, resetSaveWarning, sameShallow, syncUnsaved, TargetHud, useHud } from '../client/hud-store';
+import { predictedShip, rememberShip } from '../client/own-ship-memory';
 import { attachOverlays, createRuntime, disposeRuntime, GameRuntime } from '../client/runtime';
 import GameCanvas from './game/GameCanvas';
 import Hud, { HudActions } from './hud/Hud';
@@ -20,6 +44,8 @@ const HINT_COUNT = 3;
 const HUD_SYNC_MS = 100; // ≤ 10 Hz
 const UNDER_FIRE_MS = 3000; // GDD §8
 const DESELECT_SUNK_MS = 1200;
+// Vista libre (E13, GDD §5): las flechas mueven la vista mientras estén pulsadas (AC-118); no son intenciones
+const ARROW_KEYS: Record<string, Arrow> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
 
 function randomId(): string {
   return Math.random().toString(36).slice(2, 12).padEnd(10, '0');
@@ -78,6 +104,7 @@ interface SeaBattleDebug {
   hud: () => unknown;
   renderInfo: () => unknown;
   runtime: () => GameRuntime;
+  select: (id: string | null) => void; // un objetivo elegido sin teclado ni ratón (e2e de O-54, bajo la portada)
 }
 
 declare global {
@@ -94,6 +121,8 @@ export default function GameApp({ guest }: { guest: boolean }) {
   const [welcome, setWelcome] = useState<Welcome | null>(null);
   const labelsRef = useRef<HTMLDivElement>(null);
   const floatingRef = useRef<HTMLDivElement>(null);
+  const chipsRef = useRef<HTMLDivElement>(null);
+  const coverRef = useRef<HTMLDivElement>(null);
   const getTokenRef = useRef(getToken);
   // Sincroniza el HUD en el acto tras una intención del jugador (AC-125: refleja la pulsación en ≤ 50 ms)
   const syncRef = useRef<() => void>(() => {});
@@ -114,9 +143,26 @@ export default function GameApp({ guest }: { guest: boolean }) {
       name,
       auth: async () => (testUser ? { testUser } : guest ? { guest: true, guestId: id } : { token: (await getTokenRef.current()) ?? undefined })
     });
-    const rt = createRuntime(client);
+    // Opción A de AC-193 c: el GLB propio se pide antes de la bienvenida, con la última clase de este jugador en el
+    // navegador o, si es nuevo, la de salida (own-ship-memory.ts)
+    const playerKey = testUser ? `test:${testUser}` : guest ? `guest:${id}` : `user:${user?.id ?? ''}`;
+    const rt = createRuntime(client, predictedShip(playerKey));
     const hud = useHud.getState();
-    let pendingKill: string | null = null;
+    // Recompensas de esta pasada de eventos (AC-152; GDD §14, «XP ganada»). El hundimiento, el oro y la XP de un barco
+    // llegan en el mismo frame y se reproducen en la misma llamada a update() (game-client.ts): se juntan aquí y salen
+    // como una sola línea del feed en una microtarea, al acabar la pasada
+    let rewards: RewardDraft[] = [];
+    let flushQueued = false;
+    const flushRewards = () => {
+      flushQueued = false;
+      for (const r of rewardLines(rewards)) hud.pushFeed('gold', rewardText(r), r);
+      rewards = [];
+    };
+    const queueFlush = () => {
+      if (flushQueued) return;
+      flushQueued = true;
+      queueMicrotask(flushRewards);
+    };
     const hints = readHints();
     useHud.setState({ hint: hints < HINT_COUNT ? hints : null });
 
@@ -139,21 +185,34 @@ export default function GameApp({ guest }: { guest: boolean }) {
             useHud.setState({ killedBy: killerName ? { name: killerName, relation: killer ? relationOf(killer, myId) : 'player' } : null, shopOpen: false });
             hud.pushFeed('danger', killerName ? `${killerName} te hundió` : 'Tu barco se hundió');
           } else if (e.byShipId === myId) {
-            pendingKill = victim?.name ?? 'un barco';
+            pushKillReward(rewards, victim?.kind === 'player' ? 'pvp' : 'kill', victim?.name ?? 'un barco', e.pos);
+            queueFlush();
           }
           break;
         }
         case 'loot': {
           if (e.playerId !== myPlayer) break;
           useHud.setState({ goldGain: { id: now, amount: e.gold } });
-          if (e.source === 'kill') hud.pushFeed('gold', pendingKill ? `Hundiste a ${pendingKill} +${e.gold} oro` : `Botín +${e.gold} oro`);
-          else if (e.source === 'wreck') hud.pushFeed('gold', `Restos +${e.gold} oro`);
-          else hud.pushFeed('gold', `Botín de combate +${e.gold} oro`);
-          pendingKill = null;
+          pushGoldReward(rewards, e.source, e.gold, e.pos);
+          queueFlush();
+          break;
+        }
+        // Solo llega al dueño y nunca con 0 (xp.ts): sin XP no sale nada de XP (GDD §14)
+        case 'xp': {
+          if (e.playerId !== myPlayer) break;
+          pushXpReward(rewards, e.source, e.xp, e.pos);
+          queueFlush();
           break;
         }
         case 'respawn':
           if (e.shipId === myId) useHud.setState({ killedBy: null });
+          break;
+        // Capitán pirata (AC-111): aviso a todos al aparecer y feed de todos al hundirse
+        case 'captain':
+          hud.pushToast('warn', captainSpawnText(e.sector, e.pos));
+          break;
+        case 'captainDown':
+          hud.pushFeed('info', captainDownText(e.names, e.more));
           break;
       }
     };
@@ -172,7 +231,7 @@ export default function GameApp({ guest }: { guest: boolean }) {
         const targetId = client.myTargetId();
         const repairing = client.myRepairing();
         const attacked = targetId ? client.getShip(targetId) : undefined;
-        const inRange = !!attacked && Math.hypot(attacked.x - mine.x, attacked.z - mine.z) <= cannon.range;
+        const inRange = !!attacked && inCannonRange(Math.hypot(attacked.x - mine.x, attacked.z - mine.z), cannon.range);
         me = {
           shipId: mine.id,
           name: mine.name,
@@ -196,19 +255,23 @@ export default function GameApp({ guest }: { guest: boolean }) {
       if (selectedId && (!sel || (sel.state !== 'alive' && performance.now() - sel.sinkingSince > DESELECT_SUNK_MS))) selectedId = null;
       let target: TargetHud | null = null;
       if (sel && selectedId) {
-        const distance = mine ? Math.round(Math.hypot(sel.x - mine.x, sel.z - mine.z)) : 0;
+        // AC-31 (1.1): se compara sin redondear, como el servidor, y se muestra redondeada hacia arriba
+        const range = targetDistance(mine ? Math.hypot(sel.x - mine.x, sel.z - mine.z) : 0, cannon.range);
         target = {
           id: sel.id,
           name: sel.name,
           kind: sel.kind,
           relation: relationOf(sel, myId),
+          classId: sel.classId,
           classLabel: classLabel(sel.classId),
           hp: sel.hp,
           maxHp: sel.maxHp,
           state: sel.state,
-          distance,
-          inRange: distance <= cannon.range,
-          attackable: canAttackClient(client, mine, sel)
+          distance: range.shown,
+          inRange: range.inRange,
+          attackable: canAttackClient(client, mine, sel),
+          level: sel.level,
+          danger: targetDanger(sel, player)
         };
       }
 
@@ -225,8 +288,13 @@ export default function GameApp({ guest }: { guest: boolean }) {
         if (connection === 'connected') useHud.setState({ reconnectAttempt: 0 });
         if (connection === 'full') router.replace('/?full=1');
       }),
+      client.onPlayer((p) => rememberShip(playerKey, p.activeShip)),
       client.onPlayer((player) => {
+        // AC-151: la subida de nivel sale en el mismo commit que el panel con el nivel nuevo, al llegar el frame que la
+        // trae. Un solo aviso con el nivel final aunque el hundimiento dé varios niveles
+        const up = levelUpOf(useHud.getState().player?.xp, player.xp);
         useHud.setState({ player });
+        if (up) hud.pushToast('achievement', levelUpText(up), up.rank);
         // AC-132: el aviso llega en el mismo commit que el estado del servidor. Lo decide el servidor (autoritativo): a un
         // invitado nunca le marca unsaved, porque no escribe en la BD; si lo hiciera por error, el e2e lo vería
         syncUnsaved(player.unsaved === true);
@@ -258,10 +326,15 @@ export default function GameApp({ guest }: { guest: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [guest, identityReady]);
 
-  // Capas DOM de placas y números de daño (dueño: runtime)
+  // Capas DOM de placas, números de daño e indicadores de borde, y la portada de la entrada (dueño: runtime)
   useEffect(() => {
-    if (!runtime || !welcome || !labelsRef.current || !floatingRef.current) return;
-    return attachOverlays(runtime, labelsRef.current, floatingRef.current);
+    if (!runtime || !welcome || !labelsRef.current || !floatingRef.current || !chipsRef.current || !coverRef.current) return;
+    const detach = attachOverlays(runtime, labelsRef.current, floatingRef.current, chipsRef.current);
+    runtime.attachEntryCover(coverRef.current);
+    return () => {
+      detach();
+      runtime.attachEntryCover(null);
+    };
   }, [runtime, welcome]);
 
   // ---- Acciones compartidas por teclado, HUD y botones táctiles ----
@@ -369,12 +442,25 @@ export default function GameApp({ guest }: { guest: boolean }) {
       // Sin partida que mandar (AC-131, AC-133): las teclas no generan intenciones y Enter y Espacio quedan para el overlay
       const { connection } = useHud.getState();
       if (connection === 'load-failed' || connection === 'kicked') return;
+      // Con la portada de la entrada puesta, ninguna tecla hace nada (O-54). Tab y las flechas tampoco hacen lo suyo, para
+      // que el foco no baje a un botón del HUD que hay debajo; Espacio y Enter, solo sobre un botón del aviso de conexión
+      if (runtime?.entryCovered()) {
+        const overlay = !!el?.closest('[data-testid="connection-overlay"]');
+        const press = e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter';
+        if (e.code === 'Tab' || ARROW_KEYS[e.code] || (press && !overlay)) e.preventDefault();
+        return;
+      }
       // Una pulsación, como mucho una intención (GDD §5): la autorrepetición de una tecla mantenida no cuenta
       if (e.repeat) {
-        if (e.code === 'Space' || e.code === 'Tab') e.preventDefault();
+        if (e.code === 'Space' || e.code === 'Tab' || ARROW_KEYS[e.code]) e.preventDefault();
         return;
       }
       const st = useHud.getState();
+      if (ARROW_KEYS[e.code]) {
+        e.preventDefault();
+        runtime?.freeView.setArrow(ARROW_KEYS[e.code], true);
+        return;
+      }
       switch (e.code) {
         case 'Space':
           e.preventDefault();
@@ -403,10 +489,23 @@ export default function GameApp({ guest }: { guest: boolean }) {
         case 'KeyP':
           actions.togglePort();
           break;
+        case 'KeyC':
+          runtime?.freeView.returnToFollow(performance.now()); // vuelve al seguimiento (AC-119)
+          break;
       }
     };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (ARROW_KEYS[e.code]) runtime?.freeView.setArrow(ARROW_KEYS[e.code], false);
+    };
+    const onBlur = () => runtime?.freeView.clearArrows(); // una flecha soltada fuera de la ventana no deja la vista moviéndose
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
+    };
   }, [actions, runtime]);
 
   // ---- Puente de depuración de solo lectura para los harnesses e2e y de rendimiento ----
@@ -431,7 +530,7 @@ export default function GameApp({ guest }: { guest: boolean }) {
         screen: runtime.project(s.x, s.z)
       };
     window.__SEA_BATTLE__ = {
-      ready: () => client.state === 'connected' && !!client.welcome && runtime.renderInfo.calls > 0,
+      ready: () => client.state === 'connected' && !!client.welcome && runtime.renderInfo.calls > 0 && runtime.entry.shownAt > 0,
       serverTime: () => client.serverTime(),
       me: () => view(client.getShip(client.myShipId)) ?? null,
       ships: () => [...client.getShips()].map((s) => view(s)),
@@ -441,6 +540,7 @@ export default function GameApp({ guest }: { guest: boolean }) {
         return { me, target, selectedId, shopOpen, connection, hint, feed, toasts, saveWarning };
       },
       renderInfo: () => ({ ...runtime.renderInfo }),
+      select: (id) => useHud.getState().select(id),
       runtime: () => runtime
     };
     return () => {
@@ -460,7 +560,17 @@ export default function GameApp({ guest }: { guest: boolean }) {
           <GameCanvas runtime={runtime} onWaterClick={onWaterClick} onShipClick={onShipClick} onShipDoubleClick={onShipDoubleClick} />
           <div ref={labelsRef} className="layer-labels" aria-hidden />
           <div ref={floatingRef} className="layer-floating" aria-hidden />
-          <Hud client={runtime.client} actions={actions} islands={welcome.islands} viewRect={() => runtime.viewRect()} />
+          <div ref={chipsRef} className="layer-chips" />
+          <Hud
+            client={runtime.client}
+            actions={actions}
+            islands={welcome.islands}
+            viewRect={() => runtime.viewRect()}
+            onMinimapView={(x, z) => runtime.freeView.centerOn({ x, z }, performance.now())}
+            onRecenter={() => runtime.freeView.returnToFollow(performance.now())}
+          />
+          {/* AC-193 c: tapa el juego hasta que la entrada se abre (el GLB propio llegó, falló o pasó el tope); la oculta el runtime */}
+          <Connecting ref={coverRef} />
         </>
       ) : (
         !loadFailed && <Connecting />
