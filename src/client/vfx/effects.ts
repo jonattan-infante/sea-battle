@@ -6,8 +6,9 @@ import { BallLayer, ContactLayer } from './balls';
 import { makeSpec, ParticlePool, ParticleSpec, SHAPE } from './particles';
 import { RingLayer } from './rings';
 
-// renderOrder (§0.2): océano 0 → P_WATER 1 → P_CONTACT 2 → islas 3 → RINGS 4 → barcos 5 → sombras 6 → balas 7 → P_ALPHA 8 → P_ADD 9
-export const RENDER_ORDER = { ocean: 0, water: 1, contact: 2, islands: 3, rings: 4, ships: 5, shadows: 6, balls: 7, alpha: 8, add: 9 };
+// renderOrder (§0.2): océano 0 → sombras de los barcos con GLB 0,5 (ship-shadow.ts) → P_WATER 1 → P_CONTACT 2 → islas 3 →
+// RINGS 4 → barcos 5 → sombras de las balas 6 → balas 7 → P_ALPHA 8 → P_ADD 9
+export const RENDER_ORDER = { ocean: 0, shipShadows: 0.5, water: 1, contact: 2, islands: 3, rings: 4, ships: 5, shadows: 6, balls: 7, alpha: 8, add: 9 };
 
 export const POOLS = {
   desktop: { add: 384, alpha: 1280, water: 768, balls: 96, contact: 64, rings: 64 }, // P_ALPHA con los cuerpos de llama (D21)

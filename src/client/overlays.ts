@@ -2,7 +2,10 @@
 // Se posicionan por frame con transform, por ref y sin estado de React (CLAUDE.md, regla 3; AC-83). El
 // contenido y el declutter se recalculan a 10 Hz y solo se escribe en el DOM lo que cambia. Los estilos
 // estáticos (clases wo-*) viven en src/styles/world-overlays.css.
+import { CAPTAIN_CLASS, GUNBOAT_CLASS } from '../game/constants';
+import { rankOf } from '../game/xp';
 import { DAMAGE_TEXT, DamageTextKind, LABEL, Relation, RELATIONS, relationOf } from './art';
+import { rankBadgeSvg } from './badges';
 import type { RenderShip } from './game-client';
 
 export { relationOf };
@@ -12,7 +15,8 @@ export type { Relation };
 // las cajas de los bloques y oculta ya las placas que quedan debajo, sin esperar a la siguiente pasada a 10 Hz
 export const HUD_BLOCKS_EVENT = 'sea-battle:hud-blocks';
 
-// Iconos de línea de Lucide (ISC), 24×24, trazo 2 px, currentColor (ART-DIRECTION §13)
+// Iconos de línea de Lucide (ISC), 24×24, trazo 2 px, currentColor (ART-DIRECTION §13). La corona del capitán es propia;
+// la bomba de la cañonera, la de lucide-static 0.469.0
 const ICONS = {
   star: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',
   anchor: '<circle cx="12" cy="5" r="3"/><line x1="12" y1="22" x2="12" y2="8"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/>',
@@ -21,10 +25,25 @@ const ICONS = {
   shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
   wrench: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
   swords: '<polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/><line x1="13" y1="19" x2="19" y2="13"/><line x1="16" y1="16" x2="20" y2="20"/><line x1="19" y1="21" x2="21" y2="19"/><polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5"/><line x1="5" y1="14" x2="9" y2="18"/><line x1="7" y1="17" x2="4" y2="20"/><line x1="3" y1="19" x2="5" y2="21"/>',
-  alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>'
+  alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  crown: '<path d="M4 18 2 7l5 5 5-8 5 8 5-5-2 11Z"/><path d="M5 21h14"/>',
+  bomb: '<circle cx="11" cy="13" r="9"/><path d="M14.35 4.65 16.3 2.7a2.41 2.41 0 0 1 3.4 0l1.6 1.6a2.4 2.4 0 0 1 0 3.4l-1.95 1.95"/><path d="m22 2-1.5 1.5"/>'
 } as const;
 
 export type IconName = keyof typeof ICONS;
+
+// Iconos de la placa y del panel: los de la relación. El Capitán pirata y la Cañonera pirata (I2) son hostiles y llevan
+// 2 de 12 px: calavera y corona, y calavera y bomba (ART-DIRECTION §4.3, §10 y §11.1; O-39)
+const CAPTAIN_ICONS: readonly IconName[] = ['skull', 'crown'];
+const GUNBOAT_ICONS: readonly IconName[] = ['skull', 'bomb'];
+export function relationIcons(relation: Relation, classId: string): readonly IconName[] {
+  if (relation === 'pirate' && classId === CAPTAIN_CLASS) return CAPTAIN_ICONS;
+  if (relation === 'pirate' && classId === GUNBOAT_CLASS) return GUNBOAT_ICONS;
+  return [RELATIONS[relation].icon];
+}
+// D43: las placas de 2 iconos llevan un nombre fijo («Capitán pirata», «Cañonera pirata») que nunca se trunca; su ancho
+// máximo sube 14 px
+const TWO_ICONS_EXTRA_W = 14;
 
 export function iconSvg(name: IconName, size: number): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
@@ -85,12 +104,15 @@ interface Plate {
   icon: HTMLSpanElement;
   name: HTMLSpanElement;
   status: HTMLSpanElement;
+  badge: HTMLSpanElement;
   bar: HTMLDivElement;
   trail: HTMLDivElement;
   fill: HTMLDivElement;
   reload: HTMLDivElement | null;
   // estado escrito (para no tocar el DOM si no cambia)
   relation: Relation | null;
+  rank: number; // insignia escrita: 1–5, 0 sin insignia (NPC) y −1 sin escribir
+  iconKey: string;
   nameText: string;
   statusKey: string;
   fillPx: number;
@@ -162,8 +184,10 @@ export class LabelLayer {
     const row = el('div', 'wo-plate__row', body);
     const icon = el('span', 'wo-plate__icon', row);
     const name = el('span', 'wo-plate__name', row);
-    // 2.ª fila: barra + iconos de estado a su derecha (§11.1): el estado nunca le quita espacio al nombre
+    // 2.ª fila: insignia de rango de los jugadores (§11.5, debajo del icono de relación) + barra + iconos de estado a su
+    // derecha (§11.1): el estado nunca le quita espacio al nombre
     const meter = el('div', 'wo-plate__meter', body);
+    const badge = el('span', 'wo-plate__badge', meter);
     const bar = el('div', 'wo-plate__bar', meter);
     const status = el('span', 'wo-plate__status', meter);
     const trail = el('div', 'wo-plate__trail', bar);
@@ -172,8 +196,8 @@ export class LabelLayer {
     // las 2 filas (16 + 1 + 12) + padding 2 × 2 + borde 2
     const w = barW + 2 * LABEL.padX + 2;
     return {
-      id: '', target: null, root, body, row, icon, name, status, bar, trail, fill, reload: null,
-      relation: null, nameText: '', statusKey: '', fillPx: -1, low: false, attacker: false,
+      id: '', target: null, root, body, row, icon, name, status, badge, bar, trail, fill, reload: null,
+      relation: null, rank: -1, iconKey: '', nameText: '', statusKey: '', fillPx: -1, low: false, attacker: false,
       mode: 'full', display: false, dy: 0, sx: NaN, sy: NaN, opacity: 1, w, h: 35, sizeDirty: true,
       bx: -w / 2, bw: w, bh: 35, slot: -1, hud: false, entering: false, enterUntil: 0,
       priority: 4, dist: 0, onScreen: false, reloadP: -1, reloadVisible: false, reloadReady: false, reloadFlash: false
@@ -196,6 +220,8 @@ export class LabelLayer {
       free.target = t;
       free.root.dataset.shipId = t.ship.id;
       free.relation = null;
+      free.rank = -1;
+      free.iconKey = '';
       free.nameText = '';
       free.statusKey = '';
       free.fillPx = -1;
@@ -241,8 +267,28 @@ export class LabelLayer {
       if (relation !== plate.relation) {
         plate.relation = relation;
         plate.root.dataset.relation = relation; // color de texto y de barra por relación (CSS)
-        plate.icon.innerHTML = iconSvg(RELATIONS[relation].icon, 12);
         this.ensureReload(plate, relation === 'self');
+        plate.sizeDirty = true;
+      }
+      // Icono de la relación; el capitán lleva calavera y corona (ART-DIRECTION §10), y la cañonera, calavera y bomba (O-39)
+      const icons = relationIcons(relation, ship.classId);
+      const iconKey = icons.join('+');
+      if (iconKey !== plate.iconKey) {
+        plate.iconKey = iconKey;
+        plate.icon.innerHTML = icons.map((i) => iconSvg(i, 12)).join('');
+        plate.icon.dataset.icons = String(icons.length);
+        const maxW = (this.host.mobile ? LABEL.maxWMobile : LABEL.maxW) + (icons.length > 1 ? TWO_ICONS_EXTRA_W : 0);
+        plate.root.style.setProperty('--plate-max', `${maxW}px`);
+        plate.sizeDirty = true;
+      }
+      // Insignia de rango (§11.5, D69): solo en los jugadores, propio y ajenos, y solo la insignia, sin número de nivel. Se
+      // escribe al cambiar de rango; la placa compacta la oculta (CSS)
+      const rank = ship.level === null ? 0 : rankOf(ship.level);
+      if (rank !== plate.rank) {
+        plate.rank = rank;
+        plate.badge.innerHTML = rank ? rankBadgeSvg(rank, LABEL.badgePx) : '';
+        plate.badge.dataset.rank = String(rank);
+        plate.root.classList.toggle('has-badge', rank > 0);
         plate.sizeDirty = true;
       }
       const name = truncateName(ship.name);
@@ -580,9 +626,9 @@ export class FloatingTextLayer {
     for (const a of item.anims) a.cancel();
     item.anims.length = 0;
     const opacity = DAMAGE_TEXT.opacity[kind];
-    const gold = kind === 'gold';
-    const duration = gold ? 1200 : DAMAGE_TEXT.durationMs;
-    const rise = gold ? 48 : DAMAGE_TEXT.risePx;
+    const reward = kind === 'gold' || kind === 'xp';
+    const duration = reward ? DAMAGE_TEXT.rewardDurationMs : DAMAGE_TEXT.durationMs;
+    const rise = reward ? DAMAGE_TEXT.rewardRisePx : DAMAGE_TEXT.risePx;
     const last = this.lastByKey.get(key);
     const chained = !!last && now - last.t < DAMAGE_TEXT.stackMs;
     const n = chained ? last.n + 1 : 0;
@@ -599,7 +645,7 @@ export class FloatingTextLayer {
     this.place(item);
     if (typeof item.rise.animate === 'function') {
       item.anims.push(item.rise.animate([{ transform: 'translateY(0)' }, { transform: `translateY(${-rise}px)` }], { duration, easing: 'cubic-bezier(.22,1,.36,1)', fill: 'forwards' }));
-      const fadeAt = gold ? 900 / 1200 : 600 / 900;
+      const fadeAt = reward ? 900 / 1200 : 600 / 900;
       const pop = kind === 'heavy'
         ? [{ transform: 'scale(1.4)', opacity, offset: 0 }, { transform: 'scale(1)', opacity, offset: 200 / duration }]
         : [{ transform: 'scale(0.8)', opacity, offset: 0 }, { transform: 'scale(1.15)', opacity, offset: 90 / duration }, { transform: 'scale(1)', opacity, offset: 200 / duration }];
