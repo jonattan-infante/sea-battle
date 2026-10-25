@@ -1,7 +1,8 @@
 // Proxy TCP delante del Postgres de los tests, para cortar la BD sin pararla (AC-131, AC-132): `cut` rechaza las
 // conexiones nuevas y corta las abiertas (BD parada), `hang` acepta y no contesta (BD colgada) y `restore` vuelve a
-// reenviar. `delay` retrasa lo que va hacia la BD, en orden (AC-129: ver si el apagado escribe antes de cerrar). Lo usan
-// Jest y los e2e (el servidor propio recibe la URL del proxy como DATABASE_URL)
+// reenviar. `delay` retrasa lo que va hacia la BD, en orden (AC-129: ver si el apagado escribe antes de cerrar), y
+// `delayReplies` lo que vuelve de ella (O-42: la escritura llega y se aplica, pero su respuesta no llega en el plazo). Lo
+// usan Jest y los e2e (el servidor propio recibe la URL del proxy como DATABASE_URL)
 import net from 'net';
 
 export type ProxyMode = 'pass' | 'cut' | 'hang';
@@ -13,6 +14,7 @@ export interface PgProxy {
   hang: () => void;
   restore: () => void;
   delay: (ms: number) => void;
+  delayReplies: (ms: number) => void;
   close: () => Promise<void>;
 }
 
@@ -22,6 +24,7 @@ export async function startPgProxy(targetUrl: string): Promise<PgProxy> {
   const targetPort = Number(target.port || 5432);
   let mode: ProxyMode = 'pass';
   let delayMs = 0;
+  let replyDelayMs = 0;
   const sockets = new Set<net.Socket>();
   const track = (s: net.Socket) => {
     sockets.add(s);
@@ -50,7 +53,15 @@ export async function startPgProxy(targetUrl: string): Promise<PgProxy> {
       last = at;
       setTimeout(() => upstream.writable && upstream.write(chunk), at - Date.now());
     });
-    upstream.pipe(client);
+    // Desde la BD, igual; sin retraso ni nada en cola, sale en el acto, como con un pipe
+    let lastReply = Date.now();
+    upstream.on('data', (chunk) => {
+      const at = Math.max(lastReply, Date.now() + replyDelayMs);
+      lastReply = at;
+      const send = () => client.writable && client.write(chunk);
+      if (at <= Date.now()) send();
+      else setTimeout(send, at - Date.now());
+    });
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const url = new URL(targetUrl);
@@ -82,6 +93,9 @@ export async function startPgProxy(targetUrl: string): Promise<PgProxy> {
     },
     delay: (ms) => {
       delayMs = ms;
+    },
+    delayReplies: (ms) => {
+      replyDelayMs = ms;
     },
     close: async () => {
       dropAll();

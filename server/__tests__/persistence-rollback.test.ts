@@ -1,7 +1,8 @@
-// Vuelta atrás de la 1.1 a la 1.0.3 (AC-157) con Postgres real: filas v: 2 con el formato de GDD §13 («Formato de la
-// fila»), servidor de juego en este proceso y socket.io real. La 1.1 aún no existe: «la 1.1 escribe» es una fila sembrada
-// con su formato, y «la 1.1 lee» se comprueba sobre la fila que queda. La 1.0.2 lee con su parser congelado
-// (fixtures/progress-1.0.2.ts). Reiniciar es un servidor nuevo, con el mundo vacío, sobre la misma BD
+// Filas v: 2 con el formato de GDD §13 («Formato de la fila») y vuelta atrás a la 1.0.3 (AC-157), con Postgres real,
+// servidor de juego en este proceso y socket.io real. La 1.1 juega con la XP de la fila (AC-155); los barcos que la
+// simulación todavía no juega (Goleta y Navío) no entran en el mundo ni viajan, y se vuelven a escribir tal cual. La 1.0.3
+// lee y escribe con su lector congelado (fixtures/progress-1.0.3.ts). Reiniciar es un servidor nuevo, con el mundo vacío,
+// sobre la misma BD
 import { createServer, Server as HttpServer } from 'http';
 import { AddressInfo } from 'net';
 import { Pool } from 'pg';
@@ -16,8 +17,9 @@ import { createPool } from '../db/pool';
 import { createGameServer, GameServer, GameServerOptions } from '../game-server';
 import { createPgStore } from '../persistence';
 import { SavedProgress } from '../progress';
-import { parseProgress as parseProgress102 } from './fixtures/progress-1.0.2';
+import { parseProgress as parseProgress103, serializeProgress as serializeProgress103 } from './fixtures/progress-1.0.3';
 import { connectGame, joinGame, Joined, sleep, waitFor } from './fixtures/game-socket';
+import { rowV1 } from './fixtures/progress-rows';
 import { createTestDb, TestDb } from './pg/test-db';
 
 const testAuth = async (auth: unknown) => {
@@ -82,7 +84,7 @@ async function restart(): Promise<void> {
 
 const join = (userId: string): Promise<Joined> => joinGame(url, { token: userId }, userId, sockets);
 const world = () => game!.world;
-const fields = (v: PlayerView): SavedProgress => ({ gold: v.gold, upgrades: v.upgrades, ownedShips: v.ownedShips, activeShip: v.activeShip });
+const fields = (v: PlayerView): SavedProgress => ({ gold: v.gold, upgrades: v.upgrades, ownedShips: v.ownedShips, activeShip: v.activeShip, xp: v.xp });
 const texts = (j: Joined) => j.notices().map((n) => n.text);
 
 // Una fila de la 1.1 con todo: XP, los dos barcos nuevos y el Navío como barco activo
@@ -94,9 +96,11 @@ const V2 = {
   activeShip: 'line',
   xp: 1234
 };
-// Lo que juega la 1.0.3 con esa fila: lo de la 1.0, con la Fragata, que es el mejor barco de la 1.0 que posee
-const PLAYED: SavedProgress = { gold: 4321, upgrades: { cannons: 3, hull: 2, sails: 1 }, ownedShips: ['sloop', 'brig', 'frigate'], activeShip: 'frigate' };
-const FRIGATE: SavedProgress = { gold: 1234, upgrades: { cannons: 2, hull: 3, sails: 1 }, ownedShips: ['sloop', 'brig', 'frigate'], activeShip: 'frigate' };
+// Con lo que se juega esa fila: su XP, y los barcos que la simulación juega, con la Fragata, que es el mejor que posee.
+// Cuando dev-npc añada la Goleta y el Navío a la simulación, estos casos cambian a propósito
+const PLAYED: SavedProgress = { gold: 4321, upgrades: { cannons: 3, hull: 2, sails: 1 }, ownedShips: ['sloop', 'brig', 'frigate'], activeShip: 'frigate', xp: 1234 };
+const FRIGATE: SavedProgress = { gold: 1234, upgrades: { cannons: 2, hull: 3, sails: 1 }, ownedShips: ['sloop', 'brig', 'frigate'], activeShip: 'frigate', xp: 0 };
+const NEW_SHIPS = /"(schooner|line)"/;
 
 async function seed(userId: string, state: unknown): Promise<void> {
   await db.admin.query('INSERT INTO player_progress (user_id, state) VALUES ($1, $2)', [userId, state]);
@@ -118,8 +122,8 @@ const wire = (j: Joined) => JSON.stringify([j.welcome, ...j.frames]);
 const ownSnapshot = (j: Joined): ShipSnapshot | undefined =>
   j.frames.flatMap((f) => f.s ?? []).find((s): s is ShipSnapshot => s.id === j.welcome.shipId && 'c' in s);
 
-describe('AC-157 (a, b): la 1.0.3 lee las filas v: 2 de la 1.1 y juega con lo de la 1.0', () => {
-  test('con el Navío como barco activo entra con la Fragata, y ni la XP ni los barcos nuevos viajan al cliente', async () => {
+describe('filas v: 2 (AC-155 y AC-157 b): se juega con su XP y con los barcos que la simulación juega', () => {
+  test('con el Navío como barco activo entra con la Fragata y su XP; la XP viaja al cliente y los barcos nuevos no', async () => {
     await seed('u-ana', V2);
     await startServer();
     const a = await join('u-ana');
@@ -127,37 +131,41 @@ describe('AC-157 (a, b): la 1.0.3 lee las filas v: 2 de la 1.1 y juega con lo de
     expect(shipOfPlayer(world(), 'u-ana')!.classId).toBe('frigate');
     expect(ownSnapshot(a)?.c).toBe('frigate');
     expect(world().players.get('u-ana')!.ownedShips).toEqual(['sloop', 'brig', 'frigate']);
+    expect(world().players.get('u-ana')!.xp).toBe(1234);
     // Más frames: el barco navega (deltas) y gana oro (otra vista privada)
     a.c.emit(C2S.moveTo, { x: 60, z: 60 });
     world().players.get('u-ana')!.gold += 1;
     await waitFor(() => a.frames.length >= 4 && a.me().gold === 4322, 3000, 'frames con deltas y la vista nueva');
-    expect(wire(a)).not.toMatch(/"(schooner|line|xp)"/);
+    expect(a.me().xp).toBe(1234);
+    expect(wire(a)).not.toMatch(NEW_SHIPS);
   });
 
   test.each([
     ['la Goleta, con Balandra y Bergantín', ['sloop', 'brig', 'schooner'], 'schooner', 'brig'],
     ['el Navío, solo con la Balandra', ['sloop', 'line'], 'line', 'sloop']
-  ])('con %s como barco activo entra con el mejor de la 1.0 que posee', async (_label, ownedShips, activeShip, playing) => {
+  ])('con %s como barco activo entra con el mejor que la simulación juega', async (_label, ownedShips, activeShip, playing) => {
     await seed('u-bea', { ...V2, ownedShips, activeShip });
     await startServer();
     const b = await join('u-bea');
     expect(b.me().activeShip).toBe(playing);
     expect(shipOfPlayer(world(), 'u-bea')!.classId).toBe(playing);
-    expect(wire(b)).not.toMatch(/"(schooner|line|xp)"/);
+    expect(b.me().xp).toBe(1234);
+    expect(wire(b)).not.toMatch(NEW_SHIPS);
   });
 });
 
-describe('AC-157 (c): la 1.0.3 escribe la misma v que leyó', () => {
-  test('v: 2: el oro ganado se escribe con la misma XP y los mismos barcos nuevos, y como activo la Fragata con la que juega', async () => {
+describe('escritura (AC-155 y AC-156): la 1.1 siempre escribe v: 2, con la XP de la partida', () => {
+  test('v: 2: el oro y la XP ganados se escriben con los mismos barcos nuevos, y como activo la Fragata con la que juega', async () => {
     await seed('u-cai', V2);
     await startServer();
     await join('u-cai');
     world().players.get('u-cai')!.gold += 40;
+    world().players.get('u-cai')!.xp += 66;
     await game!.flushProgress();
-    expect(await rowOf('u-cai')).toEqual({ state: { ...V2, gold: 4361, activeShip: 'frigate' }, revision: 2 });
+    expect(await rowOf('u-cai')).toEqual({ state: { ...V2, gold: 4361, activeShip: 'frigate', xp: 1300 }, revision: 2 });
   });
 
-  test('v: 2: una compra se confirma después de escribirse (AC-130 a), con lo nuevo intacto', async () => {
+  test('v: 2: una compra se confirma después de escribirse (AC-130 a), con la XP y lo nuevo intactos', async () => {
     await seed('u-dan', { ...V2, gold: 2000, ownedShips: ['sloop', 'line'], activeShip: 'line' });
     await startServer();
     const d = await join('u-dan');
@@ -166,8 +174,8 @@ describe('AC-157 (c): la 1.0.3 escribe la misma v que leyó', () => {
     await waitFor(() => texts(d).includes('Compra realizada'), 3000, 'la compra del Bergantín');
     expect((await rowOf('u-dan')).state).toEqual({ ...V2, gold: 0, ownedShips: ['sloop', 'brig', 'line'], activeShip: 'brig' });
     await waitFor(() => d.me().activeShip === 'brig', 3000, 'la vista con el Bergantín');
-    expect(fields(d.me())).toEqual({ gold: 0, upgrades: V2.upgrades, ownedShips: ['sloop', 'brig'], activeShip: 'brig' });
-    expect(wire(d)).not.toMatch(/"(schooner|line|xp)"/);
+    expect(fields(d.me())).toEqual({ gold: 0, upgrades: V2.upgrades, ownedShips: ['sloop', 'brig'], activeShip: 'brig', xp: 1234 });
+    expect(wire(d)).not.toMatch(NEW_SHIPS);
   });
 
   test('v: 2: el cambio de barco en el puerto guarda el elegido, con lo nuevo intacto', async () => {
@@ -179,7 +187,7 @@ describe('AC-157 (c): la 1.0.3 escribe la misma v que leyó', () => {
     expect((await rowOf('u-eva')).state).toEqual({ ...V2, activeShip: 'brig' });
   });
 
-  test('v: 2: el Navío no se puede elegir ni comprar desde la 1.0.3 (el protocolo no lo conoce) y la fila no cambia', async () => {
+  test('v: 2: el Navío no se puede elegir ni comprar mientras la simulación no lo juegue (el protocolo no lo conoce) y la fila no cambia', async () => {
     await seed('u-fer', V2);
     const before = await rawRow('u-fer');
     await startServer();
@@ -192,41 +200,41 @@ describe('AC-157 (c): la 1.0.3 escribe la misma v que leyó', () => {
     expect(await rawRow('u-fer')).toBe(before);
   });
 
-  test('v: 2 sin ningún barco de la 1.0: entra con la Balandra y, al escribir, la fila queda con ["sloop", "line"] y la misma XP', async () => {
+  test('v: 2 sin ningún barco que la simulación juegue: entra con la Balandra y, al escribir, la fila queda con ["sloop", "line"] y la misma XP', async () => {
     await seed('u-flor', { ...V2, ownedShips: ['line'], activeShip: 'line', xp: 500 });
     await startServer();
     const f = await join('u-flor');
-    expect(fields(f.me())).toEqual({ gold: 4321, upgrades: V2.upgrades, ownedShips: ['sloop'], activeShip: 'sloop' });
+    expect(fields(f.me())).toEqual({ gold: 4321, upgrades: V2.upgrades, ownedShips: ['sloop'], activeShip: 'sloop', xp: 500 });
     world().players.get('u-flor')!.gold += 1;
     await game!.flushProgress();
     expect((await rowOf('u-flor')).state).toEqual({ ...V2, gold: 4322, ownedShips: ['sloop', 'line'], activeShip: 'sloop', xp: 500 });
   });
 
-  test('v: 1: sigue en v: 1, con las claves de la 1.0 y sin xp, y la 1.0.2 la lee', async () => {
-    await seed('u-gal', { v: 1, ...FRIGATE });
+  test('v: 1: entra con 0 de XP y, al escribir, pasa a v: 2 con xp 0 (AC-156); la 1.0.3 la lee (AC-157)', async () => {
+    await seed('u-gal', rowV1(FRIGATE));
     await startServer();
-    await join('u-gal');
+    const g = await join('u-gal');
+    expect(fields(g.me())).toEqual(FRIGATE);
     world().players.get('u-gal')!.gold += 10;
     await game!.flushProgress();
     const { state, revision } = await rowOf('u-gal');
     expect(revision).toBe(2);
-    expect(state).toEqual({ v: 1, ...FRIGATE, gold: 1244 });
-    expect(Object.keys(state).sort()).toEqual(['activeShip', 'gold', 'ownedShips', 'upgrades', 'v']);
-    expect(parseProgress102(state)).toEqual({ ...FRIGATE, gold: 1244 });
+    expect(state).toEqual({ v: 2, ...FRIGATE, gold: 1244 });
+    expect(parseProgress103(state)).toEqual({ progress: { gold: 1244, upgrades: FRIGATE.upgrades, ownedShips: FRIGATE.ownedShips, activeShip: 'frigate' }, carry: { v: 2, xp: 0, newShips: [] } });
   });
 
-  test('un usuario nuevo se escribe en v: 1, y la 1.0.2 lo lee', async () => {
+  test('un usuario nuevo se escribe en v: 2 con 0 de XP, y la 1.0.3 lo lee', async () => {
     await startServer();
     await join('u-hugo');
     await game!.flushProgress();
     const { state } = await rowOf('u-hugo');
-    expect(state.v).toBe(1);
-    expect(parseProgress102(state)).toEqual({ gold: 100, upgrades: { cannons: 1, hull: 1, sails: 1 }, ownedShips: ['sloop'], activeShip: 'sloop' });
+    expect(state).toEqual({ v: 2, gold: 100, upgrades: { cannons: 1, hull: 1, sails: 1 }, ownedShips: ['sloop'], activeShip: 'sloop', xp: 0 });
+    expect(parseProgress103(state)).not.toBeNull();
   });
 });
 
-describe('AC-157 (d): al volver a la 1.1, la XP y los barcos nuevos están intactos', () => {
-  test('si la 1.0.3 no escribe la fila, queda igual byte a byte, con el Navío como barco activo', async () => {
+describe('AC-157 (d): volver a la 1.0.3 y otra vez a la 1.1 no pierde la XP ni los barcos nuevos', () => {
+  test('si la 1.1 no escribe la fila, queda igual byte a byte, con el Navío como barco activo', async () => {
     await seed('u-ines', V2);
     const before = await rawRow('u-ines');
     await startServer();
@@ -239,26 +247,29 @@ describe('AC-157 (d): al volver a la 1.1, la XP y los barcos nuevos están intac
     expect((await rowOf('u-ines')).state.activeShip).toBe('line');
   });
 
-  test('alternando las versiones (la 1.1 escribe, la 1.0.3 lee y escribe, otra vez), la XP y los barcos nuevos son siempre los de la 1.1', async () => {
+  test('la 1.1 escribe, la 1.0.3 lee y escribe, la 1.1 lee: la XP y los barcos nuevos son los de la 1.1, y el activo el de la 1.0.3', async () => {
     await seed('u-jon', V2);
     await startServer();
     await join('u-jon');
-    world().players.get('u-jon')!.gold += 1;
+    world().players.get('u-jon')!.xp += 66;
     await game!.flushProgress();
-    expect((await rowOf('u-jon')).state).toEqual({ ...V2, gold: 4322, activeShip: 'frigate' });
-
-    // La 1.1 vuelve: el jugador elige el Navío en el puerto y gana XP
+    const by11 = await rowOf('u-jon');
+    expect(by11).toEqual({ state: { ...V2, activeShip: 'frigate', xp: 1300 }, revision: 2 });
     await stopServer();
-    const by11 = { ...V2, gold: 4400, activeShip: 'line', xp: 2500 };
-    await db.admin.query('UPDATE player_progress SET state = $2, revision = revision + 1 WHERE user_id = $1', ['u-jon', by11]);
 
-    // Y se vuelve a la 1.0.3
+    // La 1.0.3, con su lector congelado y la misma guarda de revision: el jugador gana oro y elige el Bergantín
+    const read = parseProgress103(by11.state)!;
+    const written = serializeProgress103({ ...read.progress, gold: 4400, activeShip: 'brig' }, read.carry);
+    const { rowCount } = await db.admin.query('UPDATE player_progress SET state = $2, revision = revision + 1 WHERE user_id = $1 AND revision = $3', ['u-jon', written, by11.revision]);
+    expect(rowCount).toBe(1);
+
+    // Vuelve la 1.1
     await startServer();
     const again = await join('u-jon');
-    expect(fields(again.me())).toEqual({ ...PLAYED, gold: 4400 });
+    expect(fields(again.me())).toEqual({ ...PLAYED, gold: 4400, activeShip: 'brig', xp: 1300 });
     world().players.get('u-jon')!.gold += 1;
     await game!.flushProgress();
-    expect(await rowOf('u-jon')).toEqual({ state: { ...by11, gold: 4401, activeShip: 'frigate' }, revision: 4 });
+    expect(await rowOf('u-jon')).toEqual({ state: { ...V2, gold: 4401, activeShip: 'brig', xp: 1300 }, revision: 4 });
   });
 
   test('reconectar antes de 10 s (el progreso sigue en memoria) no pierde lo nuevo al escribir', async () => {
@@ -284,12 +295,12 @@ function tryJoin(c: ClientSocket): Promise<{ welcome?: Welcome; error?: Notice }
   });
 }
 
-describe('AC-157 (a) y AC-156: la 1.0.3 rechaza las demás filas como la 1.1, sin tocarlas', () => {
+describe('AC-156: se rechazan las demás filas, sin tocarlas', () => {
   test.each([
     ['v: 3', { ...V2, v: 3 }],
-    ['una v: 2 sin xp', { v: 2, ...FRIGATE }],
-    ['una v: 1 con xp', { v: 1, ...FRIGATE, xp: 10 }],
-    ['una v: 1 con el Navío', { v: 1, ...FRIGATE, ownedShips: ['sloop', 'line'], activeShip: 'sloop' }],
+    ['una v: 2 sin xp', { ...rowV1(FRIGATE), v: 2 }],
+    ['una v: 1 con xp', { ...rowV1(FRIGATE), xp: 10 }],
+    ['una v: 1 con el Navío', { ...rowV1(FRIGATE), ownedShips: ['sloop', 'line'], activeShip: 'sloop' }],
     ['xp negativa', { ...V2, xp: -1 }],
     ['xp por encima del tope', { ...V2, xp: 10_000_000 }],
     ['un barco fuera de los 5 ids', { ...V2, ownedShips: ['sloop', 'brigantine'], activeShip: 'sloop' }],
@@ -309,7 +320,7 @@ describe('AC-157 (a) y AC-156: la 1.0.3 rechaza las demás filas como la 1.1, si
 });
 
 describe('revisión (AC-130): la guarda sigue igual con las filas v: 2', () => {
-  test('si la 1.1 escribe la fila por detrás, la 1.0.3 no la pisa: el jugador sale con el aviso', async () => {
+  test('si otro proceso escribe la fila por detrás, no se pisa: el jugador sale con el aviso', async () => {
     await seed('u-max', V2);
     await startServer({ saveIntervalMs: 60_000 });
     const m = await join('u-max');

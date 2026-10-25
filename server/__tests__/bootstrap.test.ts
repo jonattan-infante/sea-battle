@@ -21,10 +21,10 @@ describe('DATABASE_URL', () => {
   test('en Railway sin DATABASE_URL el servidor termina con código 1 y no abre el puerto', () => {
     const { spawnSync } = jest.requireActual('child_process') as typeof import('child_process');
     const port = String(40000 + Math.floor(Math.random() * 10000));
-    const result = spawnSync('npx', ['tsx', 'server/index.ts'], {
+    const result = spawnSync(process.execPath, ['--import', 'tsx', 'server/index.ts'], {
       env: { ...process.env, RAILWAY_ENVIRONMENT: 'staging', DATABASE_URL: '', AUTH_BYPASS: '', PORT: port, NODE_ENV: 'production' },
       encoding: 'utf8',
-      timeout: 60_000
+      timeout: 60_000, killSignal: 'SIGKILL' // O-36: al vencer, spawnSync cierra las tuberías y el apagado del servidor se cuelga en EPIPE
     });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('Falta DATABASE_URL');
