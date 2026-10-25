@@ -60,13 +60,12 @@ async function startStandard(page: Page, i2 = false) {
   return { ...setup, onScreen };
 }
 
-// Que el Capitán tenga su GLB con la KTX2 del atlas. La Cañonera, sin entrada en SHIP_GLB (BACKLOG :421: el Capitán entra
-// solo), se dibuja con su procedural
+// Que la Cañonera y el Capitán tengan su GLB con la KTX2 del atlas
 const glbsReady = (page: Page) =>
   expect
     .poll(() => page.evaluate(() => {
       const glb = (window.__SEA_BATTLE__!.runtime() as unknown as { shipGlb: { loaded(c: string): boolean; model(c: string): { map?: { isCompressedTexture?: boolean } | null } } }).shipGlb;
-      return ['captain'].every((c) => glb.loaded(c) && glb.model(c).map?.isCompressedTexture === true);
+      return ['gunboat', 'captain'].every((c) => glb.loaded(c) && glb.model(c).map?.isCompressedTexture === true);
     }), { timeout: 60_000 })
     .toBe(true);
 
@@ -93,14 +92,14 @@ test.describe('Escena estándar @perf', () => {
     await page.evaluate(() => window.__SEA_BATTLE__!.runtime().stopScene());
   });
 
-  // Producto (P2 del punto 3 de dev-render; BACKLOG :421): la misma escena con la población del I2 de GDD §0, con el GLB de
-  // D91 del Capitán y su sombra en el agua (las Cañoneras, en su procedural: el Capitán entra solo). La base es la misma
-  // escena con el procedural del Capitán, que es lo que dibuja la base (sin GLB ni sombra): su GLB se retiene hasta medirla
-  test('AC-89 con la población del I2 (8 piratas, 4 Cañoneras, 8 mercantes y el Capitán): con el GLB del Capitán y su sombra, ≤ 100 draw calls y ≤ 250 000 triángulos; la diferencia con la base, sin VFX, al log', async ({ page }) => {
+  // Producto (P2 del punto 3 de dev-render; BACKLOG :421): la misma escena con la población del I2 de GDD §0, con los GLB de
+  // D91 y sus sombras en el agua. La base es la misma escena con los procedurales de la Cañonera y el Capitán, que es lo
+  // que dibuja la base (sin GLB ni sombra): sus GLB se retienen hasta medirla
+  test('AC-89 con la población del I2 (8 piratas, 4 Cañoneras, 8 mercantes y el Capitán): con sus GLB y sus 5 sombras, ≤ 100 draw calls y ≤ 250 000 triángulos; la diferencia con la base, sin VFX, al log', async ({ page }) => {
     test.setTimeout(150_000);
     let release!: () => void;
     const held = new Promise<void>((r) => (release = r));
-    const glbs = [SHIP_GLB.captain!];
+    const glbs = [SHIP_GLB.gunboat!, SHIP_GLB.captain!];
     for (const url of glbs) {
       await page.route(`**${url}`, async (route) => {
         await held;
@@ -126,7 +125,7 @@ test.describe('Escena estándar @perf', () => {
     const d = (k: keyof Sample) => max(k) - maxOf(base, k);
     console.log(`AC-89 (I2): ${onScreen.ships} barcos en pantalla · máx. ${max('calls')} draw calls · máx. ${max('triangles')} triángulos · VFX-01 máx. ${max('vfxCalls')} · sombras ${JSON.stringify(shadows)} · memoria ${JSON.stringify(memory0)} → ${JSON.stringify(memory1)}`);
     console.log(`AC-89 (I2), sin VFX: base (procedurales) máx. ${maxOf(base, 'callsNoVfx')} draw calls y ${maxOf(base, 'trianglesNoVfx')} triángulos · con GLB y sombras ${max('callsNoVfx')} y ${max('trianglesNoVfx')} · diferencia ${d('callsNoVfx')} draw calls y ${d('trianglesNoVfx')} triángulos`);
-    expect(shadows).toEqual([1]); // el Capitán; las 4 Cañoneras, procedurales, sin sombra
+    expect(shadows).toEqual([1, 4]); // el Capitán y las 4 Cañoneras
     expect(max('calls')).toBeLessThanOrEqual(100);
     expect(max('triangles')).toBeLessThanOrEqual(250_000);
     expect(max('vfxCalls')).toBeLessThanOrEqual(11);
@@ -160,7 +159,7 @@ test.describe('Escena estándar @perf', () => {
       const gl = rt.gl.getContext();
       const dbg = gl.getExtension('WEBGL_debug_renderer_info');
       const renderer = String(gl.getParameter(dbg ? dbg.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
-      const levels = ['captain'].map((c) => rt.shipGlb.model(c).map?.anisotropy ?? 0);
+      const levels = ['gunboat', 'captain'].map((c) => rt.shipGlb.model(c).map?.anisotropy ?? 0);
       const px = new Uint8Array(4);
       const frame = () => {
         const t0 = performance.now();
@@ -197,7 +196,7 @@ test.describe('Escena estándar @perf', () => {
     const cost = s.A.p95 - s.off.p95;
     const aa = Math.abs(s.A.p95 - s.A2.p95);
     console.log(`Tanda B, tiempo de frame · coste: p95 de A (${level}) − p95 a 1 (B∪B′) = ${ms(cost)} ms · p95 sube > 1 ms: ${cost > 1 ? 'sí' : 'no'} · A/A del p95 |A − A′| = ${ms(aa)} ms · A/A p95 < 0,5 ms: ${aa < 0.5 ? 'sí' : 'no'} · ${aa < 0.5 ? 'la regla de 1 ms se lee' : 'la medida no separa: decide producto con lo medido'}`);
-    expect(run.levels, `los GLB con el anisótropo del runtime (${level})`).toEqual([level]);
+    expect(run.levels, `los GLB con el anisótropo del runtime (${level})`).toEqual([level, level]);
     expect(Object.values(run.arms).map((a) => a.length)).toEqual([cycles, cycles, cycles, cycles]);
     expect(Object.values(run.arms).flat().filter((t) => !Number.isFinite(t) || t < 0), 'tiempos de frame sin medir').toEqual([]);
   });

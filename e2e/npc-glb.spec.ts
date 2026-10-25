@@ -1,24 +1,21 @@
 // La Cañonera y el Capitán de D91 en GLB (punto 3 de dev-render; ASSET-SPEC §13, sus filas): entran por el cargador de los
 // barcos (src/client/models/ship-glb.ts), con el .glb y su .ktx2 aparte (paso 4c) en public/models. El cliente solo baja
 // en segundo plano los modelos de los barcos que pueden salir (BACKLOG :423): la bienvenida lista las clases de NPC del
-// mundo, y con el I2 apagado no están la Cañonera ni el Capitán. El Capitán entra solo (BACKLOG :421): la Cañonera, sin
-// entrada en SHIP_GLB, tiene sus archivos en public/models (SHIP_GLB_STAGED), pero no se piden nunca
+// mundo, y con el I2 apagado no están la Cañonera ni el Capitán
 import fs from 'fs';
 import path from 'path';
 import { expect, Page, test } from '@playwright/test';
 import { externalUris } from '../scripts/glb/glb-fallback';
-import { SHIP_GLB, SHIP_GLB_STAGED } from '../src/client/models/ship-glb';
+import { SHIP_GLB } from '../src/client/models/ship-glb';
 import { enterGame } from './helpers';
 import { startOwnServer } from './own-server';
 
 const I2_CLASSES = ['gunboat', 'captain'] as const;
-// Las rutas del .glb y del .ktx2 de una clase del I2: la de SHIP_GLB (o, sin entrada, la de SHIP_GLB_STAGED) y la uri de
-// la KTX2 dentro de su GLB
-const filesOf = (classId: string) => {
-  const url = (SHIP_GLB[classId] ?? SHIP_GLB_STAGED[classId])!;
+// Las rutas del .glb y del .ktx2 de cada clase del I2, las de SHIP_GLB y la uri de la KTX2 dentro de su GLB
+const I2_FILES = I2_CLASSES.flatMap((classId) => {
+  const url = SHIP_GLB[classId]!;
   return [url, ...externalUris(new Uint8Array(fs.readFileSync(path.join(__dirname, '..', 'public', url)))).map((uri) => `/models/${uri}`)];
-};
-const I2_FILES = I2_CLASSES.flatMap(filesOf);
+});
 
 // Peticiones de la página a cada archivo del I2, desde antes de entrar
 function countRequests(page: Page): () => Record<string, number> {
@@ -29,8 +26,7 @@ function countRequests(page: Page): () => Record<string, number> {
   });
   return () => Object.fromEntries(I2_FILES.map((p) => [p, seen.get(p) ?? 0]));
 }
-// Las peticiones esperadas a los archivos de cada clase
-const each = (n: (classId: string) => number) => Object.fromEntries(I2_CLASSES.flatMap((c) => filesOf(c).map((p) => [p, n(c)])));
+const each = (n: number) => Object.fromEntries(I2_FILES.map((p) => [p, n]));
 
 const npcClasses = (page: Page) =>
   page.evaluate(() => (window.__SEA_BATTLE__!.runtime() as unknown as { src: { welcome: { npcClasses: string[] } | null } }).src.welcome?.npcClasses ?? null);
@@ -43,10 +39,10 @@ test.describe('Precarga de los GLB de los barcos que pueden salir (BACKLOG :423)
     const classes = await npcClasses(page);
     console.log(`BACKLOG :423, I2 apagado: npcClasses ${JSON.stringify(classes)} · peticiones ${JSON.stringify(requests())}`);
     expect(classes).toEqual(['pirate', 'merchant']);
-    expect(requests()).toEqual(each(() => 0));
+    expect(requests()).toEqual(each(0));
   });
 
-  test('con el I2 encendido se piden 1 vez el .glb y el .ktx2 del Capitán, que acaba con su GLB y su KTX2, y ninguna los de la Cañonera, que sigue en su procedural', async ({ page }) => {
+  test('con el I2 encendido se piden 1 vez el .glb y el .ktx2 de cada uno, y las dos clases acaban con su GLB y su KTX2', async ({ page }) => {
     test.setTimeout(120_000);
     const server = await startOwnServer({ SEA_BATTLE_I2: '1' });
     try {
@@ -57,13 +53,12 @@ test.describe('Precarga de los GLB de los barcos que pueden salir (BACKLOG :423)
           const glb = (window.__SEA_BATTLE__!.runtime() as unknown as { shipGlb: { loaded(c: string): boolean; model(c: string): { map?: { isCompressedTexture?: boolean } | null } } }).shipGlb;
           return classes.map((c) => glb.loaded(c) && glb.model(c).map?.isCompressedTexture === true);
         }, [...I2_CLASSES]);
-      await expect.poll(ready, { timeout: 60_000 }).toEqual([false, true]);
+      await expect.poll(ready, { timeout: 60_000 }).toEqual([true, true]);
       await page.waitForTimeout(1_000); // ninguna petición de más después
       const classes = await npcClasses(page);
       console.log(`BACKLOG :423, I2 encendido: npcClasses ${JSON.stringify(classes)} · peticiones ${JSON.stringify(requests())}`);
       expect(classes).toEqual(['pirate', 'merchant', 'gunboat', 'captain']);
-      expect(requests()).toEqual(each((c) => (c === 'captain' ? 1 : 0)));
-      expect(await ready(), 'la Cañonera, sin GLB; el Capitán, con su GLB y su KTX2').toEqual([false, true]);
+      expect(requests()).toEqual(each(1));
     } finally {
       await server.kill();
     }

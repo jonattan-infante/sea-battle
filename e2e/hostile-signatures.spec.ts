@@ -32,7 +32,10 @@ const STANDARD_PX = 20; // el estandarte del Capitán: ≥ 20 px CSS de área co
 const DPR_CHECK = { deg: 45, dprs: [1.5, 1.5, 1.125], tolerance: 0.15 };
 // AD-28 (D48): cañones de la Cañonera en 1440×900. Parámetros del conteo, por si ux cambia la definición: nivel de cañón
 // (N3 = 5,04 px/m), rumbos, en qué pasadas se oculta el mortero, largo mínimo de la mancha (Feret) y mínimo de cañones
-const GUN_COUNT = { cannonLevel: 3, headings: HEADINGS, hideMortar: { capture: true, region: true }, minFeret: 4, minGuns: 8, sway: { deg: 225, captures: 5, everyMs: 1150 } };
+const GUN_COUNT = { cannonLevel: 3, headings: HEADINGS, hideMortar: { capture: true, region: true }, minFeret: 4, minGuns: 8, sway: { captures: 5, everyMs: 1150 } };
+// Producto (BACKLOG :421; ART-DIRECTION, AD-28): se cuentan cañones distintos con ≥ 6 px de caña. Una mancha con cañón y
+// Feret ≥ minFeret da su cañón principal, el de más px limpios en ella en las 2 pasadas de identidad, si tiene ≥ CANA_MIN
+const CANA_MIN = 6;
 const OUT = process.env.AD28_OUT;
 
 // area en px del lienzo; areaCss = area ÷ dpr², con el dpr de la imagen capturada
@@ -41,9 +44,9 @@ interface Signature { classId: string; deg: number; lod: number; dpr: number; ar
 // model: con qué se dibujó la vista en esa pose, el procedural o el GLB con su respaldo o con su KTX2 (ship-glb.ts)
 type ModelView = { model: { map?: { isCompressedTexture?: boolean } | null } };
 
-// Las clases con GLB en el manifiesto (el Capitán de D91; la Cañonera, sin entrada: BACKLOG :421) cambian a él al llegar:
-// la escena pide su GLB al crear la vista. Antes de medir se espera a que lleguen, con su KTX2, para que todas las poses
-// midan el modelo que se ve en el juego, y no unas el procedural y otras el GLB (O-62)
+// Las clases con GLB en el manifiesto (la Cañonera y el Capitán de D91) cambian a él al llegar: la escena pide su GLB al
+// crear la vista. Antes de medir se espera a que lleguen, con su KTX2, para que todas las poses midan el modelo que se ve
+// en el juego, y no unas el procedural y otras el GLB (O-62)
 const GLB_HOSTILES = HOSTILES.filter((c) => SHIP_GLB[c]);
 const glbReady = (page: Page, classes: readonly string[]) =>
   expect
@@ -192,8 +195,8 @@ test.describe('Firmas de los hostiles @mobile', () => {
         }
       }
     }
-    // O-62: la clara del par Capitán–Cañonera, con el modelo de cada uno (el Capitán en GLB y la Cañonera en su procedural:
-    // BACKLOG :421), para vigilarla en la CI. Difiere con lo de D51: ≥ 30 % del mayor y ≥ 1 punto
+    // O-62: la clara del par Capitán–Cañonera, con el modelo de cada uno, para vigilarla en la CI. Difiere con lo de D51:
+    // ≥ 30 % del mayor y ≥ 1 punto
     for (const deg of HEADINGS) {
       const [c, g] = (['captain', 'gunboat'] as const).map((k) => rows.find((r) => r.classId === k && r.deg === deg)!);
       const p = pairs.find((q) => q.deg === deg && q.a === 'captain' && q.b === 'gunboat')!;
@@ -239,7 +242,10 @@ interface CountOptions { hideMortar: { capture: boolean; region: boolean }; minF
 interface PartTris { cannon: number; mortar: number; carriage: number }
 interface Sway { roll: number; pitch: number; y: number } // el balanceo de la vista en la captura (rad, rad y m)
 interface GlbParts { cannon: number[]; mortar: number[]; carriage: number[]; deck: number[] }
-async function deckGuns([id, deckHex, cannonHex, railHex, carriages, opts, keep, glb]: [string, string[], string, string, Part[], CountOptions, boolean, GlbParts | null]): Promise<{ guns: number; mounts: number; ferets: number[]; gunFerets: number[]; tris: PartTris; sway: Sway; model: string; crops?: string[] }> {
+// Una mancha oscura de la cubierta (px del lienzo) y los px limpios de cada cañón que tiene, «babor z 1.4»
+interface BlobDetail { feret: number; px: number; x: number; y: number; cannon: boolean; carriage: boolean; ids: Record<string, number> }
+type GunArgs = [string, string[], string, string, Part[], CountOptions, boolean, GlbParts | null, number[]];
+async function deckGuns([id, deckHex, cannonHex, railHex, carriages, opts, keep, glb, zs]: GunArgs): Promise<{ guns: number; mounts: number; ferets: number[]; gunFerets: number[]; tris: PartTris; sway: Sway; model: string; blobs: BlobDetail[]; crops?: string[] }> {
   type Attr = { count: number; array: Float32Array; clone(): Attr; getX(i: number): number; getY(i: number): number; getZ(i: number): number; setXYZ(i: number, x: number, y: number, z: number): void };
   type Geo = { getAttribute(n: string): Attr; setAttribute(n: string, a: Attr): void; toNonIndexed(): Geo; dispose(): void };
   type Light = { isLight?: boolean; isHemisphereLight?: boolean; intensity: number; color: { clone(): unknown; copy(c: unknown): void; setRGB(r: number, g: number, b: number): void }; groundColor?: Light['color'] };
@@ -333,6 +339,27 @@ async function deckGuns([id, deckHex, cannonHex, railHex, carriages, opts, keep,
   geo.setAttribute('color', pieces);
   geo.setAttribute('position', collapse((t) => opts.hideMortar.capture && isMortar(t)));
   const piecesImg = rt.captureImage('image/png')!;
+  // De qué cañón es cada píxel de cañón (turno a-v7 de dev-render): cada triángulo de cañón va a su cañón por su centroide,
+  // el lado por el signo de x (+X babor, −X estribor; ASSET-SPEC §2) y la z por la más cercana de zs, a < 0,7 m. Dos pasadas
+  // más con la geometría de la captura, en colores puros (con la luz de albedo salen a 0 o a ≥ 200): «lado», R = babor y
+  // G = estribor; «z», el índice de la z + 1 en binario en R, G y B. Lo demás, negro
+  const side = color.clone();
+  const zid = color.clone();
+  for (let t = 0; t < pos.count / 3; t++) {
+    const cx = (pos.getX(3 * t) + pos.getX(3 * t + 1) + pos.getX(3 * t + 2)) / 3;
+    const cz = (pos.getZ(3 * t) + pos.getZ(3 * t + 1) + pos.getZ(3 * t + 2)) / 3;
+    const zi = isCannon(t) ? zs.findIndex((z) => Math.abs(z - cz) < 0.7) : -1;
+    const sd = zi >= 0 ? [cx > 0 ? 1 : 0, cx < 0 ? 1 : 0, 0] : [0, 0, 0];
+    const b = zi >= 0 ? [(zi + 1) & 1, ((zi + 1) >> 1) & 1, ((zi + 1) >> 2) & 1] : [0, 0, 0];
+    for (let k = 0; k < 3; k++) {
+      side.setXYZ(3 * t + k, sd[0], sd[1], sd[2]);
+      zid.setXYZ(3 * t + k, b[0], b[1], b[2]);
+    }
+  }
+  geo.setAttribute('color', side);
+  const sideImg = rt.captureImage('image/png')!;
+  geo.setAttribute('color', zid);
+  const zImg = rt.captureImage('image/png')!;
   if (map) {
     material.map = map;
     material.needsUpdate = true;
@@ -359,7 +386,17 @@ async function deckGuns([id, deckHex, cannonHex, railHex, carriages, opts, keep,
     x.drawImage(im, 0, 0);
     return x.getImageData(0, 0, c.width, c.height);
   };
-  const [A, D, P] = await Promise.all([con, deckImg, piecesImg].map(decode));
+  const [A, D, P, SI, ZI] = await Promise.all([con, deckImg, piecesImg, sideImg, zImg].map(decode));
+  // El cañón de un píxel, de las 2 pasadas; null si algún canal queda entre 56 y 199 (borde mezclado con el fondo: un px de
+  // caña es el que la caña cubre en las 4 muestras del MSAA 4×)
+  const cannonAt = (j: number) => {
+    const bit = (v: number) => (v >= 200 ? 1 : v <= 55 ? 0 : -1);
+    const [r, g] = [bit(SI.data[4 * j]), bit(SI.data[4 * j + 1])];
+    const z = [0, 1, 2].map((c) => bit(ZI.data[4 * j + c]));
+    if (r + g !== 1 || r < 0 || g < 0 || z.some((v) => v < 0)) return null;
+    const zi = z[0] + 2 * z[1] + 4 * z[2] - 1;
+    return zi >= 0 && zi < zs.length ? `${r ? 'babor' : 'estribor'} z ${zs[zi].toFixed(1)}` : null;
+  };
   const W = A.width;
   const N = W * A.height;
   const linB = (v: number) => { const c = v / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
@@ -370,7 +407,7 @@ async function deckGuns([id, deckHex, cannonHex, railHex, carriages, opts, keep,
   const dark = new Uint8Array(N);
   for (let i = 0; i < N; i++) if (D.data[4 * i] >= 128 && L(i) <= 25) dark[i] = 1;
   const seen = new Uint8Array(N);
-  const blobs: { feret: number; cannon: boolean; carriage: boolean }[] = [];
+  const blobs: BlobDetail[] = [];
   for (let i = 0; i < N; i++) {
     if (!dark[i] || seen[i]) continue;
     const stack = [i];
@@ -394,7 +431,15 @@ async function deckGuns([id, deckHex, cannonHex, railHex, carriages, opts, keep,
     for (let a = 0; a < px.length; a++) {
       for (let b = a + 1; b < px.length; b++) d2 = Math.max(d2, (px[a] % W - px[b] % W) ** 2 + (((px[a] / W) | 0) - ((px[b] / W) | 0)) ** 2);
     }
-    blobs.push({ feret: Math.sqrt(d2), cannon: px.some((j) => P.data[4 * j] >= 128), carriage: px.some((j) => P.data[4 * j + 1] >= 128) });
+    const ids: Record<string, number> = {};
+    for (const j of px) {
+      if (P.data[4 * j] < 128) continue;
+      const c = cannonAt(j);
+      if (c) ids[c] = (ids[c] ?? 0) + 1;
+    }
+    const x = px.reduce((sx, j) => sx + (j % W), 0) / px.length;
+    const y = px.reduce((sy, j) => sy + ((j / W) | 0), 0) / px.length;
+    blobs.push({ feret: Math.sqrt(d2), px: px.length, x, y, cannon: px.some((j) => P.data[4 * j] >= 128), carriage: px.some((j) => P.data[4 * j + 1] >= 128), ids });
   }
   const big = blobs.filter((b) => b.feret >= opts.minFeret).sort((a, b) => b.feret - a.feret);
   const model = view.model;
@@ -406,6 +451,7 @@ async function deckGuns([id, deckHex, cannonHex, railHex, carriages, opts, keep,
     tris,
     sway,
     model: !model.map ? 'procedural' : model.map.isCompressedTexture ? 'ktx2' : 'respaldo',
+    blobs: [...blobs].sort((a, b) => b.feret - a.feret),
     crops: keep ? [con, deckImg, piecesImg] : undefined
   };
 }
@@ -421,8 +467,8 @@ const glbParts = async (page: Page, id: string) => {
 };
 
 // El conteo de AD-28 en una página: la Cañonera al foco en cada rumbo; con retain = ['gunboat'], en su procedural (su GLB,
-// retenido), y cada pose tiene que serlo. Se cuentan solo las manchas que tocan un cañón: en el GLB por sus triángulos de
-// U6; en el procedural, por su color y su distancia al eje (isCannon)
+// retenido), y cada pose tiene que serlo. Cuentan los cañones distintos con ≥ CANA_MIN px de caña (cannonCount); los px de
+// cañón salen, en el GLB, de sus triángulos de U6, y en el procedural, de su color y su distancia al eje (isCannon)
 async function countGuns(page: Page, retain: readonly string[]) {
   if (OUT) fs.mkdirSync(OUT, { recursive: true });
   const { pose, ...setup } = await startGallery(page, GUN_COUNT.cannonLevel, retain);
@@ -433,7 +479,7 @@ async function countGuns(page: Page, retain: readonly string[]) {
   const r = getShipModel('gunboat').recipe;
   const carriages = r.cannonZ.flatMap((z) => [1, -1].map((side) => ({ x: side * (deckHalfBeam(r, z / r.L) - 1.0), y: deckY(r, z / r.L) + 0.25, z })));
   const deck = [TOP_FACE.deckGunboat.albedo, TOP_FACE.deckAltGunboat.albedo];
-  const rows: { deg: number; guns: number; mounts: number; ferets: number[]; gunFerets: number[]; tris: PartTris; model: string }[] = [];
+  const rows: { deg: number; guns: number; mounts: number; ferets: number[]; gunFerets: number[]; tris: PartTris; model: string; all: number; cana: number }[] = [];
   const opts: CountOptions = { hideMortar: GUN_COUNT.hideMortar, minFeret: GUN_COUNT.minFeret, axis: GUNBOAT_GLB_AD28.axis };
   // Con el GLB, sus partes por triángulo (U6), de la geometría que dibuja la vista (LOD0 con N3)
   const glb = await glbParts(page, id);
@@ -442,58 +488,86 @@ async function countGuns(page: Page, retain: readonly string[]) {
     expect(glb.parts.cannon.length, 'AD-28 cañones: el GLB con N3 dibuja sus cañones (LOD0)').toBeGreaterThan(0);
   }
   const parts: GlbParts | null = glb && { cannon: glb.parts.cannon, mortar: glb.parts.mortar, carriage: glb.parts.carriage, deck: glb.parts.deck };
+  const zs = glb ? GUNBOAT_GLB_AD28.cannonZ : r.cannonZ; // las z de los cañones, de U6 o de la receta del procedural
+  const args = (keep: boolean): GunArgs => [id, deck, SHIP_LOOKS.pirate.cannon, SHIP_LOOKS.pirate.rail, carriages, opts, keep, parts, zs];
   for (const deg of GUN_COUNT.headings) {
     await pose(id, setup.focus.x, setup.focus.z, deg);
     await page.waitForTimeout(800);
-    const { crops, ...q } = await page.evaluate(deckGuns, [id, deck, SHIP_LOOKS.pirate.cannon, SHIP_LOOKS.pirate.rail, carriages, opts, !!OUT, parts] as [string, string[], string, string, Part[], CountOptions, boolean, GlbParts | null]);
-    rows.push({ deg, ...q });
+    const { crops, ...q } = await page.evaluate(deckGuns, args(!!OUT));
+    rows.push({ deg, ...q, ...cannonCount(`${deg}° captura de siempre (${q.model})`, q.blobs, zs) });
     if (OUT && crops) crops.forEach((url, k) => fs.writeFileSync(path.join(OUT, `ad28-cañones-${q.model}-${deg}-${['con', 'region', 'piezas'][k]}.png`), Buffer.from(url.slice(url.indexOf(',') + 1), 'base64')));
   }
   console.log(`AD-28 cañones: ppm ${(await page.evaluate(() => window.__SEA_BATTLE__!.runtime().stats().ppm)).toFixed(3)}`);
   console.log(`AD-28 cañones, poses por modelo: ${posesByModel(rows)}`);
-  // Sin entrada en SHIP_GLB (BACKLOG :421: el Capitán entra solo), la Cañonera se cuenta en su procedural, y las capturas
-  // con el balanceo, que son del GLB, no se hacen
-  if (!SHIP_GLB.gunboat) console.log(`AD-28 cañones: Cañonera en procedural, sin GLB · las ${GUN_COUNT.sway.captures} capturas a ${GUN_COUNT.sway.deg}° con el balanceo no se hacen y no cuentan como hechas`);
   for (const model of new Set(rows.map((q) => q.model))) {
     const { tris } = rows.find((q) => q.model === model)!;
     console.log(`AD-28 cañones, triángulos del pase (${model}): ${tris.cannon} de cañón, ${tris.mortar} de mortero, ${tris.carriage} de cureña`);
   }
-  // Los montajes (manchas con cañón o cureña) y las demás manchas se registran sin asertar (ux, 2026-10-24)
-  for (const q of rows) console.log(`AD-28 cañones ${String(q.deg).padStart(3)}° ${q.model}: ${q.guns} manchas con cañón y Feret ≥ ${GUN_COUNT.minFeret} px (Feret ${q.gunFerets.map((f) => f.toFixed(1)).join(' ')}) · ${q.mounts} montajes, sin asertar · todas (Feret ${q.ferets.slice(0, 16).map((f) => f.toFixed(1)).join(' ')})`);
+  // Las manchas con cañón, los montajes (manchas con cañón o cureña) y las demás manchas se registran sin asertar
+  for (const q of rows) console.log(`AD-28 cañones ${String(q.deg).padStart(3)}° ${q.model}: ${q.cana} cañones distintos con ≥ ${CANA_MIN} px de caña (${q.all} sin el mínimo) · ${q.guns} manchas con cañón y Feret ≥ ${GUN_COUNT.minFeret} px (Feret ${q.gunFerets.map((f) => f.toFixed(1)).join(' ')}) · ${q.mounts} montajes, sin asertar · todas (Feret ${q.ferets.slice(0, 16).map((f) => f.toFixed(1)).join(' ')})`);
   if (retain.includes('gunboat')) for (const q of rows) expect.soft(q.model, `AD-28 cañones ${q.deg}°: el procedural, con el GLB retenido`).toBe('procedural');
   // El procedural y el GLB, cada uno en su línea (C5P cae en la 1.ª y C5 en la 2.ª)
-  for (const q of rows.filter((q) => q.model === 'procedural')) expect.soft(q.guns, `AD-28 cañones de la Cañonera ${q.deg}° (procedural)`).toBeGreaterThanOrEqual(GUN_COUNT.minGuns);
-  for (const q of rows.filter((q) => q.model !== 'procedural')) expect.soft(q.guns, `AD-28 cañones de la Cañonera ${q.deg}° (${q.model})`).toBeGreaterThanOrEqual(GUN_COUNT.minGuns);
-  // Con el GLB, a 225° (producto, 2026-10-24: el 8 de ese rumbo, ¿es estable?), 5 capturas más con el balanceo, con 1,15 s
-  // de espera entre ellas: el alabeo (runtime.ts, sin(1,1 t), ±3°) tiene un periodo de 5,7 s, y el registro da el de cada
-  // captura. Solo al registro: la aserción es la de arriba, con la captura de siempre
-  if (glb) {
-    const { deg, captures, everyMs } = GUN_COUNT.sway;
+  for (const q of rows.filter((q) => q.model === 'procedural')) expect.soft(q.cana, `AD-28 cañones de la Cañonera ${q.deg}° (procedural)`).toBeGreaterThanOrEqual(GUN_COUNT.minGuns);
+  for (const q of rows.filter((q) => q.model !== 'procedural')) expect.soft(q.cana, `AD-28 cañones de la Cañonera ${q.deg}° (${q.model})`).toBeGreaterThanOrEqual(GUN_COUNT.minGuns);
+  // El paso (4) de la Cañonera (BACKLOG :421): en cada rumbo, 5 capturas más con el balanceo, con 1,15 s de espera entre
+  // ellas (el alabeo, runtime.ts, sin(1,1 t), ±3°, tiene un periodo de 5,7 s), cada una con su asignación al registro. En
+  // el GLB, cada una da ≥ 8 cañones distintos, en su propia línea; el procedural se registra igual, sin asertar
+  const { captures, everyMs } = GUN_COUNT.sway;
+  const sway: { deg: number; k: number; model: string; all: number; cana: number }[] = [];
+  const started = Date.now();
+  const toDeg = (rad: number) => ((rad * 180) / Math.PI).toFixed(2);
+  for (const deg of GUN_COUNT.headings) {
     await pose(id, setup.focus.x, setup.focus.z, deg);
-    const swayRows: { guns: number; min: number }[] = [];
     for (let k = 1; k <= captures; k++) {
       await page.waitForTimeout(everyMs);
-      const q = await page.evaluate(deckGuns, [id, deck, SHIP_LOOKS.pirate.cannon, SHIP_LOOKS.pirate.rail, carriages, opts, false, parts] as [string, string[], string, string, Part[], CountOptions, boolean, GlbParts | null]);
-      const min = q.gunFerets.length ? Math.min(...q.gunFerets) : 0;
-      swayRows.push({ guns: q.guns, min });
-      const toDeg = (r: number) => ((r * 180) / Math.PI).toFixed(2);
-      console.log(`AD-28 cañones ${String(deg).padStart(3)}° ${q.model}, balanceo ${k}/${captures} (alabeo ${toDeg(q.sway.roll)}°, cabeceo ${toDeg(q.sway.pitch)}°, y ${q.sway.y.toFixed(3)} m): ${q.guns} manchas con cañón y Feret ≥ ${GUN_COUNT.minFeret} px (Feret ${q.gunFerets.map((f) => f.toFixed(1)).join(' ')}) · mínimo ${min.toFixed(1)} px · ${q.mounts} montajes, sin asertar · todas (Feret ${q.ferets.slice(0, 16).map((f) => f.toFixed(1)).join(' ')})`);
+      const q = await page.evaluate(deckGuns, args(false));
+      const c = cannonCount(`${deg}° balanceo ${k}/${captures} (${q.model})`, q.blobs, zs);
+      sway.push({ deg, k, model: q.model, ...c });
+      console.log(`AD-28 cañones ${String(deg).padStart(3)}° ${q.model}, balanceo ${k}/${captures} (alabeo ${toDeg(q.sway.roll)}°, cabeceo ${toDeg(q.sway.pitch)}°, y ${q.sway.y.toFixed(3)} m): ${c.cana} cañones distintos con ≥ ${CANA_MIN} px de caña (${c.all} sin el mínimo) · ${q.guns} manchas con cañón y Feret ≥ ${GUN_COUNT.minFeret} px (Feret ${q.gunFerets.map((f) => f.toFixed(1)).join(' ')}) · ${q.mounts} montajes`);
     }
-    console.log(`AD-28 cañones ${deg}° con el balanceo, ${captures} capturas, sin asertar: con cañón ${swayRows.map((q) => q.guns).join(', ')} · el menor ${Math.min(...swayRows.map((q) => q.guns))} · Feret más pequeño ${Math.min(...swayRows.map((q) => q.min)).toFixed(1)} px`);
   }
+  const byDeg = GUN_COUNT.headings.map((deg) => `${deg}° ${sway.filter((q) => q.deg === deg).map((q) => q.cana).join(', ')}`);
+  console.log(`AD-28 cañones con el balanceo, ${captures} capturas por rumbo en ${((Date.now() - started) / 1000).toFixed(1)} s: ${byDeg.join(' · ')} · el menor ${Math.min(...sway.map((q) => q.cana))} (${[...new Set(sway.map((q) => q.model))].join(', ')})`);
+  if (retain.includes('gunboat')) for (const q of sway) expect.soft(q.model, `AD-28 cañones ${q.deg}°, balanceo ${q.k}: el procedural, con el GLB retenido`).toBe('procedural');
+  for (const q of sway.filter((q) => q.model !== 'procedural')) expect.soft(q.cana, `AD-28 cañones de la Cañonera ${q.deg}°, balanceo ${q.k}/${captures} (${q.model})`).toBeGreaterThanOrEqual(GUN_COUNT.minGuns);
+}
+
+// La asignación de una captura (turno a-v8 de dev-render): cada mancha con su Feret, sus px, su centro y los px limpios de
+// cada cañón que toca; cada cañón, si cuenta (es el principal de una mancha con cañón y Feret ≥ minFeret, el de más px en
+// ella) o por qué no; y los cañones distintos sin el mínimo de caña (all) y con él (cana: el principal, con ≥ CANA_MIN px
+// suyos en la mancha). Un cañón partido en 2 manchas cuenta 1, y 2 cañones en una mancha cuentan 1, el principal
+function cannonCount(tag: string, blobs: BlobDetail[], zs: number[]) {
+  blobs.forEach((b, n) => {
+    const ids = Object.entries(b.ids).sort((u, v) => v[1] - u[1]);
+    console.log(`  AD-28 ${tag} · mancha ${n + 1}/${blobs.length}: Feret ${b.feret.toFixed(1)} px · ${b.px} px · centro (${b.x.toFixed(1)}, ${b.y.toFixed(1)}) · ${b.cannon ? `cañón ${ids.length ? ids.map(([c, m]) => `${c} (${m} px)`).join(' + ') : 'sin px limpios'}` : 'sin cañón'}${b.carriage ? ' · cureña' : ''}${b.feret >= GUN_COUNT.minFeret && b.cannon ? ' · CUENTA' : ''}`);
+  });
+  const main = (b: BlobDetail) => Object.entries(b.ids).sort((u, v) => v[1] - u[1])[0];
+  const counted = blobs.filter((b) => b.cannon && b.feret >= GUN_COUNT.minFeret);
+  const all = new Set(counted.map((b) => main(b)?.[0]).filter((c): c is string => !!c));
+  const cana = new Set(counted.map((b) => main(b)).filter((m): m is [string, number] => !!m && m[1] >= CANA_MIN).map((m) => m[0]));
+  const state = ['babor', 'estribor'].flatMap((sd) => zs.map((z) => `${sd} z ${z.toFixed(1)}`)).map((c) => {
+    if (cana.has(c)) return { c, ok: true, why: '' };
+    if (all.has(c)) return { c, ok: false, why: `menos de ${CANA_MIN} px de caña` };
+    const shared = counted.find((b) => b.ids[c]);
+    if (shared) return { c, ok: false, why: `en la mancha de ${main(shared)?.[0]}` };
+    const small = blobs.filter((b) => b.ids[c]).sort((u, v) => v.feret - u.feret)[0];
+    return { c, ok: false, why: small ? `su mayor mancha, de ${small.feret.toFixed(1)} px` : 'sin mancha oscura' };
+  });
+  console.log(`  AD-28 ${tag} · cuentan ${cana.size}: ${state.filter((q) => q.ok).map((q) => q.c).join(', ')} · no cuentan: ${state.filter((q) => !q.ok).map((q) => `${q.c} (${q.why})`).join(', ')}`);
+  return { all: all.size, cana: cana.size };
 }
 
 test.describe('Cañones de la Cañonera', () => {
-  test.setTimeout(180_000);
+  test.setTimeout(300_000); // las 4 capturas de siempre y las 20 con el balanceo, cada una con 5 pasadas
 
-  test('AD-28: en 1440×900 con N3 se cuentan ≥ 8 cañones de la Cañonera sobre su cubierta en cada rumbo', async ({ page }) => {
+  test('AD-28: en 1440×900 con N3 se cuentan ≥ 8 cañones distintos de la Cañonera sobre su cubierta en cada rumbo, también en 5 capturas con el balanceo', async ({ page }) => {
     await countGuns(page, []);
   });
 
   // Con la Cañonera en GLB, también su procedural, que es lo que se ve mientras carga o si falla (producto, con ux,
   // 2026-10-24). Sin GLB, el test de arriba ya mide el procedural
-  test('AD-28: con la Cañonera en GLB, su procedural (el GLB retenido) también da ≥ 8 cañones en cada rumbo', async ({ page }) => {
-    test.skip(!SHIP_GLB.gunboat, 'Cañonera en procedural, sin GLB (sin entrada en SHIP_GLB)');
+  test('AD-28: con la Cañonera en GLB, su procedural (el GLB retenido) también da ≥ 8 cañones distintos en cada rumbo', async ({ page }) => {
+    test.skip(!SHIP_GLB.gunboat, 'la Cañonera no tiene GLB en SHIP_GLB');
     await countGuns(page, ['gunboat']);
   });
 });

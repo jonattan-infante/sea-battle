@@ -1,10 +1,10 @@
 // AC-193 (a), lo que comprueba QA al cambiar al GLB (BACKLOG, AC-193 a: «Sockets de los barcos de la receta» y «Cajas: casco
-// sí, aparejo no»): con el Capitán de D91, cuyo GLB trae sus sockets, su palo y su volumen de clic (la Cañonera, sin entrada
-// en SHIP_GLB: BACKLOG :421). Un fuego o un humo encendidos siguen en el socket del GLB desde el frame del cambio, sin
-// duplicarse ni quedarse en el sitio viejo; la placa, la vida y el anillo se mueven a lo sumo una vez y en ese frame; un
-// barco seleccionado sigue seleccionado; la eslora y la manga de la vista (las de la clase) no cambian. El GLB se retiene
-// con page.route hasta que todo está encendido, y un envoltorio de runtime.frame apunta cada frame: el modelo, los puntos
-// de emisión en coordenadas del barco, la placa y los anillos que se dibujan en su sitio
+// sí, aparejo no»): con el Capitán de D91, cuyo GLB trae sus sockets, su palo y su volumen de clic. Un fuego o un humo
+// encendidos siguen en el socket del GLB desde el frame del cambio, sin duplicarse ni quedarse en el sitio viejo; la placa,
+// la vida y el anillo se mueven a lo sumo una vez y en ese frame; un barco seleccionado sigue seleccionado; la eslora y la
+// manga de la vista (las de la clase) no cambian. El GLB se retiene con page.route hasta que todo está encendido, y un
+// envoltorio de runtime.frame apunta cada frame: el modelo, los puntos de emisión en coordenadas del barco, la placa y los
+// anillos que se dibujan en su sitio
 import { expect, Page, test } from '@playwright/test';
 import { LEGIBILITY_I2 } from '../server/scenarios';
 import { SHIP_GLB } from '../src/client/models/ship-glb';

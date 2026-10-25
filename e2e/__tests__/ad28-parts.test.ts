@@ -1,19 +1,18 @@
 // AD-28 con el GLB de la Cañonera de D91 (U6 de dev-render): las partes de la batería por el centroide de cada triángulo,
-// sobre el GLB de public/models leído como en el juego (ship-glb.test.ts, «Los GLB de la Cañonera y el Capitán de D91»). Sin
-// entrada en SHIP_GLB (BACKLOG :421: el Capitán entra solo), su archivo sale de SHIP_GLB_STAGED
+// sobre el GLB de public/models leído como en el juego (ship-glb.test.ts, «Los GLB de la Cañonera y el Capitán de D91»)
 import fs from 'fs';
 import path from 'path';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
-import { SHIP_GLB, SHIP_GLB_STAGED, shipModelFromGlb } from '../../src/client/models/ship-glb';
+import { SHIP_GLB, shipModelFromGlb } from '../../src/client/models/ship-glb';
 import { geometryArrays, gunboatGlbParts, GUNBOAT_GLB_AD28 } from '../ad28-parts';
 
 const lods = async () => {
   (globalThis as unknown as { self?: unknown }).self ??= globalThis; // GLTFLoader crea la URL de la imagen con self.URL
   const ktx2 = { load: (_url: string, onLoad: (t: THREE.Texture) => void) => onLoad(new THREE.CompressedTexture([], 1024, 1024)) } as unknown as KTX2Loader;
-  const url = (SHIP_GLB.gunboat ?? SHIP_GLB_STAGED.gunboat)!;
+  const url = SHIP_GLB.gunboat!;
   const file = fs.readFileSync(path.join(__dirname, '..', '..', 'public', url));
   const scene = await new Promise<THREE.Object3D>((resolve, reject) =>
     new GLTFLoader()
