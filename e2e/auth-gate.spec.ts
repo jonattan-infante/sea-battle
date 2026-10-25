@@ -70,7 +70,7 @@ test.describe('P0: /game con un token que solo el handshake refresca', () => {
 });
 
 // De punta a punta en Chromium con el usuario de prueba de la instancia de desarrollo (externalId sea-battle-qa, por
-// ticket del Backend API; TECH-ARCHITECTURE §4). Como en la reproducción del lead en prod: se adelanta __client_uat 5 min
+// ticket del Backend API; TECH-ARCHITECTURE §5). Como en la reproducción del lead en prod: se adelanta __client_uat 5 min
 // justo antes de «Zarpar», así que el __session del navegador queda más viejo que la marca
 const secretKey = () =>
   process.env.CLERK_SECRET_KEY ?? (fs.existsSync('.env.local') ? parseEnv(fs.readFileSync('.env.local', 'utf8')).CLERK_SECRET_KEY : undefined);
