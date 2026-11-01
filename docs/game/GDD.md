@@ -56,7 +56,7 @@
 | Combate | Selección, ataque persistente con andanadas, alcance, recarga, precisión, números de daño y reparación |
 | Experiencia (1.1) | XP por hundir NPC y jugadores, con reparto por daño y reglas contra el abuso; 20 niveles y 5 insignias (§10b) |
 | NPC | Pirata (hostil) y Mercante (pasivo). **Incremento I2, en la versión 1.1.0 y P0 en ella** (Q12; antes P1): Cañonera pirata (hostil, mantiene la distancia) y Capitán pirata (jefe). **1.1 (P2):** Galeón del tesoro, pasivo que responde al fuego, sin escolta (§9) |
-| Cámara | Sigue al barco. **I2, en la 1.1.0 y P0 en ella (antes P1):** vista libre con arrastre, minimapa y flechas, y vuelta al barco (§5) |
+| Cámara | Sigue al barco. **I2, en la 1.1.0 y P0 en ella (antes P1):** vista libre con arrastre, minimapa y flechas, y vuelta al barco (§5). **Desde la 1.1.1**, el jugador elige en Opciones entre «Centrada», la de partida, y «Libre», la vista libre (§5, «Cámara») |
 | Economía | Oro: recompensas por hundir, restos flotantes (P1), tienda de mejoras y barcos |
 | Muerte | Hundimiento, pantalla de muerte, reaparición en el puerto y protección |
 | Multijugador | 20 jugadores por servidor. PvE cooperativo (P0) y PvP fuera de la zona segura (P1) |
@@ -306,15 +306,15 @@ Lo que miden con la tabla de la lámina, antes de los 2 cm, según ux (turno P3,
 | Ciclar objetivo | `Tab` / `Shift+Tab` | Recorre los barcos atacables a ≤150 m, del más cercano al más lejano |
 | Atacar / cancelar | `Espacio` o botón **Atacar** | Alterna (*toggle*) sobre el objetivo seleccionado (§7) |
 | Seleccionar + atacar (P1) | Doble clic sobre un barco atacable | Atajo |
-| Cancelar / deseleccionar | `Esc` | La 1.ª pulsación cancela el ataque; la 2.ª deselecciona. Con la tienda o la pantalla de niveles abierta, la 1.ª la cierra |
+| Cancelar / deseleccionar | `Esc` | La 1.ª pulsación cancela el ataque; la 2.ª deselecciona. Con la tienda o la pantalla de niveles abierta, la 1.ª la cierra. Con el panel de opciones abierto (1.1.1), una pulsación hace una sola cosa: cancela la espera de una tecla, si la hay; si no, cierra el panel (BACKLOG AC-205) |
 | Zarpar (hundido) | `Espacio` / `Enter` o botón **Zarpar** | Solo cuando la cuenta atrás ha terminado; antes no hacen nada |
-| Detener | `S` | Borra el destino; el barco frena |
+| Detener | `S` (por defecto; se cambia en Opciones desde la 1.1.1) | Borra el destino; el barco frena. Vale con las 2 cámaras |
 | Reparar | `R` o botón **Reparar** | Alterna (§8) |
-| Zoom | Rueda del ratón | 3 niveles de **extensión visible**: 0,7× (más cerca), 1,0× (por defecto) y 1,5× (más lejos) |
+| Zoom | Rueda del ratón | 3 niveles de **extensión visible**: 0,7× (más cerca), 1,0× (por defecto) y 1,5× (más lejos). Con el panel de opciones abierto, la rueda no hace zoom (1.1.1, BACKLOG AC-205) |
 | Puerto | `P` o botón **Puerto** | Solo dentro de la zona segura |
 | Niveles e insignias (1.1) | `N` o clic en la insignia o el nivel del panel del jugador | Abre y cierra la pantalla de niveles (§14), en cualquier momento, también en combate. Un clic fuera la cierra y no hace nada más. No pausa el juego ni genera tráfico de red (BACKLOG AC-190) |
-| Mover la vista (I2) | Arrastrar en el agua (> 12 px), clic o arrastre en el minimapa, flechas | Entra en vista libre. Un clic sin arrastre sigue navegando |
-| Centrar en mi barco (I2) | `C` o botón **Centrar** | Vuelve al seguimiento |
+| Mover la vista (I2; desde la 1.1.1, solo con la cámara «Libre») | Arrastrar en el agua (> 12 px), clic o arrastre en el minimapa, o las 4 teclas de la vista (por defecto, las flechas; se cambian en Opciones) | Con «Libre», entra en vista libre. Un clic sin arrastre sigue navegando. Con «Centrada», la de partida, la vista no se separa del barco: arrastrar es un clic al soltar (navega hasta donde se suelta), el minimapa solo se mira y las teclas de la vista no mueven nada (BACKLOG AC-206) |
+| Centrar en mi barco (I2; solo con «Libre») | `C` (por defecto; se cambia en Opciones) o botón **Centrar** | Vuelve al seguimiento, y la cámara sigue en «Libre». Con «Centrada» no hace falta: no salen ni el botón ni el chip del barco propio (BACKLOG AC-206) |
 
 ### Móvil (táctil)
 | Acción | Entrada | Regla |
@@ -327,8 +327,8 @@ Lo que miden con la tabla de la lámina, antes de los 2 cm, según ux (turno P3,
 | Zoom (P1) | Pellizco | Mismos 3 niveles |
 | Puerto | Botón **Puerto** | Solo en la zona segura |
 | Niveles e insignias (1.1) | Toque en el bloque del icono del panel del jugador (52×52 px) | Igual que en escritorio. Se cierra con ✕ (≥48×48 px) o con un toque fuera, que no navega ni selecciona |
-| Mover la vista (I2) | Arrastrar **un** dedo en el agua (> 12 px CSS), o tocar o arrastrar en el minimapa | Un toque sin arrastre sigue navegando; con dos dedos es zoom, nunca desplazamiento |
-| Centrar (I2) | Botón **Centrar** | Vuelve al seguimiento |
+| Mover la vista (I2; desde la 1.1.1, solo con «Libre») | Arrastrar **un** dedo en el agua (> 12 px CSS), o tocar o arrastrar en el minimapa | Un toque sin arrastre sigue navegando; con dos dedos es zoom, nunca desplazamiento. Con «Centrada», arrastrar un dedo es un toque al soltarlo y el minimapa solo se mira (BACKLOG AC-206). La cámara se elige con el botón **Opciones**; en táctil no hay teclas que cambiar |
+| Centrar (I2; solo con «Libre») | Botón **Centrar** | Vuelve al seguimiento; con «Centrada» no sale |
 
 **Regla de entrada:** cada pulsación produce como mucho una intención. Los conmutadores (Atacar, Reparar, Esc) alternan sobre la **última intención del jugador**, no sobre el estado que llega del servidor, que va interpolado y con retraso (§13). Esa última intención incluye lo que cancela según §8: después de pulsar Reparar, el siguiente Atacar ataca, y después de Atacar o de una orden de navegación, el siguiente Reparar repara. Una intención que el servidor va a rechazar con seguridad (reparar con el casco intacto) no cancela nada (AC-128). Mantener una tecla pulsada no la repite.
 
@@ -336,19 +336,19 @@ Orientaciones soportadas: vertical (390×844) y horizontal (844×390). Mientras 
 
 ### Cámara (qué debe comunicar; los valores exactos los define `game-ux`)
 - Proyección "isométrica" (cenital oblicua).
-- **Modo seguimiento** (por defecto): sigue al barco propio, que queda siempre en el **10 % central** de la pantalla: la caja centrada de 10 % del ancho × 10 % del alto (|dx| ≤ 0,05·W, |dy| ≤ 0,05·H), medida sobre el pivote del barco.
+- **Dos cámaras, a elegir en el botón Opciones del HUD** (1.1.1, E18; BACKLOG AC-205 a AC-209; ART-DIRECTION §20): **«Centrada»**, la de partida para todos (también el invitado) y la de la 1.0, y **«Libre»**, la vista libre de la 1.1.0 (abajo). La elección y las teclas se guardan en el navegador, no en el servidor, porque son del aparato. En escritorio, con un puntero fino, el mismo panel deja cambiar las teclas de 6 acciones: las 4 de mover la vista, Centrar y Detener; las demás son fijas. El panel no pausa el juego ni envía nada al servidor, salvo el `viewAt(null)` de volver a «Centrada» desde una vista movida. **Modo seguimiento** (el de «Centrada», y el de «Libre» mientras el jugador no mueve la vista): sigue al barco propio, que queda siempre en el **10 % central** de la pantalla: la caja centrada de 10 % del ancho × 10 % del alto (|dx| ≤ 0,05·W, |dy| ≤ 0,05·H), medida sobre el pivote del barco.
 - **Encuadre (decisión U8, D23):** con el zoom por defecto cabe entero, a 1440×900 y a 390×844, el círculo de radio **R = max(alcance de tu cañón, 65 m)**. Es decir, 65 / 70 / 80 m con los cañones N1 / N2 / N3 (antes, 80 m fijos).
   - 65 m es el **mayor alcance de los NPC** (cañonera y capitán). Si en el futuro un NPC alcanza más, R sube con él.
   - **Por qué no el alcance propio a secas (60 m con N1):** la cañonera orbita a 62 m y el capitán dispara desde 65 m, así que dispararían desde fuera del encuadre precisamente al jugador novato, que es quien tiene que perseguir a la cañonera.
   - **Ganancia:** la Balandra inicial pasa de 1 310 a ≈1 984 px² en su peor rumbo (+51 %), frente a los ≈2 000 px² del barco del jugador en Seafight.
   - Al comprar cañones, R cambia (65 → 70 → 80 m) con una transición de 600 ms al cerrar la tienda.
   - Los jugadores con más alcance (PvP, hasta 80 m) pueden quedar fuera del encuadre. Para eso está el indicador de atacante fuera de pantalla (§14).
-- **Vista libre** (I2; P0 en la 1.1.0, antes P1). En Seafight el minimapa y unas teclas mueven la carta, y "To the Ship" la devuelve al barco (REFERENCE §2 y §12).
-  - **Entrar:** arrastrar en el agua más de 12 px (botón izquierdo o un dedo); hacer clic o arrastrar en el minimapa (la vista se centra en ese punto); o usar las flechas (150 m/s).
+- **Vista libre** (I2; P0 en la 1.1.0, antes P1; desde la 1.1.1, solo con la cámara «Libre»). En Seafight el minimapa y unas teclas mueven la carta, y "To the Ship" la devuelve al barco (REFERENCE §2 y §12).
+  - **Entrar:** arrastrar en el agua más de 12 px (botón izquierdo o un dedo); hacer clic o arrastrar en el minimapa (la vista se centra en ese punto); o usar las teclas de la vista (por defecto, las flechas; 150 m/s).
   - **Soltar antes de 12 px es un clic normal:** navega o selecciona. Dos dedos son zoom, nunca desplazamiento.
   - En vista libre, un clic en el agua navega hacia ese punto (aunque esté lejos del barco) y un clic en un barco lo selecciona. Nada más cambia.
   - El centro de la vista no sale del mapa (±500 m, es decir, ±`MAP_HALF_SIZE`, `src/game/constants.ts:17`: si el mapa cambia de tamaño, el límite cambia con él).
-  - **Volver al seguimiento** (transición de 300 ms): con `C` o el botón Centrar, cuando el barco propio recibe daño, al morir o al reaparecer. «Recibe daño» es cualquier bajada de su vida sin cambio de clase, que en la práctica es un impacto. Cambiar de barco en la tienda no cuenta (decidido por producto el 2026-10-18, a pregunta de dev). **También vuelve cuando llega una andanada contra el barco propio, aunque falle** (un evento `volley` con su `targetId`; *ampliado el mismo día*, a pregunta de dev). Por qué: el chip de atacante no sale en vista libre, porque los dos chips nunca coinciden (ART-DIRECTION §12.8, D89). Si la cámara solo volviera con el daño, una andanada fallida dejaría al jugador mirando a otra parte sin saber que le disparan. Que te disparen es justo cuando necesitas ver tu barco.
+  - **Volver al seguimiento** (transición de 300 ms): con la tecla de Centrar (`C` por defecto) o el botón Centrar, cuando el barco propio recibe daño, al morir o al reaparecer. «Recibe daño» es cualquier bajada de su vida sin cambio de clase, que en la práctica es un impacto. Cambiar de barco en la tienda no cuenta (decidido por producto el 2026-10-18, a pregunta de dev). **También vuelve cuando llega una andanada contra el barco propio, aunque falle** (un evento `volley` con su `targetId`; *ampliado el mismo día*, a pregunta de dev). Por qué: el chip de atacante no sale en vista libre, porque los dos chips nunca coinciden (ART-DIRECTION §12.8, D89). Si la cámara solo volviera con el daño, una andanada fallida dejaría al jugador mirando a otra parte sin saber que le disparan. Que te disparen es justo cuando necesitas ver tu barco.
   - Si el barco propio no se ve, un indicador en el borde señala hacia él. «No se ve» quiere decir que está fuera de la pantalla o tapado por el HUD: fuera del marco útil (ART-DIRECTION §12.8, BACKLOG AC-121). Lo mismo vale para el atacante de §14.
   - **Lo que se ve está vivo:** los barcos que hay en la zona mirada se muestran; nunca se ve mar vacío donde hay NPC (§13).
 
