@@ -169,7 +169,8 @@ body {
 .hud-recenter { position: absolute; right: 16px; top: 280px; width: 184px; height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 12px; color: var(--ui-text); font-size: 14px; font-weight: 600; cursor: pointer; animation: fade-in 150ms ease both; }
 .hud-recenter svg { flex: none; width: 18px; height: 18px; }
 .hud-recenter:hover { border-color: var(--ui-gold); }
-.hud-recenter__key { margin-left: auto; box-sizing: border-box; width: 20px; height: 20px; border: 1px solid var(--ui-line); border-radius: 4px; font-family: inherit; font-size: 11px; font-weight: 600; line-height: 18px; text-align: center; color: var(--ui-text-dim); }
+.hud-recenter__key { margin-left: auto; box-sizing: border-box; width: 20px; height: 20px; border: 1px solid var(--ui-line); border-radius: 4px; font-family: inherit; font-size: 11px; font-weight: 600; line-height: 18px; text-align: center; color: var(--ui-text-dim); display: grid; place-items: center; }
+.hud-recenter .hud-recenter__key svg { width: 11px; height: 11px; } /* E18 (§20.4): la tecla asignada, o su flecha de 11 px */
 /* Halo del Capitán pirata en el minimapa (ART-DIRECTION §4.3, D43): anillo coral de 1,5 px, r 7 → 12 px y α 0,6 → 0 a 1 Hz. Lo
    anima CSS: el canvas se redibuja a ≤ 2 Hz y solo mueve su posición (0 commits de React). El trazo no escala con el anillo */
 .hud-minimap__halo { position: absolute; left: 0; top: 0; width: 24px; height: 24px; margin: -12px 0 0 -12px; overflow: visible; pointer-events: none; display: none; }
@@ -208,6 +209,8 @@ body {
 }
 .slot:hover:not(:disabled):not([aria-disabled="true"]) { border-color: var(--ui-gold); }
 .slot__key { position: absolute; left: 4px; top: 2px; font-size: 11px; color: var(--ui-text-dim); }
+.slot__key--icon { top: 4px; line-height: 0; } /* E18 (§20.4): una flecha asignada va como icono de 11 px en (4, 4) */
+.slot__key svg { width: 11px; height: 11px; }
 .slot__label { font-size: 11px; line-height: 1; }
 .slot__icon { margin-top: 6px; }
 .slot:disabled, .slot[aria-disabled="true"] { cursor: not-allowed; }
@@ -301,6 +304,83 @@ body {
   .hud-recenter { top: auto; right: 88px; bottom: 100px; } /* a la izquierda de Reparar: 704, 238 en 844 × 390 */
   .hud-hint { bottom: 12px; } /* H-06: entre Puerto y Objetivo, lejos del barco centrado y de su placa */
   .hud-hint.is-alt { top: 64px; bottom: auto; } /* bajo el primer aviso (12 + 36 + 16) */
+}
+
+/* ---------- Opciones: cámara y teclas (E18, D98; ART-DIRECTION §20) ----------
+   Las cajas se miden por fuera: con el borde de 1 px, el relleno y las posiciones de dentro llevan 1 px menos */
+/* §20.1: 40 × 40 a 8 px a la izquierda del oro (1192, 16 en 1440×900), engranaje de 20; pulsado, oro al 20 % y borde de 2 */
+.hud-options { position: absolute; right: 208px; top: 16px; width: 40px; height: 40px; padding: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: var(--ui-text); cursor: pointer; }
+.hud-options svg { flex: none; width: 20px; height: 20px; }
+.hud-options:hover { border-color: var(--ui-gold); }
+.hud-options.is-active { background: linear-gradient(rgba(242, 193, 78, 0.2), rgba(242, 193, 78, 0.2)), var(--ui-panel); border: 2px solid var(--ui-gold); }
+.hud-options__label { display: none; font-size: 10px; font-weight: 500; line-height: 15px; }
+/* AC-205: un clic fuera del panel solo lo cierra. El velo es transparente: el juego sigue a la vista */
+.options-scrim { position: absolute; inset: 0; z-index: 35; }
+/* §20.2: 424 de ancho, colgado del botón (808, 64 en 1440×900), 600 de alto (622 con un aviso); sin transición */
+.options { position: absolute; right: 208px; top: 64px; width: 424px; padding: 19px; background: rgba(11, 26, 36, 0.94); border: 1px solid var(--ui-line); border-radius: 8px; color: var(--ui-text); line-height: 1.5; }
+.options__head { display: flex; align-items: center; justify-content: space-between; height: 32px; margin-bottom: 16px; }
+.options__title { margin: 0; font-size: 18px; font-weight: 600; white-space: nowrap; }
+.options__close { flex: none; width: 32px; height: 32px; padding: 0; display: grid; place-items: center; border: 1px solid var(--ui-line); border-radius: 8px; background: none; color: var(--ui-text); cursor: pointer; }
+.options__close svg { width: 18px; height: 18px; }
+.options__heading { margin: 0 0 8px; font-size: 13px; font-weight: 600; line-height: 18px; color: var(--ui-text-dim); }
+/* §20.3: 2 tarjetas de 186 × 110, con 12 entre ellas; toda la tarjeta es el radio */
+.options__cameras { display: grid; grid-template-columns: 186px 186px; gap: 12px; }
+.options__camera { position: relative; height: 110px; padding: 0; text-align: left; font: inherit; border: 1px solid var(--ui-line); border-radius: 8px; background: rgba(255, 255, 255, 0.03); color: var(--ui-text); cursor: pointer; }
+.options__camera[aria-checked="true"] { background: rgba(242, 193, 78, 0.12); border-color: var(--ui-gold); box-shadow: inset 0 0 0 1px var(--ui-gold); color: var(--ui-gold-hi); } /* borde de 2 sin mover el contenido */
+.options__camera-icon { position: absolute; left: 11px; top: 11px; line-height: 0; }
+.options__camera-icon svg { width: 24px; height: 24px; }
+.options__camera-name { position: absolute; left: 45px; top: 11px; height: 24px; display: flex; align-items: center; font-size: 15px; font-weight: 600; white-space: nowrap; }
+.options__radio { position: absolute; right: 11px; top: 15px; width: 16px; height: 16px; border: 2px solid var(--ui-text-dim); border-radius: 50%; }
+.options__camera[aria-checked="true"] .options__radio { border-color: var(--ui-gold); }
+.options__camera[aria-checked="true"] .options__radio::after { content: ''; position: absolute; left: 2px; top: 2px; width: 8px; height: 8px; border-radius: 50%; background: var(--ui-gold); }
+.options__camera-text { position: absolute; left: 11px; top: 43px; width: 162px; font-size: 12px; font-weight: 500; line-height: 18px; color: var(--ui-text-dim); }
+/* §20.4: las teclas, solo en escritorio y con puntero fino */
+.options__keys { margin-top: 20px; }
+.options__heading--keys { margin-bottom: 2px; }
+.options__hint { margin: 0 0 8px; font-size: 12px; font-weight: 500; line-height: 18px; color: var(--ui-text-dim); white-space: nowrap; }
+.options__group { display: flex; align-items: center; justify-content: space-between; height: 20px; }
+.options__group--ship { margin-top: 6px; }
+.options__group-name { margin: 0; font-size: 12px; font-weight: 600; line-height: 18px; color: var(--ui-text-dim); }
+.options__group-note { font-size: 12px; font-weight: 500; line-height: 18px; color: var(--ui-text-dim); white-space: nowrap; }
+.options__row { display: flex; align-items: center; justify-content: space-between; height: 36px; margin: 0 -8px; padding: 0 8px; border-radius: 6px; }
+.options__row:not([data-state="idle"]) { background: rgba(255, 255, 255, 0.05); } /* de x 820 a 1220 */
+.options__action { font-size: 14px; font-weight: 500; white-space: nowrap; }
+.options__key { flex: none; width: 56px; height: 28px; padding: 0; display: grid; place-items: center; font: inherit; font-size: 13px; font-weight: 600; line-height: 1; white-space: nowrap; border: 1px solid var(--ui-line); border-radius: 6px; background: rgba(255, 255, 255, 0.04); color: var(--ui-text); cursor: pointer; }
+.options__key svg { width: 16px; height: 16px; }
+.options__row[data-state="waiting"] .options__key { width: auto; padding: 0 8px; border: 2px solid var(--ui-gold); background: rgba(242, 193, 78, 0.12); color: var(--ui-gold-hi); } /* 116,5 × 28 */
+.options__row[data-state="swapped"] .options__key { border: 2px solid var(--ui-info); background: rgba(108, 195, 245, 0.16); }
+.options__row[data-state="rejected"] .options__key { width: auto; min-width: 56px; padding: 0 8px; border: 2px solid var(--ui-danger); background: rgba(255, 122, 122, 0.16); } /* máx(56, etiqueta + 20) */
+.options__note { margin: 0; height: 22px; display: flex; align-items: center; font-size: 12px; font-weight: 600; line-height: 18px; white-space: nowrap; }
+.options__note[data-kind="wait"] { font-weight: 500; color: var(--ui-text-dim); }
+.options__note[data-kind="swap"] { color: var(--ui-info); }
+.options__note[data-kind="fixed"], .options__note[data-kind="invalid"] { color: var(--ui-danger); }
+.options__reset { display: block; height: 32px; margin: 16px 0 0 auto; padding: 0 15px; font: inherit; font-size: 14px; font-weight: 600; white-space: nowrap; border: 1px solid var(--ui-line); border-radius: 8px; background: none; color: var(--ui-text); cursor: pointer; } /* 106,3 × 32 */
+/* Táctil (§20.1–20.3): botón de 52 con «Opciones», ✕ de 48, cabecera de 48 y tarjetas una sobre otra */
+@media (max-width: 699.98px), (max-height: 499.98px) {
+  .hud-options { width: 52px; height: 52px; border-radius: 12px; }
+  .hud-options svg { width: 22px; height: 22px; }
+  .hud-options__label { display: block; }
+  .options { padding: 15px; background: rgba(11, 26, 36, 0.96); }
+  .options__head { height: 48px; margin-bottom: 8px; }
+  .options__close { width: 48px; height: 48px; }
+  .options__close svg { width: 22px; height: 22px; }
+  .options__cameras { grid-template-columns: 1fr; gap: 8px; }
+  .options__camera-icon svg { width: 26px; height: 26px; }
+  .options__camera-name { left: 47px; height: 26px; font-size: 16px; }
+  .options__radio { top: 16px; }
+  .options__camera-text { top: 45px; font-size: 13px; line-height: 19.5px; }
+}
+@media (max-width: 699.98px) {
+  .hud-options { left: 16px; right: auto; top: auto; bottom: calc(env(safe-area-inset-bottom, 0px) + 88px); } /* 16, 704: 20 sobre Puerto */
+  .options { left: 0; right: 0; top: auto; bottom: 0; width: auto; border-radius: 16px 16px 0 0; padding-bottom: calc(23px + env(safe-area-inset-bottom, 0px)); } /* hoja de 390 × 285 */
+  .options__camera { height: 77.5px; }
+  .options__camera-text { width: 334px; }
+}
+@media (max-height: 499.98px) and (min-width: 700px) {
+  .hud-options { left: 12px; right: auto; top: auto; bottom: 72px; } /* 12, 266: 8 sobre Puerto */
+  .options { left: 72px; right: auto; top: auto; bottom: 12px; width: 264px; border-radius: 12px; } /* 72, 88 a 336, 378 */
+  .options__camera { height: 97px; }
+  .options__camera-text { width: 208px; }
 }
 
 /* ---------- Modales (z 40) ---------- */

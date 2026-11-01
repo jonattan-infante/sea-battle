@@ -164,3 +164,93 @@ describe('Vista libre: envíos de viewAt (AC-123)', () => {
     expect(s.sent).toEqual([]);
   });
 });
+
+// E18 (H-1801): con la cámara «Centrada», la de la 1.0, la vista nunca se suelta del barco y no sale ningún viewAt
+function centeredSetup() {
+  const s = setup();
+  s.view.setCentered(true, 0);
+  return s;
+}
+
+describe('Cámara «Centrada» (AC-206)', () => {
+  test('(a) arrastrar 200 px no mueve la vista: al soltar es un clic en el punto donde suelta', () => {
+    const s = centeredSetup();
+    s.view.pointerDown(500, 400);
+    const moved: boolean[] = [];
+    for (let dx = 4; dx <= 200; dx += 4) moved.push(s.view.pointerMove(500 + dx, 400, toWorld, dx));
+    const up = s.view.pointerUp();
+    expect({ moved: moved.some(Boolean), up, mode: s.view.mode, focus: s.focus(), sent: s.sent, free: s.free }).toEqual({
+      moved: false,
+      up: 'click',
+      mode: 'follow',
+      focus: s.ship,
+      sent: [],
+      free: []
+    });
+  });
+
+  test('(b) mantener 2 s una tecla de la vista no mueve la cámara', () => {
+    const s = centeredSetup();
+    s.view.setArrow('up', true);
+    for (let t = 0; t <= 2000; t += 16) s.view.update(t, 0.016);
+    expect({ mode: s.view.mode, focus: s.focus(), sent: s.sent, free: s.free }).toEqual({ mode: 'follow', focus: s.ship, sent: [], free: [] });
+  });
+
+  test('(c) el minimapa no centra la vista', () => {
+    const s = centeredSetup();
+    s.view.centerOn({ x: 900, z: -700 }, 0);
+    s.view.update(600, 0.016);
+    expect({ mode: s.view.mode, focus: s.focus(), sent: s.sent, free: s.free }).toEqual({ mode: 'follow', focus: s.ship, sent: [], free: [] });
+  });
+});
+
+describe('Cambiar de modo (AC-207)', () => {
+  test('de «Libre» a «Centrada»: vuelve al barco en 300 ms con 1 viewAt(null), y desde ahí vale AC-206', () => {
+    // La vista libre a 300 m del barco, con el centro ya en el servidor
+    const s = setup();
+    s.view.setArrow('right', true);
+    let t = 0;
+    for (; t <= 2000; t += 16) s.view.update(t, 0.016);
+    s.view.setArrow('right', false);
+    for (; t <= 3000; t += 16) s.view.update(t, 0.016); // sale el último centro pendiente
+    s.at(t);
+    const off = s.focus()!.x - s.ship.x;
+    const before = s.sent.length;
+    s.view.setCentered(true, t);
+    const switched = { sent: s.sent.slice(before), mode: s.view.mode };
+    s.at(t + FREE_VIEW.returnMs / 2);
+    const mid = s.focus()!.x - s.ship.x;
+    s.at(t + FREE_VIEW.returnMs);
+    const back = { focus: s.focus(), mode: s.view.mode };
+    s.view.pointerDown(500, 400); // AC-206 (a) desde ahí
+    const dragged = s.view.pointerMove(700, 400, toWorld, t + 400);
+    const up = s.view.pointerUp();
+    s.view.setCentered(true, t + 500); // elegirla otra vez no manda otro null
+    expect({
+      at300: Math.abs(off - 300) <= 30 && before > 0,
+      switched,
+      midway: mid > 0 && mid < off,
+      back,
+      dragged,
+      up,
+      sentAfter: s.sent.slice(before)
+    }).toEqual({ at300: true, switched: { sent: [null], mode: 'returning' }, midway: true, back: { focus: s.ship, mode: 'follow' }, dragged: false, up: 'click', sentAfter: [null] });
+  });
+
+  test('de «Libre» sin haber movido la vista a «Centrada»: 0 mensajes', () => {
+    const s = setup();
+    s.view.setCentered(true, 0);
+    expect({ mode: s.view.mode, sent: s.sent }).toEqual({ mode: 'follow', sent: [] });
+  });
+
+  test('de «Centrada» a «Libre»: la cámara no se mueve hasta que el jugador la mueva, y entonces vale AC-116', () => {
+    const s = centeredSetup();
+    s.view.setArrow('up', true); // pulsada en «Centrada»: no cuenta al cambiar
+    s.view.setCentered(false, 0);
+    for (let t = 0; t <= 1000; t += 16) s.view.update(t, 0.016);
+    const still = { mode: s.view.mode, focus: s.focus(), sent: [...s.sent] }; // copia: el arrastre de después añade
+    s.view.pointerDown(500, 400);
+    const dragged = s.view.pointerMove(562, 400, toWorld, 1100);
+    expect({ still, dragged, mode: s.view.mode }).toEqual({ still: { mode: 'follow', focus: s.ship, sent: [] }, dragged: true, mode: 'free' });
+  });
+});

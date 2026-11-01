@@ -38,6 +38,7 @@ export class FreeView {
   private sent: Point | null = null; // lo último que tiene el servidor
   private sentAt = -Infinity;
   private dirty = false;
+  private locked = false; // cámara «Centrada» (E18, AC-206): la vista nunca se suelta del barco
 
   constructor(
     private readonly send: (center: Point | null) => void,
@@ -47,6 +48,19 @@ export class FreeView {
 
   get free(): boolean {
     return this.mode === 'free';
+  }
+
+  get centered(): boolean {
+    return this.locked;
+  }
+
+  // Opciones de cámara (E18, AC-207). A «Centrada»: si la vista estaba suelta, vuelve al barco como con C (con el
+  // viewAt(null) si el servidor tenía un centro); desde ahí, arrastrar es un clic al soltar, y ni las teclas de la vista
+  // ni el minimapa la mueven (AC-206). A «Libre»: la cámara se queda donde está hasta que el jugador la mueva
+  setCentered(centered: boolean, now: number): void {
+    if (centered === this.locked) return;
+    if (centered) this.returnToFollow(now); // suelta también las teclas de la vista y el arrastre
+    this.locked = centered;
   }
 
   // Foco de la cámara en este frame: el barco en seguimiento, el centro de la vista en libre y una mezcla durante la vuelta
@@ -74,7 +88,7 @@ export class FreeView {
     const p = this.press;
     if (!p) return false;
     if (!p.dragging) {
-      if (Math.hypot(x - p.x, y - p.y) <= FREE_VIEW.dragPx) return false;
+      if (this.locked || Math.hypot(x - p.x, y - p.y) <= FREE_VIEW.dragPx) return false;
       p.dragging = true;
       this.enterFree();
     }
@@ -104,6 +118,7 @@ export class FreeView {
       this.arrows.delete(arrow);
       return;
     }
+    if (this.locked) return;
     this.arrows.add(arrow);
     this.enterFree();
   }
@@ -114,6 +129,7 @@ export class FreeView {
 
   // Minimapa: centra la vista en ese punto del mundo, sin navegar (AC-117)
   centerOn(p: Point, now: number): void {
+    if (this.locked) return;
     this.enterFree();
     this.moveTo(p.x, p.z);
     this.flush(now);

@@ -1,7 +1,7 @@
 'use client';
 // HUD (ART-DIRECTION §12). React solo pinta cuando cambian los datos del store; lo que avanza con el reloj
 // (recarga, protección, cuenta atrás) se actualiza por ref desde un único requestAnimationFrame.
-import React, { useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react';
+import React, { useEffect, useLayoutEffect, useRef } from 'react';
 import { REPAIR_RATE, REPAIR_RATE_UNDER_FIRE } from '../../game/constants';
 import { rankLabel, rankOf } from '../../game/xp';
 import type { GameClient } from '../../client/game-client';
@@ -21,11 +21,15 @@ import {
   xpProgress
 } from '../../client/hud-logic';
 import { MeHud, Relation, TargetHud, useHud } from '../../client/hud-store';
+import { isArrowCode } from '../../client/key-bindings';
+import { useOptions } from '../../client/options-store';
 import { HUD_BLOCKS_EVENT } from '../../client/overlays';
 import { RankBadge } from './badges';
 import FeedText from './FeedText';
 import { Alert, Close, CloudOff, Coins, Crosshair, Recenter, Sailboat, Shield, Stop, Store, Swords, Target, Wrench } from './icons';
 import Minimap, { ViewRect } from './Minimap';
+import { KeyCap, OptionsButton, OptionsPanel, useKeyText } from './OptionsPanel';
+import { useHudLayout } from './layout';
 import RelationIcon from './RelationIcon';
 import Shop from './Shop';
 import { DeathOverlay } from './Overlays';
@@ -56,26 +60,6 @@ const pct = (v: number, max: number) => `${Math.max(0, Math.min(100, (v / Math.m
 const fmt = (n: number) => n.toLocaleString('es-ES');
 const fmtRate = (r: number) => `${(r * 100).toLocaleString('es-ES', { maximumFractionDigits: 1 })} %/s`;
 
-// Disposición del HUD: los mismos cortes que globals.css (§12.1–12.3). Decide los tamaños de las insignias (24 o 18 px en
-// el panel, 16 o 12 en el objetivo) y dónde va el nivel. Solo cambia al girar o redimensionar la ventana
-type HudLayout = 'desktop' | 'portrait' | 'landscape';
-const PORTRAIT = '(max-width: 699.98px)';
-const LANDSCAPE = '(max-height: 499.98px) and (min-width: 700px)';
-
-function readLayout(): HudLayout {
-  if (window.matchMedia(PORTRAIT).matches) return 'portrait';
-  return window.matchMedia(LANDSCAPE).matches ? 'landscape' : 'desktop';
-}
-
-function subscribeLayout(onChange: () => void): () => void {
-  const lists = [PORTRAIT, LANDSCAPE].map((q) => window.matchMedia(q));
-  lists.forEach((l) => l.addEventListener('change', onChange));
-  return () => lists.forEach((l) => l.removeEventListener('change', onChange));
-}
-
-function useHudLayout(): HudLayout {
-  return useSyncExternalStore(subscribeLayout, readLayout, () => 'desktop');
-}
 
 // ---------- Panel del jugador ----------
 
@@ -391,6 +375,8 @@ function useReloadLayer(ref: React.RefObject<HTMLElement | null>, active: boolea
 
 function ActionBar({ actions }: { actions: HudActions }) {
   const m = useActionModel();
+  const keys = useOptions((s) => s.keys); // la ranura de Detener enseña su tecla asignada (AC-208)
+  const stopKey = useKeyText('stop');
   const reloadRef = useRef<HTMLSpanElement>(null);
   useReloadLayer(reloadRef, !!m?.attacking);
   if (!m) return null;
@@ -426,8 +412,8 @@ function ActionBar({ actions }: { actions: HudActions }) {
         <span className="slot__icon"><Target size={28} /></span>
         <span className="slot__label">Objetivo</span>
       </button>
-      <button type="button" className="slot" disabled={!m.alive} onClick={actions.stop} title="Detener (S)" data-testid="btn-stop">
-        <span className="slot__key">S</span>
+      <button type="button" className="slot" disabled={!m.alive} onClick={actions.stop} title={`Detener (${stopKey})`} data-testid="btn-stop">
+        <span className={`slot__key ${isArrowCode(keys.stop) ? 'slot__key--icon' : ''}`}><KeyCap code={keys.stop} /></span>
         <span className="slot__icon"><Stop size={28} /></span>
         <span className="slot__label">Detener</span>
       </button>
@@ -484,15 +470,17 @@ function MobileButtons({ actions }: { actions: HudActions }) {
 // minimapa con la tecla; en táctil es un botón de 52 × 52 con la palabra debajo, como Reparar (globals.css)
 function RecenterButton({ onRecenter }: { onRecenter?: () => void }) {
   const free = useHud((s) => s.freeView) && !!onRecenter;
+  const centerCode = useOptions((s) => s.keys.center); // la caja de Centrar enseña su tecla asignada (AC-208)
+  const centerKey = useKeyText('center');
   useLayoutEffect(() => {
     window.dispatchEvent(new Event(HUD_BLOCKS_EVENT));
   }, [free]);
   if (!free) return null;
   return (
-    <button type="button" className="panel hud-recenter" onClick={onRecenter} data-testid="recenter" data-hud-block="" aria-label="Centrar" title="Centrar (C)">
+    <button type="button" className="panel hud-recenter" onClick={onRecenter} data-testid="recenter" data-hud-block="" aria-label="Centrar" title={`Centrar (${centerKey})`}>
       <Recenter size={22} />
       <span className="hud-recenter__label">Centrar</span>
-      <kbd className="hud-recenter__key">C</kbd>
+      <kbd className="hud-recenter__key"><KeyCap code={centerCode} /></kbd>
     </button>
   );
 }
@@ -587,6 +575,7 @@ export default function Hud({
         <PlayerPanel client={client} />
         <TargetPanel actions={actions} />
         <GoldPanel />
+        <OptionsButton />
         <Minimap client={client} islands={islands} viewRect={viewRect} onView={onMinimapView} />
         <Toasts />
         <Feed />
@@ -596,6 +585,7 @@ export default function Hud({
         <Hint />
       </div>
       {shopOpen && <Shop actions={actions} />}
+      <OptionsPanel />
       <DeathOverlay client={client} actions={actions} />
     </>
   );

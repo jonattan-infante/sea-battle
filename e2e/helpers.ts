@@ -1,4 +1,6 @@
 import { expect, Page } from '@playwright/test';
+import { DEFAULT_BINDINGS, Bindings } from '../src/client/key-bindings';
+import { CameraMode, OPTIONS_KEY, serializeOptions } from '../src/client/options';
 
 export interface DebugShip {
   id: string;
@@ -54,6 +56,22 @@ export function trackSocket(page: Page) {
     });
   });
   return { sent, received, reset: () => ((sent.length = 0), (received.length = 0)) };
+}
+
+// Opciones de cámara y teclas de E18, que viven en el navegador (AC-207): se escriben antes de cada carga de la página,
+// como si el jugador las hubiera elegido. La cámara por defecto es «Centrada»; las pruebas de la vista libre (E13)
+// eligen «Libre». No sirve para probar la recarga, porque las vuelve a escribir en cada una
+export async function presetOptions(page: Page, camera: CameraMode, keys: Bindings = DEFAULT_BINDINGS): Promise<void> {
+  await page.addInitScript(
+    ([key, value]) => {
+      try {
+        localStorage.setItem(key, value);
+      } catch {
+        // sin almacenamiento, la página arranca con las de por defecto
+      }
+    },
+    [OPTIONS_KEY, serializeOptions({ camera, keys })] as const
+  );
 }
 
 export async function enterGame(page: Page, base = ''): Promise<void> {
