@@ -949,7 +949,7 @@ Es un círculo de 18 px a la izquierda de la placa propia: pista `rgba(255,255,2
 
 | Parámetro | Valor |
 |---|---|
-| Bloques del HUD | Los elementos marcados con `data-hud-block`. **Escritorio**: panel del jugador, panel del objetivo (si se ve), oro, minimapa con su pie del sector, barra de acciones y cada línea visible del feed. **390×844**: barra superior, objetivo (si se ve), minimapa, Atacar, Objetivo, Reparar y Puerto. 844×390 usa los mismos elementos. **En los tres tamaños, cada aviso visible también es un bloque** (D41): los toasts de §12.5, el aviso «Zona segura», que se queda mientras el barco está en la zona, y en móvil las líneas del feed que se muestran como avisos. **No son bloques** la pista de primera sesión, que ya esquiva la placa propia, la del objetivo y los avisos (AC-105, AC-110), ni los chips de borde de I2 (44–57 px en el marco, que se mueven en cada frame; D89). Con la vista libre (I2), el botón Centrar sí es un bloque |
+| Bloques del HUD | Los elementos marcados con `data-hud-block`. **Escritorio**: panel del jugador, panel del objetivo (si se ve), oro, minimapa con su pie del sector, barra de acciones y cada línea visible del feed. **390×844**: barra superior, objetivo (si se ve), minimapa, Atacar, Objetivo, Reparar y Puerto. 844×390 usa los mismos elementos. **En los tres tamaños, cada aviso visible también es un bloque** (D41): los toasts de §12.5, el aviso «Zona segura», que se queda mientras el barco está en la zona, y en móvil las líneas del feed que se muestran como avisos. **No son bloques** la pista de primera sesión, que ya esquiva la placa propia, la del objetivo y los avisos (AC-105, AC-110), ni los chips de borde de I2 (44–57 px en el marco, que se mueven en cada frame; D89). Con la vista libre (I2), el botón Centrar sí es un bloque. **Con D98, también el botón de opciones** en los 3 tamaños (§20.1) |
 | Caja de la placa | La del declutter (§11.2): la placa completa o compacta, con su desplazamiento de +18 o +36 px, y en la propia, con el indicador de recarga (AC-107) |
 | Ocultar | Si la caja de la placa, ampliada 8 px por cada lado, se cruza con la caja de un bloque: `visibility: hidden` en la raíz de la placa y opacidad 0 en sus hijos, **sin transición** y en el mismo frame en que se coloca la placa (`position()`, por ref). La opacidad no se escribe en la raíz porque ahí va, en línea y por frame, la del hundimiento (VFX-SPEC: la placa se desvanece en 300 ms; `overlays.ts:462-465` y `:478`). Las dos se multiplican y ninguna pisa a la otra (D41). Por eso el cruce es 0 en cualquier frame y a cualquier velocidad: el peor caso, dos barcos a 14 m/s en sentidos opuestos con 0,7×, se mueve 248 px/s |
 | Volver a mostrar | Cuando la caja ampliada 16 px ya no se cruza con ningún bloque (histéresis de 8 px, sin parpadeo en el borde). Fundido de entrada de 150 ms en los hijos (`ease-out`, la animación `fade-in` existente), no en la raíz. **No se usa** `transition: opacity`, que retrasaría el desvanecido del hundimiento, porque ese se escribe por frame. Con `prefers-reduced-motion: reduce`, aparece sin fundido |
@@ -1078,7 +1078,7 @@ y:772 ┌─ Feed (P1) 360×112 ──┐            ┌──── Acciones 33
 |---|---|---|
 | Panel del jugador | 16, 16, 296, 88 | Icono de clase 56 px (silueta sobre un aro dorado), nombre (15/600), clase (13 `--ui-text-dim`), barra de vida 200×14 (`--ui-ok`, números 12 px tabulares dentro a la derecha) y línea de estado (§12.4) |
 | Panel del objetivo | 560, 16, 320, 72 | Solo con objetivo. Icono de relación 40 px, nombre en su color, "Tipo · actitud", barra 220×10 en el color de la relación, distancia "48 m" y estado "✓ En alcance" (`--ui-ok`) o "✕ Fuera de alcance" (`--ui-text-dim`). Botón ✕ de 24 px (Esc) |
-| Oro + ping | 1240, 16, 184, 40 | Moneda `--ui-gold` + total (16/600 tabular). Al ganar, "+120" que sube 16 px en 800 ms. El ping solo aparece si es > 200 ms (`--ui-gold`) |
+| Oro + ping | 1240, 16, 184, 40 | Moneda `--ui-gold` + total (16/600 tabular). Al ganar, "+120" que sube 16 px en 800 ms. El ping solo aparece si es > 200 ms (`--ui-gold`). A su izquierda, a 8 px, el botón de opciones: 1192, 16, 40 × 40 (§20.1; D98) |
 | Minimapa (P1) | 1240, 64, 184, **208**: mapa de 184 × 184 arriba y pie de 24 px (D39) | Fondo `ocean.deep` al 90 %, islas `sand`, zona segura discontinua, rectángulo de la vista (1 px blanco al 60 %) y entidades con la forma de §4.3. Canvas 2D a ≤ 2 Hz (AC-77). El mapa no cambia de tamaño (AD-29) |
 | Coordenadas | **Dentro del pie del minimapa** (D39): 1240, 248, 184, 24, separado del mapa por una línea de 1 px `--ui-line` | "Sector E5 · X 12 Z −40" (12 px tabular `--ui-text-dim`, centrado y sin `text-shadow`). Va sobre el fondo del panel (contraste 5,7:1 en el peor fondo, §4.5). Antes flotaba sin fondo en y = 252 y se mezclaba con las placas que pasaban por debajo (O-4). Como en Seafight, el sector va en el marco de la carta (R1). En móvil sigue oculto |
 | Toast / aviso de zona | 540, 96, 360, 36; el 2.º en 540, 140 (se apilan ≤ 3 hacia abajo con 8 px de separación). Área de texto 356 × 36, sin recortar (verificado en e2e, b5dc2c1) | §12.5 |
@@ -1117,13 +1117,13 @@ y:776└──52──┘                       └──────┘  └─
 | **Atacar** | 302, 756, 72, 72 (≥ 64, AC-80). Anillo de recarga de 4 px en el borde |
 | **Objetivo** | 234, 776, 52, 52 |
 | **Reparar** | 322, 684, 52, 52 |
-| **Puerto** | 16, 776, 52, 52 |
+| **Puerto** | 16, 776, 52, 52. Encima, a 20 px, el botón **Opciones**: 16, 704, 52, 52 (§20.1; D98) |
 | Feed | Oculto: los eventos van como toasts |
 
 Los botones táctiles miden ≥ 48×48 px y están separados ≥ 8 px. Ninguno se solapa con el panel ni con el minimapa (AC-80).
 
 ### 12.3 Móvil horizontal 844×390
-La columna izquierda (x 12–264) tiene la barra de vida 252×44 y debajo el objetivo 252×48 (252×70 con un jugador o un NPC marcado como objetivo; D75, D77). **El icono del objetivo mide 28 px, como en 390×844** (D81): con el de 40 de la 1.0, al cuerpo le quedan 184 px y la línea del rango más larga no cabe; con el de 28, 196. La derecha (x 580–832) tiene el oro y el minimapa de 72×72 arriba y los botones abajo: Atacar 72×72 en (748, 306), Objetivo y Reparar de 52 en (684, 326) y (768, 238), y Puerto en (12, 326). El centro queda libre para el juego. El círculo de alcance R puede pasar por debajo de las esquinas (AC-24 solo exige 1440×900 y 390×844). **Avisos**: 272, 12, 300 × 36 (texto 296 × 36); el 2.º en 272, 56, entre la columna izquierda (≤ 264) y la derecha (≥ 580). **Pista**: ranura normal en y = 338 y ranura alta en y = 64, justo bajo el aviso 1 (12 + 36 + 8), con la misma regla que en §12.1: si la normal está libre, la pista se queda en ella; si está ocupada, sube con 1 aviso y se oculta con 2, centradas. Anchos táctiles: pista 0 («Toca el agua para navegar») 226 px, pista 1 273 y pista 2 300 (x 272–572, a 8 px de las dos columnas). Aquí el ancho máximo de la pista es **300 px**, el hueco entre columnas; hoy lo cumplen las 3 pistas sin variante corta. La esquiva dinámica no cuenta los paneles del objetivo ni del oro como obstáculo, así que **el e2e de AC-110 recorre las 3 pistas en 844×390 contra las dos columnas** (D30). Una pista nueva de más de 300 px necesita una variante corta (AC-110; b5dc2c1).
+La columna izquierda (x 12–264) tiene la barra de vida 252×44 y debajo el objetivo 252×48 (252×70 con un jugador o un NPC marcado como objetivo; D75, D77). **El icono del objetivo mide 28 px, como en 390×844** (D81): con el de 40 de la 1.0, al cuerpo le quedan 184 px y la línea del rango más larga no cabe; con el de 28, 196. La derecha (x 580–832) tiene el oro y el minimapa de 72×72 arriba y los botones abajo: Atacar 72×72 en (748, 306), Objetivo y Reparar de 52 en (684, 326) y (768, 238), y Puerto en (12, 326). Encima de Puerto, a 8 px, el botón **Opciones** en (12, 266), 52 × 52 (§20.1; D98). El centro queda libre para el juego. El círculo de alcance R puede pasar por debajo de las esquinas (AC-24 solo exige 1440×900 y 390×844). **Avisos**: 272, 12, 300 × 36 (texto 296 × 36); el 2.º en 272, 56, entre la columna izquierda (≤ 264) y la derecha (≥ 580). **Pista**: ranura normal en y = 338 y ranura alta en y = 64, justo bajo el aviso 1 (12 + 36 + 8), con la misma regla que en §12.1: si la normal está libre, la pista se queda en ella; si está ocupada, sube con 1 aviso y se oculta con 2, centradas. Anchos táctiles: pista 0 («Toca el agua para navegar») 226 px, pista 1 273 y pista 2 300 (x 272–572, a 8 px de las dos columnas). Aquí el ancho máximo de la pista es **300 px**, el hueco entre columnas; hoy lo cumplen las 3 pistas sin variante corta. La esquiva dinámica no cuenta los paneles del objetivo ni del oro como obstáculo, así que **el e2e de AC-110 recorre las 3 pistas en 844×390 contra las dos columnas** (D30). Una pista nueva de más de 300 px necesita una variante corta (AC-110; b5dc2c1).
 
 ### 12.4 Estados del HUD
 | Estado (GDD §7–8) | Línea del panel del jugador | Ranura Atacar | Placa propia |
@@ -1146,7 +1146,7 @@ Fondo `--ui-panel`, borde izquierdo de 4 px según el tipo (info `--ui-info`, é
 **Aviso persistente de guardado (AC-132; D50)**: «Progreso sin guardar, reintentando…» con el icono `cloud-off` de 16 px en `--ui-gold` y el borde izquierdo de tipo aviso (`--ui-gold`). Va **el primero de la columna de avisos**, por encima de «Zona segura» y de los toasts: 540, 96 en 1440×900; 16, 156 en 390×844; 272, 12 en 844×390. Como «Zona segura», no caduca, no cuenta en el máximo de 3 toasts ni sale por cupo, y es un bloque del HUD (`data-hud-block`, D41) que cuenta para la regla de la pista. Ocupa una línea en los tres tamaños: el texto mide 224 px, y con el icono, 248. Lo ven todos los jugadores con cuenta mientras la BD siga caída, tengan o no cambios pendientes. Los invitados no lo ven y su Puerto sigue habilitado, porque no escriben en la BD (AC-132). Aparece en el mismo commit en que llega el estado del servidor y se queda **al menos 3 s**, para que un corte de un instante no parpadee. **Al volver la BD**, cuando el servidor confirma la escritura, se quita sin fundido y sale un toast de éxito «Progreso guardado» (3,5 s), que cierra el ciclo. El toast entra en la pila de toasts, detrás de «Zona segura», y no en el hueco del aviso: los avisos persistentes siempre van delante (D55). Ese mismo commit rehabilita Puerto. Mientras dure el corte, pulsar Puerto o la tecla P no abre la tienda y saca un toast de peligro «La tienda no está disponible: no podemos guardar» (el texto de AC-132). Vale dentro y fuera de la zona segura: el corte manda sobre «Solo en la zona segura» (AC-66), en el toast y en el `title`, porque ese aviso mandaría al jugador a navegar hasta el puerto para nada (D55). En móvil, el `title` no se ve.
 
 ### 12.6 Capas (z-index)
-canvas 0 · placas 10 · números de daño 15 · HUD 20 · toasts 30 · modal (tienda, muerte, desconexión) 40.
+canvas 0 · placas 10 · números de daño 15 · HUD 20 · toasts 30 · panel de opciones 35 (D98, §20.2: tapa el final de la columna de avisos) · modal (tienda, muerte, desconexión) 40.
 
 ### 12.7 Cursor (escritorio)
 Sobre el agua: flecha por defecto. Sobre un barco atacable: mira SVG de 32 px (coral, punto caliente en el centro). Sobre un barco no atacable (zona segura o protegido): `not-allowed`.
@@ -1289,7 +1289,7 @@ Qué comunica (GDD §14 y §15): dónde estás, cuánto te falta para el siguien
 
 Reglas: Pirata One **nunca** por debajo de 20 px ni en texto corrido. Mínimo absoluto de 11 px.
 
-**Iconos**: SVG de línea de 24×24, trazo de 2 px y `currentColor`. Se copian de [Lucide](https://lucide.dev) (licencia ISC) a un módulo propio, sin dependencia en tiempo de ejecución: `anchor`, `skull`, `coins`, `star`, `crosshair`, `wrench`, `shield`, `sailboat`, `swords`, `octagon-x` (detener), `store` (puerto), `settings`, `wifi` y `cloud-off` (progreso sin guardar, D50). La corona del capitán es un SVG propio.
+**Iconos**: SVG de línea de 24×24, trazo de 2 px y `currentColor`. Se copian de [Lucide](https://lucide.dev) (licencia ISC) a un módulo propio, sin dependencia en tiempo de ejecución: `anchor`, `skull`, `coins`, `star`, `crosshair`, `wrench`, `shield`, `sailboat`, `swords`, `octagon-x` (detener), `store` (puerto), `settings` (el botón de opciones, D98), `move` (la cámara «Libre», D98), `arrow-up` (también girada 90°, 180° y 270°: las teclas de flecha, D98; los 3 de lucide-static 0.469.0), `wifi` y `cloud-off` (progreso sin guardar, D50). La corona del capitán es un SVG propio.
 
 ### 13.1 Icono de la aplicación (D54; AC-141)
 **Motivo**: un barco de perfil con la proa a la derecha. Lleva el velacho, la mayor con panza y el foque en crema `#F5F1E6` (`--ui-text`, el tono de las velas del jugador) y el mástil, el gallardete, el casco con castillo de popa y el bauprés en oro `#F2C14E` (`--ui-gold`, el gallardete del jugador). Todo va sobre `#0F3F5C` (el `themeColor` y el fondo de «Conectando») con una ola `#1A5F86` (`ocean.deep`) abajo. Es el barco del jugador, no el pirata: crema y oro, como el logo y el botón «Zarpar». Los únicos colores son estos 4.
@@ -1779,9 +1779,203 @@ Jonattan delegó en producto y UX lo que antes era su juicio («No necesitas de 
 | D95 | Producto pidió rehacer las 4 clases del jugador que faltan con la receta de D91, una lámina por clase en el orden Balandra, Bergantín, Goleta y Fragata, cada una con el visto bueno de Jonattan antes de construirse, y con los topes de BACKLOG `:361`: ≤ 5 000 / 1 200 tris, las 8 combinaciones ≤ 630 930 B en archivo y el atlas del lado más pequeño con ≥ 18 px/m | **La Balandra** (`docs/game/art/D95-balandra.png`, sha256 `3bffafad…6908`, 1895 × 2246): la de hoy, la británica y la española, como en el juego en 1440×900, de lado, desde arriba, la popa de cerca y en el móvil en color y en grises, y la tira de las 5 clases a la misma escala. Decisiones de ux: (1) la camareta de popa se queda en las 2 familias (S4, AD-37), con el techo de tablas y la moldura dorada, y la española la sube 0,4 m; (2) la bandera de la familia cuelga del pico de la cangreja, 0,4 m a popa, porque la botavara pasa por donde iría el asta; (3) la textura va a 512² (26,2 px/m) y el respaldo, a 128² (pasa la regla de 4b). Medidas en ASSET-SPEC §13: 1 189 / 306 y 1 381 / 306 tris, y 110 955 B las 2, el 17,6 % de los 630 930. **La 1.ª versión no se publicó** (turno K v1, FIN 05:54:24Z): el techo de la camareta salía como una losa dorada (la moldura tapaba las tablas), y había 2 erratas («Frente a la Bergantín» y «Lo que pide: Gratis: …»); se repitió el turno (v2, FIN 14:34:29Z). Errata conocida en la v2: «16 × 4.4 m» con punto decimal; se corrige desde el Bergantín, para que el script del lote sea el que hizo esta lámina. **El Bergantín** (`docs/game/art/D95-bergantin.png`, sha256 `7ccbe0d7…2965`, 1973 × 2413; turno K, FIN 14:41:07Z), con las mismas vistas, ya sin la errata del decimal: la camareta en las 2 familias, el bote entre los 2 palos y la cruz de Borgoña en las 2 cuadras del trinquete; 2 159 / 408 y 2 543 / 408 tris, y 139 308 B las 2 (con la Balandra, 250 263 B, el 39,7 % de los 630 930). **Jonattan aprobó las 2 el 2026-10-20** (registro de la página de diseños, comprobado por el lead): el Bergantín a las 15:57:38Z y la Balandra a las 15:57:41Z, sobre las 2 láminas de arriba (sha256 `7ccbe0d7…2965` y `3bffafad…6908`). La receta se queda como está: la Goleta y la Fragata se hacen con ella, cada una con su lámina, la británica y la española, y su visto bueno (antes: «si con la Balandra pide cambios en la receta, el Bergantín se rehace, y la Goleta y la Fragata esperan a su respuesta», lead, 2026-10-19). Fuentes: `scripts/ux/barcos/clase_curvo.py`, `scripts/ux/laminas/lamina_clase.py`, `scripts/ux/laminas/code/export-rig-clases.ts` y `scripts/ux/barcos/blender_curvo.py` | §9.3; ASSET-SPEC §13 |
 | D96 | dev-npc preguntó (2026-10-19) cómo se ve el ⚓ del minimapa sobre la costa del puerto de D92, que es del mismo `sand` (§4.3, «El puerto, en 2 tiempos», punto 2); ninguna lámina lo enseñaba | **Un disco `#07121B` detrás del ⚓**, de 10 px CSS × DPR en los 3 tamaños (el radio del dibujo del ⚓ con su contorno, 8,34 px, más 1, hacia arriba), solo cuando se dibuja la costa del puerto. Orden de capas: costa, disco, ⚓, anillo de la zona segura y, encima, la vista, el área de interés y los marcadores de barco, también el propio amarrado dentro del disco. **Jonattan aprobó la lámina** `docs/game/art/D96-minimapa-puerto.png` (sha256 `ca7a9caf…3632`, 2240 × 3433) el 2026-10-21 a las 02:57:06Z, sin comentario (registro de la página de diseños, comprobado por el lead): la columna de la derecha, con el disco. La lámina sale de `scripts/ux/laminas/lamina_minimapa_puerto.py`, con el modelo de canvas de AD-29 de D87 y los 7 círculos de la v3 de `scripts/ux/mapa/puerto_forma.py`, y enseña hoy (sin la costa del puerto, solo el ⚓), la costa con el ⚓ encima tal cual y la propuesta, en 182, 86 y 70 px, en color y en grises, sin barcos y con el propio en el amarre 5 y otro jugador en el 2 (GDD §4). Medidas (182, 86 y 70 px): la costa del puerto ocupa 155,0, 41,9, 32,9 px²; sin disco, fuera del dibujo del ⚓ asoman 47,0, 5,0, 2,1 px² (en escritorio la emborrona), y con el disco, 1,0, 0,0, 0,0 px²: **el disco tapa la costa**, y el puerto lo marca el ⚓. El círculo de la zona segura mide 20,0, 9,5, 7,7 px de radio, así que el disco lo pasa en los 2 móviles y el círculo va encima. **Condiciones de producto** (2026-10-19): (1) AD-29 con el disco (el barrido de `scripts/ux/ad29py.py`, W 24, con el ⚓ sobre el disco como variante de su clase): a DPR 1, propia 0,983 y cruce máximo 0,309, con el ■ del mercante; a DPR 2, propia 0,993 y cruce máximo 0,244, con el ▲ del barco propio; el ⚓ sin disco repite `scripts/ux/calibracion/ad29-1-1-w24.json` (diferencia 0); (2) el orden de capas, en la 2.ª fila de cada tamaño; (3) el disco no se lee como tierra: L* 5,0 frente a 83,9 de la arena, ΔE76 81,8–88,2 en las 4 visiones (frente al agua, 35,7–36,5). **En contra** (aceptado por producto el 2026-10-19 y publicado con la lámina): con el disco, en el minimapa no se ve la forma del puerto, que queda debajo, y en los móviles el disco pasa del círculo de la zona segura, que se sigue viendo encima. Producto la anota en GDD :270 (la fila «Minimapa» de «El puerto con forma de isla»), en el registro de AC-192 (BACKLOG :378, la fila del minimapa de D87) y en BACKLOG :400, que la construye en el mismo PR que lo que queda de D87 (`0e7c546`). Tiradas sin publicar: la 1.ª (turno P, 2026-10-19) sacaba el ⚓ de los rótulos como un cuadro vacío (la Barlow no lo tiene) y decía «la fila de abajo» por «la columna de la derecha»; la 2.ª (P2) los corrigió; la 3.ª (P3, 2026-10-20, sha256 `24895d24…f944`) añadió las 3 condiciones, pero decía «en móvil, el ancla ya lo tapa» (asoman 5,0 de 41,9 px²) y «se lee igual en los 3 tamaños» (sin medir); la 4.ª (P4, FIN 18:32:10Z) los corrige y pone en «Medidas» la costa que asoma sin disco, y es la publicada y aprobada | §4.3; AD-29; D87; D92 |
 | D97 | AD-28 con el balanceo (BACKLOG :421; turno a-v7 de dev-render): con ≥ 6 px de caña, el GLB de la Cañonera da 6, 8, 8, 8 y 8 cañones distintos a 225° y 7, 7, 8, 9 y 8 a 45° en las 5 posturas forzadas, por debajo de 8. La regla (a) pide al modelo de ux 10 a 225°, 135° y 315°, y 9 a 45°, en 400 posturas, porque el modelo cuenta 2 cañones más que el juego a 225° y 1 más a 45° | **La Cañonera abre sus 2 velas al tercio 48° a estribor (el resto de la flota sigue con los 25° de D12) y su foque arranca a 10,5 m en el trinquete (antes, del tope, a 12,1 m).** Con el orden de producto (foque → pico → apertura → pie → caña; BACKLOG :421) es la primera que cumple: el foque solo da 6–8 a 225° y 8 a 45°; el pico no mueve 225° (6–8); el pie, hasta +3 m, da 10 a 225° pero 7–8 a 45°, porque a 45° los cañones de babor los tapa el centro de las velas, y eso solo cambia al girarlas. De las 6 que cumplían (47–50° con el foque de 9 a 10,5 m), es la que menos cambia el diseño: la que menos encoge el foque, y queda 2° por encima del salto de 225° (a 46° da 8). En el modelo (`balanceo.py`: el pase de `deckGuns` con la pose de `runtime.ts:1484-1501`, MSAA 4× y caña ≥ 6; 400 posturas: alabeo ±3°, cabeceo ±1,5° y 16 fases), 10 a 225° (las 400), 9–12 a 45° (33 en 9), 11–12 a 135° y 11–12 a 315°. **Jonattan aprobó la lámina** `docs/game/art/D91-canonera-v5.png` (sha256 `8d23e763…10ba`, 1556 × 4117) el 2026-10-24 a las 18:57:36Z (registro de la página de diseños, comprobado por el lead). Sale de `scripts/ux/ad28/lamina_canonera4.py` con el `canonera2_curvo.py` de `c6a2c52`, el de antes de D97 (el turno de reexporte la reproduce byte a byte así), y enseña: la prueba de los cañones a 225° y a 45° en la peor postura de hoy entre 100 (de 6 a 10 y de 7 a 9); la captura 1/5 del a-v7 a 225° junto al modelo en esa postura (6 en el juego y 8 en el modelo, IoU 0,867); 135° y 150°; el móvil; de lado, desde arriba, las velas de frente y de cerca, y la tabla de 400 posturas. Medidas: la lona de las velas al tercio no cambia (73,68 y 43,05 m²); el foque pasa de 43,38 a 36,22 m² (−16,5 %) y su grátil, de 15,34 a 14,61 m, así que su dibujo se aplasta un 5 %; las velas salen hasta 6,09 m del eje (hoy 3,47 m), frente a 5,03 m del eje a la borda, y su punto más bajo queda a 1,70 m de lo que tienen debajo (hoy 1,73 m); los mismos triángulos (1 988 / 465), UV, COLOR_0 y _RIM_MASK; la bandera, en el pico de la mayor, gira con ella. Firmas de AD-28 / O-62 (`ad28_canonera2.py firmas`): 6 de 6 pares en los 4 rumbos. **Condiciones de producto:** la AO se rehornea en el mismo turno de Blender del reexporte, con el mismo tamaño, disposición, UV y formato del atlas; el log da los KB de la textura y del GLB, antes y después; AS-V19 de la Cañonera se vuelve a medir en el paso (4); si el rehorneado cambia algo más que esa sombra, vuelve como lámina. **En contra** (aceptado por producto el 2026-10-24 y publicado con la lámina): sus velas ya no se abren como las del resto de la flota; a 135° y 315° se ven casi de canto (el 2,9 % de su superficie de cara a la cámara, hoy el 19,3 %; hoy les pasa a 150° y 330°, con el 4,9 %) y no se ve la calavera, aunque las firmas pasan en esos rumbos; y cumple justo (10 a 225° en las 400 posturas): lo decide el paso (4) en el juego. Tiradas sin publicar: la v3 (el pie a +1,5 m, que el a-v7 dejó corto) y la v4 (`5f819146…`), igual que la v5 sin «en los 4 rumbos, también a 135° y 315°» en la línea de las firmas. La v6 (la v5 tras el rehorneado de la AO; BACKLOG :421) dice «una diferencia empieza a notarse hacia 2,3»: es la diferencia apenas perceptible (JND) de ΔE76, el valor que da `colour.difference.JND_CIE1976` de colour-science citando a Mokrzycki y Tatol (2011), «Color difference Delta E – A survey», *Machine Graphics and Vision* 20, 383–411, y el mismo 2,3 que usa `veredicto_cajas.py` (`JND`) para la silueta. **Jonattan aprobó la v6** `docs/game/art/D91-canonera-v6.png` (sha256 `90402fc8…b2a8`, 1582 × 4591) en el chat hacia las 00:00Z del 2026-10-25: «Apruebo la lámina» (el lead comprobó el sha256 en disco a las 00:00:39Z; BACKLOG :363). Sale de `scripts/ux/ad28/lamina_canonera6.py`, que corre `lamina_canonera4.py` hasta «# --- la hoja» en el árbol de la v5 (el `canonera2_curvo.py` de `c6a2c52`) y dibuja las vistas «como en el juego» con la KTX2 de la entrega de D97 (`0baf1e61…2cd1`); los datos del turno CV que lee (los cañones, las firmas y las 2 entregas) y las 38 cajas de la aprobada están en `scripts/ux/regenerar/cv/`. La condición de 0,10 de producto pasa con los 2 muestreos (b e isobox) | ASSET-SPEC :861, :870 y :879; AD-28; D12; BACKLOG :363 y :421 |
+| D98 | Jonattan (2026-10-25, E18): «El sistema tiene un comportamiento raro, ahora solo me puede mover en el mapa con las fechas, deberia poder ser configurable, fijo (como antes) con una opción en el menu algo como "centrar" y que se pueda elegir que teclas son las de navegación a modo de configuracion». Producto fijó 2 modos de cámara («Centrada», la de la 1.0 y la de por defecto, y «Libre», la de E13) y 6 teclas a elegir, en un panel nuevo (AC-205 a AC-209) | **Un botón de engranaje en el HUD y un panel de opciones** (§20). En escritorio, el panel cuelga del botón (424 × 600), con las 2 cámaras como 2 tarjetas y las 6 teclas en 2 grupos: «Vista», con la nota «Solo con la cámara Libre», y «Barco». En táctil, solo la cámara, en una hoja desde abajo (390×844) o junto al botón (844×390). La caja del 10 % central queda fuera del panel en los 3 tamaños, a 16, 94,8 y 43,8 px. Las flechas van como iconos, porque la Barlow no las trae. **Lámina** `docs/game/art/D98-opciones.png` (sha256 `bbf52e6e…d9b5ca`), **aprobada por Jonattan** el 2026-11-01 a las 18:30:10Z (pieza `opciones-camara`). Fuente: `scripts/ux/laminas/lamina_opciones.py` | §20; §11.4, §12.1–§12.3, §12.6 y §13; BACKLOG AC-205 a AC-209 |
 
 **Abiertas:**
 
 | # | Para | Pregunta | Supuesto en este documento |
 |---|---|---|---|
 | U6 | `game-developer` | Preset de cámara de `qa:capture` para generar las imágenes de la landing | §16.1 |
+
+---
+
+## 20. Opciones: cámara y teclas (1.1.1; E18; D98; AC-205 a AC-209)
+
+Lo pidió Jonattan el 2026-10-25 (BACKLOG E18; frase literal): «El sistema tiene un comportamiento raro, ahora solo me puede mover en el mapa con las fechas, deberia poder ser configurable, fijo (como antes) con una opción en el menu algo como "centrar" y que se pueda elegir que teclas son las de navegación a modo de configuracion». **Qué debe comunicar** (E18): qué hace cada modo, de un vistazo, y cómo volver a «Centrada» sin buscar: 1 clic en el engranaje y 1 en «Centrada».
+
+**Lámina** (AC-192): `docs/game/art/D98-opciones.png`, 1950 × 5300, sha256 `bbf52e6ea83502ac78c1903da793a7e709a1aa206754a2e45d5ae1e3f2d9b5ca`. **Aprobada por Jonattan** el 2026-11-01 a las 18:30:10Z (pieza `opciones-camara`). Dibuja lo nuevo sobre capturas reales del candidato `486b7a2`: las 7 de entrada y su sha256 están en el campo `fuentes` del JSON de medidas. **Fuente**: `scripts/ux/laminas/lamina_opciones.py`, con `fragata_panel.py` al lado. Reutiliza el dibujo de D89 y escribe `D98-opciones-medidas.json`, que se guarda en `scripts/ux/regenerar/d98/`. Uso, desde la raíz: `UX_FONTS=… UX_OUT=… UX_D98_B1=<capturas-11b/png> UX_D98_B2=<capturas-11/png> python3 -I scripts/ux/laminas/lamina_opciones.py scripts/ux/laminas`. Las cifras de esta sección salen de ese guion (se cita `:línea`) o del JSON. Los anchos de texto están medidos con la Barlow del juego.
+
+**Común a todo:** px CSS, Barlow e interlineado de 1,5, salvo donde se diga otra cosa; tokens de §4.4. Valores fuera de los tokens:
+- fondo del panel: el color de `--ui-panel`, más opaco que su 0,85, porque es texto de 12–14 px sobre el juego en marcha. `rgba(11, 26, 36, 0.94)` en escritorio y `0.96` en táctil;
+- rellenos: `--ui-gold` al 12 % (tarjeta elegida y espera) y al 20 % (botón pulsado, como `.slot.is-active`); `--ui-info` y `--ui-danger` al 16 %; blanco al 3 % (tarjeta sin elegir), al 4 % (tecla) y al 5 % (fila resaltada).
+
+### 20.1 El botón de opciones
+| Tamaño | Caja (x, y, ancho, alto) | Dónde | Dibujo |
+|---|---|---|---|
+| 1440×900 | 1192, 16, 40, 40 | En la franja de arriba, a 8 px a la izquierda del oro (1240, 16) | `.panel` (fondo `--ui-panel`, borde 1 px `--ui-line`), radio 8; `settings` de 20 px `--ui-text` a 10 del borde. Sin texto visible: `aria-label` «Opciones» |
+| 390×844 | 16, 704, 52, 52 (y desde `safe-area-inset-bottom`, como Puerto) | Encima de Puerto (16, 776), a 20 px | Como los demás botones táctiles: radio 12, `settings` de 22 y «Opciones» 10/500 `--ui-text` 2 px debajo. El bloque de 22 + 2 + 15 va centrado en vertical: el icono queda a 6,5 del borde de arriba. «Opciones» mide 40,6 px de los 52 |
+| 844×390 | 12, 266, 52, 52 | Encima de Puerto (12, 326), a 8 px | Como en 390×844 |
+
+**Pulsado**, con el panel abierto: `--ui-gold` al 20 % sobre `--ui-panel`, borde 2 px `--ui-gold` (como la ranura activa de §12.1) y `aria-expanded="true"`. En 390×844 la hoja lo tapa. Es un bloque del HUD en los 3 tamaños (§11.4), así que los chips de borde lo esquivan (§12.8, AD-30). Pulsarlo con el panel abierto lo cierra, como cualquier clic fuera del panel. Código: `lamina_opciones.py:57-59` y `:70-83`.
+
+### 20.2 El panel
+| | 1440×900 | 390×844 | 844×390 |
+|---|---|---|---|
+| Forma | Cuelga del botón, alineado a su borde derecho | Hoja anclada abajo, a todo el ancho | A la derecha del botón, apoyado abajo |
+| Caja (x0, y0, x1, y1) | 808, 64, 1232, 664: 424 × 600. Con un aviso de §20.4, 424 × 622 (y1 686) | 0, 559, 390, 844: 390 × 285 | 72, 88, 336, 378: 264 × 290 |
+| Junto a | 8 px bajo el botón (y 56) y 8 px a la izquierda del minimapa (x 1240) | El borde de abajo de la pantalla | 8 px a la derecha del botón (x 64); abajo, el marco útil de 12 (y 378) |
+| Fondo, borde y radio | `rgba(11, 26, 36, 0.94)`, 1 px `--ui-line`, radio 8 | `rgba(11, 26, 36, 0.96)`, 1 px `--ui-line`, radio 16 arriba (las esquinas de abajo quedan fuera de la pantalla) | `rgba(11, 26, 36, 0.96)`, 1 px `--ui-line`, radio 12 |
+| Relleno | 20 | 16, y abajo 24 + `env(safe-area-inset-bottom)` | 16 |
+| Título | «Opciones» 18/600 `--ui-text` (73,6 px), centrado en una fila de 32 | «Opciones» 18/600, en una fila de 48 | «Opciones · Cámara» 18/600 (145,5 px), en una fila de 48 |
+| Cerrar | ✕ de 32 × 32 en 1180, 84: radio 8, borde 1 px `--ui-line`, sin fondo, `Close` de 18 `--ui-text` centrado | 48 × 48 en 326, 575, con `Close` de 22 (AC-205: ≥ 48 en táctil) | 48 × 48 en 272, 104, con `Close` de 22 |
+| Contenido | La cámara (§20.3) y las teclas (§20.4) | La cámara | La cámara, sin el rótulo «Cámara», que ya va en el título |
+| La caja del 10 % central (AC-23) y su separación del panel (AC-205) | 648, 405, 792, 495: 16 px (acaba en x 792; el panel empieza en 808) | 175,5, 379,8, 214,5, 464,2: 94,8 px (acaba en y 464,2; la hoja empieza en 559); 60,8 con un `safe-area-inset-bottom` de 34 | 379,8, 175,5, 464,2, 214,5: 43,8 px (el panel acaba en x 336) |
+
+**Qué forma toma el panel:** la de los mismos cortes que el resto del HUD (r11 `034d1c3`):
+- escritorio: fuera de `(max-width: 699.98px), (max-height: 499.98px)` (`globals.css:189`);
+- 390×844: `(max-width: 699.98px)` (`:203`);
+- 844×390: `(max-height: 499.98px) and (min-width: 700px)` (`:226`).
+
+Las teclas solo salen en la forma de escritorio y con `(pointer: fine)` (AC-205).
+
+**Comportamiento:**
+- Se abre y se cierra sin transición, en el frame del clic, así que la caja que mide el e2e es la final desde el primer frame. «Sube desde abajo», en la lámina, quiere decir anclada abajo.
+- `z-index` 35 (§12.6): encima de los avisos (30) y debajo de los modales (40), como en la lámina, donde tapa el final del aviso «Zona segura».
+- Es un diálogo no modal (`role="dialog"`, `aria-label` «Opciones»): no atrapa el foco, porque las teclas del juego siguen activas (AC-205).
+
+**Escritorio, de arriba abajo** (y absoluta en 1440×900; `:139-196`):
+
+| Bloque | y | Alto (+ hueco hasta el siguiente) | Contenido |
+|---|---|---|---|
+| Cabecera | 84–116 | 32 (+ 16) | El título a x 828 y la ✕ en 1180 |
+| «Cámara» | 132–150 | 18 (+ 8) | 13/600 `--ui-text-dim` |
+| Tarjetas | 158–268 | 110 (+ 20) | 2 de 186 × 110, en x 828 y en x 1026, con 12 entre ellas (§20.3) |
+| «Teclas» | 288–306 | 18 (+ 2) | 13/600 `--ui-text-dim` |
+| Ayuda | 308–326 | 18 (+ 8) | «Haz clic en una tecla para cambiarla.» 12/500 `--ui-text-dim` (189,0 px) |
+| Grupo «Vista» | 334–354 | 20 | «Vista» 12/600 `--ui-text-dim` a la izquierda; «Solo con la cámara Libre» 12/500 `--ui-text-dim` (127,8 px), alineada a x 1212. Sale con las 2 cámaras; la lámina enseña «Centrada» |
+| 5 filas | 354–534 | 5 × 36 (+ 6) | Vista arriba, Vista abajo, Vista izquierda, Vista derecha y Centrar (§20.4) |
+| Grupo «Barco» | 540–560 | 20 | «Barco» 12/600 `--ui-text-dim` |
+| Fila | 560–596 | 36 (+ 16) | Detener, que vale con las 2 cámaras |
+| Restablecer | 612–644 | 32 (+ 20 de relleno) | Botón de 106,3 × 32 alineado a x 1212: texto 14/600 `--ui-text` (74,3 px) con 16 a cada lado, radio 8, borde 1 px `--ui-line`, sin fondo. Vuelve a las teclas de siempre y no cambia la cámara (AC-209) |
+
+### 20.3 Las 2 opciones de cámara
+| | Escritorio (186 × 110) | 390×844 (358 × 77,5) | 844×390 (232 × 97) |
+|---|---|---|---|
+| Posición | y 158; x 828 y 1026, una al lado de la otra, con 12 entre ellas | x 16; y 657 y 742,5, una sobre la otra, con 8 entre ellas. Encima, «Cámara» 13/600 `--ui-text-dim` en y 631 | x 88; y 160 y 265, con 8 entre ellas |
+| Icono | 24 px en (12, 12) | 26 px en (12, 12) | 26 px en (12, 12) |
+| Nombre | 15/600 en x +46, centrado con el icono | 16/600 en x +48 | 16/600 en x +48 |
+| Estado | Círculo de 16 (trazo de 2), con el centro a 20 del borde derecho y en y +24 | Igual, en y +25 | Igual, en y +25 |
+| Descripción | 12/500 `--ui-text-dim`, línea de 18, desde y +44, ancho 162 | 13/500, línea de 19,5, desde y +46, ancho 334 | 13/500, línea de 19,5, desde y +46, ancho 208 |
+| Alto | 12 + 24 + 8 + 3 × 18 + 12 = 110 (manda «Libre», con 3 líneas) | 12 + 26 + 8 + 19,5 + 12 = 77,5 | 12 + 26 + 8 + 2 × 19,5 + 12 = 97 |
+
+| Opción | Icono | Escritorio | Táctil |
+|---|---|---|---|
+| «Centrada», la de por defecto (AC-206) | `Recenter` de D89 (§12.8): la misma idea que Centrar | «La cámara sigue siempre a tu ⏎ barco, como antes.» | «La cámara sigue siempre a tu barco, como antes.» En 390×844, 1 línea; en 844×390, «La cámara sigue siempre a tu barco, ⏎ como antes.» |
+| «Libre» | `move` | «Mueve la vista arrastrando o ⏎ con las teclas de la vista. ⏎ Centrar vuelve al barco.» | «Arrastra para mover la vista. Centrar vuelve al barco.» En 390×844, 1 línea; en 844×390, «Arrastra para mover la vista. Centrar ⏎ vuelve al barco.» |
+
+«⏎» marca dónde cae el salto de línea, medido con la Barlow. El navegador lo pone solo con el ancho de la fila; el texto no lleva saltos.
+
+**Elegida:**
+- fondo `--ui-gold` al 12 % y borde 2 px `--ui-gold`;
+- icono y nombre en `--ui-gold-hi`;
+- círculo `--ui-gold` con un punto lleno de 8 px, también `--ui-gold`.
+
+**Sin elegir:**
+- fondo blanco al 3 % y borde 1 px `--ui-line`;
+- icono y nombre en `--ui-text`;
+- círculo `--ui-text-dim`, vacío.
+
+**Las 2:** radio 8 en los 3 tamaños. Toda la tarjeta es el control: `role="radio"` con `aria-checked`, dentro de un `role="radiogroup"`. En grises y con daltonismo, la elegida se distingue por el punto y por el borde de 2 px, no solo por el oro (lámina, §5). Código: `:110-130`.
+
+### 20.4 Las teclas (solo escritorio, con `(pointer: fine)`)
+**Cada fila**, de 36 de alto:
+- el nombre, 14/500 `--ui-text`, en x 828 y centrado en la fila;
+- la tecla, a la derecha: 56 × 28, en x 1156 y a 4 del borde de arriba de la fila (x1 1212), con radio 6, fondo blanco al 4 % y borde 1 px `--ui-line`. Dentro va la letra, 13/600 `--ui-text` y centrada, o la flecha, como icono de 16 `--ui-text` (`arrow-up` girada 0°, 90°, 180° o 270°), porque la Barlow del juego no trae ↑ ↓ ← →. La tecla es el botón que abre la espera.
+
+**Teclas por defecto:** flecha arriba, flecha abajo, flecha izquierda, flecha derecha, C y S.
+
+**La letra que se enseña** es la del teclado del jugador en esa posición (`e.code`, AC-208): la tecla que en un QWERTY es la W dice «W» en un teclado español o inglés y «Z» en un AZERTY (lámina, §3). Código: `:95-107`.
+
+**Estados de la fila que se cambia** (lámina, §3; `:167-191`):
+- la fila se resalta con blanco al 5 %, de x 820 a 1220 (8 px más que el contenido a cada lado), con radio 6;
+- el aviso va en una línea de 22 bajo esa fila, en x 828;
+- el panel crece 22, de 600 a 622, y las filas de debajo bajan 22: Detener pasa a 582–618.
+
+| Estado | Cuándo | Tecla | Aviso (12 px) |
+|---|---|---|---|
+| a · Espera | Clic en la tecla de una de las 6 acciones | Una caja «Pulsa una tecla…» 13/600 `--ui-gold-hi` (96,5 px) de 116,5 × 28 (el texto más 10 a cada lado), alineada a x 1212, con fondo `--ui-gold` al 12 % y borde 2 px `--ui-gold` | «Esc cancela.» 500 `--ui-text-dim` |
+| b · Intercambio | La tecla es de otra de las 6 (AC-209) | Las 2 filas resaltadas y sus 2 teclas con fondo `--ui-info` al 16 % y borde 2 px `--ui-info`, cada una con su tecla nueva | Bajo la fila que se cambió: «{tecla} era de {acción}: {acción} pasa a {tecla de antes}.» 600 `--ui-info`. En la lámina: «S era de Detener: Detener pasa a la flecha abajo.» (253,3 px) |
+| c · Rechazo de una tecla fija | Espacio, Tab, Enter, R, P o N (AC-209) | La tecla pulsada, con fondo `--ui-danger` al 16 % y borde 2 px `--ui-danger` | «Esa tecla es de {acción}.» 600 `--ui-danger`. En la lámina: R, «Esa tecla es de Reparar.» (125,6 px) |
+| d · Rechazo de una tecla que no vale | Fuera de A–Z, 0–9 de la fila de arriba y las 4 flechas, o con Mayús, Ctrl, Alt o Cmd (AC-208) | Igual que en c, con la tecla pulsada; en la lámina, «F5» | «Esa tecla no vale: usa una letra, un número o una flecha.» 600 `--ui-danger` (292,2 px de los 384 del panel: es el texto de una línea más largo) |
+
+**Cómo se escribe una tecla en los avisos:**
+- al principio de la frase, la letra o el número solos («S era de…», «5 era de…»), o «La flecha arriba era de…»;
+- después de «pasa a», con artículo: «pasa a la S», «pasa al 5», «pasa a la flecha abajo» (AC-208: las flechas se escriben).
+
+**Nombres de las acciones:** los de la barra (Atacar, Reparar, Objetivo, Detener y Puerto), los de las filas (Vista arriba…, Centrar) y, para N, «Niveles» (AC-190). El de Enter está por decidir (pregunta de D98).
+
+**Las teclas del HUD siguen a la asignación** (AC-208; lámina, §3 b):
+- la ranura de Detener de la barra de acciones pone su tecla en el sitio de `.slot__key` (left 4; 11 px `--ui-text-dim`); si es una flecha, el icono de 11 px `--ui-text-dim` va en (4, 4) de la ranura;
+- la caja de la tecla de Centrar (20 × 20, §12.8) lleva la letra en 11/600 o la flecha de 11 px, centrada. Esto último no sale en la lámina: usa el mismo dibujo que la ranura.
+
+Ningún texto del panel ni del HUD usa los caracteres ↑ ↓ ← → (U+2190 a U+2193).
+
+### 20.5 «Centrada» frente a «Libre» en la pantalla (lámina, §4)
+- **«Libre»** es la vista libre de §12.8, sin cambios: el botón Centrar, con la caja de su tecla, y el chip del barco propio, solo mientras la vista está lejos del barco.
+- **«Centrada»**: no salen ni Centrar ni el chip del barco propio, porque la vista nunca se separa (AC-206). El chip del atacante sale en los 2 modos (AC-124). El botón de opciones se ve igual en los 2.
+
+### 20.6 Qué tapa el panel abierto (medido)
+| Tamaño | Qué tapa | Fuente |
+|---|---|---|
+| 1440×900 | El mar de la derecha y x 808–900 de la columna de avisos (y ≥ 96): el final del aviso «Zona segura», 92 de sus 360 px. Su texto se sigue leyendo | Lámina |
+| 1440×900 | El final de los avisos largos de esa columna. El texto empieza en x 580 (borde de 4, relleno de 12, icono de 16 y 8 de separación), así que se tapa el que pase de 228 px a 14/500: a «¡Capitán pirata en el noroeste, sector E10!» le tapa 26 px y a «La tienda no está disponible: no podemos guardar», 75 | Medido con la Barlow; no sale en la lámina |
+| 1440×900 | Con un objetivo elegido, x 808–880 e y 64–88 de su panel (560, 16, 320 × 72): los últimos 33 px de su barra de vida (x 808–841), en sus 4 filas de abajo (y 64–68 de 58–68), y la esquina. El nombre, la línea del tipo y la distancia quedan a la vista | Capturas `x4-E` y `x5-E` del candidato `486b7a2` y `globals.css:127` en r11; no sale en la lámina |
+| 390×844 | Todo lo que queda por debajo de y 559: Puerto, Objetivo, Atacar, Reparar, Centrar y el propio botón | Lámina |
+| 844×390 | El mar a la izquierda del barco y, con un objetivo, 24 de los 48 px de su panel (46 de 70 con un jugador o un barco peligroso). Con el zoom más cercano (3,44 / 0,7 = 4,914 px/m) y la proa a 270°, 35 px de la Fragata (34,8; el 5,7 % de su silueta). Con el zoom por defecto, nada | Lámina; `D98-opciones-medidas.json` |
+
+### 20.7 Contraste (medido; `scripts/ux/pal.py`, WCAG 2.x)
+Cada valor se da sobre 3 fondos bajo el panel: espuma `#EAF6FA` (el peor, §4.5), océano `#1A5F86` y arena `#E6CF9A`.
+
+| Texto | Color | Fondo compuesto sobre espuma | Espuma / océano / arena |
+|---|---|---|---|
+| Título, filas, letras de tecla y Restablecer | `--ui-text` | `#182731` | 13,5 / 15,1 / 13,9 |
+| Rótulos, ayuda, nota y «Esc cancela.» | `--ui-text-dim` | `#182731` | 7,5 / 8,4 / 7,7 |
+| Aviso del intercambio | `--ui-info` | `#182731` | 7,8 / 8,7 / 8,0 |
+| Avisos de rechazo | `--ui-danger` | `#182731` | 6,0 / 6,7 / 6,2 |
+| Tarjeta elegida: nombre e icono | `--ui-gold-hi` | `#323A34` | 8,2 / 9,2 / 8,4 |
+| Tarjeta elegida: descripción (el peor texto) | `--ui-text-dim` | `#323A34` | 5,8 / 6,5 / 5,9 |
+| Tarjeta sin elegir: nombre e icono | `--ui-text` | `#1F2E37` | 12,4 / 13,9 / 12,8 |
+| Tarjeta sin elegir: descripción | `--ui-text-dim` | `#1F2E37` | 6,9 / 7,7 / 7,1 |
+| Tecla: letra o flecha | `--ui-text` | `#223039` | 12,0 / 13,6 / 12,4 |
+| Fila resaltada: nombre | `--ui-text` | `#24323B` | 11,7 / 13,2 / 12,0 |
+| Espera: «Pulsa una tecla…» | `--ui-gold-hi` | `#3D433D` | 7,0 / 8,0 / 7,2 |
+| Intercambio: tecla | `--ui-text` | `#2F4959` | 8,4 / 9,4 / 8,6 |
+| Rechazo: tecla | `--ui-text` | `#473E45` | 9,2 / 10,3 / 9,4 |
+| Táctil: título | `--ui-text` | `#14232D` | 14,3 / 15,3 / 14,5 |
+| Táctil, tarjeta elegida: nombre | `--ui-gold-hi` | `#2F3631` | 8,6 / 9,4 / 8,8 |
+| Táctil, tarjeta elegida: descripción | `--ui-text-dim` | `#2F3631` | 6,1 / 6,6 / 6,2 |
+| Táctil, tarjeta sin elegir: descripción | `--ui-text-dim` | `#1B2933` | 7,3 / 7,9 / 7,4 |
+| Botón: engranaje y «Opciones» | `--ui-text` | `#2C3B44` | 10,2 / 14,1 / 11,1 |
+| Botón pulsado: engranaje | `--ui-text` | `#545646` | 6,7 / 9,0 / 7,1 |
+
+Todos los textos dan ≥ 4,5 ✓.
+
+**Gráficos** (WCAG 1.4.11, ≥ 3), sobre espuma / océano / arena:
+- borde de la tarjeta elegida frente al panel: 9,1 / 10,1 / 9,4;
+- círculo elegido frente a su tarjeta: 7,0 / 7,9 / 7,2;
+- círculo sin elegir: 6,9 / 7,7 / 7,1;
+- bordes de 2 px de espera, intercambio y rechazo frente a la fila: 7,8, 6,8 y 5,2 sobre espuma;
+- el borde de 1 px `--ui-line` de la tecla da 2,5 / 2,6 / 2,5. Es decorativo, como el de los demás bloques del HUD: la tecla se reconoce por su letra o su flecha;
+- el borde dorado del botón pulsado frente al mar da 1,5 / 4,1 / 1,1, pero el estado se lee también por el panel abierto.
+
+**Daltonismo** (ΔE76; normal / protan / deutan / tritan):
+- espera–intercambio: 97 / 94 / 98 / 74;
+- espera–rechazo: 60 / 53 / 34 / 36;
+- intercambio–rechazo: 85 / 47 / 66 / 106;
+- nombre elegido–sin elegir: 53 / 55 / 53 / 24.
+
+Todos ≥ 20, y además cada estado lleva su aviso escrito.
+
+### 20.8 Reglas verificables (QA)
+1. El botón ocupa las cajas de §20.1, con ±1 px, en los 3 tamaños. Con el panel abierto, lleva el borde de 2 px `--ui-gold` (en escritorio y en 844×390).
+2. El panel ocupa la caja de §20.2, con ±1 px, dentro del viewport y sin scroll de la página (AC-81). Con un aviso de §20.4, mide 424 × 622.
+3. La caja del 10 % central queda fuera del panel, a 16, 94,8 y 43,8 px (AC-205).
+4. Ningún texto se recorta ni se parte, salvo las descripciones de §20.3: 2 y 3 líneas en escritorio, 1 y 1 en 390×844, y 2 y 2 en 844×390.
+5. Ningún nodo de texto del panel ni del HUD contiene U+2190 a U+2193: las flechas son `svg`.
+6. Los textos dan ≥ 4,5 sobre espuma (§20.7).
+7. Las capturas de QA, frente a la lámina: el botón cerrado y pulsado, el panel en los 3 tamaños, los 4 estados de §20.4 y la ranura de Detener con la flecha abajo.
+
+**Lo que cuesta** (lámina):
+- 0 triángulos y 0 llamadas de dibujo: son elementos de la página;
+- 0 mensajes al servidor, salvo el `viewAt(null)` de AC-207;
+- los 3 iconos nuevos: 1072 B de SVG sin comprimir. Es el contenido de los 6 `svg` de la lámina (engranaje, «Libre» y las 4 flechas) sin la etiqueta `<svg>` (`:466`).
