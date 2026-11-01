@@ -1,6 +1,8 @@
 // Iconos de línea 24×24, trazo de 2 px y currentColor (ART-DIRECTION §13). Sin dependencias. Swords copia el de
 // Lucide (ISC) y Coins y Wrench siguen su construcción; el resto son dibujos propios. CloudOff copia el de Lucide (ISC,
 // lucide-static 0.469.0): progreso sin guardar (D50). Bomb copia el de Lucide (ISC, lucide-static 0.469.0): la Cañonera.
+// Settings, Move y ArrowUp copian «settings», «move» y «arrow-up» de Lucide (ISC, lucide-static 0.469.0): las opciones de
+// cámara y teclas (E18, D98; ART-DIRECTION §20)
 import React from 'react';
 
 type IconProps = { size?: number; className?: string; title?: string };
@@ -164,5 +166,39 @@ export const Alert = (p: IconProps) => (
   <Svg {...p}>
     <path d="M12 3 2 20h20Z" />
     <path d="M12 10v4M12 17h.01" />
+  </Svg>
+);
+
+// Opciones (E18, D98, §20.1): el botón del HUD
+export const Settings = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+    <circle cx="12" cy="12" r="3" />
+  </Svg>
+);
+
+// La tarjeta «Libre» (§20.3)
+export const Move = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 2v20" />
+    <path d="m15 19-3 3-3-3" />
+    <path d="m19 9 3 3-3 3" />
+    <path d="M2 12h20" />
+    <path d="m5 9-3 3 3 3" />
+    <path d="m9 5 3-3 3 3" />
+  </Svg>
+);
+
+// Una tecla de flecha (§20.4), girada 0°, 90°, 180° o 270° para arriba, derecha, abajo e izquierda: la Barlow del juego
+// no tiene ↑ ↓ ← → (AC-208)
+const ARROW_TURN = { ArrowUp: 0, ArrowRight: 90, ArrowDown: 180, ArrowLeft: 270 } as const;
+export type ArrowCode = keyof typeof ARROW_TURN;
+
+export const ArrowUp = ({ code = 'ArrowUp', ...p }: IconProps & { code?: ArrowCode }) => (
+  <Svg {...p}>
+    <g transform={`rotate(${ARROW_TURN[code]} 12 12)`}>
+      <path d="m5 12 7-7 7 7" />
+      <path d="M12 19V5" />
+    </g>
   </Svg>
 );

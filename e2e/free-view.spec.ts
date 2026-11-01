@@ -7,7 +7,7 @@ import { MAP_HALF_SIZE } from '../src/game/constants';
 import { C2S, S2C } from '../src/game/protocol';
 import type { ServerFrame, ShipSnapshot } from '../src/game/types';
 import { EDGE_ATTACK, VIEW_RETURN } from '../server/scenarios';
-import { enterGame, hud, me, trackSocket, waitFor } from './helpers';
+import { enterGame, hud, me, presetOptions, trackSocket, waitFor } from './helpers';
 import { intents } from './net';
 import { startOwnServer } from './own-server';
 
@@ -60,6 +60,8 @@ const pressAndWatchCentred = (page: Page, code: string, ms: number) =>
   );
 
 test.describe('Vista libre (E13)', () => {
+  test.beforeEach(({ page }) => presetOptions(page, 'free')); // E18: la vista libre es la cámara «Libre» (AC-207)
+
   test('AC-116: arrastrar más de 12 px desplaza la vista con el puntero y no envía ningún moveTo; soltar antes navega con 1', async ({ page }) => {
     const net = trackSocket(page); // antes de entrar: el WebSocket se abre al conectar y no se ve el que ya existe
     await enterGame(page);

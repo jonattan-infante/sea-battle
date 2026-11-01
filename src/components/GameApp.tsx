@@ -32,6 +32,8 @@ import {
   targetDistance
 } from '../client/hud-logic';
 import { MeHud, resetSaveWarning, sameShallow, syncUnsaved, TargetHud, useHud } from '../client/hud-store';
+import { actionOf, isArrowCode, routeKey, ViewAction } from '../client/key-bindings';
+import { closeOnOtherWindows, useOptions } from '../client/options-store';
 import { predictedShip, rememberShip } from '../client/own-ship-memory';
 import { attachOverlays, createRuntime, disposeRuntime, GameRuntime } from '../client/runtime';
 import GameCanvas from './game/GameCanvas';
@@ -44,8 +46,10 @@ const HINT_COUNT = 3;
 const HUD_SYNC_MS = 100; // ≤ 10 Hz
 const UNDER_FIRE_MS = 3000; // GDD §8
 const DESELECT_SUNK_MS = 1200;
-// Vista libre (E13, GDD §5): las flechas mueven la vista mientras estén pulsadas (AC-118); no son intenciones
-const ARROW_KEYS: Record<string, Arrow> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
+// Vista libre (E13, GDD §5): las teclas de la vista (por defecto, las flechas; E18 deja elegirlas) la mueven mientras
+// estén pulsadas (AC-118); no son intenciones
+const VIEW_DIR: Record<ViewAction, Arrow> = { viewUp: 'up', viewDown: 'down', viewLeft: 'left', viewRight: 'right' };
+const viewDir = (action: string | null) => (action && action in VIEW_DIR ? VIEW_DIR[action as ViewAction] : null);
 
 function randomId(): string {
   return Math.random().toString(36).slice(2, 12).padEnd(10, '0');
@@ -72,6 +76,24 @@ function testUserParam(): string | null {
   } catch {
     return null;
   }
+}
+
+// El almacenamiento del navegador, si se deja leer (en modo privado o con cookies bloqueadas, acceder ya lanza)
+function browserStorage(): Storage | undefined {
+  try {
+    return window.localStorage;
+  } catch {
+    return undefined;
+  }
+}
+
+// La distribución del teclado, para que el panel de opciones diga la letra del jugador (AC-208). Solo la da Chromium; en
+// los demás, la etiqueta sale de la tecla pulsada al asignarla o, sin ella, del QWERTY
+function learnKeyboardLayout(): void {
+  const kb = (navigator as Navigator & { keyboard?: { getLayoutMap?: () => Promise<Iterable<[string, string]>> } }).keyboard;
+  kb?.getLayoutMap?.()
+    .then((map) => useOptions.getState().learnLayout(map))
+    .catch(() => {});
 }
 
 function readHints(): number {
@@ -147,6 +169,10 @@ export default function GameApp({ guest }: { guest: boolean }) {
     // navegador o, si es nuevo, la de salida (own-ship-memory.ts)
     const playerKey = testUser ? `test:${testUser}` : guest ? `guest:${id}` : `user:${user?.id ?? ''}`;
     const rt = createRuntime(client, predictedShip(playerKey));
+    // Opciones de cámara y teclas (E18, AC-207): del navegador, antes de la primera entrada del jugador
+    useOptions.getState().hydrate(browserStorage());
+    rt.freeView.setCentered(useOptions.getState().camera === 'centered', performance.now());
+    learnKeyboardLayout();
     const hud = useHud.getState();
     // Recompensas de esta pasada de eventos (AC-152; GDD §14, «XP ganada»). El hundimiento, el oro y la XP de un barco
     // llegan en el mismo frame y se reproducen en la misma llamada a update() (game-client.ts): se juntan aquí y salen
@@ -321,10 +347,27 @@ export default function GameApp({ guest }: { guest: boolean }) {
       setWelcome(null);
       resetSaveWarning();
       useHud.setState({ me: null, target: null, player: null, selectedId: null, shopOpen: false, killedBy: null, toasts: [], feed: [] });
+      useOptions.getState().setOpen(false);
     };
     // El nombre se fija al conectar; getToken se lee por ref en cada intento
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [guest, identityReady]);
+
+  // Opciones (E18): el modo de cámara pasa a la vista en el acto (AC-207: a «Centrada», vuelve al barco con su
+  // viewAt(null)). Con otra tabla de teclas, una tecla de la vista pulsada ya no tendría su keyup: se sueltan todas. La
+  // tienda, la muerte o la desconexión cierran el panel (AC-205: nunca 2 ventanas a la vez)
+  useEffect(() => {
+    if (!runtime) return;
+    const stopWindows = closeOnOtherWindows();
+    const stopOptions = useOptions.subscribe((s, prev) => {
+      if (s.camera !== prev.camera) runtime.freeView.setCentered(s.camera === 'centered', performance.now());
+      if (s.keys !== prev.keys) runtime.freeView.clearArrows();
+    });
+    return () => {
+      stopWindows();
+      stopOptions();
+    };
+  }, [runtime]);
 
   // Capas DOM de placas, números de daño e indicadores de borde, y la portada de la entrada (dueño: runtime)
   useEffect(() => {
@@ -447,20 +490,38 @@ export default function GameApp({ guest }: { guest: boolean }) {
       if (runtime?.entryCovered()) {
         const overlay = !!el?.closest('[data-testid="connection-overlay"]');
         const press = e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter';
-        if (e.code === 'Tab' || ARROW_KEYS[e.code] || (press && !overlay)) e.preventDefault();
+        if (e.code === 'Tab' || isArrowCode(e.code) || (press && !overlay)) e.preventDefault();
         return;
       }
+      const opts = useOptions.getState();
+      const route = routeKey(e.code, { waiting: !!opts.waiting, open: opts.open, bindings: opts.keys });
+      // El panel de opciones espera una tecla (AC-208): esa pulsación solo sirve para asignarla, y Esc la cancela. Con
+      // Cmd o Ctrl no se le quita al navegador su atajo; el panel dice que no vale
+      if (route.kind === 'panel') {
+        if (!e.metaKey && !e.ctrlKey) e.preventDefault();
+        if (!e.repeat) opts.press(e.code, { shift: e.shiftKey, ctrl: e.ctrlKey, alt: e.altKey, meta: e.metaKey }, e.key);
+        return;
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
       // Una pulsación, como mucho una intención (GDD §5): la autorrepetición de una tecla mantenida no cuenta
       if (e.repeat) {
-        if (e.code === 'Space' || e.code === 'Tab' || ARROW_KEYS[e.code]) e.preventDefault();
+        if (e.code === 'Space' || e.code === 'Tab' || isArrowCode(e.code) || route.kind === 'action') e.preventDefault();
         return;
       }
       const st = useHud.getState();
-      if (ARROW_KEYS[e.code]) {
-        e.preventDefault();
-        runtime?.freeView.setArrow(ARROW_KEYS[e.code], true);
+      if (route.kind === 'closePanel') {
+        opts.setOpen(false); // con el panel abierto, Esc solo lo cierra (AC-205)
         return;
       }
+      if (route.kind === 'action') {
+        e.preventDefault();
+        const dir = viewDir(route.action);
+        if (dir) runtime?.freeView.setArrow(dir, true);
+        else if (route.action === 'center') runtime?.freeView.returnToFollow(performance.now()); // vuelve al seguimiento (AC-119)
+        else actions.stop(); // Detener (S por defecto), en los 2 modos
+        return;
+      }
+      if (isArrowCode(e.code)) e.preventDefault(); // una flecha sin acción tampoco desplaza nada de la página
       switch (e.code) {
         case 'Space':
           e.preventDefault();
@@ -480,24 +541,19 @@ export default function GameApp({ guest }: { guest: boolean }) {
           } else st.select(null);
           break;
         }
-        case 'KeyS':
-          actions.stop();
-          break;
         case 'KeyR':
           actions.toggleRepair();
           break;
         case 'KeyP':
           actions.togglePort();
           break;
-        case 'KeyC':
-          runtime?.freeView.returnToFollow(performance.now()); // vuelve al seguimiento (AC-119)
-          break;
       }
     };
     const onKeyUp = (e: KeyboardEvent) => {
-      if (ARROW_KEYS[e.code]) runtime?.freeView.setArrow(ARROW_KEYS[e.code], false);
+      const dir = viewDir(actionOf(useOptions.getState().keys, e.code));
+      if (dir) runtime?.freeView.setArrow(dir, false);
     };
-    const onBlur = () => runtime?.freeView.clearArrows(); // una flecha soltada fuera de la ventana no deja la vista moviéndose
+    const onBlur = () => runtime?.freeView.clearArrows(); // una tecla soltada fuera de la ventana no deja la vista moviéndose
     window.addEventListener('keydown', onKey);
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('blur', onBlur);

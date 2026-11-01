@@ -9,7 +9,7 @@ import path from 'path';
 import { expect, Page, test } from '@playwright/test';
 import { TAB_TARGET_RADIUS } from '../src/game/constants';
 import { C2S } from '../src/game/protocol';
-import { entryOf, hud, me, ships, trackSocket, waitFor } from './helpers';
+import { entryOf, hud, me, presetOptions, ships, trackSocket, waitFor } from './helpers';
 import { intents, sailTo } from './net';
 import { OwnServer, startOwnServer } from './own-server';
 
@@ -88,6 +88,7 @@ test.describe('Teclado bajo la portada de la entrada (O-54)', () => {
         }
       });
     }, URL_HELD);
+    await presetOptions(page, 'free'); // E18: la flecha mueve la vista solo con la cámara «Libre» (AC-206 b)
     const net = trackSocket(page);
     await page.goto(`${own.url}/game`);
     // La bienvenida llegó, el frame ya corre (la entrada espera) y la portada tapa el juego. enterGame no vale: su ready()

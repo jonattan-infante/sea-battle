@@ -8,7 +8,7 @@ import { EDGE_ATTACK } from '../server/scenarios';
 import { hudLayout } from '../src/client/art';
 import type { ChipRect } from '../src/client/edge-chip-layer';
 import { USABLE_FRAME } from '../src/client/edge-chips';
-import { enterGame, hud, me, waitFor } from './helpers';
+import { enterGame, hud, me, presetOptions, waitFor } from './helpers';
 import { startOwnServer } from './own-server';
 
 type Point = { x: number; z: number };
@@ -91,6 +91,8 @@ async function eightAndBlocked(page: Page, label: string, blocked: Point) {
 }
 
 test.describe('Indicadores de borde y Centrar (E13)', () => {
+  test.beforeEach(({ page }) => presetOptions(page, 'free')); // E18: la vista libre es la cámara «Libre» (AC-207)
+
   test('AC-121 y AD-30 en 1440×900: 8 direcciones, el rayo sobre el minimapa y Centrar, y bajo la barra de acciones sí sale', async ({ page }) => {
     await enterGame(page);
     await expect(page.getByTestId('recenter')).toHaveCount(0); // Centrar solo existe en vista libre
