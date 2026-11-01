@@ -12,7 +12,7 @@
 // Con D23_OUT=<carpeta> guarda los recortes de cada pose (k = 0) y un JSON con todas las cifras, para QA.
 // Las clases con GLB (BACKLOG :421, 2026-10-24): el primer test las mide en su procedural, con el GLB retenido, porque es
 // lo que se ve mientras carga o si falla. El segundo mide su GLB con la KTX2 de 1024², su anisótropo y la luz de forma
-// comprobados: AS-V19 con el suelo provisional de la tanda B (≥ 45 % a 0° y 90°; el 55 %, al registro) y AS-V18, AS-V20,
+// comprobados: AS-V19 ≥ 55 % en los 4 rumbos (el paso (4) de la Cañonera, BACKLOG :421) y AS-V18, AS-V20,
 // AS-V21, AD-10, AD-25 y AD-33 como «no medido en GLB», nunca en verde. Con HD_ANISO=<n> pone el anisótropo de los GLB a
 // n y AS-V19 va solo al registro (la corrida a nivel 1). El tercero comprueba que el anisótropo no toca los procedurales.
 import { expect, Page, test } from '@playwright/test';
@@ -41,12 +41,12 @@ const ATLAS_PX = 1024; // la KTX2 del atlas de los GLB de la receta (ASSET-SPEC 
 // Lo que no se mide en el GLB (BACKLOG :421 (a)): no trae los rangos de partes que piden, o mide el procedural
 // (measureShipValues). Lo asertan sobre el procedural el primer test, la lámina aprobada y la captura de QA
 const NOT_IN_GLB = (classId: string) => ['AS-V18', ...(AS_V20_CLASSES.includes(classId) ? ['AS-V20'] : []), 'AS-V21', 'AD-10', 'AD-25', 'AD-33'];
-// Tanda B (BACKLOG :421 (c)): suelo provisional de AS-V19 en el GLB a 0° y 90°, con el anisótropo y la luz de forma. El 55 %
-// y el suelo de 2 corridas se leen en el registro
-const AS_V19_GLB_FLOOR = 0.45;
+// AS-V19 en el GLB, con el anisótropo y la luz de forma: ≥ 55 % en los 4 rumbos (BACKLOG :421, el paso (4) de la Cañonera).
+// La tanda B dio el caso (i), con el control map = null por debajo a 90° en las 2 clases: el suelo del commit es el 55 %
+const AS_V19_GLB_FLOOR = 0.55;
 const HD_ANISO = process.env.HD_ANISO ? Number(process.env.HD_ANISO) : null;
 if (HD_ANISO !== null && !(Number.isInteger(HD_ANISO) && HD_ANISO >= 1 && HD_ANISO <= 16)) throw new Error(`HD_ANISO=${process.env.HD_ANISO}: tiene que ser un entero de 1 a 16`);
-const PROCEDURAL_CLASSES: readonly string[] = CLASSES.filter((c) => !SHIP_GLB[c]); // las 5 de la 1.0 y la Cañonera (BACKLOG :421)
+const PROCEDURAL_CLASSES: readonly string[] = CLASSES.filter((c) => !SHIP_GLB[c]); // las 5 de la 1.0
 
 interface Region {
   name: string;
@@ -838,9 +838,9 @@ test.describe('Detalle interno de los cascos @perf', () => {
 
   // Las clases con GLB, en su GLB (BACKLOG :421; ASSET-SPEC, AS-V19): antes de la primera pose se espera a que sus vistas
   // lleven la KTX2 del atlas, y cada captura tiene que dibujarla con el anisótropo del runtime (mapAnisotropyFor: el
-  // máximo del renderizador hasta SHIP_MAP_ANISOTROPY, o el de HD_ANISO) y la luz de forma (P5). AS-V19, con el suelo
-  // provisional de la tanda B a 0° y 90°; con HD_ANISO, solo al registro. Lo de NOT_IN_GLB sale como «no medido en GLB»
-  test('Clases con GLB: la KTX2 del atlas con su anisótropo en cada captura, AS-V19 ≥ 45 % a 0° y 90°, 1 draw call en su presupuesto y lo no medido en GLB', async ({ page }) => {
+  // máximo del renderizador hasta SHIP_MAP_ANISOTROPY, o el de HD_ANISO) y la luz de forma (P5). AS-V19, ≥ 55 % en los 4
+  // rumbos; con HD_ANISO, solo al registro. Lo de NOT_IN_GLB sale como «no medido en GLB»
+  test('Clases con GLB: la KTX2 del atlas con su anisótropo en cada captura, AS-V19 ≥ 55 % en los 4 rumbos, 1 draw call en su presupuesto y lo no medido en GLB', async ({ page }) => {
     test.skip(GLB_CLASSES.length === 0, 'ninguna clase con GLB en SHIP_GLB');
     test.setTimeout(240_000);
     await enterGame(page);
@@ -868,9 +868,9 @@ test.describe('Detalle interno de los cascos @perf', () => {
         maps: [...new Set(rs.map((r) => (r.map ? `${r.model} ${r.map.w}×${r.map.h} anisótropo ${r.map.aniso} mips ${r.map.mips}` : r.model)))].join(', ')
       };
     }));
-    const floored = (deg: number) => HD_ANISO === null && (deg === 0 || deg === 90);
+    const floored = HD_ANISO === null; // con HD_ANISO, AS-V19 solo al registro
     console.log(`AS-V19 GLB · ${renderer} · anisótropo máximo del renderizador ${max}, tope ${SHIP_MAP_ANISOTROPY}, nivel ${level}${HD_ANISO !== null ? ' (HD_ANISO)' : ''} · luz de forma ${GLB_CLASSES.map((c) => `${c} (${shapeLight[c].join(', ')})`).join(', ')}`);
-    for (const p of summary) console.log(`D36 GLB ${p.classId.padEnd(8)} N1 ${String(p.deg).padStart(3)}° LOD${p.lod} · ${p.maps} · ${p.calls} draw call / ${p.triangles} tris · silueta ${p.mask} px · AS-V19 ${(p.texture * 100).toFixed(1)} % (${p.shots}; ${floored(p.deg) ? `suelo provisional ${AS_V19_GLB_FLOOR * 100} %` : 'registro, sin asertar'} · ≥ 55 %: ${p.texture >= 0.55 ? 'sí' : 'no'})`);
+    for (const p of summary) console.log(`D36 GLB ${p.classId.padEnd(8)} N1 ${String(p.deg).padStart(3)}° LOD${p.lod} · ${p.maps} · ${p.calls} draw call / ${p.triangles} tris · silueta ${p.mask} px · AS-V19 ${(p.texture * 100).toFixed(1)} % (${p.shots}; ${floored ? `suelo ${AS_V19_GLB_FLOOR * 100} %` : 'registro, sin asertar'} · ≥ 55 %: ${p.texture >= 0.55 ? 'sí' : 'no'})`);
     for (const classId of GLB_CLASSES) console.log(`GLB ${classId.padEnd(8)}: no medido en GLB · ${NOT_IN_GLB(classId).join(', ')} (se asertan sobre su procedural)`);
     if (out) fs.writeFileSync(path.join(out, 'd36-glb.json'), JSON.stringify({ renderer, max, level, shapeLight, rows, summary }, null, 1));
 
@@ -882,8 +882,8 @@ test.describe('Detalle interno de los cascos @perf', () => {
       expect.soft(p.calls, `GLB ${p.classId} ${p.deg}°: 1 draw call por barco`).toBe(1);
       expect.soft(p.triangles, `GLB ${p.classId} ${p.deg}°: triángulos del barco ≤ §5`).toBeLessThanOrEqual(BUDGET[p.classId]);
     }
-    // El suelo, en su propia línea: el control de map=null en «con» (measurePose) cae aquí, a 0° y 90° en las 2 clases
-    for (const p of summary.filter((p) => floored(p.deg))) expect.soft(p.texture, `AS-V19 GLB ${p.classId} ${p.deg}°: suelo provisional de la tanda B`).toBeGreaterThanOrEqual(AS_V19_GLB_FLOOR);
+    // El suelo, en su propia línea: el control de map=null en «con» (measurePose) cae aquí, a 90° en las 2 clases
+    if (floored) for (const p of summary) expect.soft(p.texture, `AS-V19 GLB ${p.classId} ${p.deg}°: ≥ 55 %`).toBeGreaterThanOrEqual(AS_V19_GLB_FLOOR);
   });
 
   // Tanda B (BACKLOG :421 (3)): el anisótropo solo toca los mapas de los GLB. Cada clase al foco a 0° y 90°, con el frame

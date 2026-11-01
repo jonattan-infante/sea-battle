@@ -15,13 +15,8 @@ import { getShipModel, LOD_PX, ShipExtras, ShipModel, ShipSockets } from './ship
 // Clase → URL del GLB (/models/<id>.<hash de su contenido>.glb, servido con caché de un año: next.config.ts). Sin entrada,
 // la clase usa el procedural y no se descarga nada. Cada GLB entra aprobado y con el paso 4c (scripts/glb/stage-model.ts)
 export const SHIP_GLB: Partial<Record<string, string>> = {
+  gunboat: '/models/npc_pirate_gunboat.c0e38d17.glb', // la Cañonera de D91, v6 (D97; ASSET-SPEC §13; sha256 6785c435…4ab8)
   captain: '/models/npc_pirate_captain.73eb940c.glb' // el Capitán de D91 (ASSET-SPEC §13; sha256 7a9b694c…ef92)
-};
-// GLB aprobados y en public/models con el paso 4c, pero sin entrada en SHIP_GLB: el runtime no los lee y la clase sigue en
-// su procedural. Los tests leen de aquí sus archivos. La Cañonera: el Capitán entra solo (producto, BACKLOG :421), y ella se
-// queda en su procedural hasta que producto la pase a SHIP_GLB
-export const SHIP_GLB_STAGED: Partial<Record<string, string>> = {
-  gunboat: '/models/npc_pirate_gunboat.36e700c2.glb' // la Cañonera de D91, 2.ª vuelta (ASSET-SPEC §13; sha256 7912ea8a…7055)
 };
 // Transcodificador de KTX2 (basis_transcoder.js y .wasm, copiados de three/examples/jsm/libs/basis), en una carpeta con el
 // hash de los dos: se sirve con caché de un año, y al subir three cambia de URL (lo comprueba ship-glb.test.ts)

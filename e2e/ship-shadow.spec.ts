@@ -9,8 +9,7 @@ import { SHADOW_Y } from '../src/client/models/ship-shadow';
 import { enterGame } from './helpers';
 
 const HEADINGS = [45, 135, 225, 315];
-// El Capitán de D91. La Cañonera, sin entrada en SHIP_GLB (BACKLOG :421: el Capitán entra solo), es un procedural más
-const GLB_CLASSES = ['captain'] as const;
+const GLB_CLASSES = ['gunboat', 'captain'] as const;
 
 // Retiene los GLB de las clases hasta release()
 async function hold(page: Page, classes: readonly string[]): Promise<() => void> {
@@ -65,7 +64,7 @@ const shadows = (page: Page) =>
 test.describe('Sombra en el agua de los GLB (U1–U4)', () => {
   test.setTimeout(180_000);
 
-  test('U1: los procedurales (también la Cañonera) no proyectan sombra, el Capitán tampoco mientras carga su GLB, y con él sí, una; el lienzo tiene stencil', async ({ page }) => {
+  test('U1: los procedurales no proyectan sombra, la Cañonera y el Capitán tampoco mientras carga su GLB, y con él sí, una cada uno; el lienzo tiene stencil', async ({ page }) => {
     const release = await hold(page, GLB_CLASSES);
     await enterGame(page);
     const stencil = await page.evaluate(() => (window.__SEA_BATTLE__!.runtime() as unknown as { gl: { getContext(): WebGL2RenderingContext } }).gl.getContext().getContextAttributes()?.stencil);
@@ -81,16 +80,16 @@ test.describe('Sombra en el agua de los GLB (U1–U4)', () => {
     const loaded = await shadows(page);
     console.log(`U1: sombras con los GLB retenidos ${JSON.stringify(loading)} · con los GLB ${JSON.stringify(loaded)}`);
     expect(loading).toEqual([]);
-    expect(loaded).toEqual(['captain×1']);
+    expect(loaded).toEqual(['captain×1', 'gunboat×1']);
   });
 
   // U2 con U8 de ux (ASSET-SPEC :825): (a) la razón de luminancia lineal de cada píxel con y sin la sombra, en el mismo frame
   // congelado, 0,60 ± 0,03 de media sobre los píxeles a ≥ 3 px del borde de la sombra y de la silueta del barco; la razón
-  // frente al anillo de agua de 3 a 10 px por fuera va solo al log. (b) Área de sombra (razón ≤ 0,80, la mitad de la caída:
-  // un píxel del borde cuenta si la sombra cubre ≥ 50 %) a ±10 % de la del modelo: el LOD1 de la vista recortado en y = 0 y
-  // proyectado por sunDir a y = SHADOW_Y, rasterizado aquí por el centro de cada píxel del lienzo, menos lo que tapa el
-  // barco. Distancias en px de lienzo con 8 vecinos
-  test('U2: la sombra del Capitán en los 4 rumbos deja el agua a 0,60 ± 0,03 de su luz y cubre el área del modelo (±10 %)', async ({ page }) => {
+  // frente al anillo de agua de 3 a 10 px por fuera va solo al log. (b) Área de sombra (razón ≤ 0,80: con el MSAA 4×, ≥ 2 de 4
+  // muestras) a ±10 % de la del modelo con ese muestreo, el estándar (A) y el invertido en y (B) a la vez: el LOD1 recortado en
+  // y = 0, proyectado por sunDir a y = SHADOW_Y y rasterizado aquí, menos lo que tapa el barco. Por el centro del píxel va solo
+  // al log: cuenta de menos en el borde y oscilaba en la cota con el balanceo (BACKLOG :421). Distancias en px, 8 vecinos
+  test('U2: la sombra de la Cañonera y del Capitán en los 4 rumbos deja el agua a 0,60 ± 0,03 de su luz y cubre el área del modelo (±10 %)', async ({ page }) => {
     await enterGame(page);
     const { focus, pose } = await startGallery(page);
     await glbLoaded(page, GLB_CLASSES);
@@ -104,11 +103,12 @@ test.describe('Sombra en el agua de los GLB (U1–U4)', () => {
       }
       await pose(id, focus.x + 2000, focus.z, 90);
     }
-    for (const r of rows) console.log(`U2 ${r.classId.padEnd(7)} ${String(r.deg).padStart(3)}°: razón ${r.sameRatio.toFixed(3)} frente al mismo píxel sin sombra (media de ${r.inside} px a ≥ 3 px del borde y del barco; agua sin sombra ahí: luminancia lineal ${r.water.toFixed(4)}, sRGB medio ${r.waterHex}) · ${r.ringRatio.toFixed(3)} frente al anillo (${r.ring} px, solo log) · área ${r.area} px frente a ${r.model} del modelo (${(100 * (r.area / r.model - 1)).toFixed(1)} %) · barco ${r.ship} px`);
+    for (const r of rows) console.log(`U2 ${r.classId.padEnd(7)} ${String(r.deg).padStart(3)}°: razón ${r.sameRatio.toFixed(3)} frente al mismo píxel sin sombra (media de ${r.inside} px a ≥ 3 px del borde y del barco; agua sin sombra ahí: luminancia lineal ${r.water.toFixed(4)}, sRGB medio ${r.waterHex}) · ${r.ringRatio.toFixed(3)} frente al anillo (${r.ring} px, solo log) · área ${r.area} px frente a ${r.modelA} del modelo con el MSAA A (${(100 * (r.area / r.modelA - 1)).toFixed(1)} %) y ${r.modelB} con el B (${(100 * (r.area / r.modelB - 1)).toFixed(1)} %) · ${r.model} por el centro (${(100 * (r.area / r.model - 1)).toFixed(1)} %, solo log) · barco ${r.ship} px`);
     for (const r of rows) {
       expect.soft(r.inside, `U2 ${r.classId} ${r.deg}°: px a ≥ 3 px del borde`).toBeGreaterThan(0);
       expect.soft(Math.abs(r.sameRatio - 0.6), `U2 (a) ${r.classId} ${r.deg}°: razón ${r.sameRatio.toFixed(3)}`).toBeLessThanOrEqual(0.03);
-      expect.soft(Math.abs(r.area / r.model - 1), `U2 (b) ${r.classId} ${r.deg}°: área ${r.area} frente a ${r.model}`).toBeLessThanOrEqual(0.1);
+      expect.soft(Math.abs(r.area / r.modelA - 1), `U2 (b) ${r.classId} ${r.deg}°: área ${r.area} frente a ${r.modelA} del MSAA A`).toBeLessThanOrEqual(0.1);
+      expect.soft(Math.abs(r.area / r.modelB - 1), `U2 (b) ${r.classId} ${r.deg}°: área ${r.area} frente a ${r.modelB} del MSAA B`).toBeLessThanOrEqual(0.1);
     }
   });
 });
@@ -158,6 +158,10 @@ const measure = (page: Page, id: string) =>
     };
     const out = { sx: 0, sy: 0 };
     const model = new Uint8Array(W * H);
+    // Las 4 muestras del MSAA 4× estándar en el píxel (A, bits 0–3) y las mismas invertidas en y (B, bits 4–7)
+    const MSAA = [[0.375, 0.125], [0.875, 0.375], [0.125, 0.625], [0.625, 0.875]];
+    const SAMPLES = [...MSAA, ...MSAA.map(([x, y]) => [x, 1 - y])];
+    const samples = new Uint8Array(W * H);
     for (let t = 0; t < n; t++) {
       let poly = [0, 1, 2].map((j) => world(vi(t, j)));
       const clipped: number[][] = [];
@@ -179,23 +183,26 @@ const measure = (page: Page, id: string) =>
       for (let j = 0; j < poly.length; j++) area2 += poly[j][0] * poly[(j + 1) % poly.length][1] - poly[(j + 1) % poly.length][0] * poly[j][1];
       if (Math.abs(area2) < 1e-9) continue;
       const sgn = Math.sign(area2);
+      const inside = (cx: number, cy: number) => {
+        for (let j = 0; j < poly.length; j++) {
+          const [ax, ay] = poly[j], [bx, by] = poly[(j + 1) % poly.length];
+          if (sgn * ((bx - ax) * (cy - ay) - (by - ay) * (cx - ax)) < 0) return false;
+        }
+        return true;
+      };
       const xs = poly.map((p) => p[0]), ys = poly.map((p) => p[1]);
       for (let py = Math.max(0, Math.floor(Math.min(...ys))); py <= Math.min(H - 1, Math.ceil(Math.max(...ys))); py++) {
         for (let px = Math.max(0, Math.floor(Math.min(...xs))); px <= Math.min(W - 1, Math.ceil(Math.max(...xs))); px++) {
-          const cx = px + 0.5, cy = py + 0.5;
-          let inside = true;
-          for (let j = 0; j < poly.length && inside; j++) {
-            const [ax, ay] = poly[j], [bx, by] = poly[(j + 1) % poly.length];
-            inside = sgn * ((bx - ax) * (cy - ay) - (by - ay) * (cx - ax)) >= 0;
-          }
-          if (inside) model[py * W + px] = 1;
+          if (inside(px + 0.5, py + 0.5)) model[py * W + px] = 1;
+          for (let s = 0; s < SAMPLES.length; s++) if (inside(px + SAMPLES[s][0], py + SAMPLES[s][1])) samples[py * W + px] |= 1 << s;
         }
       }
     }
+    const bits = (v: number) => (v & 1) + ((v >> 1) & 1) + ((v >> 2) & 1) + ((v >> 3) & 1);
     // Barco: lo que cambia entre solo el barco y nada; sombra: razón ≤ 0,8 frente al mismo píxel sin ella
     const ship = new Uint8Array(W * H);
     const shadow = new Uint8Array(W * H);
-    let shipPx = 0, area = 0, modelPx = 0;
+    let shipPx = 0, area = 0, modelPx = 0, modelA = 0, modelB = 0;
     for (let i = 0; i < W * H; i++) {
       if (B.data[4 * i] !== C.data[4 * i] || B.data[4 * i + 1] !== C.data[4 * i + 1] || B.data[4 * i + 2] !== C.data[4 * i + 2]) {
         ship[i] = 1;
@@ -207,6 +214,8 @@ const measure = (page: Page, id: string) =>
         area++;
       }
       if (model[i]) modelPx++;
+      if (bits(samples[i]) >= 2) modelA++;
+      if (bits(samples[i] >> 4) >= 2) modelB++;
     }
     // Distancia (8 vecinos) a lo que no es sombra, dentro, y a la sombra, fuera
     const dist = (seed: (i: number) => boolean) => {
@@ -242,7 +251,7 @@ const measure = (page: Page, id: string) =>
     }
     rt.setPaused(false);
     const hex = '#' + rgb.map((v) => Math.round(inN ? v / inN : 0).toString(16).padStart(2, '0')).join('').toUpperCase();
-    return { inside: inN, ring: ringN, ringRatio: inN && ringN ? inCon / inN / (ringCon / ringN) : 0, sameRatio: inN ? ratioSum / inN : 0, water: inN ? inSin / inN : 0, waterHex: hex, area, model: modelPx, ship: shipPx };
+    return { inside: inN, ring: ringN, ringRatio: inN && ringN ? inCon / inN / (ringCon / ringN) : 0, sameRatio: inN ? ratioSum / inN : 0, water: inN ? inSin / inN : 0, waterHex: hex, area, model: modelPx, modelA, modelB, ship: shipPx };
   }, [id, [...LIGHTING.sunDir], SHADOW_Y] as [string, number[], number]);
 
 // U5: la luz de forma, solo en los GLB de la receta. Con uShapeLight a (1, 1), la luz de sin ella; la razón por píxel del
