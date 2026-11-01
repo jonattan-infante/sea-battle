@@ -6,6 +6,17 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-11-02
+
+### Añadido
+
+- **Opciones de cámara y teclas.** Un botón nuevo con un engranaje, junto a tu oro, abre el panel de opciones. El juego no se pausa mientras lo tienes abierto, y el panel se cierra con Esc, con su botón de cerrar o con un clic fuera. Puedes elegir entre dos cámaras: **«Centrada»**, que sigue a tu barco en todo momento, y **«Libre»**, la vista libre de la 1.1.0. En escritorio, con ratón, también puedes cambiar las teclas de mover la vista, Centrar y Detener: si eliges una tecla que ya usa otra de ellas, se intercambian, y **Restablecer** vuelve a las de siempre. Lo que elijas se guarda en tu navegador.
+
+### Cambiado
+
+- **La cámara de partida es «Centrada».** Tu barco queda siempre en el centro de la pantalla. Arrastrar en el agua te lleva hasta donde sueltas, como un clic, y el minimapa solo se mira. Si prefieres la vista libre de la 1.1.0, elige «Libre» en Opciones y se recordará la próxima vez.
+- La ranura de Detener y el botón Centrar enseñan la tecla que tengas asignada.
+
 ## [1.1.0] - 2026-10-25
 
 ### Añadido
