@@ -6,6 +6,13 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-11-02
+
+### Corregido
+
+- **Barcos que daban vueltas alrededor de un punto.** Si mandabas la Fragata a un punto cercano a su espalda, a veces se quedaba girando alrededor sin llegar nunca, y mientras giraba no se reparaba. Les pasaba también a los mercantes. Ahora cada barco frena según lo que gira y llega al punto. Las rutas largas no cambian.
+- Los enlaces del final de este archivo llegan a todas las versiones publicadas.
+
 ## [1.1.1] - 2026-11-02
 
 ### Añadido
@@ -171,7 +178,11 @@ Detalle y criterios en `docs/game/BACKLOG.md`, «Conocidos de la 1.0.0».
 - **clerk-js fijada en 5.128.0** (`src/lib/clerk-js.ts`). El navegador carga esa versión y no la última 5.x, así que Clerk no puede cambiar textos ni comportamiento en prod sin un deploy nuestro. Mantenimiento: cada subida de `@clerk/nextjs` o de clerk-js cambia la versión fijada a propósito, en un commit propio, y vuelve a pasar las pruebas de los textos en español del inicio de sesión y el registro (AC-140 c y AD-35 d). Así ningún texto nuevo de Clerk en inglés llega a prod sin que nadie lo vea.
 - **Node 24 en todo**: local, CI y Railway usan la misma versión mayor. La fijan `engines.node` (`24.x`) en `package.json`, `.nvmrc` y la CI, que lee `.nvmrc`. Si `verify` corre con otra versión mayor, falla `server/__tests__/node-runtime.test.ts`.
 
-[Unreleased]: https://github.com/jonattan-infante/sea-battle/compare/v1.0.3...HEAD
+[Unreleased]: https://github.com/jonattan-infante/sea-battle/compare/v1.1.2...HEAD
+[1.1.2]: https://github.com/jonattan-infante/sea-battle/compare/v1.1.1...v1.1.2
+[1.1.1]: https://github.com/jonattan-infante/sea-battle/compare/v1.1.0...v1.1.1
+[1.1.0]: https://github.com/jonattan-infante/sea-battle/compare/v1.0.4...v1.1.0
+[1.0.4]: https://github.com/jonattan-infante/sea-battle/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/jonattan-infante/sea-battle/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/jonattan-infante/sea-battle/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/jonattan-infante/sea-battle/compare/v1.0.0...v1.0.1
