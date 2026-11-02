@@ -3,7 +3,7 @@
 // sin estado de React por frame (CLAUDE.md, regla 3). Fuentes: ART-DIRECTION, ASSET-SPEC y VFX-SPEC.
 import * as THREE from 'three';
 import type { RootState } from '@react-three/fiber';
-import { CANNON_LEVELS, INTERPOLATION_DELAY_MS, MAX_CANNON_RANGE, ISLANDS, PORT_POSITION, PVP_ENABLED, SAFE_ZONE_RADIUS, SHIP_CLASSES, SINKING_TIME } from '../game/constants';
+import { CANNON_LEVELS, INTERPOLATION_DELAY_MS, MAX_CANNON_RANGE, IslandDef, ISLANDS, PORT_POSITION, PVP_ENABLED, SAFE_ZONE_RADIUS, SHIP_CLASSES, SINKING_TIME } from '../game/constants';
 import { Navigator } from '../game/nav';
 import { GameEvent, PlayerView, Welcome, WreckView } from '../game/types';
 import { CAMERA, computePpm0, DAMAGE_TEXT, DamageTextKind, frameRangeM, LABEL, LIGHTING, MOBILE_MAX_WIDTH, RING_COLORS, ZOOM } from './art';
@@ -13,7 +13,8 @@ import { FreeView, OwnWatch, ViewMode } from './free-view';
 import type { GameClient, RenderShip } from './game-client';
 import { useHud } from './hud-store';
 import { buildBuoyGeometry, buildIslands, buildLootGeometry, buildPalmGeometry, buoyInstances, PropInstance } from './models/island-geometry';
-import { createOceanGeometry, createOceanMaterial } from './models/ocean-material';
+import { createOceanGeometry, createOceanMaterial, disposeOceanMaterial } from './models/ocean-material';
+import { isMap10, islandsKey, islandsOf, ISLANDS_1_0_KEY } from './map-islands';
 import { measureSailVisibility, measureShipValues, SailVisibility, ShipValues } from './models/sail-visibility';
 import { createShipMaterial, LOD_PX, ShipMaterial, ShipModel } from './models/ship-geometry';
 import { EntryGate, mapAnisotropyFor, prefetchClasses, setShipMap, ShipGlbStore } from './models/ship-glb';
@@ -718,6 +719,7 @@ export class GameRuntime implements OverlayHost, ChipHost {
   focusZ: number = PORT_POSITION.z;
   readonly freeView: FreeView; // vista libre (E13): el foco cuando la cámara no sigue al barco
   private readonly stopViewReturn: () => void;
+  private readonly stopWelcome: () => void;
   private lookX = 0;
   private lookY = 0;
   private lookZ = 0;
@@ -734,13 +736,15 @@ export class GameRuntime implements OverlayHost, ChipHost {
   private readonly ocean: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
   private readonly staticMaterial: THREE.MeshStandardMaterial;
   private readonly islandMesh: THREE.Mesh;
-  private readonly palms: THREE.InstancedMesh;
+  private palms: THREE.InstancedMesh;
+  private islandsKey = ISLANDS_1_0_KEY; // las islas que pinta la escena (map-islands.ts): las de la 1.0 hasta la bienvenida
+  private islandList: readonly IslandDef[] = ISLANDS;
   private readonly buoys: THREE.InstancedMesh;
   private readonly loot: THREE.InstancedMesh;
   private readonly wrecks = new Map<string, WreckState>();
 
   private readonly director: VfxDirector;
-  private readonly navigator = new Navigator(ISLANDS);
+  private navigator = new Navigator(ISLANDS);
   private readonly materialPool: ShipMaterial[] = [];
   private readonly unsubscribe: (() => void)[] = [];
   private readonly reducedMotionQuery: MediaQueryList | null;
@@ -817,6 +821,10 @@ export class GameRuntime implements OverlayHost, ChipHost {
 
     this.director = new VfxDirector(this);
     this.subscribe(client);
+    // AC-199 e: al llegar la bienvenida, las islas del servidor. Con el mapa de la 1.0 son las mismas y no se rehace nada
+    this.stopWelcome = client.onWelcome((w) => {
+      if (this.src === this.client) this.applyIslands(islandsOf(w));
+    });
     if (ownClass) this.shipGlb.predictOwn(ownClass); // su GLB, antes que el cargador
     this.shipGlb.warm(); // con manifiesto, el cargador baja mientras se conecta (el transcodificador, después del GLB propio)
   }
@@ -849,8 +857,37 @@ export class GameRuntime implements OverlayHost, ChipHost {
     this.hoverId = null;
     this.src = src;
     this.subscribe(src);
+    this.applyIslands(islandsOf(src.welcome));
     this.labels?.sync(this.views.values());
     this.snapFrame();
+  }
+
+  // AC-199 e: la escena pinta los círculos de la fuente (la bienvenida del servidor; sin ella, los de la 1.0). Si cambian, se
+  // rehacen el agua (su shader lleva el número de círculos y la rejilla de candidatos), las islas, las palmeras y el navegador
+  // del marcador de destino. Se hace una vez, al entrar, no por frame (el grafo cuesta de 4 a 18 ms, AC-199 e)
+  private applyIslands(islands: readonly IslandDef[]): void {
+    const key = islandsKey(islands);
+    if (key === this.islandsKey) return;
+    this.islandsKey = key;
+    this.islandList = islands;
+    const list = [...islands];
+    this.navigator = new Navigator(list);
+    const ocean = this.ocean.material;
+    this.ocean.material = createOceanMaterial(list);
+    disposeOceanMaterial(ocean);
+    this.rebuildIslandGeometry();
+  }
+
+  // Las islas procedurales: con el mapa de la 1.0, las de siempre; con otro, la versión sencilla de cada círculo (AC-200 e)
+  private rebuildIslandGeometry(): void {
+    const built = buildIslands([...this.islandList], { simple: !isMap10(this.islandList) });
+    this.islandMesh.geometry.dispose();
+    this.islandMesh.geometry = built.geometry;
+    const palms = this.instanced(this.palms.geometry, built.palms);
+    this.scene.remove(this.palms);
+    this.palms.dispose();
+    this.palms = palms;
+    this.scene.add(palms);
   }
 
   private instanced(geometry: THREE.BufferGeometry, items: PropInstance[]): THREE.InstancedMesh {
@@ -1793,13 +1830,14 @@ export class GameRuntime implements OverlayHost, ChipHost {
   dispose(): void {
     this.unsubscribe.forEach((u) => u());
     this.stopViewReturn();
+    this.stopWelcome();
     this.detachOverlays();
     for (const view of this.views.values()) view.mesh.material.dispose();
     for (const m of this.materialPool) m.dispose();
     this.views.clear();
     this.effects.dispose();
     this.ocean.geometry.dispose();
-    this.ocean.material.dispose();
+    disposeOceanMaterial(this.ocean.material);
     this.islandMesh.geometry.dispose();
     this.palms.geometry.dispose();
     this.buoys.geometry.dispose();

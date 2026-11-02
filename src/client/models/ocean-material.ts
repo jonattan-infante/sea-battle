@@ -264,6 +264,12 @@ export function createOceanMaterial(islands: IslandDef[]): THREE.ShaderMaterial 
   });
 }
 
+// El material y su textura de la rejilla, que material.dispose() no libera (AC-199 e: el agua se rehace al llegar las islas)
+export function disposeOceanMaterial(material: THREE.ShaderMaterial): void {
+  (material.uniforms.uIsleGrid.value as THREE.Texture).dispose();
+  material.dispose();
+}
+
 // Plano unitario horizontal; se escala al suelo visible + 40 m y se recentra en cada frame
 export function createOceanGeometry(): THREE.BufferGeometry {
   return new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
