@@ -4,7 +4,7 @@
 // píxel a píxel. Aquí se comprueba con la búsqueda que hace el shader (candidatesAt, en float32 como la GPU) frente a la
 // fuerza bruta, en una malla densa y en los bordes de celda
 import * as THREE from 'three';
-import { ISLANDS } from '../../../game/constants';
+import { ISLANDS, MAP_1_1 } from '../../../game/constants';
 import { buildIsleGrid, candidatesAt, EMPTY, ISLE_CELL, ISLE_REACH, IsleCircle, IsleGrid, MAX_ISLE_CIRCLES } from '../isle-grid';
 import { createOceanMaterial } from '../ocean-material';
 
@@ -83,6 +83,47 @@ describe('AC-198 e: la rejilla de candidatos da la misma distancia a la costa qu
     const grid = buildIsleGrid(cluster);
     expect(grid.texelsPerCell).toBe(2);
     expect(mismatches(cluster, 0.5)).toEqual([]);
+  });
+});
+
+// Con el puerto de D92, el mapa de la 1.1 tiene 50 círculos y alguna celda del puerto pide 2 texels, así que la rejilla entera
+// lleva 2. El bucle de los texels se corta en el primer vacío (BACKLOG :1687): una celda con ≤ 3 candidatos lee 1 texel
+describe('AC-198 e: el mapa de la 1.1 (50 círculos) y el corte en el primer vacío', () => {
+  const circles = MAP_1_1.islands;
+  const grid = buildIsleGrid(circles);
+
+  test('2 texels por celda, como mucho 6 candidatos (en el puerto), y la misma distancia que la lista', () => {
+    expect(circles).toHaveLength(50);
+    expect(grid.texelsPerCell).toBe(2);
+    const counts = Array.from({ length: grid.nx * grid.nz }, (_, k) => {
+      let n = 0;
+      for (let j = 0; j < grid.texelsPerCell * 4 && grid.data[k * grid.texelsPerCell * 4 + j] !== EMPTY; j++) n++;
+      return n;
+    });
+    expect(Math.max(...counts)).toBe(6);
+    expect(mismatches(circles, 2)).toEqual([]);
+  });
+
+  test('cada celda lee los texels hasta su primer vacío: 1 con ≤ 3 candidatos y 2 con 4 o más', () => {
+    const wrong: string[] = [];
+    let one = 0;
+    for (let gz = 0; gz < grid.nz; gz++) {
+      for (let gx = 0; gx < grid.nx; gx++) {
+        const reads = { texels: 0 };
+        const n = candidatesAt(grid, grid.originX + (gx + 0.5) * grid.cell, grid.originZ + (gz + 0.5) * grid.cell, reads).length;
+        const want = n <= 3 ? 1 : 2;
+        if (want === 1) one++;
+        if (reads.texels !== want && wrong.length < 5) wrong.push(`celda (${gx}, ${gz}): ${n} candidatos, ${reads.texels} texels`);
+      }
+    }
+    expect(wrong).toEqual([]);
+    expect(one).toBeGreaterThan(0.95 * grid.nx * grid.nz);
+  });
+
+  test('el shader corta igual: el primer vacío sale también del bucle de los texels', () => {
+    const shader = createOceanMaterial(circles).fragmentShader;
+    expect(shader).toMatch(/for \(int l = 0; l < 2; l\+\+\) \{\s*if \(cellDone\) break;/);
+    expect(shader).toMatch(/if \(i == 255\) \{\s*cellDone = true;\s*break;\s*\}/);
   });
 });
 

@@ -136,11 +136,18 @@ void main() {
   vec2 gi = floor((p - uIsleBox.xy) * uIsleBox.z);
   if (gi.x >= 0.0 && gi.y >= 0.0 && gi.x < uIsleSize.x && gi.y < uIsleSize.y) {
     ivec2 cell = ivec2(gi);
+    // Los índices de una celda van seguidos y los vacíos detrás: el primer vacío corta también el bucle de los texels, y una
+    // celda con ≤ 4 candidatos lee 1 texel aunque la rejilla lleve 2 (con los 50 círculos de D92; BACKLOG :1687)
+    bool cellDone = false;
     for (int l = 0; l < ${texelsPerCell}; l++) {
+      if (cellDone) break;
       vec4 t = texelFetch(uIsleGrid, ivec2(cell.x * ${texelsPerCell} + l, cell.y), 0) * 255.0;
       for (int k = 0; k < 4; k++) {
         int i = int(t[k] + 0.5);
-        if (i == ${EMPTY}) break;
+        if (i == ${EMPTY}) {
+          cellDone = true;
+          break;
+        }
         dIsle = min(dIsle, length(p - uIslands[i].xy) - uIslands[i].z);
       }
     }

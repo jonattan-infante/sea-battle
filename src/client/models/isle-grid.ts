@@ -60,8 +60,9 @@ export function buildIsleGrid(circles: IsleCircle[], cell = ISLE_CELL, reach = I
   return { originX, originZ, cell, nx, nz, texelsPerCell, data };
 }
 
-// Los candidatos del punto (x, z), con la misma búsqueda que el shader y en float32 como la GPU
-export function candidatesAt(grid: IsleGrid, x: number, z: number): number[] {
+// Los candidatos del punto (x, z), con la misma búsqueda que el shader y en float32 como la GPU: el primer vacío corta los
+// dos bucles. `reads` cuenta los texels que lee, para comprobar ese corte
+export function candidatesAt(grid: IsleGrid, x: number, z: number, reads?: { texels: number }): number[] {
   const f = Math.fround;
   const gx = Math.floor(f(f(f(x) - f(grid.originX)) * f(1 / grid.cell)));
   const gz = Math.floor(f(f(f(z) - f(grid.originZ)) * f(1 / grid.cell)));
@@ -69,9 +70,10 @@ export function candidatesAt(grid: IsleGrid, x: number, z: number): number[] {
   const at = (gz * grid.nx + gx) * grid.texelsPerCell * 4;
   const out: number[] = [];
   for (let l = 0; l < grid.texelsPerCell; l++) {
+    if (reads) reads.texels++;
     for (let k = 0; k < 4; k++) {
       const i = grid.data[at + l * 4 + k];
-      if (i === EMPTY) break;
+      if (i === EMPTY) return out;
       out.push(i);
     }
   }
