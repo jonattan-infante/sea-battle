@@ -8,7 +8,7 @@ import { migrate } from './db/migrate';
 import { createPool } from './db/pool';
 import { createGameServer, GameServer, GameServerOptions } from './game-server';
 import { createPgStore } from './persistence';
-import { i2Enabled } from './features';
+import { i2Enabled, mapId, mapOfId } from './features';
 import { applyScenario, I2_SCENARIOS, parseScenario } from './scenarios';
 
 type Env = Record<string, string | undefined>;
@@ -37,6 +37,10 @@ export async function startGame(io: Server, env: Env = process.env, log: (msg: s
   const scenario = isAuthBypassAllowed(env) && parseScenario(env.SEA_BATTLE_SCENARIO);
   const i2 = i2Enabled(env);
   if (scenario && I2_SCENARIOS.includes(scenario) && !i2) throw new Error(`El escenario «${scenario}» necesita el I2 encendido (SEA_BATTLE_I2=1, AC-187)`);
+  const map = mapId(env);
+  // Los escenarios colocan sus barcos con las coordenadas del mapa 1.0: con otro, una escena de QA podría dejarlos dentro
+  // de una isla sin que nadie lo note
+  if (scenario && map !== '1.0') throw new Error(`El escenario «${scenario}» está colocado para el mapa 1.0: no arranca con SEA_BATTLE_MAP=${map}`);
   let pool: Pool | null = null;
   if (env.DATABASE_URL) {
     pool = createPool(env.DATABASE_URL, log);
@@ -50,6 +54,8 @@ export async function startGame(io: Server, env: Env = process.env, log: (msg: s
     log('⚠️  Sin DATABASE_URL: el progreso vive solo en memoria (se pierde al reiniciar)');
   }
   log(i2 ? '🏴‍☠️ I2 encendido (SEA_BATTLE_I2=1): el Capitán pirata y las cañoneras entran en partida' : 'I2 apagado: sin Capitán pirata ni cañoneras (se enciende con SEA_BATTLE_I2=1)');
+  if (env.SEA_BATTLE_MAP && env.SEA_BATTLE_MAP !== map) log(`Aviso: SEA_BATTLE_MAP=«${env.SEA_BATTLE_MAP}» no se reconoce: mapa 1.0`);
+  log(map === '1.1' ? 'Mapa 1.1 (SEA_BATTLE_MAP=1.1): las islas de la 1.1 y los amarres del puerto' : 'Mapa 1.0 (se cambia con SEA_BATTLE_MAP=1.1)');
   const game = createGameServer(io, {
     authenticate: (auth) => authenticateHandshake(auth, env),
     spawnNpcs: env.SEA_BATTLE_NPCS !== '0', // servidor de prueba sin NPC (AC-83, AC-87)
@@ -58,6 +64,7 @@ export async function startGame(io: Server, env: Env = process.env, log: (msg: s
     metrics: env.SEA_BATTLE_METRICS !== '0', // AC-142 / AC-143: una línea por minuto con jugadores; 0 la apaga
     metricsIntervalMs: metricsInterval(env.SEA_BATTLE_METRICS_MS),
     i2,
+    map: mapOfId(map),
     log,
     ...overrides
   });
