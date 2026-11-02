@@ -1,7 +1,7 @@
 // AS-V15 (ASSET-SPEC §11): las comprobaciones AS-V02…V09 aplicadas al Object3D procedural de las 5 recetas P0,
 // más AS-V16 (radio de las islas en la flotación) y los presupuestos de islas y props de §5. Sin WebGL.
 import * as THREE from 'three';
-import { ISLANDS } from '../../../game/constants';
+import { ISLANDS, MAP_1_1 } from '../../../game/constants';
 import { buildBuoyGeometry, buildIslands, buildLootGeometry, buildPalmGeometry } from '../island-geometry';
 import { SHIP_LOOKS, TOP_FACE } from '../../art';
 import { buildShipAsset, clothTones, deckHalfBeam, deckTones, deckY, getShipModel, SHIP_RECIPES, ShipExtras, shipLook } from '../ship-geometry';
@@ -715,5 +715,38 @@ describe('Islas y props procedurales', () => {
     expect(tris(buildPalmGeometry())).toBeLessThanOrEqual(100);
     expect(tris(buildBuoyGeometry())).toBeLessThanOrEqual(48);
     expect(tris(buildLootGeometry())).toBeLessThanOrEqual(48);
+  });
+});
+
+// AC-200 e (ART-DIRECTION §8.6, «Mientras se descargan»): con el mapa de la 1.1, mientras no llega el modelo de una isla, su
+// misma unión de círculos en versión sencilla, la playa y la meseta de §9.1 en cada círculo, sin props. Nunca con las formas
+// de la 1.0: lo que se ve es lo que choca (AC-199)
+describe('Versión sencilla de las islas del mapa de la 1.1 (AC-200 e)', () => {
+  const circles = MAP_1_1.islands;
+  const simple = buildIslands(circles, { simple: true });
+
+  test('sin props: ni palmeras ni pueblo, y en cada círculo solo la playa y la meseta (3n + 3(n − 2) triángulos)', () => {
+    expect(simple.palms).toEqual([]);
+    for (const c of circles) {
+      const n = Math.min(24, Math.max(12, Math.round(c.radius / 2.5)));
+      expect([c.id, simple.triangles[c.id]]).toEqual([c.id, 3 * n + 3 * (n - 2)]);
+    }
+    expect(simple.geometry.groups).toHaveLength(0);
+  });
+
+  test('AC-199 a: la playa en la flotación de cada círculo está entre 0,94r y r, y nada sobre el agua sale de su unión', () => {
+    for (const c of circles) for (const r of simple.waterlineRadii[c.id]) expect(r).toBeGreaterThanOrEqual(0.94 * c.radius - 1e-9), expect(r).toBeLessThanOrEqual(c.radius + 1e-9);
+    const pos = simple.geometry.getAttribute('position');
+    let worst = -Infinity;
+    for (let v = 0; v < pos.count; v++) {
+      if (pos.getY(v) <= 0) continue;
+      worst = Math.max(worst, Math.min(...circles.map((c) => Math.hypot(pos.getX(v) - c.x, pos.getZ(v) - c.z) - c.radius)));
+    }
+    expect(worst).toBeLessThanOrEqual(0);
+  });
+
+  test('sin la opción, las islas de la 1.0 conservan sus props (palmeras y pueblo)', () => {
+    expect(buildIslands(ISLANDS).palms.length).toBeGreaterThan(0);
+    expect(buildIslands(ISLANDS).triangles.PORT).toBeGreaterThan(buildIslands(ISLANDS, { simple: true }).triangles.PORT);
   });
 });

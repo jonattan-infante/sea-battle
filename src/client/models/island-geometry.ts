@@ -39,7 +39,7 @@ function cylinderSides(radial: number): (t: number) => 'side' | 'top' | 'bottom'
   return (t) => (t < 2 * radial ? 'side' : t < 3 * radial ? 'top' : 'bottom');
 }
 
-function addIsland(g: GeoBuilder, island: IslandDef, palms: PropInstance[], waterline: number[]): void {
+function addIsland(g: GeoBuilder, island: IslandDef, palms: PropInstance[], waterline: number[], simple: boolean): void {
   const rnd = createRng(islandSeed(island.id));
   const r = island.radius;
   const isPort = island.id === 'PORT';
@@ -76,6 +76,8 @@ function addIsland(g: GeoBuilder, island: IslandDef, palms: PropInstance[], wate
   const baseR = 0.74 * r * (1 + (rnd() * 2 - 1) * 0.08);
   const plateauPart = cylinderSides(n - 2);
   g.add(new THREE.CylinderGeometry(topR, baseR, 1.0, n - 2), trs(island.x + dx, 1.3, island.z + dz), lin(TOP_FACE.grass.albedo), (t) => plateauPart(t) === 'bottom');
+  // Versión sencilla (AC-200 e; ART-DIRECTION §8.6, «Mientras se descargan»): la playa y la meseta, sin props
+  if (simple) return;
 
   // Colina rocosa (r ≥ 35): base grass.dark, cima rock.dark
   if (r >= 35 && !isPort) {
@@ -176,7 +178,8 @@ function addTown(g: GeoBuilder, island: IslandDef, rnd: () => number): void {
   g.add(new THREE.PlaneGeometry(2, 1.3), trs(fx + 1, 1.8 + 9 - 0.65, fz), lin(PALETTE.portFlag));
 }
 
-export function buildIslands(islands: IslandDef[]): IslandBuild {
+// simple: la versión sencilla de cada círculo, para el mapa nuevo mientras no llega el modelo de su isla (AC-200 e)
+export function buildIslands(islands: readonly IslandDef[], options: { simple?: boolean } = {}): IslandBuild {
   const g = new GeoBuilder();
   const palms: PropInstance[] = [];
   const triangles: Record<string, number> = {};
@@ -184,7 +187,7 @@ export function buildIslands(islands: IslandDef[]): IslandBuild {
   for (const island of islands) {
     const before = g.triangles;
     waterlineRadii[island.id] = [];
-    addIsland(g, island, palms, waterlineRadii[island.id]);
+    addIsland(g, island, palms, waterlineRadii[island.id], options.simple ?? false);
     triangles[island.id] = g.triangles - before;
   }
   return { geometry: g.build(), palms, triangles, waterlineRadii };
