@@ -36,6 +36,7 @@ import {
   I2_SCENARIOS,
   LEGIBILITY,
   LEGIBILITY_I2,
+  LEGIBILITY_I2_90_CAPTAIN_DEG,
   parseScenario,
   REPAIR_START_HULL,
   ScenarioName,
@@ -216,6 +217,26 @@ describe('escenario "legibility-i2" (AC-115), con el I2 encendido', () => {
     const after = [...w.ships.values()].filter((s) => s.kind !== 'player').map((s) => ({ ...s.pos, h: s.heading }));
     expect(after).toEqual(before);
     expect(volleys).toEqual([]);
+  });
+});
+
+// AC-115 en 390×844 (producto, 2026-11-02, O-69): la misma escena, con el Capitán a 90°, su rumbo de menos vela de cara
+describe('escenario "legibility-i2-90" (AC-115, móvil), con el I2 encendido', () => {
+  const deg = (h: number) => Math.round((h * 180) / Math.PI);
+  const pose = (name: ScenarioName) => {
+    const w = createWorld({ seed: 1, spawnNpcs: false, i2: true });
+    applyScenario(w, name);
+    return [...w.ships.values()].map((s) => ({ classId: s.classId, kind: s.kind, pos: s.pos, deg: deg(s.heading), ai: s.ai, holdPosition: s.holdPosition })).sort((a, b) => a.classId.localeCompare(b.classId));
+  };
+
+  test('el Capitán a 90° y lo demás (clases, puestos, los otros 3 rumbos, sin IA) igual que en "legibility-i2"', () => {
+    expect(LEGIBILITY_I2_90_CAPTAIN_DEG).toBe(90);
+    const base = pose('legibility-i2');
+    const m90 = pose('legibility-i2-90');
+    expect(m90.find((s) => s.classId === CAPTAIN_CLASS)!.deg).toBe(90);
+    expect(base.find((s) => s.classId === CAPTAIN_CLASS)!.deg).toBe(225);
+    expect(m90.map((s) => (s.classId === CAPTAIN_CLASS ? { ...s, deg: 225 } : s))).toEqual(base);
+    expect(m90.map((s) => s.deg).sort((a, b) => a - b)).toEqual([45, 90, 135, 315]);
   });
 });
 
@@ -424,6 +445,7 @@ describe('escenario "shipyard" (AC-70)', () => {
     expect(parseScenario('captain')).toBe('captain');
     expect(parseScenario('captain-down')).toBe('captain-down');
     expect(parseScenario('legibility-i2')).toBe('legibility-i2');
+    expect(parseScenario('legibility-i2-90')).toBe('legibility-i2-90');
     expect(parseScenario('danger')).toBe('danger');
     expect(parseScenario('rich')).toBeNull();
     expect(parseScenario(undefined)).toBeNull();

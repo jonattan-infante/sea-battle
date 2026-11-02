@@ -65,6 +65,10 @@ export const LEGIBILITY_I2 = {
     { classId: 'merchant', x: -40, z: 160, headingDeg: 315 }
   ]
 } as const;
+// Variante de 390×844 de AC-115 (precisado por producto el 2026-11-02, O-69): la misma escena con el Capitán a 90°, el rumbo
+// en que menos vela enseña de cara (6,3 %, medido por ux); la de 1440×900 lo deja a 225° (7,4 %). Rumbo = ship.heading,
+// el de mesh.rotation.y en el cliente. Solo cambia ese rumbo: puestos, clases y los otros 3 rumbos son los de LEGIBILITY_I2
+export const LEGIBILITY_I2_90_CAPTAIN_DEG = 90;
 
 // Marca de peligro (AC-189, D77): una cañonera y un pirata quietos y sin IA, a tiro del cañón N1 desde el borde de la zona
 // segura y en torno al cebo del Capitán, fuera de la exclusión del puerto. Cada jugador entra con el oro justo de los
@@ -112,10 +116,10 @@ export const VIEW_RETURN = { pirate: { x: 0, z: 150 }, hull: 0.3 } as const;
 // `volley-miss` (AC-119, una andanada contra ti devuelve la cámara aunque falle): el mismo pirata, con puntería 0
 export const EDGE_ATTACK = { pirate: { x: 0, z: 215 }, standoff: 52, accuracy: 0.25 } as const;
 
-export const SCENARIOS = ['showcase', 'shipyard', 'targets', 'endurance', 'repair', 'legibility', 'captain', 'captain-down', 'legibility-i2', 'danger', 'xp', 'xp-13', 'xp-12', 'view-return', 'edge-attack', 'volley-miss'] as const;
+export const SCENARIOS = ['showcase', 'shipyard', 'targets', 'endurance', 'repair', 'legibility', 'captain', 'captain-down', 'legibility-i2', 'legibility-i2-90', 'danger', 'xp', 'xp-13', 'xp-12', 'view-return', 'edge-attack', 'volley-miss'] as const;
 export type ScenarioName = (typeof SCENARIOS)[number];
 // Escenarios con NPC del I2: con el I2 apagado no existen (AC-187), así que exigen SEA_BATTLE_I2=1
-export const I2_SCENARIOS: readonly ScenarioName[] = ['captain', 'captain-down', 'legibility-i2', 'danger'];
+export const I2_SCENARIOS: readonly ScenarioName[] = ['captain', 'captain-down', 'legibility-i2', 'legibility-i2-90', 'danger'];
 
 export function parseScenario(value: string | undefined): ScenarioName | null {
   return (SCENARIOS as readonly string[]).includes(value ?? '') ? (value as ScenarioName) : null;
@@ -205,13 +209,14 @@ export function applyScenario(world: World, name: ScenarioName): void {
     merchant.ai = null;
     return;
   }
-  if (name === 'legibility-i2') {
+  if (name === 'legibility-i2' || name === 'legibility-i2-90') {
     for (const p of LEGIBILITY_I2.ships) {
+      const headingDeg = name === 'legibility-i2-90' && p.classId === CAPTAIN_CLASS ? LEGIBILITY_I2_90_CAPTAIN_DEG : p.headingDeg;
       const at = { x: p.x, z: p.z };
       const ship: Ship =
         p.classId === CAPTAIN_CLASS ? spawnCaptain(world, at)! : p.classId === GUNBOAT_CLASS ? spawnGunboat(world, 0)! : p.classId === 'merchant' ? spawnMerchant(world) : spawnPirate(world, 0);
       ship.pos = at;
-      ship.heading = (p.headingDeg * Math.PI) / 180;
+      ship.heading = (headingDeg * Math.PI) / 180;
       ship.ai = null;
       if (ship.kind === 'pirate') ship.holdPosition = true; // DT-04: los hostiles de los escenarios no patrullan
       ship.destination = null;
