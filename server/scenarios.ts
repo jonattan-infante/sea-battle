@@ -54,21 +54,36 @@ export const LEGIBILITY = {
 // Capitán a 90 m, y tenerlos a esa distancia de los dos jugadores, también en su camino desde el puerto, los sacaría del
 // encuadre de 390×844 a 1,0× (~138 m de ancho). Sin IA no entran en combate ni se mueven, y lo que se mide (modelo, placa
 // y marcador del minimapa) sale de su clase. El pirata va igual, para que los puestos no dependan de su radio de agresión.
-// Exige el I2 encendido: sin él no hay cañonera ni Capitán (AC-187)
+// Exige el I2 encendido: sin él no hay cañonera ni Capitán (AC-187). Es la imagen de 1440×900, con el Capitán a 225°.
+// rejilla.py tiene que dar 0 celdas compartidas entre barcos distintos (BACKLOG :801): con la Cañonera a z 158 y el pirata
+// a z 262, la placa de la Cañonera entraba en la fila 4 del Capitán (8-4 y 9-4); a z 150 y 266, cada barco queda en su
+// bloque con ≥ 26 px de holgura (≥ 5 m, y el puesto propio se da por bueno a < 2 m)
 export const LEGIBILITY_I2 = {
   self: SHOWCASE_POINT,
   other: { x: -30, z: 230 },
   ships: [
-    { classId: 'pirate', x: 45, z: 262, headingDeg: 45 }, // a z 255, en 390×844 la placa del Capitán le tapaba 8 px
-    { classId: GUNBOAT_CLASS, x: 40, z: 158, headingDeg: 135 },
+    { classId: 'pirate', x: 45, z: 266, headingDeg: 45 },
+    { classId: GUNBOAT_CLASS, x: 40, z: 150, headingDeg: 135 },
     { classId: CAPTAIN_CLASS, x: 48, z: 212, headingDeg: 225 },
     { classId: 'merchant', x: -40, z: 160, headingDeg: 315 }
   ]
 } as const;
-// Variante de 390×844 de AC-115 (precisado por producto el 2026-11-02, O-69): la misma escena con el Capitán a 90°, el rumbo
-// en que menos vela enseña de cara (6,3 %, medido por ux); la de 1440×900 lo deja a 225° (7,4 %). Rumbo = ship.heading,
-// el de mesh.rotation.y en el cliente. Solo cambia ese rumbo: puestos, clases y los otros 3 rumbos son los de LEGIBILITY_I2
-export const LEGIBILITY_I2_90_CAPTAIN_DEG = 90;
+// Variante de 390×844 de AC-115 (precisado por producto el 2026-11-02, O-69): el Capitán a 90°, el rumbo en que menos vela
+// enseña de cara (6,3 %, medido por ux); la de 1440×900 lo deja a 225° (7,4 %). Rumbo = ship.heading, el de
+// mesh.rotation.y en el cliente. El Capitán sigue en su puesto, (48, 212), y se mueven los demás (BACKLOG :1149): de
+// costado mide 108,6 px CSS de eslora y, desde el puesto propio de LEGIBILITY_I2, la proa salía 3,5 px por la derecha.
+// Desde (15, 275), el Capitán ocupa las columnas 4–6 de las filas 4–5 de la rejilla de 6 × 12, y cada barco tiene su
+// bloque sin celdas compartidas, con ≥ 17 px de holgura (≥ 6,5 m). Los otros 3 rumbos son los de LEGIBILITY_I2
+export const LEGIBILITY_I2_90 = {
+  self: { x: 15, z: 275 },
+  other: { x: -31, z: 300 },
+  ships: [
+    { classId: 'pirate', x: -31, z: 239, headingDeg: 45 },
+    { classId: GUNBOAT_CLASS, x: -8, z: 147, headingDeg: 135 },
+    { classId: CAPTAIN_CLASS, x: 48, z: 212, headingDeg: 90 },
+    { classId: 'merchant', x: 61, z: 270, headingDeg: 315 }
+  ]
+} as const;
 
 // Marca de peligro (AC-189, D77): una cañonera y un pirata quietos y sin IA, a tiro del cañón N1 desde el borde de la zona
 // segura y en torno al cebo del Capitán, fuera de la exclusión del puerto. Cada jugador entra con el oro justo de los
@@ -210,8 +225,8 @@ export function applyScenario(world: World, name: ScenarioName): void {
     return;
   }
   if (name === 'legibility-i2' || name === 'legibility-i2-90') {
-    for (const p of LEGIBILITY_I2.ships) {
-      const headingDeg = name === 'legibility-i2-90' && p.classId === CAPTAIN_CLASS ? LEGIBILITY_I2_90_CAPTAIN_DEG : p.headingDeg;
+    for (const p of (name === 'legibility-i2-90' ? LEGIBILITY_I2_90 : LEGIBILITY_I2).ships) {
+      const headingDeg: number = p.headingDeg;
       const at = { x: p.x, z: p.z };
       const ship: Ship =
         p.classId === CAPTAIN_CLASS ? spawnCaptain(world, at)! : p.classId === GUNBOAT_CLASS ? spawnGunboat(world, 0)! : p.classId === 'merchant' ? spawnMerchant(world) : spawnPirate(world, 0);
