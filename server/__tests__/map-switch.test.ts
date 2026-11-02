@@ -1,6 +1,7 @@
 // 1.2, piloto del mapa (C1): el mapa del mundo lo decide solo el servidor, con SEA_BATTLE_MAP=1.1 (server/features.ts).
 // Sin la variable, que es lo que se despliega, el mundo es el de hoy (MAP_1_0). Con ella, la bienvenida lleva las islas de
-// la 1.1 para que el cliente pinte lo que simula el servidor (AC-199 e). Los escenarios de prueba solo arrancan con el 1.0
+// la 1.1 para que el cliente pinte lo que simula el servidor (AC-199 e). Con la 1.1, un escenario de prueba solo arranca si
+// todos sus barcos quedan en sitios navegables del mapa (C3)
 import { createServer, Server as HttpServer } from 'http';
 import { AddressInfo } from 'net';
 import { Server } from 'socket.io';
@@ -8,9 +9,11 @@ import { io as ioClient, Socket as ClientSocket } from 'socket.io-client';
 import { GUNBOAT_CLASS, ISLANDS, MAP_1_0, MAP_1_1, navClearance } from '../../src/game/constants';
 import { C2S, S2C } from '../../src/game/protocol';
 import { Welcome } from '../../src/game/types';
-import { navigatorOf } from '../../src/game/world';
+import { createWorld, navigatorOf, spawnMerchant } from '../../src/game/world';
 import { startGame } from '../bootstrap';
 import { mapId, mapOfId } from '../features';
+import * as scenarios from '../scenarios';
+import { applyScenario, I2_SCENARIOS, SCENARIOS, strandedShips } from '../scenarios';
 import { createGameServer, GameServer } from '../game-server';
 
 const testAuth = async (auth: unknown) => ({ userId: (auth as { token: string }).token, guest: false });
@@ -81,19 +84,68 @@ describe('arranque con SEA_BATTLE_MAP (server/bootstrap.ts)', () => {
     expect(logs.some((l) => l.startsWith('Aviso: SEA_BATTLE_MAP'))).toBe(warns);
   });
 
-  test.each(['targets', 'captain', 'legibility-i2'])('el escenario "%s" no arranca con SEA_BATTLE_MAP=1.1, y con el mapa 1.0 sí', async (scenario) => {
+  // Escenarios con la 1.1 (C3): todos los de SCENARIOS, sin NPC y con el I2 si lo piden. O arrancan con todos sus barcos en
+  // sitios navegables, o no arrancan y el error nombra el escenario, el barco y la posición. Hoy arrancan los 17
+  const env = (scenario: string, map?: string) => ({
+    SEA_BATTLE_NPCS: '0',
+    AUTH_BYPASS: '1',
+    SEA_BATTLE_SCENARIO: scenario,
+    ...((I2_SCENARIOS as readonly string[]).includes(scenario) ? { SEA_BATTLE_I2: '1' } : {}),
+    ...(map ? { SEA_BATTLE_MAP: map } : {})
+  });
+
+  test.each([...SCENARIOS])('el escenario "%s" con SEA_BATTLE_MAP=1.1: arranca con sus barcos en sitios navegables, o no arranca y dice dónde', async (scenario) => {
     const server = ioOnly();
     cleanups.push(() => server.close());
-    const env = { SEA_BATTLE_NPCS: '0', AUTH_BYPASS: '1', SEA_BATTLE_SCENARIO: scenario, SEA_BATTLE_I2: '1' };
-    // Si arrancara, se para en afterEach: con el servidor en marcha, Jest no terminaría
-    const refused = await startGame(server, { ...env, SEA_BATTLE_MAP: '1.1' }).then(
-      ({ game: started }) => (cleanups.push(() => started.stop()), null),
-      (err: Error) => err.message
+    const result = await startGame(server, env(scenario, '1.1')).then(
+      ({ game: started }) => (cleanups.push(() => started.stop()), started),
+      (err: Error) => err
     );
-    expect(refused).toBe(`El escenario «${scenario}» está colocado para el mapa 1.0: no arranca con SEA_BATTLE_MAP=1.1`);
-    const { game: g } = await startGame(server, env);
+    if (result instanceof Error) {
+      console.log(`C3: el escenario «${scenario}» no arranca con la 1.1: ${result.message}`);
+      expect(result.message).toMatch(new RegExp(`^El escenario «${scenario}» deja barcos en sitios no navegables del mapa: \\S+ \\(\\S+\\) en \\(-?\\d+\\.\\d{2}, -?\\d+\\.\\d{2}\\)`));
+      return;
+    }
+    expect(result.world.islands).toBe(MAP_1_1.islands);
+    expect(strandedShips(result.world, new Set())).toEqual([]);
+  });
+
+  test.each([...SCENARIOS])('el escenario "%s" sin SEA_BATTLE_MAP arranca con el mapa 1.0, como antes', async (scenario) => {
+    const server = ioOnly();
+    cleanups.push(() => server.close());
+    const { game: g } = await startGame(server, env(scenario));
     cleanups.push(() => g.stop());
     expect(g.world.islands).toBe(MAP_1_0.islands);
+  });
+
+  // Hoy los 17 escenarios son navegables con la 1.1, así que ninguno lanza: lo que bootstrap pasa a applyScenario se
+  // comprueba aparte, espiando la llamada (la implementación de verdad sigue corriendo)
+  test.each([
+    ['con SEA_BATTLE_MAP=1.1', true, '1.1'],
+    ['sin SEA_BATTLE_MAP', false, undefined]
+  ])('%s, bootstrap aplica el escenario con requireNavigable = %s', async (_, required, map) => {
+    const spy = jest.spyOn(scenarios, 'applyScenario');
+    cleanups.push(() => spy.mockRestore());
+    const server = ioOnly();
+    cleanups.push(() => server.close());
+    const { game: g } = await startGame(server, env('targets', map));
+    cleanups.push(() => g.stop());
+    expect(spy.mock.calls.map(([world, name, options]) => ({ same: world === g.world, name, options }))).toEqual([
+      { same: true, name: 'targets', options: { requireNavigable: required } }
+    ]);
+  });
+
+  test('strandedShips da los barcos que puso el escenario y quedan en roca, con su margen; los de antes no cuentan', () => {
+    const world = createWorld({ seed: 1, spawnNpcs: false, map: MAP_1_1 });
+    spawnMerchant(world).pos = { x: 0, z: 0 }; // en roca, pero ya estaba antes del escenario
+    const before = new Set(world.ships.keys());
+    applyScenario(world, 'targets');
+    expect(strandedShips(world, before)).toEqual([]);
+    const placed = [...world.ships.values()].find((s) => !before.has(s.id))!;
+    placed.pos = { x: 0, z: 0 }; // dentro del puerto de D92
+    expect(strandedShips(world, before).map((s) => s.id)).toEqual([placed.id]);
+    placed.pos = { x: 0, z: 150 + navClearance(placed.classId) }; // TARGETS_POINT y más: agua
+    expect(strandedShips(world, before)).toEqual([]);
   });
 
   // (iii)
