@@ -1,8 +1,9 @@
 import { ISLANDS, NAV_LIMIT, PIVOT_MIN_ANGLE, PIVOT_SPEED, SHIP_CLASSES, navClearance } from '../constants';
 import { segmentPointDistance } from '../nav';
-import { createRng, distance } from '../vec';
+import { Ship, World } from '../types';
+import { createRng, distance, forward } from '../vec';
 import { moveTo, navigator, stop } from '../world';
-import { DT, emptyWorld, percentile, placePlayer, run, runUntil } from './helpers';
+import { DT, emptyWorld, i2World, percentile, placeCaptain, placeGunboat, placeMerchant, placePirate, placePlayer, run, runUntil } from './helpers';
 
 describe('E1 — Navegación', () => {
   test('AC-15: llega a ≤ 2 m del destino con velocidad 0 y no oscila', () => {
@@ -165,4 +166,56 @@ describe('E1 — Navegación', () => {
     console.log(`AC-22: p99 ${runs.map((r) => r.p99.toFixed(3)).join(' · ')} ms (p50 ${runs.map((r) => r.p50.toFixed(3)).join(' · ')} ms) → menor ${best.toFixed(3)} ms`);
     expect(best).toBeLessThanOrEqual(2);
   });
+
+  // O-70: con el destino final cerca y a la espalda, a 1,5 m/s, la Cañonera (50 °/s) orbitaba el punto en el borde de los
+  // 2 m sin parar nunca. Cada clase tiene que pararse a ≤ 2 m en ≤ 10 s; un NPC también vale si elige otro destino. Los
+  // destinos van de 2,5 a 8 m: a 2,0 m el barco ya cuenta como llegado en el primer tick
+  function placeOf(world: World, classId: string, x: number, z: number, heading: number): Ship {
+    switch (SHIP_CLASSES[classId].kind === 'player' ? 'player' : classId) {
+      case 'player': {
+        const ship = placePlayer(world, 'a', x, z, heading);
+        ship.classId = classId;
+        return ship;
+      }
+      case 'pirate':
+        return placePirate(world, x, z, heading);
+      case 'gunboat':
+        return placeGunboat(world, x, z, heading);
+      case 'merchant':
+        return placeMerchant(world, x, z, heading);
+      case 'captain': {
+        const ship = placeCaptain(world, x, z, heading);
+        ship.pos = { x, z };
+        return ship;
+      }
+      default:
+        throw new Error(`Clase sin colocar en el test: ${classId}`);
+    }
+  }
+
+  // 7 clases × 3 rumbos relativos × 2 bandas × 4 distancias (a 180°, las 2 bandas dan el mismo punto)
+  const ARRIVAL_CASES = Object.keys(SHIP_CLASSES).flatMap((classId) =>
+    [100, 135, 180].flatMap((rel) => [1, -1].flatMap((band) => [2.5, 4, 6, 8].map((d) => [classId, rel * band, d] as const)))
+  );
+
+  test.each(ARRIVAL_CASES)('O-70: %s con el destino final a %i° a la espalda y a %d m, a 1,5 m/s, se para a ≤ 2 m en ≤ 10 s', (classId, rel, d) => {
+    const world = i2World();
+    const heading = Math.PI / 3;
+    const ship = placeOf(world, classId, 200, 0, heading);
+    const f = forward(heading + (rel * Math.PI) / 180);
+    const target = { x: 200 + f.x * d, z: f.z * d };
+    ship.destination = target;
+    ship.path = [{ ...target }];
+    ship.speed = 1.5;
+    let arrival: { t: number; dist: number; speed: number } | null = null;
+    let t = 0;
+    run(world, 10, () => {
+      t += DT;
+      if (!arrival && ship.destination !== target) arrival = { t, dist: distance(ship.pos, target), speed: ship.speed };
+    });
+    expect(arrival).not.toBeNull();
+    expect(arrival!.dist).toBeLessThanOrEqual(2);
+    expect(arrival!.speed).toBe(0);
+  });
 });
+
