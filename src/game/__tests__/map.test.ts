@@ -19,7 +19,7 @@ import {
 } from '../constants';
 import { Navigator, segmentPointDistance } from '../nav';
 import { Vec2, angleDelta, distance, forward } from '../vec';
-import { addPlayer, createWorld, moveTo, navigatorOf, respawn, shipOfPlayer, step } from '../world';
+import { addPlayer, createWorld, moveTo, navigatorOf, respawn, shipOfPlayer, spawnPirate, step } from '../world';
 import { DT, placeCaptain, placeGunboat, placePlayer, run, runUntil } from './helpers';
 
 // Mapa de la 1.1 (GDD §4; puesto 5). Las islas de MAP_1_1 son las de D83, aprobada por Jonattan el 2026-10-18, y el puerto,
@@ -705,5 +705,42 @@ describe('E16 — Rutas del puerto (AC-177, con las islas de D83 y el puerto de 
     }
     console.log(`AC-177 (b) margen ${margin}: ${out.join(' · ')}`);
     expect(worst).toBeLessThanOrEqual(1.15);
+  });
+});
+
+// C3 (1.2): el último recurso de pirateSpot, cuando sus 120 intentos caen en roca. Era el punto fijo (±380, ±380), que
+// en la 1.1 queda 4,03 m dentro de la cala de su sector (G1–G4, radio 13, centro en ±373,66). Ahora es el punto navegable
+// más cercano a él: en la 1.0, (±380, ±380) ya es agua y sale el mismo punto que antes
+describe('E16 — Último recurso de pirateSpot (C3)', () => {
+  // Los 120 intentos del sector SE (3) caen en el centro de I1 (260, 200), que es roca en los 2 mapas: el RNG alterna el
+  // valor del ángulo, en [0,12, π/2 − 0,12], y el del radio, en el anillo pirata de 300 a 460 m
+  const I1 = { x: 260, z: 200 };
+  function rngIntoI1(): () => number {
+    const a = Math.atan2(I1.z, I1.x);
+    const r = Math.hypot(I1.x, I1.z);
+    const values = [(a - 0.12) / (Math.PI / 2 - 0.24), (r - 300) / 160];
+    let k = 0;
+    return () => values[k++ % 2];
+  }
+  const CORNER = { x: 380, z: 380 };
+
+  test('con la 1.1, un pirata cuyos 120 intentos caen en roca aparece en agua navegable junto a (380, 380), no dentro de la cala G4', () => {
+    const world = world11();
+    world.rng = rngIntoI1();
+    const pirate = spawnPirate(world, 3);
+    const clearance = navClearance('pirate');
+    const nav = navigatorOf(world);
+    expect(nav.navigable(I1, clearance)).toBe(false);
+    expect(nav.navigable(CORNER, clearance)).toBe(false);
+    expect({ pos: pirate.pos, navigable: nav.navigable(pirate.pos, clearance) }).toEqual({ pos: pirate.pos, navigable: true });
+    expect(distance(pirate.pos, CORNER)).toBeLessThan(25);
+  });
+
+  test('con la 1.0, el mismo pirata aparece exactamente en (380, 380), como antes', () => {
+    const world = createWorld({ seed: 1, spawnNpcs: false });
+    world.rng = rngIntoI1();
+    const pirate = spawnPirate(world, 3);
+    expect(navigatorOf(world).navigable(I1, navClearance('pirate'))).toBe(false);
+    expect(pirate.pos).toEqual(CORNER);
   });
 });

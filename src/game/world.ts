@@ -240,7 +240,9 @@ function pirateSpot(world: World, sector: number, checkPlayers: boolean, classId
     fallback ??= p;
     if (!checkPlayers || farFromPlayers(world, p)) return p;
   }
-  return fallback ?? { x: sx * 380, z: sz * 380 };
+  // Último recurso: el agua más cercana a (±380, ±380). En la 1.0 ese punto ya es navegable y sale tal cual; en la 1.1 cae
+  // dentro de la cala de su sector (G1–G4), y sin esto el barco aparecería en la roca (C3)
+  return fallback ?? navigatorOf(world).nearestNavigable({ x: sx * 380, z: sz * 380 }, radius);
 }
 
 function newShip(world: World, classId: string, name: string, ownerId: string | null, pos: Vec2, heading: number): Ship {
