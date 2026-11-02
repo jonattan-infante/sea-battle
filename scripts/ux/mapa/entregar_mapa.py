@@ -1,16 +1,16 @@
 # Uso (desde la raíz del repo), con gltf-transform 4.5.1 y KTX-Software 4.4.2 (`ktx`) en el PATH, y en $UX_OUT/mapa lo que
-# dejan islas.py y blender_islas.py (islands.glb, island_I1.glb, atlas_isla.png y los isla_<id>_lod0.npz; D83) y
+# dejan islas.py y blender_islas.py (islands.glb, atlas_isla.png y los isla_<id>_lod0.npz; D83) y
 # puerto_forma.py, puerto_isla.py y blender_estatico.py (island_port.glb, atlas_puerto_isla.png, puerto_isla_lod0.npz y
 # puerto-forma-v3.json; D92):
-#   python3 -I scripts/ux/mapa/entregar_mapa.py  →  $UX_OUT/entrega-mapa/dentro/{islands,island_I1,island_port}.glb (la entrega
+#   python3 -I scripts/ux/mapa/entregar_mapa.py  →  $UX_OUT/entrega-mapa/dentro/{islands,island_port}.glb (la entrega
 #   a dev-render: la KTX2 y el respaldo en el BIN; el paso 4c lo hace su externalizeKtx2), de contraste <nombre>.<hash>.glb y
 #   <atlas>.<hash>.ktx2 con el 4c de aquí, y entrega-mapa.json con las medidas
 # El escenario de la 1.1 como lo espera el juego (ASSET-SPEC §9.7, §9.8 y §13, pasos 4, 4b y 4c, como los barcos): la
 # geometría con meshopt; la KTX2 ETC1S desde el PNG del atlas, con los parámetros de comprimir_cadena.sh (un hilo, paleta
 # acotada a 1024); y el respaldo de D90 en `texture.source`. El del puerto es el de §9.8 (JPEG de 256², turno P3). El de las
 # islas se mide aquí con la regla de los estáticos de §9.8: la de 4b en el encuadre más cercano (escritorio 0,7×) de cada
-# isla, que tiene que pasar en las 15, y de los que pasan, el más ligero. islands.glb e island_I1.glb (el piloto de AC-198)
-# comparten la KTX2. Comprueba lo que se lee del archivo (raíces, extras y `sb_circles` frente a las tablas de GDD §4, 1
+# isla, que tiene que pasar en las 15, y de los que pasan, el más ligero. islands.glb (el piloto de AC-198 lo baja entero y dibuja solo I1)
+# lleva esa KTX2. Comprueba lo que se lee del archivo (raíces, extras y `sb_circles` frente a las tablas de GDD §4, 1
 # material OPAQUE, sin NORMAL, triángulos) y pasa `gltf-transform validate` con las 2 formas. Ligero (≈ 1 min, un núcleo:
 # el render de las 15 islas). Escribe en UX_OUT. No corre en la CI.
 import copy, hashlib, io, json, os, shutil, struct, subprocess, sys
@@ -131,7 +131,7 @@ if __name__ == '__main__':
     isl = lambda sid: CI.ISLAS[sid[len('island_'):]][4] if sid and sid.startswith('island_') and sid[len('island_'):] in CI.ISLAS else None
     if chosen is not None:
         resp_i, fmt_i, side_i = chosen
-        for name in ('islands', 'island_I1'):
+        for name in ('islands',):  # sin island_I1.glb: el piloto baja islands.glb (producto, 2026-11-02)
             out[name] = deliver(os.path.join(MAPA, f'{name}.glb'), name, ktx_i, 'islands', resp_i, fmt_i, side_i, isl)
             print(name, json.dumps(out[name], ensure_ascii=False), flush=True)
     # el puerto (D92), con el respaldo de §9.8
@@ -149,8 +149,8 @@ if __name__ == '__main__':
         out['escenario_transferido_gzip9_B'] = out['islands']['glb_gzip9_B'] + out['islands']['ktx2_gzip9_B'] + out['island_port']['glb_gzip9_B'] + out['island_port']['ktx2_gzip9_B']
         out['escenario_archivo_B'] = out['islands']['glb_B'] + out['islands']['ktx2_B'] + out['island_port']['glb_B'] + out['island_port']['ktx2_B']
     json.dump(out, open(os.path.join(DST, 'entrega-mapa.json'), 'w'), indent=1, ensure_ascii=False)
-    bad = [n for n in ('islands', 'island_I1', 'island_port') if n not in out]
-    for n in ('islands', 'island_I1', 'island_port'):
+    bad = [n for n in ('islands', 'island_port') if n not in out]
+    for n in ('islands', 'island_port'):
         if n not in out: continue
         c = out[n]['comprobaciones']
         if not (c['validate']['sin_errores'] and c['validate_dentro']['sin_errores'] and all(r['nombre_igual_a_sb_id'] and r['malla'] and r['sb_circles_igual_a_gdd'] for r in c['raices'].values())
