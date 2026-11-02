@@ -14,6 +14,7 @@ import type { GameClient, RenderShip } from './game-client';
 import { useHud } from './hud-store';
 import { buildBuoyGeometry, buildIslands, buildLootGeometry, buildPalmGeometry, buoyInstances, PropInstance } from './models/island-geometry';
 import { createOceanGeometry, createOceanMaterial, disposeOceanMaterial } from './models/ocean-material';
+import { IslandGlbStore, sameCircles, serverShapes, shapeOf } from './models/island-glb';
 import { isMap10, islandsKey, islandsOf, ISLANDS_1_0_KEY } from './map-islands';
 import { measureSailVisibility, measureShipValues, SailVisibility, ShipValues } from './models/sail-visibility';
 import { createShipMaterial, LOD_PX, ShipMaterial, ShipModel } from './models/ship-geometry';
@@ -683,6 +684,9 @@ export class GameRuntime implements OverlayHost, ChipHost {
   readonly views = new Map<string, ShipView>();
   // GLB de las clases (ASSET-SPEC §13): el procedural se pinta mientras carga y si falla
   readonly shipGlb = new ShipGlbStore();
+  // AC-198 (piloto C1): las islas del mapa nuevo en GLB, con el cargador de los barcos
+  private readonly islandGlb = new IslandGlbStore(() => this.shipGlb.sharedLoader());
+  private readonly islandRoots = new Map<string, THREE.Object3D>(); // forma → raíz del GLB en la escena
   private shipMapAnisotropy = 0; // el de los mapas de los GLB, al tener renderer (tanda B)
   // Sombra en el agua de los barcos con su GLB de la receta, con atlas (palanca 4 de D91; ASSET-SPEC §13, fila 6)
   readonly shipShadows = new ShipShadows();
@@ -875,12 +879,20 @@ export class GameRuntime implements OverlayHost, ChipHost {
     const ocean = this.ocean.material;
     this.ocean.material = createOceanMaterial(list);
     disposeOceanMaterial(ocean);
+    // Las raíces del GLB son de otro mapa: fuera, y vuelven a entrar si sus círculos siguen siendo los del servidor
+    for (const root of this.islandRoots.values()) this.scene.remove(root);
+    this.islandRoots.clear();
     this.rebuildIslandGeometry();
+    // AC-198 c: con el mapa nuevo, islands.glb baja después de la entrada (updateFrame); hasta entonces, la versión sencilla
+    if (!isMap10(list)) this.islandGlb.request();
   }
 
-  // Las islas procedurales: con el mapa de la 1.0, las de siempre; con otro, la versión sencilla de cada círculo (AC-200 e)
+  // Las islas procedurales: con el mapa de la 1.0, las de siempre; con otro, la versión sencilla de cada círculo menos los de
+  // las formas que ya pinta su GLB (AC-200 e)
   private rebuildIslandGeometry(): void {
-    const built = buildIslands([...this.islandList], { simple: !isMap10(this.islandList) });
+    const map10 = isMap10(this.islandList);
+    const list = map10 ? [...this.islandList] : this.islandList.filter((c) => !this.islandRoots.has(shapeOf(c.id)));
+    const built = buildIslands(list, { simple: !map10 });
     this.islandMesh.geometry.dispose();
     this.islandMesh.geometry = built.geometry;
     const palms = this.instanced(this.palms.geometry, built.palms);
@@ -888,6 +900,28 @@ export class GameRuntime implements OverlayHost, ChipHost {
     this.palms.dispose();
     this.palms = palms;
     this.scene.add(palms);
+  }
+
+  // AC-199 e: una raíz de islands.glb entra solo si sus círculos son los del servidor; entonces sale su versión sencilla
+  private placeIslandRoots(): void {
+    const models = this.islandGlb.take();
+    if (!models.length) return;
+    const shapes = serverShapes(this.islandList);
+    let placed = false;
+    for (const m of models) {
+      const server = shapes.get(m.shape);
+      if (!server || !sameCircles(m.circles, server) || this.islandRoots.has(m.shape)) {
+        console.warn(`[island-glb] ${m.sbId}: sus círculos no son los del servidor; se queda la versión sencilla`);
+        continue;
+      }
+      m.root.traverse((o) => {
+        o.renderOrder = RENDER_ORDER.islands;
+      });
+      this.scene.add(m.root);
+      this.islandRoots.set(m.shape, m.root);
+      placed = true;
+    }
+    if (placed) this.rebuildIslandGeometry();
   }
 
   private instanced(geometry: THREE.BufferGeometry, items: PropInstance[]): THREE.InstancedMesh {
@@ -1334,6 +1368,9 @@ export class GameRuntime implements OverlayHost, ChipHost {
     }
     if (!this.shipMapAnisotropy) this.shipGlb.setMapAnisotropy((this.shipMapAnisotropy = mapAnisotropyFor(state.gl.capabilities.getMaxAnisotropy())));
     this.shipGlb.pump(state.gl);
+    // AC-198 c: islands.glb, en segundo plano después de la entrada (el barco propio, primero)
+    if (this.entry.shownAt) this.islandGlb.pump(state.gl);
+    this.placeIslandRoots();
     this.src.update(now);
     if (this.src !== this.client) this.client.update(now); // drena sus eventos aunque no se dibuje
     const step = Math.min(dt, 0.1);
@@ -1844,6 +1881,7 @@ export class GameRuntime implements OverlayHost, ChipHost {
     this.loot.geometry.dispose();
     this.staticMaterial.dispose();
     this.shipShadows.dispose();
+    this.islandGlb.dispose();
     this.shipGlb.dispose();
     this.scene.clear();
   }

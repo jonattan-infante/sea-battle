@@ -289,6 +289,12 @@ export class ShipGlbStore {
     if (!this.disposed && !this.loader && this.ownGlb()) this.loader = this.makeLoader();
   }
 
+  // El cargador de los barcos, para las islas (island-glb.ts): un solo KTX2Loader, con su transcodificador y sus workers.
+  // Lo libera dispose(), no quien lo pide
+  sharedLoader(): GlbLoader {
+    return (this.loader ??= this.makeLoader());
+  }
+
   // Opción A de AC-193 c (BACKLOG :1745): antes de la bienvenida, el GLB de la clase propia predicha (la última del
   // jugador en este navegador o, si no hay, la de salida) empieza a bajar ya, y antes que el cargador, que también hace
   // falta para el primer frame con el modelo. Solo GLB del manifiesto: si la clase aún no tiene URL, la descarga empieza
