@@ -5,7 +5,7 @@ import { Browser, expect, Page, test } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 import { PORTS } from '../playwright.config';
-import { DANGER, LEGIBILITY, LEGIBILITY_I2 } from '../server/scenarios';
+import { DANGER, LEGIBILITY, LEGIBILITY_I2, LEGIBILITY_I2_90 } from '../server/scenarios';
 import { enterGame, me, ships, waitFor } from './helpers';
 import { startOwnServer } from './own-server';
 
@@ -358,17 +358,18 @@ test.describe('Capturas @capture', () => {
   // AC-115 (ART-DIRECTION §18.2): la escena del I2 para los evaluadores-agente, en un servidor propio con el I2 encendido y
   // sin más NPC: pirata, cañonera, Capitán y mercante quietos con los rumbos de AD-28, y los dos jugadores. Sin objetivo
   // seleccionado. El Capitán, en el rumbo de canto de cada tamaño (producto, 2026-11-02, O-69): a 225° en 1440×900
-  // ("legibility-i2") y a 90° en 390×844 ("legibility-i2-90")
+  // ("legibility-i2") y a 90° en 390×844 ("legibility-i2-90", con sus propios puestos: BACKLOG :1149)
   for (const vp of VIEWPORTS) {
     test(`legibilidad del I2 en ${vp.name} (AC-115)`, async ({ browser }) => {
       test.setTimeout(150_000);
       const scenario = vp.mobile ? 'legibility-i2-90' : 'legibility-i2';
+      const posts = vp.mobile ? LEGIBILITY_I2_90 : LEGIBILITY_I2;
       console.log(`AC-115 ${vp.name}: escenario ${scenario}`);
       const server = await startOwnServer({ SEA_BATTLE_NPCS: '0', SEA_BATTLE_I2: '1', SEA_BATTLE_SCENARIO: scenario });
       const page = await newPage(browser, vp);
       const other = await newPage(browser, vp);
       try {
-        await toPosts(page, other, server.url, LEGIBILITY_I2.self, LEGIBILITY_I2.other);
+        await toPosts(page, other, server.url, posts.self, posts.other);
         await legibilityShot(page, vp, AC115);
       } finally {
         await page.context().close();

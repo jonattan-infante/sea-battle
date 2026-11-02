@@ -36,7 +36,7 @@ import {
   I2_SCENARIOS,
   LEGIBILITY,
   LEGIBILITY_I2,
-  LEGIBILITY_I2_90_CAPTAIN_DEG,
+  LEGIBILITY_I2_90,
   parseScenario,
   REPAIR_START_HULL,
   ScenarioName,
@@ -169,26 +169,31 @@ describe('escenario "legibility" (AC-72)', () => {
   });
 });
 
-// AC-115 (ART-DIRECTION §18.2): la escena de los evaluadores-agente del I2. Los puestos en pantalla (≥ 16 px CSS entre cajas
-// y fuera de los paneles, D57) los comprueba la captura de e2e/capture.spec.ts; aquí, lo que es del mundo
-describe('escenario "legibility-i2" (AC-115), con el I2 encendido', () => {
+// AC-115 (ART-DIRECTION §18.2): la escena de los evaluadores-agente del I2, en sus 2 variantes: "legibility-i2" (1440×900, el
+// Capitán a 225°) y "legibility-i2-90" (390×844, el Capitán a 90° y los demás en otros puestos, BACKLOG :1149). Los puestos en
+// pantalla (≥ 16 px CSS entre cajas, dentro del viewport y fuera de los paneles, D57) los comprueba la captura de
+// e2e/capture.spec.ts, y las celdas, rejilla.py; aquí, lo que es del mundo
+describe.each([
+  ['legibility-i2', LEGIBILITY_I2, [45, 135, 225, 315]],
+  ['legibility-i2-90', LEGIBILITY_I2_90, [45, 90, 135, 315]]
+] as const)('escenario "%s" (AC-115), con el I2 encendido', (name, scene, headings) => {
   const world = createWorld({ seed: 1, spawnNpcs: false, i2: true });
-  applyScenario(world, 'legibility-i2');
+  applyScenario(world, name);
   const npcs = [...world.ships.values()];
   const deg = (h: number) => Math.round((h * 180) / Math.PI);
 
-  test('un pirata, una cañonera, el Capitán y un mercante en sus puestos, sin IA, con los 4 rumbos de AD-28 repartidos (45°, 135°, 225° y 315°), y nada más', () => {
+  test(`un pirata, una cañonera, el Capitán y un mercante en sus puestos, sin IA, con los rumbos ${headings.join(', ')}, y nada más`, () => {
     expect(npcs.map((s) => s.classId).sort()).toEqual([CAPTAIN_CLASS, GUNBOAT_CLASS, 'merchant', 'pirate']);
-    for (const p of LEGIBILITY_I2.ships) {
+    for (const p of scene.ships) {
       const s = npcs.find((n) => n.classId === p.classId)!;
       expect({ classId: s.classId, pos: s.pos, deg: deg(s.heading), ai: s.ai }).toEqual({ classId: p.classId, pos: { x: p.x, z: p.z }, deg: p.headingDeg, ai: null });
     }
-    expect(npcs.map((s) => deg(s.heading)).sort((a, b) => a - b)).toEqual([45, 135, 225, 315]);
+    expect(npcs.map((s) => deg(s.heading)).sort((a, b) => a - b)).toEqual([...headings]);
     expect(npcs.filter((s) => s.kind === 'pirate').map((s) => s.holdPosition)).toEqual([true, true, true]); // DT-04
   });
 
   test('los puestos de los jugadores quedan fuera de la zona segura, y los NPC fuera de las islas y de la exclusión del puerto', () => {
-    for (const p of [LEGIBILITY_I2.self, LEGIBILITY_I2.other]) expect(Math.hypot(p.x, p.z)).toBeGreaterThan(SAFE_ZONE_RADIUS);
+    for (const p of [scene.self, scene.other]) expect(Math.hypot(p.x, p.z)).toBeGreaterThan(SAFE_ZONE_RADIUS);
     for (const s of npcs) {
       for (const isl of ISLANDS) expect(Math.hypot(s.pos.x - isl.x, s.pos.z - isl.z)).toBeGreaterThan(isl.radius + navClearance(s.classId));
       expect(Math.hypot(s.pos.x, s.pos.z)).toBeGreaterThan(PIRATE_PORT_EXCLUSION);
@@ -197,11 +202,11 @@ describe('escenario "legibility-i2" (AC-115), con el I2 encendido', () => {
 
   test('con los dos jugadores en sus puestos y sin protección, nadie se mueve ni dispara en 30 s (la cañonera detecta a 80 m y el Capitán a 90 m)', () => {
     const w = createWorld({ seed: 2, spawnNpcs: false, i2: true });
-    applyScenario(w, 'legibility-i2');
+    applyScenario(w, name);
     addPlayer(w, 'u1', 'Ana');
     addPlayer(w, 'u2', 'Bea');
     const players = [shipOfPlayer(w, 'u1')!, shipOfPlayer(w, 'u2')!];
-    const posts = [LEGIBILITY_I2.self, LEGIBILITY_I2.other];
+    const posts = [scene.self, scene.other];
     const before = [...w.ships.values()].filter((s) => s.kind !== 'player').map((s) => ({ ...s.pos, h: s.heading }));
     const volleys: string[] = [];
     for (let i = 0; i < 30 * TICK_RATE; i++) {
@@ -220,24 +225,15 @@ describe('escenario "legibility-i2" (AC-115), con el I2 encendido', () => {
   });
 });
 
-// AC-115 en 390×844 (producto, 2026-11-02, O-69): la misma escena, con el Capitán a 90°, su rumbo de menos vela de cara
-describe('escenario "legibility-i2-90" (AC-115, móvil), con el I2 encendido', () => {
-  const deg = (h: number) => Math.round((h * 180) / Math.PI);
-  const pose = (name: ScenarioName) => {
-    const w = createWorld({ seed: 1, spawnNpcs: false, i2: true });
-    applyScenario(w, name);
-    return [...w.ships.values()].map((s) => ({ classId: s.classId, kind: s.kind, pos: s.pos, deg: deg(s.heading), ai: s.ai, holdPosition: s.holdPosition })).sort((a, b) => a.classId.localeCompare(b.classId));
-  };
-
-  test('el Capitán a 90° y lo demás (clases, puestos, los otros 3 rumbos, sin IA) igual que en "legibility-i2"', () => {
-    expect(LEGIBILITY_I2_90_CAPTAIN_DEG).toBe(90);
-    const base = pose('legibility-i2');
-    const m90 = pose('legibility-i2-90');
-    expect(m90.find((s) => s.classId === CAPTAIN_CLASS)!.deg).toBe(90);
-    expect(base.find((s) => s.classId === CAPTAIN_CLASS)!.deg).toBe(225);
-    expect(m90.map((s) => (s.classId === CAPTAIN_CLASS ? { ...s, deg: 225 } : s))).toEqual(base);
-    expect(m90.map((s) => s.deg).sort((a, b) => a - b)).toEqual([45, 90, 135, 315]);
-  });
+// AC-115 en 390×844 (producto, 2026-11-02, O-69, y BACKLOG :1149): el Capitán, en el mismo puesto que en "legibility-i2" y a
+// 90°, su rumbo de menos vela de cara; el pirata, la cañonera y el mercante, con los rumbos de "legibility-i2"
+test('"legibility-i2-90": el Capitán en el puesto de "legibility-i2" y a 90°, y los otros 3 NPC con sus rumbos', () => {
+  const of = (scene: typeof LEGIBILITY_I2 | typeof LEGIBILITY_I2_90, classId: string) => scene.ships.find((p) => p.classId === classId)!;
+  const c90 = of(LEGIBILITY_I2_90, CAPTAIN_CLASS);
+  const c225 = of(LEGIBILITY_I2, CAPTAIN_CLASS);
+  expect([c90.x, c90.z, c90.headingDeg]).toEqual([c225.x, c225.z, 90]);
+  expect(c225.headingDeg).toBe(225);
+  for (const id of ['pirate', GUNBOAT_CLASS, 'merchant']) expect(of(LEGIBILITY_I2_90, id).headingDeg).toBe(of(LEGIBILITY_I2, id).headingDeg);
 });
 
 // AC-189: el e2e de la marca de peligro. Con la Balandra N1 sale con la cañonera y no con el pirata; al comprar Cañones N2
