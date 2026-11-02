@@ -1,8 +1,8 @@
 // Escenarios deterministas para capturas de QA y UX (ART-DIRECTION §18). Solo se aplican con el modo
 // invitado permitido (nunca en Railway); en producción el mundo es siempre el del GDD.
-import { CANNON_LEVELS, CAPTAIN_CLASS, CAPTAIN_KILLS_TO_SPAWN, GUNBOAT_CLASS, LEVEL_XP, SHIP_CLASSES, WRECK_LIFETIME } from '../src/game/constants';
+import { CANNON_LEVELS, CAPTAIN_CLASS, CAPTAIN_KILLS_TO_SPAWN, GUNBOAT_CLASS, LEVEL_XP, SHIP_CLASSES, WRECK_LIFETIME, navClearance } from '../src/game/constants';
 import { Ship, World } from '../src/game/types';
-import { spawnCaptain, spawnGunboat, spawnMerchant, spawnPirate } from '../src/game/world';
+import { navigatorOf, spawnCaptain, spawnGunboat, spawnMerchant, spawnPirate } from '../src/game/world';
 
 // Punto de captura en mar abierto, fuera de la zona segura (r 110) y a ≥ 60 m de cualquier isla
 export const SHOWCASE_POINT = { x: 0, z: 200 };
@@ -140,7 +140,28 @@ export function parseScenario(value: string | undefined): ScenarioName | null {
   return (SCENARIOS as readonly string[]).includes(value ?? '') ? (value as ScenarioName) : null;
 }
 
-export function applyScenario(world: World, name: ScenarioName): void {
+// Los barcos que puso el escenario (los que no estaban en `before`) y que quedan en un sitio no navegable del mapa del
+// mundo con el margen de su casco (navClearance). Los restos no son barcos y no cuentan
+export function strandedShips(world: World, before: ReadonlySet<string>): Ship[] {
+  const nav = navigatorOf(world);
+  return [...world.ships.values()].filter((s) => !before.has(s.id) && !nav.navigable(s.pos, navClearance(s.classId)));
+}
+
+// Aplica el escenario. Con requireNavigable (el mapa 1.1, server/bootstrap.ts), el servidor no arranca si alguno de sus
+// barcos queda en un sitio no navegable: los escenarios se colocaron para el mapa 1.0, y una escena de QA con un barco
+// dentro de una isla daría capturas engañosas sin que nadie lo notara. Sin la opción (el mapa 1.0), lo de siempre
+export function applyScenario(world: World, name: ScenarioName, options: { requireNavigable?: boolean } = {}): void {
+  const before = new Set(world.ships.keys());
+  placeScenario(world, name);
+  if (!options.requireNavigable) return;
+  const stranded = strandedShips(world, before);
+  if (stranded.length > 0) {
+    const where = stranded.map((s) => `${s.id} (${s.classId}) en (${s.pos.x.toFixed(2)}, ${s.pos.z.toFixed(2)})`).join(', ');
+    throw new Error(`El escenario «${name}» deja barcos en sitios no navegables del mapa: ${where}`);
+  }
+}
+
+function placeScenario(world: World, name: ScenarioName): void {
   if (name === 'xp' || name === 'xp-13' || name === 'xp-12') {
     const s: { xp: number; gold?: number } = XP_SCENARIOS[name];
     world.startingXp = s.xp;
