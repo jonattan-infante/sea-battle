@@ -79,3 +79,35 @@ export function candidatesAt(grid: IsleGrid, x: number, z: number, reads?: { tex
   }
   return out;
 }
+
+// Variante de QA 'grid-f32' (AC-198 e; solo para medir, con el gancho de QA del runtime): la misma rejilla con los círculos dentro, para que
+// el shader no indexe el array de uniforms con un índice leído de la textura. Cada candidato es un texel RGBA32F (x, z, radio,
+// 1) en el orden de sus índices, y los huecos (0, 0, 0, 0) detrás. `slots` = el mayor número de candidatos de una celda (≥ 1).
+// Los valores son los mismos float32 que los uniforms, así que la distancia sale igual que con la rejilla de índices
+export interface IsleGridF32 {
+  slots: number;
+  width: number; // nx · slots
+  height: number; // nz
+  data: Float32Array; // width × height × 4
+}
+
+export function isleGridF32(grid: IsleGrid, circles: IsleCircle[]): IsleGridF32 {
+  const per = grid.texelsPerCell * 4;
+  const count = (k: number) => {
+    let n = 0;
+    while (n < per && grid.data[k * per + n] !== EMPTY) n++;
+    return n;
+  };
+  const cells = grid.nx * grid.nz;
+  let slots = 1;
+  for (let k = 0; k < cells; k++) slots = Math.max(slots, count(k));
+  const data = new Float32Array(Math.max(1, cells * slots) * 4);
+  for (let k = 0; k < cells; k++) {
+    const n = count(k);
+    for (let j = 0; j < n; j++) {
+      const c = circles[grid.data[k * per + j]];
+      data.set([c.x, c.z, c.radius, 1], (k * slots + j) * 4);
+    }
+  }
+  return { slots, width: Math.max(1, grid.nx * slots), height: Math.max(1, grid.nz), data };
+}

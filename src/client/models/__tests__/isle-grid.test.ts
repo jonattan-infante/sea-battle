@@ -7,8 +7,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as THREE from 'three';
 import { ISLANDS, MAP_1_1 } from '../../../game/constants';
-import { buildIsleGrid, candidatesAt, EMPTY, ISLE_CELL, ISLE_REACH, IsleCircle, IsleGrid, MAX_ISLE_CIRCLES } from '../isle-grid';
-import { createOceanMaterial } from '../ocean-material';
+import { buildIsleGrid, candidatesAt, EMPTY, ISLE_CELL, ISLE_REACH, IsleCircle, IsleGrid, isleGridF32, MAX_ISLE_CIRCLES } from '../isle-grid';
+import { createOceanMaterial, disposeOceanMaterial, OCEAN_LOOKUPS } from '../ocean-material';
 
 // A partir de qué distancia a la costa el agua ya no cambia: el mayor extremo de los smoothstep de dIsle del shader (18 m,
 // el somero). Sale del código del shader y no de isle-grid.ts, para que un alcance menor en la rejilla se vea
@@ -187,6 +187,85 @@ describe('AC-198 e: la rejilla por defecto y la lista solo para QA', () => {
     expect(rt.match(/setOceanLookup\(/g)).toHaveLength(1);
     expect(rt).toMatch(/\n  setOceanLookup\(lookup: OceanLookup\): void \{/);
     expect(rt).not.toMatch(/'list'/);
+  });
+});
+
+// Las otras 2 búsquedas de QA (re-turno de C1): 'list-main', el bucle de main antes de la rejilla, que es el «hoy» con el que
+// se calibra (9475c97, ocean-material.ts:130-132), y 'grid-f32', la rejilla con los círculos en una textura RGBA32F, sin
+// indexar los uniforms con un índice leído de la textura. Solo cambia el bloque de la distancia a la costa
+describe('AC-198 e: las variantes de QA list-main y grid-f32', () => {
+  const shore = (sh: string) => sh.slice(sh.indexOf('float dIsle = 1e5;'), sh.indexOf('float s = 1.0 - smoothstep(0.0, 18.0, dIsle);'));
+  const rest = (sh: string) => sh.replace(shore(sh), '').replace(/uniform vec3 uIslands\[\d+\];/, '').replace(/uniform int uIslandCount;\n|uniform highp sampler2D uIsleGridF;.*\n/g, '');
+
+  test('list-main con las 7 islas: el bucle de main, tope 16 y break con uIslandCount = 7, y los 9 de sobra a (0, 0, −1)', () => {
+    const m = createOceanMaterial([...ISLANDS], { lookup: 'list-main' });
+    expect(shore(m.fragmentShader)).toMatch(/for \(int i = 0; i < 16; i\+\+\) \{\s*if \(i >= uIslandCount\) break;\s*dIsle = min\(dIsle, length\(p - uIslands\[i\]\.xy\) - uIslands\[i\]\.z\);\s*\}/);
+    expect(shore(m.fragmentShader)).not.toMatch(/texelFetch/);
+    expect(m.fragmentShader).toMatch(/uniform vec3 uIslands\[16\];/);
+    expect(m.uniforms.uIslandCount.value).toBe(7);
+    expect(m.fragmentShader).toMatch(/uniform int uIslandCount;/);
+    expect(m.fragmentShader).not.toMatch(/uIsleGridF/);
+    const packed = m.uniforms.uIslands.value as THREE.Vector3[];
+    expect(packed).toHaveLength(16);
+    expect(packed.slice(0, 7).map((v) => [v.x, v.y, v.z])).toEqual(ISLANDS.map((c) => [c.x, c.z, c.radius]));
+    expect(packed.slice(7).every((v) => v.x === 0 && v.y === 0 && v.z === -1)).toBe(true);
+  });
+
+  test('list-main con los 50 círculos: el tope sube a 50 solo en la variante; la rejilla de por defecto no cambia', () => {
+    const m = createOceanMaterial(MAP_1_1.islands, { lookup: 'list-main' });
+    expect(shore(m.fragmentShader)).toMatch(/for \(int i = 0; i < 50; i\+\+\) \{\s*if \(i >= uIslandCount\) break;/);
+    expect(m.uniforms.uIslandCount.value).toBe(50);
+    expect(createOceanMaterial(MAP_1_1.islands).fragmentShader).toMatch(/uniform vec3 uIslands\[50\];/);
+    expect(createOceanMaterial([...ISLANDS]).fragmentShader).toMatch(/uniform vec3 uIslands\[7\];/);
+  });
+
+  test('grid-f32: cada celda guarda sus candidatos, en el orden de la rejilla de índices, con x, z, radio y 1; el resto a 0', () => {
+    for (const circles of [[...ISLANDS], MAP_1_1.islands]) {
+      const grid = buildIsleGrid(circles);
+      const f = isleGridF32(grid, circles);
+      expect(f.width).toBe(grid.nx * f.slots);
+      expect(f.height).toBe(grid.nz);
+      const wrong: string[] = [];
+      let maxN = 0;
+      for (let gz = 0; gz < grid.nz; gz++) {
+        for (let gx = 0; gx < grid.nx; gx++) {
+          const ids = candidatesAt(grid, grid.originX + (gx + 0.5) * grid.cell, grid.originZ + (gz + 0.5) * grid.cell);
+          maxN = Math.max(maxN, ids.length);
+          const got = Array.from({ length: f.slots }, (_, j) => Array.from(f.data.subarray(((gz * grid.nx + gx) * f.slots + j) * 4, ((gz * grid.nx + gx) * f.slots + j) * 4 + 4)));
+          const want = Array.from({ length: f.slots }, (_, j) => (j < ids.length ? [circles[ids[j]].x, circles[ids[j]].z, circles[ids[j]].radius, 1].map(Math.fround) : [0, 0, 0, 0]));
+          if (JSON.stringify(got) !== JSON.stringify(want) && wrong.length < 5) wrong.push(`(${gx}, ${gz})`);
+        }
+      }
+      expect(wrong).toEqual([]);
+      expect(f.slots).toBe(maxN);
+    }
+    expect(isleGridF32(buildIsleGrid(MAP_1_1.islands), MAP_1_1.islands).slots).toBe(6);
+  });
+
+  test('grid-f32: el shader lee x, z y radio de la textura RGBA32F sin filtrar, sin indexar uIslands, y corta en el primer hueco', () => {
+    const m = createOceanMaterial(MAP_1_1.islands, { lookup: 'grid-f32' });
+    const sh = shore(m.fragmentShader);
+    expect(sh).toMatch(/for \(int j = 0; j < 6; j\+\+\) \{\s*vec4 c = texelFetch\(uIsleGridF, ivec2\(cell\.x \* 6 \+ j, cell\.y\), 0\);\s*if \(c\.w == 0\.0\) break;\s*dIsle = min\(dIsle, length\(p - c\.xy\) - c\.z\);/);
+    expect(sh).not.toMatch(/uIslands|uIsleGrid,/);
+    expect(m.fragmentShader).toMatch(/uniform highp sampler2D uIsleGridF;/);
+    expect(m.fragmentShader).not.toMatch(/uIslandCount/);
+    const tex = m.uniforms.uIsleGridF.value as THREE.DataTexture;
+    expect(tex.type).toBe(THREE.FloatType);
+    expect(tex.format).toBe(THREE.RGBAFormat);
+    expect([tex.minFilter, tex.magFilter, tex.generateMipmaps, tex.flipY]).toEqual([THREE.NearestFilter, THREE.NearestFilter, false, false]);
+    const spy = jest.spyOn(tex, 'dispose');
+    disposeOceanMaterial(m);
+    expect(spy).toHaveBeenCalledTimes(1);
+    // Las demás búsquedas no crean la textura de float
+    for (const lookup of ['grid', 'list', 'list-main'] as const) expect(createOceanMaterial(MAP_1_1.islands, { lookup }).uniforms.uIsleGridF.value).toBeNull();
+  });
+
+  test('las 4 búsquedas comparten todo el shader menos la distancia a la costa (y el tamaño del array de islas)', () => {
+    expect(OCEAN_LOOKUPS).toEqual(['grid', 'list', 'list-main', 'grid-f32']);
+    for (const circles of [[...ISLANDS], MAP_1_1.islands]) {
+      const base = rest(createOceanMaterial(circles).fragmentShader);
+      for (const lookup of OCEAN_LOOKUPS) expect(rest(createOceanMaterial(circles, { lookup }).fragmentShader)).toBe(base);
+    }
   });
 });
 
