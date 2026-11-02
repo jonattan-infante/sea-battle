@@ -772,9 +772,16 @@ function moveShip(world: World, ship: Ship, dt: number): void {
         desired = Math.min(desired, PIVOT_SPEED);
       }
       if (final) {
-        // Destino muy cerca y a la espalda: girar casi en el sitio en vez de orbitarlo
+        // Destino muy cerca y de lado o a la espalda: girar casi en el sitio en vez de orbitarlo. El radio de giro
+        // (v / giro) tiene que caber en el círculo tangente al rumbo que pasa por el destino, de radio d / (2·sen δ), y
+        // d / 2 con el destino a la espalda. Con solo 1,5 m/s fijos a la espalda no cabía en los barcos de giro lento, que
+        // orbitaban el punto en el borde de los 2 m sin entrar nunca (O-70: la Cañonera, el mercante, el Capitán y la
+        // Fragata); sin el tramo de 45° a 90°, el barco acelera al bajar de 90° y vuelve a salirse
         const turnRadius = ship.speed / stats.turnRate;
-        if (Math.abs(delta) > Math.PI / 2 && dist < turnRadius * 2 + ARRIVE_DISTANCE) desired = Math.min(desired, 1.5);
+        if (Math.abs(delta) > PIVOT_MIN_ANGLE && dist < turnRadius * 2 + ARRIVE_DISTANCE) {
+          if (Math.abs(delta) > Math.PI / 2) desired = Math.min(desired, 1.5);
+          desired = Math.min(desired, (stats.turnRate * dist) / (2 * Math.sin(Math.min(Math.abs(delta), Math.PI / 2))));
+        }
       }
     }
   }
