@@ -3,6 +3,8 @@
 // distancia mínima a los candidatos de la celda, recortada a 18, es la misma que a todos los círculos: el agua sale igual
 // píxel a píxel. Aquí se comprueba con la búsqueda que hace el shader (candidatesAt, en float32 como la GPU) frente a la
 // fuerza bruta, en una malla densa y en los bordes de celda
+import * as fs from 'fs';
+import * as path from 'path';
 import * as THREE from 'three';
 import { ISLANDS, MAP_1_1 } from '../../../game/constants';
 import { buildIsleGrid, candidatesAt, EMPTY, ISLE_CELL, ISLE_REACH, IsleCircle, IsleGrid, MAX_ISLE_CIRCLES } from '../isle-grid';
@@ -124,6 +126,67 @@ describe('AC-198 e: el mapa de la 1.1 (50 círculos) y el corte en el primer vac
     const shader = createOceanMaterial(circles).fragmentShader;
     expect(shader).toMatch(/for \(int l = 0; l < 2; l\+\+\) \{\s*if \(cellDone\) break;/);
     expect(shader).toMatch(/if \(i == 255\) \{\s*cellDone = true;\s*break;\s*\}/);
+  });
+});
+
+// La búsqueda por lista (todos los círculos en cada píxel) existe solo para medir la rejilla contra ella en el mismo build
+// (condición del lead para AC-198 e). El juego usa siempre la rejilla: es lo que da createOceanMaterial sin opciones, y solo el
+// gancho de QA del runtime (setOceanLookup) pide la lista; ni la interfaz ni la URL lo llaman
+describe('AC-198 e: la rejilla por defecto y la lista solo para QA', () => {
+  const circles = MAP_1_1.islands;
+  const LIST_LOOP = /for \(int i = 0; i < 50; i\+\+\) dIsle = min\(dIsle, length\(p - uIslands\[i\]\.xy\) - uIslands\[i\]\.z\);/;
+  const GRID = /texelFetch\(uIsleGrid/;
+
+  test('sin opciones, y con lookup grid, el shader busca en la rejilla y no recorre la lista', () => {
+    for (const shader of [createOceanMaterial(circles).fragmentShader, createOceanMaterial(circles, {}).fragmentShader, createOceanMaterial(circles, { lookup: 'grid' }).fragmentShader]) {
+      expect(shader).toMatch(GRID);
+      expect(shader).toMatch(/cellDone/);
+      expect(shader).not.toMatch(LIST_LOOP);
+      const shore = shader.slice(shader.indexOf('float dIsle = 1e5;'), shader.indexOf('float s = 1.0 - smoothstep(0.0, 18.0, dIsle);'));
+      expect(shore).toMatch(GRID);
+      expect(shore).not.toMatch(/for \(int i = 0;/);
+    }
+    expect(createOceanMaterial(circles).fragmentShader).toBe(createOceanMaterial(circles, { lookup: 'grid' }).fragmentShader);
+  });
+
+  test('con lookup list, el shader recorre los 50 círculos y no lee la rejilla; el resto del shader, igual', () => {
+    const grid = createOceanMaterial(circles).fragmentShader;
+    const list = createOceanMaterial(circles, { lookup: 'list' }).fragmentShader;
+    expect(list).toMatch(LIST_LOOP);
+    expect(list).not.toMatch(GRID);
+    expect(list).not.toMatch(/cellDone/);
+    // Lo que va antes y después de la distancia a la costa es el mismo texto en las dos
+    const cut = (s: string) => {
+      const a = s.indexOf('float dIsle = 1e5;');
+      const b = s.indexOf('float s = 1.0 - smoothstep(0.0, 18.0, dIsle);');
+      expect(a).toBeGreaterThan(0);
+      expect(b).toBeGreaterThan(a);
+      return [s.slice(0, a), s.slice(b)];
+    };
+    expect(cut(list)).toEqual(cut(grid));
+  });
+
+  test('fuera de los tests, solo el runtime elige la búsqueda, con el gancho de QA y la rejilla de partida', () => {
+    const src = path.resolve(__dirname, '../../..');
+    const files: string[] = [];
+    const walk = (dir: string) => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const f = path.join(dir, e.name);
+        if (e.isDirectory()) {
+          if (e.name !== '__tests__') walk(f);
+        } else if (/\.(ts|tsx)$/.test(e.name) && !/\.test\.tsx?$/.test(e.name)) files.push(f);
+      }
+    };
+    walk(src);
+    const rel = (f: string) => path.relative(src, f);
+    const using = files.filter((f) => /setOceanLookup|\blookup\s*:|OceanLookup/.test(fs.readFileSync(f, 'utf8'))).map(rel).sort();
+    expect(using).toEqual(['client/models/ocean-material.ts', 'client/runtime.ts']);
+    const rt = fs.readFileSync(path.join(src, 'client/runtime.ts'), 'utf8');
+    // En el runtime: la rejilla de partida, el método del gancho y ninguna llamada a él ni ningún 'list' escrito
+    expect(rt).toMatch(/private oceanLookup: OceanLookup = 'grid';/);
+    expect(rt.match(/setOceanLookup\(/g)).toHaveLength(1);
+    expect(rt).toMatch(/\n  setOceanLookup\(lookup: OceanLookup\): void \{/);
+    expect(rt).not.toMatch(/'list'/);
   });
 });
 

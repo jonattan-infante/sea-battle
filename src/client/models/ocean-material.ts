@@ -41,8 +41,36 @@ void main() {
 `;
 
 // El número de círculos y los texels por celda de la rejilla (isle-grid.ts) van en el código del shader: se compila una vez
-// por material, con las islas del mapa
-const fragmentShader = (circles: number, texelsPerCell: number) => /* glsl */ `
+// por material, con las islas del mapa. `lookup` 'list' recorre todos los círculos en cada píxel, como antes de la rejilla:
+// solo para medir la rejilla contra la lista en el mismo build (QA, rt.setOceanLookup; AC-198 e). El juego usa la rejilla
+export type OceanLookup = 'grid' | 'list';
+
+const isleDistance = (lookup: OceanLookup, circles: number, texelsPerCell: number) =>
+  lookup === 'list'
+    ? /* glsl */ `
+  for (int i = 0; i < ${circles}; i++) dIsle = min(dIsle, length(p - uIslands[i].xy) - uIslands[i].z);`
+    : /* glsl */ `
+  vec2 gi = floor((p - uIsleBox.xy) * uIsleBox.z);
+  if (gi.x >= 0.0 && gi.y >= 0.0 && gi.x < uIsleSize.x && gi.y < uIsleSize.y) {
+    ivec2 cell = ivec2(gi);
+    // Los índices de una celda van seguidos y los vacíos detrás: el primer vacío corta también el bucle de los texels, y una
+    // celda con ≤ 3 candidatos lee 1 texel aunque la rejilla lleve 2 (con los 50 círculos de D92; BACKLOG :1687)
+    bool cellDone = false;
+    for (int l = 0; l < ${texelsPerCell}; l++) {
+      if (cellDone) break;
+      vec4 t = texelFetch(uIsleGrid, ivec2(cell.x * ${texelsPerCell} + l, cell.y), 0) * 255.0;
+      for (int k = 0; k < 4; k++) {
+        int i = int(t[k] + 0.5);
+        if (i == ${EMPTY}) {
+          cellDone = true;
+          break;
+        }
+        dIsle = min(dIsle, length(p - uIslands[i].xy) - uIslands[i].z);
+      }
+    }
+  }`;
+
+const fragmentShader = (circles: number, texelsPerCell: number, lookup: OceanLookup) => /* glsl */ `
 uniform float uTime;
 uniform vec3 uLightDir;
 uniform vec3 uViewDir;
@@ -132,26 +160,7 @@ void main() {
   vec3 c = mix(uDeep, mix(uTrough, uCrest, smoothstep(-0.6, 0.8, hc)), 0.55);
   // Distancia a la costa: solo los círculos candidatos de la celda (AC-198 e). Fuera de la rejilla no hay ninguno a menos
   // de 18 m, y 1e5 da lo mismo que la distancia de verdad
-  float dIsle = 1e5;
-  vec2 gi = floor((p - uIsleBox.xy) * uIsleBox.z);
-  if (gi.x >= 0.0 && gi.y >= 0.0 && gi.x < uIsleSize.x && gi.y < uIsleSize.y) {
-    ivec2 cell = ivec2(gi);
-    // Los índices de una celda van seguidos y los vacíos detrás: el primer vacío corta también el bucle de los texels, y una
-    // celda con ≤ 4 candidatos lee 1 texel aunque la rejilla lleve 2 (con los 50 círculos de D92; BACKLOG :1687)
-    bool cellDone = false;
-    for (int l = 0; l < ${texelsPerCell}; l++) {
-      if (cellDone) break;
-      vec4 t = texelFetch(uIsleGrid, ivec2(cell.x * ${texelsPerCell} + l, cell.y), 0) * 255.0;
-      for (int k = 0; k < 4; k++) {
-        int i = int(t[k] + 0.5);
-        if (i == ${EMPTY}) {
-          cellDone = true;
-          break;
-        }
-        dIsle = min(dIsle, length(p - uIslands[i].xy) - uIslands[i].z);
-      }
-    }
-  }
+  float dIsle = 1e5;${isleDistance(lookup, circles, texelsPerCell)}
   float s = 1.0 - smoothstep(0.0, 18.0, dIsle);
   c = mix(c, uShallow, 0.85 * s);
   float s2 = 1.0 - smoothstep(0.0, 4.0, dIsle);
@@ -222,7 +231,7 @@ function isleGridTexture(grid: IsleGrid): THREE.DataTexture {
   return tex;
 }
 
-export function createOceanMaterial(islands: IslandDef[]): THREE.ShaderMaterial {
+export function createOceanMaterial(islands: IslandDef[], options: { lookup?: OceanLookup } = {}): THREE.ShaderMaterial {
   const grid = buildIsleGrid(islands);
   // Sin islas, un círculo que no se lee: GLSL no admite arrays de tamaño 0
   const packed = islands.length ? islands.map((island) => new THREE.Vector3(island.x, island.z, island.radius)) : [new THREE.Vector3(0, 0, -1)];
@@ -235,7 +244,7 @@ export function createOceanMaterial(islands: IslandDef[]): THREE.ShaderMaterial 
   const theta = CAMERA.elevation;
   return new THREE.ShaderMaterial({
     vertexShader,
-    fragmentShader: fragmentShader(packed.length, grid.texelsPerCell),
+    fragmentShader: fragmentShader(packed.length, grid.texelsPerCell, options.lookup ?? 'grid'),
     uniforms: {
       uTime: { value: 0 },
       uLightDir: { value: new THREE.Vector3(...LIGHTING.sunDir) },

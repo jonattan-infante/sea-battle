@@ -13,7 +13,7 @@ import { FreeView, OwnWatch, ViewMode } from './free-view';
 import type { GameClient, RenderShip } from './game-client';
 import { useHud } from './hud-store';
 import { buildBuoyGeometry, buildIslands, buildLootGeometry, buildPalmGeometry, buoyInstances, PropInstance } from './models/island-geometry';
-import { createOceanGeometry, createOceanMaterial, disposeOceanMaterial } from './models/ocean-material';
+import { createOceanGeometry, createOceanMaterial, disposeOceanMaterial, type OceanLookup } from './models/ocean-material';
 import { IslandGlbStore, sameCircles, serverShapes, shapeOf } from './models/island-glb';
 import { isMap10, islandsKey, islandsOf, ISLANDS_1_0_KEY } from './map-islands';
 import { measureSailVisibility, measureShipValues, SailVisibility, ShipValues } from './models/sail-visibility';
@@ -743,6 +743,7 @@ export class GameRuntime implements OverlayHost, ChipHost {
   private palms: THREE.InstancedMesh;
   private islandsKey = ISLANDS_1_0_KEY; // las islas que pinta la escena (map-islands.ts): las de la 1.0 hasta la bienvenida
   private islandList: readonly IslandDef[] = ISLANDS;
+  private oceanLookup: OceanLookup = 'grid'; // la rejilla siempre; la lista, solo con el gancho de QA (setOceanLookup)
   private readonly buoys: THREE.InstancedMesh;
   private readonly loot: THREE.InstancedMesh;
   private readonly wrecks = new Map<string, WreckState>();
@@ -876,15 +877,20 @@ export class GameRuntime implements OverlayHost, ChipHost {
     this.islandList = islands;
     const list = [...islands];
     this.navigator = new Navigator(list);
-    const ocean = this.ocean.material;
-    this.ocean.material = createOceanMaterial(list);
-    disposeOceanMaterial(ocean);
+    this.rebuildOcean();
     // Las raíces del GLB son de otro mapa: fuera, y vuelven a entrar si sus círculos siguen siendo los del servidor
     for (const root of this.islandRoots.values()) this.scene.remove(root);
     this.islandRoots.clear();
     this.rebuildIslandGeometry();
     // AC-198 c: con el mapa nuevo, islands.glb baja después de la entrada (updateFrame); hasta entonces, la versión sencilla
     if (!isMap10(list)) this.islandGlb.request();
+  }
+
+  // El material del agua con las islas de la escena y la búsqueda de la costa elegida; el viejo se libera (con su textura)
+  private rebuildOcean(): void {
+    const ocean = this.ocean.material;
+    this.ocean.material = createOceanMaterial([...this.islandList], { lookup: this.oceanLookup });
+    disposeOceanMaterial(ocean);
   }
 
   // Las islas procedurales: con el mapa de la 1.0, las de siempre; con otro, la versión sencilla de cada círculo menos los de
@@ -1315,6 +1321,14 @@ export class GameRuntime implements OverlayHost, ChipHost {
   // VFX-01: draw calls de los efectos = con VFX − sin VFX
   setVfxVisible(visible: boolean): void {
     this.effects.group.visible = visible;
+  }
+
+  // AC-198 e (solo QA): la costa del agua por la rejilla (el juego) o recorriendo todos los círculos (la de antes), para medir
+  // las dos en el mismo build. Ni la interfaz ni la URL lo cambian: el juego siempre usa la rejilla
+  setOceanLookup(lookup: OceanLookup): void {
+    if (lookup === this.oceanLookup) return;
+    this.oceanLookup = lookup;
+    this.rebuildOcean();
   }
 
   // VFX-02: geometrías y texturas vivas en la GPU (deben quedar constantes durante el combate)
