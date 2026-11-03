@@ -5,14 +5,17 @@ import {
   CAPTAIN_LAIR_RADIUS,
   CAPTAIN_SPAWN_MIN_PLAYER_DISTANCE,
   HOSTILE_AI,
+  MAP_1_0,
+  MAP_1_1,
   PIRATE_PORT_EXCLUSION,
   PIRATE_SECTORS,
   PlayerShipClass,
-  TICK_RATE
+  TICK_RATE,
+  navClearance
 } from '../constants';
 import { GameEvent, Ship, Upgrades, World } from '../types';
-import { createRng, distance } from '../vec';
-import { addPlayer, attack, createWorld, maxHpFor, moveTo, respawn, setRepair, shipOfPlayer, spawnCaptain, spawnGunboat, spawnMerchant, spawnPirate } from '../world';
+import { angleDelta, createRng, distance, headingTo } from '../vec';
+import { addPlayer, attack, createWorld, drainEvents, maxHpFor, moveTo, navigatorOf, respawn, setRepair, shipOfPlayer, spawnCaptain, spawnGunboat, spawnMerchant, spawnPirate, step } from '../world';
 import { DT, i2World, median, placeCaptain, placePlayer, run } from './helpers';
 
 const PORT = { x: 0, z: 0 };
@@ -305,6 +308,109 @@ describe('H-305 — Correa del capitán (AC-112)', () => {
     expect(combatTicks).toBeGreaterThan(0);
     expect(returns).toBeGreaterThan(0);
     expect(minToPort).toBeGreaterThanOrEqual(PIRATE_PORT_EXCLUSION);
+  });
+});
+
+describe('H-305 — El Capitán no gira en el sitio ni se para junto a la costa (C3)', () => {
+  // Las 2 rachas de la calibración de AC-173 con el mapa de la 1.0, reproducidas en R1 (el Capitán pegado al margen de I1
+  // (260, 200, r 45) contra un jugador quieto que repara a ~56 m), y el canal de 48 m entre el lóbulo oeste de I1 y el escollo
+  // E1a del mapa de la 1.1, donde la variante (c) rebotaba cada 7–9 s. El punto adelantado de la órbita cae en el margen y
+  // nearestNavigable lo recortaba a pocos metros del barco: giraba en el sitio. Criterio de producto (2026-11-03; r11 f40f808):
+  // ninguna ventana de 16 s (desde t = 0) con ≥ 270° de giro y < 10 m de desplazamiento; 15 andanadas en 60 s (recarga de 4 s),
+  // todas a ≤ 65 m. Parado (en combate a < 0,5 m/s) más de 10 s seguidos, solo sin arco libre en ningún sentido
+  // (ai.orbitHold, opción i), y entonces a ≤ 65 m del objetivo y a ≥ el margen de la costa. En el canal, además, el objetivo
+  // sale por el eje hacia el NE: el Capitán deja de estar quieto antes de 10 s
+  const OUT_OF_CHANNEL = { x: 228.2, z: 340.2 };
+  test.each([
+    ['s6 junto a I1 (1.0)', MAP_1_0, { x: 316.03, z: 222.09 }, (-7.3 * Math.PI) / 180, { x: 275.25, z: 260.83 }, false],
+    ['s7 junto a I1 (1.0)', MAP_1_0, { x: 323.34, z: 193.8 }, (-20.5 * Math.PI) / 180, { x: 307.03, z: 246.78 }, false],
+    ['canal I1–E1a (1.1)', MAP_1_1, { x: 166.3, z: 243.2 }, headingTo({ x: 166.3, z: 243.2 }, { x: 195.9, z: 289.6 }), { x: 195.9, z: 289.6 }, true]
+  ])('%s: contra un objetivo quieto que repara, ninguna ventana de 16 s con ≥ 270° y < 10 m, 15 andanadas a ≤ 65 m en 60 s y parado > 10 s solo sin arco libre, a tiro y fuera del margen', (_name, map, at, heading, targetAt, leaves) => {
+    const world = createWorld({ seed: 1, spawnNpcs: false, i2: true, map });
+    const nav = navigatorOf(world);
+    const margin = navClearance(CAPTAIN_CLASS);
+    addPlayer(world, 'p', 'P', { gold: 0, upgrades: { cannons: 3, hull: 1, sails: 1 }, ownedShips: ['sloop', 'frigate'], activeShip: 'frigate' });
+    const target = shipOfPlayer(world, 'p')!;
+    target.pos = { ...targetAt };
+    target.protectedUntil = 0;
+    target.maxHp = 1e9; // que no se hunda: lo que se mide es el movimiento del Capitán
+    target.hp = 5e8;
+    setRepair(world, 'p', true);
+    const captain = spawnCaptain(world, at)!;
+    captain.heading = heading;
+
+    const windowTicks = 16 * TICK_RATE;
+    const tightWindows: { t: number; turnDeg: number; disp: number }[] = [];
+    let turn = 0;
+    let lastHeading = captain.heading;
+    let start = { ...captain.pos };
+    let volleys = 0;
+    let farthestVolley = 0;
+    let stopped = 0;
+    let longestStop = 0;
+    let holdTicks = 0;
+    const holdBreaks: string[] = [];
+    for (let tick = 1; tick <= 60 * TICK_RATE; tick++) {
+      if (!target.repairing && target.hp < target.maxHp) setRepair(world, 'p', true);
+      step(world, DT);
+      for (const e of drainEvents(world)) {
+        if (e.type === 'volley' && e.shipId === captain.id) {
+          volleys++;
+          farthestVolley = Math.max(farthestVolley, distance(e.from, e.to));
+        }
+      }
+      turn += angleDelta(lastHeading, captain.heading);
+      lastHeading = captain.heading;
+      const hold = captain.ai?.orbitHold === true;
+      if (hold) {
+        holdTicks++;
+        const d = distance(captain.pos, target.pos);
+        const coast = nav.edgeClearance(captain.pos);
+        if (holdBreaks.length < 3 && (d > 65 || coast < margin - 0.01)) holdBreaks.push(`t=${(tick / TICK_RATE).toFixed(2)} d=${d.toFixed(2)} costa=${coast.toFixed(2)}`);
+      }
+      stopped = !hold && captain.ai?.state === 'combat' && captain.speed < 0.5 ? stopped + DT : 0;
+      longestStop = Math.max(longestStop, stopped);
+      if (tick % windowTicks === 0) {
+        const disp = distance(captain.pos, start);
+        if (Math.abs(turn) >= (270 * Math.PI) / 180 && disp < 10) tightWindows.push({ t: tick / TICK_RATE, turnDeg: +((turn * 180) / Math.PI).toFixed(1), disp: +disp.toFixed(1) });
+        turn = 0;
+        start = { ...captain.pos };
+      }
+    }
+    // En el canal: el objetivo sale y se abre un sentido; el Capitán se mueve (≥ 0,5 m/s) antes de 10 s
+    let leftHoldAfter: number | string = 'no aplica';
+    if (leaves) {
+      const holdingAt60 = captain.ai?.orbitHold === true;
+      moveTo(world, 'p', OUT_OF_CHANNEL);
+      leftHoldAfter = holdingAt60 ? 'no se movió en 10 s' : 'no estaba quieto sin arco a los 60 s';
+      for (let tick = 1; holdingAt60 && tick <= 10 * TICK_RATE; tick++) {
+        step(world, DT);
+        drainEvents(world);
+        if (captain.speed >= 0.5) {
+          leftHoldAfter = 'antes de 10 s';
+          break;
+        }
+      }
+    }
+    // Si cae, el rojo enseña las ventanas, los segundos parado, las andanadas, la más lejana o dónde se rompió el quieto
+    expect({
+      tightWindows,
+      stoppedOver10sWithArc: longestStop > 10 ? +longestStop.toFixed(2) : false,
+      holdOutOfRangeOrInMargin: holdBreaks,
+      captainState: captain.ai?.state,
+      volleys,
+      volleysWithin65: farthestVolley <= 65 ? true : +farthestVolley.toFixed(1),
+      leftHoldAfter
+    }).toEqual({
+      tightWindows: [],
+      stoppedOver10sWithArc: false,
+      holdOutOfRangeOrInMargin: [],
+      captainState: 'combat',
+      volleys: 15,
+      volleysWithin65: true,
+      leftHoldAfter: leaves ? 'antes de 10 s' : 'no aplica'
+    });
+    console.log(`C3 R2 ${_name}: ${(holdTicks / TICK_RATE).toFixed(2)} s quieto sin arco libre, ${volleys} andanadas, la más lejana a ${farthestVolley.toFixed(1)} m`);
   });
 });
 
