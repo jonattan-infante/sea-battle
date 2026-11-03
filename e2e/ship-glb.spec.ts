@@ -167,12 +167,16 @@ test.describe('Barcos en GLB (ASSET-SPEC §13)', () => {
 
   // AC-193 c, opción B (producto, 2026-10-18): la entrada espera al GLB propio, como mucho 0,5 s sobre la de hoy (el primer
   // frame). Los tiempos de SwiftShader no valen como cifra: se comprueba en qué frame se abre, que no depende de su duración
-  test('AC-193 c (B): sin ningún GLB que pueda salir (ninguno de una clase del jugador y el I2 apagado) se entra en el primer frame, como hoy', async ({ page }) => {
+  // AC-200 e (producto, 2026-11-03, cambio a propósito): la entrada espera además a la bienvenida, con el mismo tope. Antes
+  // este test asertaba shownAt === firstFrameAt («se entra en el primer frame, como hoy»)
+  test('AC-193 c (B) y AC-200 e: sin ningún GLB que pueda salir (ninguno de una clase del jugador y el I2 apagado) se entra en el primer frame tras la bienvenida, dentro del tope', async ({ page }) => {
     await enterGame(page);
     const entry = await entryOf(page);
     console.log(`AC-193 c entrada sin GLB: ${JSON.stringify(entry)}`);
-    expect(entry).toMatchObject({ lastWaitAt: 0, withGlb: false, capped: false, coverHidden: true });
-    expect(entry.shownAt).toBe(entry.firstFrameAt);
+    expect(entry).toMatchObject({ withGlb: false, capped: false, portCapped: false, coverHidden: true });
+    expect(entry.welcomeAt).toBeGreaterThan(0);
+    if (!entry.welcomeCapped) expect(entry.shownAt).toBeGreaterThanOrEqual(entry.welcomeAt); // ≥ la bienvenida, salvo con el tope
+    expect(entry.lastWaitAt - entry.firstFrameAt).toBeLessThan(OWN_GLB_WAIT_MS); // y nunca esperó más allá del tope
   });
 
   // Sin WebGL no hay frames que abran la entrada. En la 1.0.3 se ve el canvas vacío con el HUD: R3F crea el renderer

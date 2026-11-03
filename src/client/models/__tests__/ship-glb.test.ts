@@ -566,6 +566,19 @@ describe('AC-193 c, opción B: la entrada espera al GLB propio con un tope de 0,
     expect(both).toMatchObject({ withGlb: true, capped: false, portCapped: true });
   });
 
+  test('AC-200 e (producto, 2026-11-03): espera a la bienvenida con el mismo tope, y después al puerto si se pidió con ella', () => {
+    const quick = new EntryGate();
+    expect([quick.update(1000, false, false, false, true), quick.update(1050, false, false, true, false), quick.update(1300, false, false, false, false)]).toEqual([false, false, true]);
+    expect(quick).toMatchObject({ shownAt: 1300, lastWaitAt: 1050, capped: false, portCapped: false, welcomeCapped: false });
+    const held = new EntryGate();
+    expect([1000, 1499, 1516].map((t) => held.update(t, false, false, false, true))).toEqual([false, false, true]);
+    expect(held).toMatchObject({ shownAt: 1516, capped: false, portCapped: false, welcomeCapped: true });
+    // Sin nada que esperar más que la bienvenida, la de la 1.0 entra en el primer frame tras ella
+    const map10 = new EntryGate();
+    expect([map10.update(1000, false, false, false, true), map10.update(1016, false, false, false, false)]).toEqual([false, true]);
+    expect(map10).toMatchObject({ firstFrameAt: 1000, shownAt: 1016, welcomeCapped: false });
+  });
+
   test('si el GLB falla, entra en ese frame con el modelo de hoy', () => {
     const gate = new EntryGate();
     gate.update(1000, true, false);
