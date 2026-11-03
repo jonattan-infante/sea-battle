@@ -553,6 +553,19 @@ describe('AC-193 c, opción B: la entrada espera al GLB propio con un tope de 0,
     expect([1000, 1600, 2999, 3000].map((t) => longer.update(t, true, false))).toEqual([false, false, false, true]);
   });
 
+  test('AC-200 e: con el puerto pedido espera también a él, con el mismo tope, y anota si entró sin él', () => {
+    const arrives = new EntryGate();
+    expect([arrives.update(1000, false, false, true), arrives.update(1300, false, false, true), arrives.update(1316, false, false, false)]).toEqual([false, false, true]);
+    expect(arrives).toMatchObject({ shownAt: 1316, lastWaitAt: 1300, capped: false, portCapped: false });
+    const late = new EntryGate();
+    expect([1000, 1499, 1516].map((t) => late.update(t, false, false, true))).toEqual([false, false, true]);
+    expect(late).toMatchObject({ shownAt: 1516, capped: false, portCapped: true });
+    // El barco llega y el puerto no: espera al puerto hasta el tope
+    const both = new EntryGate();
+    expect([both.update(1000, true, false, true), both.update(1200, false, true, true), both.update(1516, false, true, true)]).toEqual([false, false, true]);
+    expect(both).toMatchObject({ withGlb: true, capped: false, portCapped: true });
+  });
+
   test('si el GLB falla, entra en ese frame con el modelo de hoy', () => {
     const gate = new EntryGate();
     gate.update(1000, true, false);

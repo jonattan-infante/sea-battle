@@ -12,6 +12,15 @@ import { fetchGlb, GlbLoader, TextureUpgrade } from './ship-glb';
 // desde la entrega A1 de ux (ASSET-SPEC §9.7, sha256 1b8aa368… con la KTX2 dentro)
 export const ISLANDS_GLB = '/models/islands.31481120.glb';
 export const PILOT_ROOTS: readonly string[] = ['island_I1'];
+// El puerto de D92 (ASSET-SPEC §9.8): un archivo con su raíz island_port, el mismo cargador y el mismo paso 4c, con la KTX2
+// aparte (island_port_atlas.<hash>.ktx2). Sus 7 sb_circles son los PORT.k de la bienvenida
+export const PORT_GLB = '/models/island_port.64aadaf2.glb';
+export const PORT_ROOTS: readonly string[] = ['island_port'];
+
+// La forma del mapa de cada raíz: island_<id> → <id>, salvo el puerto, cuyos círculos llegan como PORT.k (constants.ts). Un
+// mapa explícito, y no mayúsculas, porque hay formas con minúsculas (E1a)
+const ROOT_SHAPE: Record<string, string> = { island_port: 'PORT' };
+export const shapeOfRoot = (sbId: string): string => ROOT_SHAPE[sbId] ?? sbId.replace(/^island_/, '');
 
 export type Circle = [x: number, z: number, radius: number];
 
@@ -55,7 +64,7 @@ export function takeRoots(scene: THREE.Object3D, wanted: readonly string[]): { m
       continue;
     }
     scene.remove(root);
-    models.push({ shape: sbId.replace(/^island_/, ''), sbId, circles: circles as Circle[], root });
+    models.push({ shape: shapeOfRoot(sbId), sbId, circles: circles as Circle[], root });
   }
   for (const id of wanted) if (!models.some((m) => m.sbId === id) && !problems.some((p) => p.startsWith(`${id}:`))) problems.push(`${id}: no está en el GLB`);
   return { models, problems };
@@ -104,6 +113,11 @@ export class IslandGlbStore {
 
   get loading(): boolean {
     return this.state === 'loading';
+  }
+
+  // Pedido y sin terminar (ni llegado ni fallado): la entrada espera al puerto mientras tanto (AC-200 e)
+  get waiting(): boolean {
+    return this.state === 'wanted' || this.state === 'loading';
   }
 
   pump(renderer: THREE.WebGLRenderer): void {

@@ -479,18 +479,21 @@ export class EntryGate {
   shownAt = 0;
   withGlb = false; // el barco propio entró ya con su GLB
   capped = false; // se abrió por el tope, con el procedural
+  portCapped = false; // AC-200 e: se abrió por el tope sin el modelo del puerto (con su versión sencilla)
 
-  update(now: number, waiting: boolean, loaded: boolean): boolean {
+  // portWaiting (AC-200 e, PROVISIONAL): el modelo del puerto, pedido y sin llegar. La entrada lo espera con el mismo tope
+  update(now: number, waiting: boolean, loaded: boolean, portWaiting = false): boolean {
     if (this.shownAt) return false;
     if (!this.firstFrameAt) this.firstFrameAt = now;
     const capped = now - this.firstFrameAt >= this.waitMs;
-    if (waiting && !capped) {
+    if ((waiting || portWaiting) && !capped) {
       this.lastWaitAt = now;
       return false;
     }
     this.shownAt = now;
     this.withGlb = loaded;
     this.capped = waiting;
+    this.portCapped = portWaiting;
     return true;
   }
 }

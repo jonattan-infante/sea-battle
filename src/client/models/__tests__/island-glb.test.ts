@@ -1,6 +1,7 @@
 // Piloto C1 del mapa nuevo (AC-198; ASSET-SPEC §9.7): islands.glb, con una raíz por isla, y su cargador. Sobre el archivo de
 // public/models: sus raíces traen los círculos del mapa de la 1.1 (AC-199 e) y la costa de la del piloto, I1, cae dentro de
 // su colisión (AC-199 a). Y el cargador: baja una vez, después de pedirlo, entrega solo la raíz del piloto y libera el resto
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import * as THREE from 'three';
@@ -8,21 +9,22 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { MAP_1_1 } from '../../../game/constants';
 import { editGlb } from '../../../../scripts/glb/glb-fallback';
-import { Circle, IslandGlbStore, ISLANDS_GLB, PILOT_ROOTS, sameCircles, serverShapes, shapeOf, takeRoots } from '../island-glb';
+import { Circle, IslandGlbStore, ISLANDS_GLB, PILOT_ROOTS, PORT_GLB, PORT_ROOTS, sameCircles, serverShapes, shapeOf, shapeOfRoot, takeRoots } from '../island-glb';
 import type { GlbLoader, TextureUpgrade } from '../ship-glb';
 
 const ROOT = path.join(__dirname, '..', '..', '..', '..');
 const FILE = path.join(ROOT, 'public', ISLANDS_GLB);
+const PORT_FILE = path.join(ROOT, 'public', PORT_GLB);
 
-// La escena de islands.glb sin texturas: sin navegador no hay descodificador de imágenes, y aquí solo cuentan la geometría y
-// los extras de las raíces
-async function islandsScene(): Promise<THREE.Object3D> {
-  const bytes = editGlb(new Uint8Array(fs.readFileSync(FILE)), (json) => {
+// La escena de islands.glb (o de island_port.glb) sin texturas: sin navegador no hay descodificador de imágenes, y aquí solo
+// cuentan la geometría y los extras de las raíces
+async function islandsScene(file = FILE): Promise<THREE.Object3D> {
+  const bytes = editGlb(new Uint8Array(fs.readFileSync(file)), (json) => {
     for (const m of (json.materials ?? []) as { pbrMetallicRoughness?: { baseColorTexture?: unknown } }[]) delete m.pbrMetallicRoughness?.baseColorTexture;
     delete json.textures;
     delete json.images;
     delete json.samplers;
-    json.extensionsUsed = (json.extensionsUsed as string[]).filter((e) => e !== 'KHR_texture_basisu');
+    json.extensionsUsed = ((json.extensionsUsed ?? []) as string[]).filter((e) => e !== 'KHR_texture_basisu');
   });
   const gltf = await new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).parseAsync(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer, '');
   return gltf.scene;
@@ -84,7 +86,28 @@ describe('islands.glb (ASSET-SPEC §9.7) frente al mapa de la 1.1', () => {
   });
 });
 
+describe('island_port.glb (ASSET-SPEC §9.8) frente al puerto de la 1.1', () => {
+  test('el archivo está en public/models con el nombre de PORT_GLB, y su nombre lleva el principio de su sha256 (paso 4c)', () => {
+    expect(PORT_ROOTS).toEqual(['island_port']);
+    const sha = crypto.createHash('sha256').update(fs.readFileSync(PORT_FILE)).digest('hex');
+    expect(PORT_GLB).toBe(`/models/island_port.${sha.slice(0, 8)}.glb`);
+  });
+
+  test('AC-200 e: la raíz island_port es la forma PORT y trae los 7 círculos del puerto de la bienvenida', async () => {
+    const { models, problems } = takeRoots(await islandsScene(PORT_FILE), PORT_ROOTS);
+    expect(problems).toEqual([]);
+    expect(models.map((m) => [m.shape, m.sbId])).toEqual([['PORT', 'island_port']]);
+    const port = serverShapes(MAP_1_1.islands).get('PORT')!;
+    expect(port).toHaveLength(7);
+    expect(sameCircles(models[0].circles, port)).toBe(true);
+  });
+});
+
 describe('círculos del servidor y de las raíces', () => {
+  test('shapeOfRoot: island_<id> es <id>, con sus minúsculas, salvo island_port, que es PORT', () => {
+    expect(['island_I1', 'island_E1a', 'island_port'].map(shapeOfRoot)).toEqual(['I1', 'E1a', 'PORT']);
+  });
+
   test('shapeOf agrupa los círculos de mapOf por forma, y sameCircles no mira el orden pero sí cada valor a 1 mm', () => {
     expect(['I1.0', 'I1.4', 'E1a', 'PORT.6'].map(shapeOf)).toEqual(['I1', 'I1', 'E1a', 'PORT']);
     const i1 = serverShapes(MAP_1_1.islands).get('I1')!;
@@ -123,7 +146,7 @@ function scene(ids: string[], material = new THREE.MeshStandardMaterial({ map: n
   const geometries: THREE.BufferGeometry[] = [];
   for (const id of ids) {
     const root = new THREE.Object3D();
-    root.userData = { sb_id: id, sb_kind: 'island', sb_circles: serverShapes(MAP_1_1.islands).get(id.replace(/^island_/, '')) };
+    root.userData = { sb_id: id, sb_kind: 'island', sb_circles: serverShapes(MAP_1_1.islands).get(shapeOfRoot(id)) };
     const g = new THREE.BoxGeometry();
     geometries.push(g);
     root.add(new THREE.Mesh(g, material));
@@ -188,6 +211,27 @@ describe('IslandGlbStore (AC-198 c)', () => {
     expect(store.take()).toEqual([]);
     expect(warn.mock.calls.map((c) => String(c[0]))).toEqual([`[island-glb] ${ISLANDS_GLB}: HTTP 404; se quedan las islas sencillas`]);
     warn.mockRestore();
+  });
+
+  test('waiting: pedido y sin terminar; deja de esperar al llegar o al fallar', async () => {
+    for (const ok of [true, false]) {
+      const { calls, loader, fetchBytes } = fake();
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      const store = new IslandGlbStore(() => loader, PORT_GLB, PORT_ROOTS, fetchBytes);
+      const seen = [store.waiting];
+      store.request();
+      seen.push(store.waiting);
+      store.pump(gl);
+      seen.push(store.waiting);
+      if (ok) calls[0].resolve(scene(['island_port']).s);
+      else calls[0].reject(new Error('HTTP 404'));
+      await settle();
+      seen.push(store.waiting);
+      expect([ok, seen]).toEqual([ok, [false, true, true, false]]);
+      expect(store.take().map((m) => [m.shape, m.sbId])).toEqual(ok ? [['PORT', 'island_port']] : []);
+      expect(calls.map((c) => c.url)).toEqual([PORT_GLB]);
+      warn.mockRestore();
+    }
   });
 
   test('una raíz del piloto que falta en el GLB se avisa', async () => {
