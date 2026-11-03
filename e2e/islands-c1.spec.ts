@@ -13,7 +13,7 @@ import { islandsKey } from '../src/client/map-islands';
 import { ISLANDS_GLB, PORT_GLB } from '../src/client/models/island-glb';
 import { buildIslands, PORT_PAVED_COLOR } from '../src/client/models/island-geometry';
 import { OWN_GLB_WAIT_MS } from '../src/client/models/ship-glb';
-import { enterGame, entryOf } from './helpers';
+import { enterGame } from './helpers';
 import { startOwnServer } from './own-server';
 
 const GLB = /\/models\/islands\.[0-9a-f]+\.glb$/;
@@ -58,6 +58,14 @@ async function transferred(reqs: Request[]) {
   const sizes = await Promise.all(reqs.map(async (r) => ({ url: new URL(r.url()).pathname, ...(await r.sizes()) })));
   return { bytes: sizes.reduce((s, x) => s + x.responseBodySize + x.responseHeadersSize, 0), detail: sizes.map((x) => `${x.url} ${x.responseBodySize}+${x.responseHeadersSize}`).join(' · ') };
 }
+
+// La entrada (EntryGate, AC-193 c y AC-200 e): primer frame, frame en que se abrió y si fue por el tope sin el barco propio o
+// sin el puerto
+const entryOf = (page: Page) =>
+  page.evaluate(() => {
+    const e = (window.__SEA_BATTLE__!.runtime() as unknown as { entry: { firstFrameAt: number; lastWaitAt: number; shownAt: number; capped: boolean; portCapped: boolean } }).entry;
+    return { firstFrameAt: e.firstFrameAt, lastWaitAt: e.lastWaitAt, shownAt: e.shownAt, capped: e.capped, portCapped: e.portCapped };
+  });
 
 // Socket.IO sobre WebSocket: cada evento viaja como texto `42["evento",datos]` (como en progress-states.spec.ts)
 const eventOf = (m: string | Buffer): string | null => (typeof m === 'string' && m.startsWith('42[') ? (JSON.parse(m.slice(2)) as [string])[0] : null);
@@ -188,8 +196,7 @@ test.describe('C1: las islas del mapa de la 1.1 en el cliente', () => {
       const d = await drawn(page);
       const withoutPort = MAP_1_1.islands.filter((c) => c.id.split('.')[0] !== 'PORT');
       console.log(`C1 · mapa 1.1, island_port.glb 4 s tarde: entrada ${JSON.stringify(entry)}, esperó ${(entry.shownAt - entry.firstFrameAt).toFixed(1)} ms (tope ${OWN_GLB_WAIT_MS} ms) · raíces ${JSON.stringify(d.roots)} · peticiones island_port.glb ${req.port.length} · su KTX2 ${req.portKtx2.length} · triángulos procedurales ${d.triangles} (la versión sencilla sin el puerto: ${trianglesOf(true, withoutPort)}) · vértices de empedrado ${await drawnCobble(page)}`);
-      // Con el tope: sin el puerto, o sin la bienvenida si el primer frame (que compila los shaders en SwiftShader) la adelanta
-      expect(entry.portCapped || entry.welcomeCapped).toBe(true);
+      expect(entry.portCapped).toBe(true);
       expect(entry.shownAt - entry.firstFrameAt).toBeGreaterThanOrEqual(OWN_GLB_WAIT_MS);
       expect(d.roots).toEqual(['PORT']);
       expect(req.port.length).toBe(1);
@@ -202,30 +209,24 @@ test.describe('C1: las islas del mapa de la 1.1 en el cliente', () => {
     }
   });
 
-  // AC-200 e (producto, 2026-11-03): con la bienvenida retenida 3 s, la entrada se abre por el tope y, hasta la bienvenida, el
-  // lienzo no tiene islas ni puerto. Se lee el estado de las mallas en cada frame (rAF), no un píxel
-  test('con la 1.1 y la bienvenida retenida 3 s, la entrada se abre por el tope y, hasta la bienvenida, no hay islas ni puerto, solo el mar (AC-200 e)', async ({ page }, info) => {
+  // AC-200 e: antes de la bienvenida no hay lienzo (GameApp.tsx:614 monta GameCanvas solo con ella; antes, la portada), así que
+  // nunca se ven las formas de la 1.0 con otro mapa, y el tope de la entrada cuenta desde el primer frame, que va tras la
+  // bienvenida. Con la bienvenida retenida 3 s se lee en cada rAF si hay <canvas> y si el runtime pintó algún frame, no un píxel
+  test('con la 1.1 y la bienvenida retenida 3 s, hasta la bienvenida no hay lienzo ni frames del juego, solo la portada; después la entrada se abre y pone el puerto (AC-200 e)', async ({ page }, info) => {
     test.setTimeout(120_000);
     const server = await startOwnServer({ SEA_BATTLE_MAP: '1.1', SEA_BATTLE_NPCS: '0' });
     try {
       await page.addInitScript(() => {
-        type Rt = {
-          client: { welcome: unknown };
-          entry: { shownAt: number };
-          islandMesh: { visible: boolean };
-          palms: { visible: boolean };
-          islandRoots: Map<string, unknown>;
-          ocean: { material: { uniforms: { uIsleSize: { value: { x: number; y: number } } } } };
-        };
-        const w = window as unknown as { __C1_SCENERY__: { welcome: boolean; shown: boolean; mesh: boolean; palms: boolean; roots: number; isle: number[] }[]; __SEA_BATTLE__?: { runtime(): unknown } };
-        w.__C1_SCENERY__ = [];
-        const tick = () => {
+        type Rt = { client: { welcome: unknown }; entry: { firstFrameAt: number } };
+        const w = window as unknown as { __C1_PRE__: { t: number; welcome: boolean; canvas: boolean; frames: boolean; cover: boolean }[]; __SEA_BATTLE__?: { runtime(): unknown } };
+        w.__C1_PRE__ = [];
+        const tick = (t: number) => {
           const rt = w.__SEA_BATTLE__?.runtime() as Rt | undefined;
-          if (rt?.islandMesh) {
-            const s = rt.ocean.material.uniforms.uIsleSize.value;
-            w.__C1_SCENERY__.push({ welcome: !!rt.client.welcome, shown: rt.entry.shownAt > 0, mesh: rt.islandMesh.visible, palms: rt.palms.visible, roots: rt.islandRoots.size, isle: [s.x, s.y] });
+          if (rt) {
+            const cover = document.querySelector<HTMLElement>('.game-root [data-testid="loading"]');
+            w.__C1_PRE__.push({ t, welcome: !!rt.client.welcome, canvas: !!document.querySelector('.game-root canvas'), frames: rt.entry.firstFrameAt > 0, cover: !!cover && !cover.hidden });
           }
-          if (w.__C1_SCENERY__.filter((f) => f.welcome).length < 30) requestAnimationFrame(tick);
+          if (w.__C1_PRE__.filter((f) => f.welcome).length < 30) requestAnimationFrame(tick);
         };
         requestAnimationFrame(tick);
       });
@@ -248,21 +249,20 @@ test.describe('C1: las islas del mapa de la 1.1 en el cliente', () => {
         });
       });
       await enterGame(page, server.url);
-      await expect.poll(() => page.evaluate(() => (window as unknown as { __C1_SCENERY__: { welcome: boolean }[] }).__C1_SCENERY__.filter((f) => f.welcome).length), { timeout: 30_000 }).toBeGreaterThanOrEqual(30);
-      const frames = await page.evaluate(() => (window as unknown as { __C1_SCENERY__: { welcome: boolean; shown: boolean; mesh: boolean; palms: boolean; roots: number; isle: number[] }[] }).__C1_SCENERY__);
+      await expect.poll(() => page.evaluate(() => (window as unknown as { __C1_PRE__: { welcome: boolean }[] }).__C1_PRE__.filter((f) => f.welcome).length), { timeout: 30_000 }).toBeGreaterThanOrEqual(30);
+      const ticks = await page.evaluate(() => (window as unknown as { __C1_PRE__: { t: number; welcome: boolean; canvas: boolean; frames: boolean; cover: boolean }[] }).__C1_PRE__);
+      await hasRoot(page, 'PORT');
       const entry = await entryOf(page);
-      const before = frames.filter((f) => !f.welcome);
-      const shownBefore = before.filter((f) => f.shown);
-      const after = frames.filter((f) => f.welcome);
-      const seen = (fs: typeof frames) => [...new Set(fs.map((f) => JSON.stringify({ mesh: f.mesh, palms: f.palms, roots: f.roots, isle: f.isle.map((v) => v > 0) })))];
-      console.log(`C1 · mapa 1.1, bienvenida retenida 3 s: entrada ${JSON.stringify(entry)} · ${before.length} frames antes de la bienvenida (${shownBefore.length} con la entrada abierta): ${seen(before).join(' ')} · ${after.length} después: ${seen(after).join(' ')}`);
+      const before = ticks.filter((f) => !f.welcome);
+      const after = ticks.filter((f) => f.welcome);
+      const span = before.length ? before.at(-1)!.t - before[0].t : 0;
+      const seen = (fs: typeof ticks) => [...new Set(fs.map((f) => JSON.stringify({ canvas: f.canvas, frames: f.frames, cover: f.cover })))];
+      console.log(`C1 · mapa 1.1, bienvenida retenida 3 s: ${before.length} ticks de rAF antes de la bienvenida en ${span.toFixed(0)} ms: ${seen(before).join(' ')} · ${after.length} después: ${seen(after).join(' ')} · entrada ${JSON.stringify(entry)} · raíces ${JSON.stringify((await drawn(page)).roots)}`);
       expect(welcomes).toBe(1);
-      expect(entry.welcomeCapped).toBe(true);
-      expect(entry.shownAt).toBeLessThan(entry.welcomeAt); // se abrió antes de la bienvenida
-      expect(shownBefore.length).toBeGreaterThan(0); // y hubo frames con el lienzo a la vista y sin bienvenida
-      expect(seen(before)).toEqual([JSON.stringify({ mesh: false, palms: false, roots: 0, isle: [false, false] })]);
-      expect(after.at(-1)).toMatchObject({ mesh: true, palms: true });
-      expect(after.at(-1)!.isle.every((v) => v > 0)).toBe(true);
+      expect(before.length).toBeGreaterThan(0); // hubo ticks con el runtime creado y sin bienvenida
+      expect(seen(before)).toEqual([JSON.stringify({ canvas: false, frames: false, cover: true })]); // sin lienzo ni frames, con la portada
+      expect(after.at(-1)).toMatchObject({ canvas: true, frames: true });
+      expect(entry.shownAt).toBeGreaterThan(0);
       expect((await drawn(page)).key).toBe(islandsKey(MAP_1_1.islands));
       await shot(page, info, 'c1-bienvenida-retenida');
     } finally {
@@ -276,8 +276,8 @@ test.describe('C1: las islas del mapa de la 1.1 en el cliente', () => {
     test.setTimeout(120_000);
     const server = await startOwnServer({ SEA_BATTLE_MAP: '1.1', SEA_BATTLE_NPCS: '0' });
     try {
+      // Sin page.route: con una ruta registrada Chrome no usa la caché HTTP (playwright-core/types/types.d.ts:4002)
       const req = islandRequests(page);
-      await page.route(GLB, (r) => r.abort()); // solo el puerto
       await enterGame(page, server.url);
       await hasRoot(page, 'PORT');
       expect([req.port.length, req.portKtx2.length]).toEqual([1, 1]);
@@ -289,7 +289,6 @@ test.describe('C1: las islas del mapa de la 1.1 en el cliente', () => {
       await page.close();
 
       const again = await context.newPage();
-      await again.route(GLB, (r) => r.abort());
       await enterGame(again, server.url);
       await hasRoot(again, 'PORT');
       const next = await network(again, pieces);
