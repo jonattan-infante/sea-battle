@@ -17,6 +17,13 @@ export interface NpcAi {
   routeIndex: number;
   fleeUntil: number;
   threatId: string | null; // barco del que huye
+  // Capitán: sentido de la órbita (1 o −1, por defecto 1). Se invierte cuando el punto adelantado cae en el margen de una
+  // isla y el del otro sentido no (C3)
+  orbitDir?: number;
+  orbitFlipAt?: number; // s de mundo de su última inversión (CAPTAIN_FLIP_MIN_INTERVAL)
+  // Sin arco libre en ningún sentido: se queda en el punto de la órbita a su altura, a tiro (producto, opción i). Se calcula
+  // en cada tick de combate; fuera de ese caso, false
+  orbitHold?: boolean;
 }
 
 export interface DamageEntry {

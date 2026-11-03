@@ -5,7 +5,11 @@ import {
   ATTACK_MAX_DISTANCE,
   CANNONBALL_SPEED,
   CANNON_LEVELS,
+  CAPTAIN_ARC_FLIP_GAIN,
+  CAPTAIN_ARC_SAMPLES,
+  CAPTAIN_ARC_STEP,
   CAPTAIN_CLASS,
+  CAPTAIN_FLIP_MIN_INTERVAL,
   CAPTAIN_KILLS_TO_SPAWN,
   CAPTAIN_LAIR_RADIUS,
   CAPTAIN_SPAWN_MIN_PLAYER_DISTANCE,
@@ -1171,6 +1175,35 @@ function fleePoint(world: World, ship: Ship, target: Ship, hostile: HostileAiSta
   return navigableFor(world, p, navClearance(ship.classId)) ? p : null;
 }
 
+// Punto de la órbita del Capitán (C3, variante d; constants.ts, CAPTAIN_ARC_*): el arco libre en su sentido decide si sigue,
+// acorta el paso o invierte; sin arco en ninguno de los 2, se queda en el punto de la órbita a su altura
+function captainOrbitPoint(world: World, ship: Ship, bearing: number, onOrbit: (angle: number) => Vec2): Vec2 {
+  const ai = ship.ai!;
+  const clearance = navClearance(ship.classId);
+  const freeArc = (dir: number) => {
+    let n = 0;
+    while (n < CAPTAIN_ARC_SAMPLES && navigableFor(world, onOrbit(bearing + dir * (n + 1) * CAPTAIN_ARC_STEP), clearance)) n++;
+    return n;
+  };
+  const leadSteps = Math.round(ORBIT_LEAD / CAPTAIN_ARC_STEP);
+  let dir = ai.orbitDir ?? 1;
+  let free = freeArc(dir);
+  let other = CAPTAIN_ARC_SAMPLES;
+  if (free < leadSteps) {
+    other = freeArc(-dir);
+    if (other >= free + CAPTAIN_ARC_FLIP_GAIN && world.time - (ai.orbitFlipAt ?? -Infinity) >= CAPTAIN_FLIP_MIN_INTERVAL) {
+      dir = -dir;
+      [free, other] = [other, free];
+      ai.orbitFlipAt = world.time;
+    }
+  }
+  ai.orbitDir = dir;
+  ai.orbitHold = free === 0 && other === 0;
+  if (free >= leadSteps) return onOrbit(bearing + dir * ORBIT_LEAD);
+  if (free > 0) return onOrbit(bearing + dir * free * CAPTAIN_ARC_STEP);
+  return onOrbit(bearing);
+}
+
 function updatePirate(world: World, ship: Ship, dt: number): void {
   const ai = ship.ai!;
   const hostile = hostileAiOf(ship);
@@ -1181,6 +1214,7 @@ function updatePirate(world: World, ship: Ship, dt: number): void {
     if (!target || tooFar || distance(ship.pos, ai.origin) > hostile.leash) {
       ai.state = 'return';
       ai.targetId = null;
+      if (ai.orbitHold) ai.orbitHold = false;
       ship.attackTargetId = null;
       setDestination(world, ship, ai.origin);
       return;
@@ -1196,19 +1230,29 @@ function updatePirate(world: World, ship: Ship, dt: number): void {
     const d = distance(ship.pos, target.pos);
     const orbit = hostile.orbitRadius;
     const away = fleePoint(world, ship, target, hostile);
-    if (d > approachDistance(hostile)) {
-      const back = forward(headingTo(target.pos, ship.pos));
-      setDestination(world, ship, pirateDestination({ x: target.pos.x + back.x * orbit, z: target.pos.z + back.z * orbit }));
+    const captain = ship.classId === CAPTAIN_CLASS;
+    if (captain) ai.orbitHold = false; // lo vuelve a poner captainOrbitPoint si sigue sin arco
+    const back = forward(headingTo(target.pos, ship.pos));
+    const approachPoint = pirateDestination({ x: target.pos.x + back.x * orbit, z: target.pos.z + back.z * orbit });
+    // El Capitán no se acerca a un punto que cae en el margen de una isla: nearestNavigable lo recortaba a pocos metros y,
+    // alternando con la órbita, giraba en el sitio (C3). Sigue con la órbita, que mira el arco libre
+    if (d > approachDistance(hostile) && !(captain && !navigableFor(world, approachPoint, navClearance(ship.classId)))) {
+      setDestination(world, ship, approachPoint);
     } else if (away) {
       setDestination(world, ship, away); // la cañonera se aleja sin dejar de disparar: updateCombat sigue con su objetivo (§9)
     } else {
       // Órbita (pirata 45 m, capitán 50 m, cañonera 62 m): apunta a un punto adelantado ORBIT_LEAD sobre un círculo de radio
       // orbit / cos(ORBIT_LEAD). Sobre el círculo nominal, la cuerda hasta ese punto deja la órbita en orbit · cos(ORBIT_LEAD),
       // un 10 % por dentro (40,7 m para 45); con el radio compensado, la órbita real es la nominal (AC-188)
-      const around = headingTo(target.pos, ship.pos) + ORBIT_LEAD;
-      const o = forward(around);
       const aim = orbit / Math.cos(ORBIT_LEAD);
-      setDestination(world, ship, pirateDestination({ x: target.pos.x + o.x * aim, z: target.pos.z + o.z * aim }));
+      const center = target.pos;
+      const bearing = headingTo(center, ship.pos);
+      const onOrbit = (angle: number) => {
+        const o = forward(angle);
+        return pirateDestination({ x: center.x + o.x * aim, z: center.z + o.z * aim });
+      };
+      // Piratas y cañonera, como siempre; el Capitán, con el arco libre (C3, CAPTAIN_ARC_*)
+      setDestination(world, ship, captain ? captainOrbitPoint(world, ship, bearing, onOrbit) : onOrbit(bearing + ORBIT_LEAD));
     }
     return;
   }

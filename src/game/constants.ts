@@ -298,6 +298,16 @@ export const PIRATE_ORBIT_SPEED = 8;
 // La órbita apunta a un punto adelantado este ángulo sobre el círculo (rad). Perseguirlo recorta la cuerda: el radio de
 // ese círculo se compensa con 1 / cos(ORBIT_LEAD) para que la órbita real sea la nominal (GDD §9, «Órbita real = nominal»)
 export const ORBIT_LEAD = 0.45;
+// Órbita del Capitán junto a la costa (C3, variante d): mira el arco de su órbita por delante en CAPTAIN_ARC_SAMPLES pasos de
+// CAPTAIN_ARC_STEP rad (3 pasos = ORBIT_LEAD) y cuenta los puntos navegables seguidos, el «arco libre». Invierte el sentido
+// solo si el suyo no llega a ORBIT_LEAD, el otro tiene al menos CAPTAIN_ARC_FLIP_GAIN pasos más y han pasado
+// CAPTAIN_FLIP_MIN_INTERVAL s desde la última inversión. Con el arco corto apunta al último punto libre, y sin arco se queda
+// en el punto de la órbita a su altura. Producto (2026-11-03): ninguna ventana de 16 s con ≥ 270° y < 10 m, ≥ 15 s entre
+// inversiones, nunca más cerca de la costa que la base y 15 andanadas a ≤ 65 m
+export const CAPTAIN_ARC_STEP = 0.15;
+export const CAPTAIN_ARC_SAMPLES = 8;
+export const CAPTAIN_ARC_FLIP_GAIN = 2;
+export const CAPTAIN_FLIP_MIN_INTERVAL = 15;
 export const PIRATE_PATROL_RADIUS = 120;
 export const PIRATE_PATROL_WAIT = { min: 2, max: 5 };
 export const PIRATE_RETURN_ARRIVE = 10;
