@@ -2,7 +2,7 @@
 // más AS-V16 (radio de las islas en la flotación) y los presupuestos de islas y props de §5. Sin WebGL.
 import * as THREE from 'three';
 import { ISLANDS, MAP_1_1 } from '../../../game/constants';
-import { buildBuoyGeometry, buildIslands, buildLootGeometry, buildPalmGeometry } from '../island-geometry';
+import { buildBuoyGeometry, buildIslands, buildLootGeometry, buildPalmGeometry, PORT_PAVED_CIRCLES, PORT_PAVED_COLOR } from '../island-geometry';
 import { SHIP_LOOKS, TOP_FACE } from '../../art';
 import { buildShipAsset, clothTones, deckHalfBeam, deckTones, deckY, getShipModel, SHIP_RECIPES, ShipExtras, shipLook } from '../ship-geometry';
 
@@ -743,6 +743,33 @@ describe('Versión sencilla de las islas del mapa de la 1.1 (AC-200 e)', () => {
       worst = Math.max(worst, Math.min(...circles.map((c) => Math.hypot(pos.getX(v) - c.x, pos.getZ(v) - c.z) - c.radius)));
     }
     expect(worst).toBeLessThanOrEqual(0);
+  });
+
+  // ASSET-SPEC §9.8 :707: la tapa de la ciudad este, la ciudad oeste y el muelle este, en empedrado; el resto, en hierba. El
+  // centro de la tapa de cada meseta es el vértice a y = 1,8 a menos de 0,1r del centro del círculo (la meseta se desplaza ≤ 0,06r)
+  const capColor = (build: ReturnType<typeof buildIslands>, c: { x: number; z: number; radius: number }) => {
+    const pos = build.geometry.getAttribute('position');
+    const col = build.geometry.getAttribute('color');
+    const got = new Set<string>();
+    for (let v = 0; v < pos.count; v++) {
+      if (Math.abs(pos.getY(v) - 1.8) > 1e-4 || Math.hypot(pos.getX(v) - c.x, pos.getZ(v) - c.z) > 0.1 * c.radius) continue;
+      got.add(new THREE.Color(col.getX(v), col.getY(v), col.getZ(v)).getHexString());
+    }
+    return [...got];
+  };
+
+  test('AC-200 e: en el puerto, la tapa de los 3 círculos de la ciudad y del muelle este va en empedrado, elegidos por centro y radio', () => {
+    expect(PORT_PAVED_COLOR).toBe('#8E7A5B'); // albedo de ux (r11 444a870, ASSET-SPEC :707)
+    const cobble = new THREE.Color(PORT_PAVED_COLOR).getHexString();
+    const grass = new THREE.Color(TOP_FACE.grass.albedo).getHexString();
+    const port = circles.filter((c) => c.id.split('.')[0] === 'PORT');
+    expect(port).toHaveLength(7);
+    const paved = (c: { x: number; z: number; radius: number }) => PORT_PAVED_CIRCLES.some(([x, z, r]) => c.x === x && c.z === z && c.radius === r);
+    expect(port.filter(paved).map((c) => [c.x, c.z, c.radius])).toEqual(PORT_PAVED_CIRCLES);
+    for (const c of port) expect([c.id, capColor(simple, c)]).toEqual([c.id, [paved(c) ? cobble : grass]]);
+    // Fuera de la versión sencilla, la tapa del puerto sigue en hierba
+    const full = buildIslands(port);
+    for (const c of port.filter(paved)) expect([c.id, capColor(full, c)]).toEqual([c.id, [grass]]);
   });
 
   test('sin la opción, las islas de la 1.0 conservan sus props (palmeras y pueblo)', () => {
