@@ -4,6 +4,7 @@ import {
   CAPTAIN_KILLS_TO_SPAWN,
   CAPTAIN_LAIR_RADIUS,
   CAPTAIN_SPAWN_MIN_PLAYER_DISTANCE,
+  DISCONNECT_GRACE,
   HOSTILE_AI,
   MAP_1_0,
   MAP_1_1,
@@ -15,7 +16,7 @@ import {
 } from '../constants';
 import { GameEvent, Ship, Upgrades, World } from '../types';
 import { angleDelta, createRng, distance, headingTo } from '../vec';
-import { addPlayer, attack, createWorld, drainEvents, maxHpFor, moveTo, navigatorOf, respawn, setRepair, shipOfPlayer, spawnCaptain, spawnGunboat, spawnMerchant, spawnPirate, step } from '../world';
+import { addPlayer, attack, createWorld, disconnectPlayer, drainEvents, maxHpFor, moveTo, navigatorOf, respawn, setRepair, shipOfPlayer, spawnCaptain, spawnGunboat, spawnMerchant, spawnPirate, step } from '../world';
 import { DT, i2World, median, placeCaptain, placePlayer, run } from './helpers';
 
 const PORT = { x: 0, z: 0 };
@@ -149,7 +150,11 @@ describe('H-305 — Correa del capitán (AC-112)', () => {
   // Guarida en el centro del arco NE, en mar abierto
   const LAIR = { x: (CAPTAIN_LAIR_RADIUS * Math.SQRT2) / 2, z: -(CAPTAIN_LAIR_RADIUS * Math.SQRT2) / 2 };
 
-  test('AC-112: si el objetivo lo arrastra a más de 150 m de su guarida, vuelve sin disparar y llega con el 100 % de la vida', () => {
+  // Daño que el objetivo le hizo en el combate: al volver a la guarida, el registro tiene que quedar vacío (AC-112, r11 dfbb729)
+  const seedDamage = (world: World, cap: Ship, target: Ship) =>
+    cap.damage.push({ playerId: target.ownerId!, shipId: target.id, amount: 300, at: world.time, firstAt: world.time });
+
+  test('AC-112: si el objetivo lo arrastra a más de 150 m de su guarida, vuelve sin disparar y llega con el 100 % de la vida y el registro de daño vacío', () => {
     const world = i2World(3);
     const cap = placeCaptain(world, LAIR.x, LAIR.z);
     const target = placePlayer(world, 'a', LAIR.x - 60, LAIR.z);
@@ -157,11 +162,13 @@ describe('H-305 — Correa del capitán (AC-112)', () => {
     run(world, DT);
     expect(cap.ai!.state).toBe('combat');
     cap.hp = 900;
+    seedDamage(world, cap, target);
     // El jugador huye hacia el oeste y se mantiene a 60 m por delante del capitán (lo arrastra)
     let leftAt = -1;
     let maxFromLair = 0;
     const volleysOnReturn: number[] = [];
     let arrivedHp = -1;
+    let arrivedDamage: unknown = 'no llegó';
     for (let i = 0; i < 90 * TICK_RATE && arrivedHp < 0; i++) {
       if (leftAt < 0) target.pos = { x: cap.pos.x - 60, z: LAIR.z };
       // La IA decide con la posición del principio del tick (antes de moverse)
@@ -177,12 +184,16 @@ describe('H-305 — Correa del capitán (AC-112)', () => {
         expect(d0).toBeLessThanOrEqual(CAPTAIN.leash + 10 * DT + 1e-6); // el primer tick fuera (10 m/s)
         expect(cap.attackTargetId).toBeNull();
       }
-      if (leftAt >= 0 && cap.ai!.state === 'patrol') arrivedHp = cap.hp;
+      if (leftAt >= 0 && cap.ai!.state === 'patrol') {
+        arrivedHp = cap.hp;
+        arrivedDamage = cap.damage.map((d) => ({ ...d }));
+      }
     }
     console.log(`AC-112: máximo alejamiento ${maxFromLair.toFixed(1)} m (inercia al dar la vuelta)`);
     expect(leftAt).toBeGreaterThan(0);
     expect(volleysOnReturn).toEqual([]);
     expect(arrivedHp).toBe(cap.maxHp);
+    expect(arrivedDamage).toEqual([]);
     expect(distance(cap.pos, LAIR)).toBeLessThanOrEqual(10);
   });
 
@@ -190,7 +201,7 @@ describe('H-305 — Correa del capitán (AC-112)', () => {
     ['se aleja a más de 110 m', (_w: World, t: Ship, c: Ship) => { t.pos = { x: c.pos.x - 150, z: c.pos.z }; }],
     ['queda protegido', (w: World, t: Ship) => { t.protectedUntil = w.time + 30; }],
     ['se hunde', (_w: World, t: Ship) => { t.state = 'sinking'; t.stateTimer = 3; }]
-  ])('AC-112: si pierde al objetivo (%s), vuelve sin disparar y llega con el 100 %% de la vida', (_label, lose) => {
+  ])('AC-112: si pierde al objetivo (%s), vuelve sin disparar y llega con el 100 %% de la vida y el registro de daño vacío', (_label, lose) => {
     const world = i2World(4);
     const cap = placeCaptain(world, LAIR.x, LAIR.z);
     const target = placePlayer(world, 'a', LAIR.x - 70, LAIR.z);
@@ -198,6 +209,7 @@ describe('H-305 — Correa del capitán (AC-112)', () => {
     run(world, 6); // combate
     expect(cap.ai!.state).toBe('combat');
     cap.hp = 1000;
+    seedDamage(world, cap, target);
     lose(world, target, cap);
     run(world, DT);
     expect(cap.ai!.state).toBe('return');
@@ -210,6 +222,56 @@ describe('H-305 — Correa del capitán (AC-112)', () => {
     expect(volleys).toBe(0);
     expect(cap.ai!.state).toBe('patrol');
     expect(cap.hp).toBe(cap.maxHp);
+    expect(cap.damage).toEqual([]);
+  });
+
+  // 4.º caso (producto, r11 dfbb729, opción A; GDD §10b y AC-96): desconectarse no es una salida. El barco sigue
+  // DISCONNECT_GRACE s en el mundo y el Capitán lo sigue atacando; al retirarse el barco, lo pierde y vuelve
+  test('AC-112: si el objetivo se desconecta en combate, lo sigue atacando los 10 s de gracia y, al retirarse el barco, vuelve sin disparar, al 100 % y con el registro de daño vacío', () => {
+    const world = i2World(4);
+    const cap = placeCaptain(world, LAIR.x, LAIR.z);
+    const target = placePlayer(world, 'a', LAIR.x - 70, LAIR.z);
+    target.hp = target.maxHp = 1e9;
+    run(world, 6); // combate
+    expect(cap.ai!.state).toBe('combat');
+    cap.hp = 1000;
+    seedDamage(world, cap, target);
+    disconnectPlayer(world, 'a');
+    // Los 10 s de gracia: sigue en combate con ese objetivo y le dispara
+    let graceVolleys = 0;
+    const graceLapses: string[] = [];
+    let tick = 0;
+    while (world.ships.has(target.id) && tick < (DISCONNECT_GRACE + 1) * TICK_RATE) {
+      tick++;
+      for (const e of run(world, DT)) if (e.type === 'volley' && e.shipId === cap.id && e.targetId === target.id) graceVolleys++;
+      if (world.ships.has(target.id) && (cap.ai!.state !== 'combat' || cap.ai!.targetId !== target.id) && graceLapses.length < 3) {
+        graceLapses.push(`t=${(tick * DT).toFixed(2)} ${cap.ai!.state} objetivo ${cap.ai!.targetId}`);
+      }
+    }
+    const removedAfter = +(tick * DT).toFixed(2);
+    run(world, DT);
+    const stateAfterRemoval = cap.ai!.state;
+    let volleys = 0;
+    for (let i = 0; i < 60 * TICK_RATE && cap.ai!.state === 'return'; i++) {
+      for (const e of run(world, DT)) if (e.type === 'volley' && e.shipId === cap.id) volleys++;
+    }
+    console.log(`AC-112 desconexión: ${graceVolleys} andanadas en la gracia; barco retirado a los ${removedAfter} s`);
+    // Cada aserto devuelve su valor en rojo, no un false
+    expect({
+      graceLapses,
+      firedInGrace: graceVolleys > 0 ? true : graceVolleys,
+      removedWithinGrace: removedAfter <= DISCONNECT_GRACE + DT + 1e-9 ? true : removedAfter,
+      stateAfterRemoval
+    }).toEqual({
+      graceLapses: [],
+      firedInGrace: true,
+      removedWithinGrace: true,
+      stateAfterRemoval: 'return'
+    });
+    expect(volleys).toBe(0);
+    expect(cap.ai!.state).toBe('patrol');
+    expect(cap.hp).toBe(cap.maxHp);
+    expect(cap.damage).toEqual([]);
   });
 
   test('AC-112: detecta a ≤ 90 m (no a 95), orbita a 50 ±5 m (mediana en 20 s) y dispara solo a ≤ 65 m', () => {
@@ -305,8 +367,9 @@ describe('H-305 — Correa del capitán (AC-112)', () => {
       }
     }
     console.log(`AC-112 (10 min): ${seen.size} capitanes, ${(combatTicks / TICK_RATE).toFixed(0)} s en combate, ${returns} regresos (el más lejano, a ${maxFromLairOnReturn.toFixed(1)} m de su guarida); mínimo al puerto ${minToPort.toFixed(1)} m`);
+    // Los regresos van al log y no se asertan: aquí dependen de un suceso casual (con 9475c97, 1 regreso, un objetivo que se
+    // pierde a 62 m de la guarida con un 8 % de vida). El regreso se prueba con los casos forzados de arriba (AC-112, r11 dfbb729)
     expect(combatTicks).toBeGreaterThan(0);
-    expect(returns).toBeGreaterThan(0);
     expect(minToPort).toBeGreaterThanOrEqual(PIRATE_PORT_EXCLUSION);
   });
 });
