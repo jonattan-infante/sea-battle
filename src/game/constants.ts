@@ -165,6 +165,13 @@ export const NAV_NODE_SLACK = 1; // holgura de los nodos del grafo de rutas sobr
 export const PIVOT_MIN_ANGLE = Math.PI / 4;
 export const PIVOT_SPEED = 1;
 export const PIVOT_ZONE = 8; // m por encima del margen de navegación
+// Mercantes NPC (C3): cada NAV_REPLAN_TICKS comprueban que la recta desde donde están hasta su siguiente waypoint no pasa a
+// menos de su radio + NAV_REPLAN_HULL_SLACK de la costa; si pasa, re-planifican desde ahí. La ruta se calcula una vez, y el
+// arco de giro del mercante que volvía de la huida a 8,8 m/s junto a T2 lo sacaba de la recta: la nueva pasaba a 6,38 m de
+// la costa (radio 7) y metía el casco 13,7 s. Con el margen entero en vez del casco, y para todos los barcos, cambiaban 201
+// de 900 rutas del jugador sin evitar ningún contacto y una ruta de AC-20 entraba en un ciclo (producto, 2026-11-03)
+export const NAV_REPLAN_TICKS = 10;
+export const NAV_REPLAN_HULL_SLACK = 1; // m sobre el radio del casco
 export const TURN_FACTORS = [
   { maxAngle: 45 * deg, factor: 1 },
   { maxAngle: 90 * deg, factor: 0.6 },
