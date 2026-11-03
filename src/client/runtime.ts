@@ -745,8 +745,6 @@ export class GameRuntime implements OverlayHost, ChipHost {
   private palms: THREE.InstancedMesh;
   private islandsKey = ISLANDS_1_0_KEY; // las islas que pinta la escena (map-islands.ts): las de la 1.0 hasta la bienvenida
   private islandList: readonly IslandDef[] = ISLANDS;
-  private sceneryShown = true; // AC-200 e: islas y costa a la vista (showScenery); el constructor las esconde hasta la bienvenida
-  private readonly oceanIsleSize = new THREE.Vector2(); // la rejilla de candidatos del agua, guardada mientras no se ven
   private readonly buoys: THREE.InstancedMesh;
   private readonly loot: THREE.InstancedMesh;
   private readonly wrecks = new Map<string, WreckState>();
@@ -829,15 +827,9 @@ export class GameRuntime implements OverlayHost, ChipHost {
 
     this.director = new VfxDirector(this);
     this.subscribe(client);
-    // AC-200 e (producto, 2026-11-03): hasta la bienvenida, ni islas ni puerto, solo el mar; así, si la entrada se abre por
-    // el tope antes, nunca se ven las formas de la 1.0 con otro mapa
-    this.showScenery(false);
     // AC-199 e: al llegar la bienvenida, las islas del servidor. Con el mapa de la 1.0 son las mismas y no se rehace nada
     this.stopWelcome = client.onWelcome((w) => {
-      if (!this.entry.welcomeAt) this.entry.welcomeAt = performance.now();
-      if (this.src !== this.client) return;
-      this.applyIslands(islandsOf(w));
-      this.showScenery(true);
+      if (this.src === this.client) this.applyIslands(islandsOf(w));
     });
     if (ownClass) this.shipGlb.predictOwn(ownClass); // su GLB, antes que el cargador
     this.shipGlb.warm(); // con manifiesto, el cargador baja mientras se conecta (el transcodificador, después del GLB propio)
@@ -872,7 +864,6 @@ export class GameRuntime implements OverlayHost, ChipHost {
     this.src = src;
     this.subscribe(src);
     this.applyIslands(islandsOf(src.welcome));
-    this.showScenery(src !== this.client || !!this.client.welcome); // las escenas sintéticas, con sus islas, como hoy
     this.labels?.sync(this.views.values());
     this.snapFrame();
   }
@@ -890,8 +881,6 @@ export class GameRuntime implements OverlayHost, ChipHost {
     const ocean = this.ocean.material;
     this.ocean.material = createOceanMaterial(list);
     disposeOceanMaterial(ocean);
-    this.oceanIsleSize.copy(this.ocean.material.uniforms.uIsleSize.value as THREE.Vector2);
-    if (!this.sceneryShown) (this.ocean.material.uniforms.uIsleSize.value as THREE.Vector2).set(0, 0);
     // Las raíces del GLB son de otro mapa: fuera, y vuelven a entrar si sus círculos siguen siendo los del servidor
     for (const root of this.islandRoots.values()) this.scene.remove(root);
     this.islandRoots.clear();
@@ -904,21 +893,6 @@ export class GameRuntime implements OverlayHost, ChipHost {
     }
   }
 
-  // AC-200 e: las islas, sus palmeras, las raíces de GLB y la costa en el agua (la rejilla de candidatos del agua a 0 × 0: el
-  // shader no lee ningún círculo, sin recompilar). Las boyas de la zona segura no son islas: se quedan
-  private showScenery(on: boolean): void {
-    this.sceneryShown = on;
-    this.islandMesh.visible = on;
-    this.palms.visible = on;
-    for (const root of this.islandRoots.values()) root.visible = on;
-    const size = this.ocean.material.uniforms.uIsleSize.value as THREE.Vector2;
-    if (on) size.copy(this.oceanIsleSize);
-    else {
-      if (size.x || size.y) this.oceanIsleSize.copy(size);
-      size.set(0, 0);
-    }
-  }
-
   // Las islas procedurales: con el mapa de la 1.0, las de siempre; con otro, la versión sencilla de cada círculo menos los de
   // las formas que ya pinta su GLB (AC-200 e)
   private rebuildIslandGeometry(): void {
@@ -928,7 +902,6 @@ export class GameRuntime implements OverlayHost, ChipHost {
     this.islandMesh.geometry.dispose();
     this.islandMesh.geometry = built.geometry;
     const palms = this.instanced(this.palms.geometry, built.palms);
-    palms.visible = this.sceneryShown;
     this.scene.remove(this.palms);
     this.palms.dispose();
     this.palms = palms;
@@ -950,7 +923,6 @@ export class GameRuntime implements OverlayHost, ChipHost {
       m.root.traverse((o) => {
         o.renderOrder = RENDER_ORDER.islands;
       });
-      m.root.visible = this.sceneryShown;
       this.scene.add(m.root);
       this.islandRoots.set(m.shape, m.root);
       placed = true;
@@ -1443,7 +1415,7 @@ export class GameRuntime implements OverlayHost, ChipHost {
     if (this.entry.shownAt) return;
     const mine = this.src.myShipId ? this.views.get(this.src.myShipId) : undefined;
     const classId = mine ? mine.ship.classId : null;
-    const opened = this.entry.update(now, this.shipGlb.waiting(classId), classId !== null && this.shipGlb.loaded(classId), this.portGlb.waiting, this.src === this.client && !this.client.welcome);
+    const opened = this.entry.update(now, this.shipGlb.waiting(classId), classId !== null && this.shipGlb.loaded(classId), this.portGlb.waiting);
     if (opened && this.entryCover) this.entryCover.hidden = true;
   }
 

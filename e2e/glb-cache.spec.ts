@@ -9,7 +9,6 @@ import path from 'path';
 import { expect, Page, test } from '@playwright/test';
 import { contentHash, E2E_PREFIX } from '../scripts/glb/content-hash';
 import { externalKtx2Fixture } from '../scripts/glb/e2e-models';
-import { OWN_GLB_WAIT_MS } from '../src/client/models/ship-glb';
 import { enterGame, entryOf, glbBeforeEntry } from './helpers';
 
 const FIXTURE = fs.readFileSync(path.join(__dirname, 'fixtures', 'ship_sloop_etc1s_meshopt.glb'));
@@ -88,9 +87,7 @@ const network = (page: Page, paths: string[]) =>
   );
 
 test.describe('Caché de la cadena de carga de los GLB (AC-193 c)', () => {
-  // AC-200 e (producto, 2026-11-03, cambio a propósito): «se entra como hoy» asertaba shownAt === firstFrameAt; ahora la
-  // entrada espera a la bienvenida, con el mismo tope
-  test('sin ningún GLB que pueda salir (ninguno de una clase del jugador y el I2 apagado), la primera visita no baja la cadena de carga: 0 peticiones al cargador, a /basis y a /models, y se entra tras la bienvenida, dentro del tope', async ({ page }) => {
+  test('sin ningún GLB que pueda salir (ninguno de una clase del jugador y el I2 apagado), la primera visita no baja la cadena de carga: 0 peticiones al cargador, a /basis y a /models, y se entra como hoy', async ({ page }) => {
     const seen = track(page);
     await enterGame(page);
     await page.waitForTimeout(2_000); // la precarga de los demás GLB arranca al entrar (prefetchAll): sin GLB que pueda salir, nada
@@ -101,10 +98,8 @@ test.describe('Caché de la cadena de carga de los GLB (AC-193 c)', () => {
     expect(seen.scripts.length).toBeGreaterThan(5); // se leyó el código de la página: la ausencia de firmas no es vacía
     expect([...seen.loaderChunks.keys()]).toEqual([]);
     expect(seen.paths().filter((p) => p.startsWith('/basis/') || p.startsWith('/models/'))).toEqual([]);
-    expect(entry).toMatchObject({ withGlb: false, capped: false, portCapped: false, coverHidden: true });
-    expect(entry.welcomeAt).toBeGreaterThan(0);
-    if (!entry.welcomeCapped) expect(entry.shownAt).toBeGreaterThanOrEqual(entry.welcomeAt);
-    expect(entry.lastWaitAt - entry.firstFrameAt).toBeLessThan(OWN_GLB_WAIT_MS);
+    expect(entry).toMatchObject({ lastWaitAt: 0, withGlb: false, capped: false, coverHidden: true });
+    expect(entry.shownAt).toBe(entry.firstFrameAt);
   });
 
   test('con manifiesto, la cadena de carga y los GLB se sirven con caché de un año, y en la visita siguiente hacen 0 peticiones a la red', async ({ context, page }) => {

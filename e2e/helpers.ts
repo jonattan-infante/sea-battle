@@ -111,24 +111,13 @@ export const glbBeforeEntry = (page: Page, url: string, waitMs?: number) =>
   );
 
 // La entrada (EntryGate): primer frame, último frame que esperó, frame en que se mostró, con qué modelo y si fue por el
-// tope (el del barco propio, el del puerto o el de la bienvenida, AC-200 e), el instante de la bienvenida; y si la portada
-// «Izando velas…» ya no tapa el juego
+// tope; y si la portada «Izando velas…» ya no tapa el juego
 export const entryOf = (page: Page) =>
   page.evaluate(() => {
-    type Entry = { firstFrameAt: number; lastWaitAt: number; shownAt: number; withGlb: boolean; capped: boolean; portCapped: boolean; welcomeCapped: boolean; welcomeAt: number };
+    type Entry = { firstFrameAt: number; lastWaitAt: number; shownAt: number; withGlb: boolean; capped: boolean };
     const e = (window.__SEA_BATTLE__!.runtime() as unknown as { entry: Entry }).entry;
     const cover = document.querySelector<HTMLElement>('.game-root > [data-testid="loading"]');
-    return {
-      firstFrameAt: e.firstFrameAt,
-      lastWaitAt: e.lastWaitAt,
-      shownAt: e.shownAt,
-      withGlb: e.withGlb,
-      capped: e.capped,
-      portCapped: e.portCapped,
-      welcomeCapped: e.welcomeCapped,
-      welcomeAt: e.welcomeAt,
-      coverHidden: !!cover && cover.hidden
-    };
+    return { firstFrameAt: e.firstFrameAt, lastWaitAt: e.lastWaitAt, shownAt: e.shownAt, withGlb: e.withGlb, capped: e.capped, coverHidden: !!cover && cover.hidden };
   });
 
 export const dialogsOf = (page: Page): string[] => (page as unknown as { __dialogs?: string[] }).__dialogs ?? [];
