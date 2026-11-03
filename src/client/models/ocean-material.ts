@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { IslandDef, MAP_HALF_SIZE, PORT_POSITION, SAFE_ZONE_RADIUS } from '../../game/constants';
 import { CAMERA, LIGHTING, PALETTE } from '../art';
-import { buildIsleGrid, EMPTY, IsleGrid, isleGridF32 } from './isle-grid';
+import { buildIsleGrid, EMPTY, IsleGrid } from './isle-grid';
 
 const deg = Math.PI / 180;
 
@@ -41,67 +41,13 @@ void main() {
 `;
 
 // El número de círculos y los texels por celda de la rejilla (isle-grid.ts) van en el código del shader: se compila una vez
-// por material, con las islas del mapa. El juego usa siempre 'grid'. Las demás búsquedas son solo para medirla en el mismo
-// build (QA, rt.setOceanLookup; AC-198 e):
-//   'list': recorre todos los círculos en cada píxel, con el tope constante (el compilador puede desenrollarlo);
-//   'list-main': el bucle de main antes de la rejilla (9475c97, ocean-material.ts:130-132): tope MAX_ISLANDS_MAIN (16) o el
-//     número de círculos si pasa de 16, y un break con el número de islas en un uniform. Es el «hoy» de la tabla del 18-oct;
-//   'grid-f32': la rejilla con x, z y radio de cada candidato en una textura RGBA32F, sin indexar los uniforms
-export type OceanLookup = 'grid' | 'list' | 'list-main' | 'grid-f32';
-export const OCEAN_LOOKUPS: readonly OceanLookup[] = ['grid', 'list', 'list-main', 'grid-f32'];
-const MAX_ISLANDS_MAIN = 16;
-
-// Tamaño del array de uniforms de las islas: el de main con 'list-main' (16 como mínimo, con los de sobra a (0, 0, −1))
-const uniformCircles = (lookup: OceanLookup, circles: number) => (lookup === 'list-main' ? Math.max(MAX_ISLANDS_MAIN, circles) : circles);
-
-const isleDistance = (lookup: OceanLookup, circles: number, texelsPerCell: number, slots: number) =>
-  lookup === 'list'
-    ? /* glsl */ `
-  for (int i = 0; i < ${circles}; i++) dIsle = min(dIsle, length(p - uIslands[i].xy) - uIslands[i].z);`
-    : lookup === 'list-main'
-    ? /* glsl */ `
-  for (int i = 0; i < ${uniformCircles(lookup, circles)}; i++) {
-    if (i >= uIslandCount) break;
-    dIsle = min(dIsle, length(p - uIslands[i].xy) - uIslands[i].z);
-  }`
-    : lookup === 'grid-f32'
-    ? /* glsl */ `
-  vec2 gi = floor((p - uIsleBox.xy) * uIsleBox.z);
-  if (gi.x >= 0.0 && gi.y >= 0.0 && gi.x < uIsleSize.x && gi.y < uIsleSize.y) {
-    ivec2 cell = ivec2(gi);
-    for (int j = 0; j < ${slots}; j++) {
-      vec4 c = texelFetch(uIsleGridF, ivec2(cell.x * ${slots} + j, cell.y), 0);
-      if (c.w == 0.0) break;
-      dIsle = min(dIsle, length(p - c.xy) - c.z);
-    }
-  }`
-    : /* glsl */ `
-  vec2 gi = floor((p - uIsleBox.xy) * uIsleBox.z);
-  if (gi.x >= 0.0 && gi.y >= 0.0 && gi.x < uIsleSize.x && gi.y < uIsleSize.y) {
-    ivec2 cell = ivec2(gi);
-    // Los índices de una celda van seguidos y los vacíos detrás: el primer vacío corta también el bucle de los texels, y una
-    // celda con ≤ 3 candidatos lee 1 texel aunque la rejilla lleve 2 (con los 50 círculos de D92; BACKLOG :1687)
-    bool cellDone = false;
-    for (int l = 0; l < ${texelsPerCell}; l++) {
-      if (cellDone) break;
-      vec4 t = texelFetch(uIsleGrid, ivec2(cell.x * ${texelsPerCell} + l, cell.y), 0) * 255.0;
-      for (int k = 0; k < 4; k++) {
-        int i = int(t[k] + 0.5);
-        if (i == ${EMPTY}) {
-          cellDone = true;
-          break;
-        }
-        dIsle = min(dIsle, length(p - uIslands[i].xy) - uIslands[i].z);
-      }
-    }
-  }`;
-
-const fragmentShader = (circles: number, texelsPerCell: number, lookup: OceanLookup, slots: number) => /* glsl */ `
+// por material, con las islas del mapa
+const fragmentShader = (circles: number, texelsPerCell: number) => /* glsl */ `
 uniform float uTime;
 uniform vec3 uLightDir;
 uniform vec3 uViewDir;
-uniform vec3 uIslands[${uniformCircles(lookup, circles)}];
-${lookup === 'list-main' ? 'uniform int uIslandCount;\n' : ''}${lookup === 'grid-f32' ? 'uniform highp sampler2D uIsleGridF; // RGBA32F: x, z, radio y 1 por candidato; (0, 0, 0, 0) = vacío\n' : ''}uniform sampler2D uIsleGrid; // RGBA8: 4 índices de círculo por texel, ${EMPTY} = vacío
+uniform vec3 uIslands[${circles}];
+uniform sampler2D uIsleGrid; // RGBA8: 4 índices de círculo por texel, ${EMPTY} = vacío
 uniform vec4 uIsleBox; // origen x, z de la rejilla, 1 / celda, sin uso
 uniform vec2 uIsleSize; // celdas en x y en z
 uniform float uMapHalf;
@@ -186,7 +132,26 @@ void main() {
   vec3 c = mix(uDeep, mix(uTrough, uCrest, smoothstep(-0.6, 0.8, hc)), 0.55);
   // Distancia a la costa: solo los círculos candidatos de la celda (AC-198 e). Fuera de la rejilla no hay ninguno a menos
   // de 18 m, y 1e5 da lo mismo que la distancia de verdad
-  float dIsle = 1e5;${isleDistance(lookup, circles, texelsPerCell, slots)}
+  float dIsle = 1e5;
+  vec2 gi = floor((p - uIsleBox.xy) * uIsleBox.z);
+  if (gi.x >= 0.0 && gi.y >= 0.0 && gi.x < uIsleSize.x && gi.y < uIsleSize.y) {
+    ivec2 cell = ivec2(gi);
+    // Los índices de una celda van seguidos y los vacíos detrás: el primer vacío corta también el bucle de los texels, y una
+    // celda con ≤ 3 candidatos lee 1 texel aunque la rejilla lleve 2 (con los 50 círculos de D92; BACKLOG :1687)
+    bool cellDone = false;
+    for (int l = 0; l < ${texelsPerCell}; l++) {
+      if (cellDone) break;
+      vec4 t = texelFetch(uIsleGrid, ivec2(cell.x * ${texelsPerCell} + l, cell.y), 0) * 255.0;
+      for (int k = 0; k < 4; k++) {
+        int i = int(t[k] + 0.5);
+        if (i == ${EMPTY}) {
+          cellDone = true;
+          break;
+        }
+        dIsle = min(dIsle, length(p - uIslands[i].xy) - uIslands[i].z);
+      }
+    }
+  }
   float s = 1.0 - smoothstep(0.0, 18.0, dIsle);
   c = mix(c, uShallow, 0.85 * s);
   float s2 = 1.0 - smoothstep(0.0, 4.0, dIsle);
@@ -257,28 +222,10 @@ function isleGridTexture(grid: IsleGrid): THREE.DataTexture {
   return tex;
 }
 
-// 'grid-f32': la rejilla con los círculos dentro, sin filtrar (texelFetch lee los float tal cual)
-function isleGridF32Texture(grid: IsleGrid, islands: IslandDef[]): { tex: THREE.DataTexture; slots: number } {
-  const f = isleGridF32(grid, islands);
-  const tex = new THREE.DataTexture(f.data, f.width, f.height, THREE.RGBAFormat, THREE.FloatType);
-  tex.magFilter = THREE.NearestFilter;
-  tex.minFilter = THREE.NearestFilter;
-  tex.generateMipmaps = false;
-  tex.flipY = false;
-  tex.needsUpdate = true;
-  return { tex, slots: f.slots };
-}
-
-export function createOceanMaterial(islands: IslandDef[], options: { lookup?: OceanLookup } = {}): THREE.ShaderMaterial {
-  const lookup = options.lookup ?? 'grid';
+export function createOceanMaterial(islands: IslandDef[]): THREE.ShaderMaterial {
   const grid = buildIsleGrid(islands);
-  const f32 = lookup === 'grid-f32' ? isleGridF32Texture(grid, islands) : null;
-  // Sin islas, un círculo que no se lee: GLSL no admite arrays de tamaño 0. Con 'list-main', relleno hasta 16 como en main
-  const n = uniformCircles(lookup, Math.max(1, islands.length));
-  const packed = Array.from({ length: n }, (_, i) => {
-    const island = islands[i];
-    return island ? new THREE.Vector3(island.x, island.z, island.radius) : new THREE.Vector3(0, 0, -1);
-  });
+  // Sin islas, un círculo que no se lee: GLSL no admite arrays de tamaño 0
+  const packed = islands.length ? islands.map((island) => new THREE.Vector3(island.x, island.z, island.radius)) : [new THREE.Vector3(0, 0, -1)];
   const waves = WAVES.map(([lambda, turn, slope]) => {
     const k = (2 * Math.PI) / lambda;
     const c = Math.sqrt((9.81 * lambda) / (2 * Math.PI)) * 0.35;
@@ -288,14 +235,12 @@ export function createOceanMaterial(islands: IslandDef[], options: { lookup?: Oc
   const theta = CAMERA.elevation;
   return new THREE.ShaderMaterial({
     vertexShader,
-    fragmentShader: fragmentShader(Math.max(1, islands.length), grid.texelsPerCell, lookup, f32?.slots ?? 1),
+    fragmentShader: fragmentShader(packed.length, grid.texelsPerCell),
     uniforms: {
       uTime: { value: 0 },
       uLightDir: { value: new THREE.Vector3(...LIGHTING.sunDir) },
       uViewDir: { value: new THREE.Vector3(0, Math.sin(theta), Math.cos(theta)) },
       uIslands: { value: packed },
-      uIslandCount: { value: islands.length },
-      uIsleGridF: { value: f32?.tex ?? null },
       uIsleGrid: { value: isleGridTexture(grid) },
       uIsleBox: { value: new THREE.Vector4(grid.originX, grid.originZ, 1 / grid.cell, 0) },
       uIsleSize: { value: new THREE.Vector2(grid.nx, grid.nz) },
@@ -329,7 +274,6 @@ export function createOceanMaterial(islands: IslandDef[], options: { lookup?: Oc
 // El material y su textura de la rejilla, que material.dispose() no libera (AC-199 e: el agua se rehace al llegar las islas)
 export function disposeOceanMaterial(material: THREE.ShaderMaterial): void {
   (material.uniforms.uIsleGrid.value as THREE.Texture).dispose();
-  (material.uniforms.uIsleGridF.value as THREE.Texture | null)?.dispose();
   material.dispose();
 }
 
