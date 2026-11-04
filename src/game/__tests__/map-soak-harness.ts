@@ -6,6 +6,7 @@
 // órbitas de O-70 (ii), las apariciones del Capitán (AC-54) y las reapariciones de los NPC (AC-52). Lo usan map-soak.test.ts
 // (con MAP_1_1) y la calibración con MAP_1_0, que pide la fila antes de fijar las aserciones
 import { CAPTAIN_CLASS, CAPTAIN_LAIR_RADIUS, CAPTAIN_SPAWN_MIN_PLAYER_DISTANCE, GUNBOAT_CLASS, MapDef, TICK_RATE, navClearance } from '../constants';
+import { Navigator } from '../nav';
 import { Ship, World } from '../types';
 import { Vec2, angleDelta, createRng, distance } from '../vec';
 import { addPlayer, attack, createWorld, moveTo, navigatorOf, respawn, setRepair, shipOfPlayer } from '../world';
@@ -61,6 +62,22 @@ export interface SoakReport {
   sunkHostiles: number; // piratas y cañoneras hundidos (el Capitán nace con el 10.º, AC-54)
   nearCoastSeconds: Record<string, number>; // segundos-NPC con destino a ≤ 30 m de una costa, por clase (solo al log)
   portBotsByMinute: { minute: number; alive: number; dead: number }[]; // bots de puerto vivos y hundidos, por minuto (solo al log)
+  replans: { checks: number; replans: number }; // re-planificaciones del mercante NPC (H2 de QA-70; solo al log)
+}
+
+// H2 (QA-70, opción A de producto, 2026-11-04, BACKLOG :1616): cuántas veces actúa la re-planificación del mercante NPC
+// (C3). Navigator.segmentClearFrom solo lo llama esa comprobación (world.ts, moveShip), así que cada llamada es una
+// comprobación y cada «no libre», una re-planificación. Se cuenta sobre el Navigator del mapa y se quita al acabar
+function countReplans(nav: Navigator): { counter: SoakReport['replans']; restore: () => void } {
+  const counter = { checks: 0, replans: 0 };
+  const original = Navigator.prototype.segmentClearFrom;
+  nav.segmentClearFrom = (from, to, clearance) => {
+    counter.checks++;
+    const clear = original.call(nav, from, to, clearance);
+    if (!clear) counter.replans++;
+    return clear;
+  };
+  return { counter, restore: () => void Reflect.deleteProperty(nav, 'segmentClearFrom') };
 }
 
 const note = (s: Ship): ShipNote => ({ id: s.id, classId: s.classId, ai: s.ai?.state ?? '-', pos: { ...s.pos }, destination: s.destination ? { ...s.destination } : null });
@@ -82,6 +99,7 @@ interface Track {
 export function runMapSoak(seed: number, map: MapDef): SoakReport {
   const world: World = createWorld({ seed, i2: true, map });
   const nav = navigatorOf(world);
+  const replanCount = countReplans(nav);
   const rng = createRng(11);
   for (let i = 0; i < PORT_BOTS; i++) addPlayer(world, `bot${i}`, `Bot ${i}`);
   for (let i = 0; i < HUNTERS; i++) {
@@ -102,7 +120,8 @@ export function runMapSoak(seed: number, map: MapDef): SoakReport {
     minGunboatToPort: Infinity,
     sunkHostiles: 0,
     nearCoastSeconds: {},
-    portBotsByMinute: []
+    portBotsByMinute: [],
+    replans: replanCount.counter
   };
   const windowTicks = ORBIT_WINDOW * TICK_RATE;
   for (let t = 0; t < SOAK_SECONDS * TICK_RATE; t++) {
@@ -247,6 +266,7 @@ export function runMapSoak(seed: number, map: MapDef): SoakReport {
   // Las ventanas malas que forman parte de una racha no son sueltas
   const inRun = new Set(report.orbitRuns.map((r) => r.id));
   report.orbitSingles = report.orbitSingles.filter((w) => !inRun.has(w.id));
+  replanCount.restore();
   return report;
 }
 
@@ -258,6 +278,7 @@ export function soakSummary(r: SoakReport): string {
     ` · atascos > ${STUCK_LIMIT} s: ${r.stuck.length} · rachas de órbita: ${r.orbitRuns.length} · ventanas sueltas: ${r.orbitSingles.length}` +
     ` · Capitanes: ${r.captains.length} · reapariciones: pirata ${count('pirate')}, mercante ${count('merchant')}, cañonera ${count(GUNBOAT_CLASS)}` +
     ` · hostiles hundidos: ${r.sunkHostiles}` +
+    ` · re-planificaciones del mercante: ${r.replans.replans} (de ${r.replans.checks} comprobaciones)` +
     ` · bots de puerto vivos/hundidos por minuto: ${r.portBotsByMinute.map((m) => `${m.minute}:${m.alive}/${m.dead}`).join(' ')}` +
     ` · mín. al puerto: pirata ${r.minPirateToPort.toFixed(1)} m, cañonera ${r.minGunboatToPort.toFixed(1)} m` +
     ` · segundos-NPC con destino a ≤ ${COAST_NEAR} m de costa: ${Object.entries(r.nearCoastSeconds).map(([c, v]) => `${c} ${v.toFixed(0)}`).join(', ') || '0'}` +
