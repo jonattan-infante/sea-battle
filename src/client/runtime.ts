@@ -3,17 +3,20 @@
 // sin estado de React por frame (CLAUDE.md, regla 3). Fuentes: ART-DIRECTION, ASSET-SPEC y VFX-SPEC.
 import * as THREE from 'three';
 import type { RootState } from '@react-three/fiber';
-import { CANNON_LEVELS, INTERPOLATION_DELAY_MS, MAX_CANNON_RANGE, ISLANDS, PORT_POSITION, PVP_ENABLED, SAFE_ZONE_RADIUS, SHIP_CLASSES, SINKING_TIME } from '../game/constants';
+import { CANNON_LEVELS, INTERPOLATION_DELAY_MS, MAX_CANNON_RANGE, IslandDef, ISLANDS, navClearance, PORT_POSITION, PVP_ENABLED, SAFE_ZONE_RADIUS, SHIP_CLASSES, SINKING_TIME } from '../game/constants';
 import { Navigator } from '../game/nav';
 import { GameEvent, PlayerView, Welcome, WreckView } from '../game/types';
 import { CAMERA, computePpm0, DAMAGE_TEXT, DamageTextKind, frameRangeM, LABEL, LIGHTING, MOBILE_MAX_WIDTH, RING_COLORS, ZOOM } from './art';
+import { markerDestination } from './click-marker';
 import { ChipHost, EdgeChipLayer } from './edge-chip-layer';
 import { Attack, AttackerTracker } from './edge-chips';
 import { FreeView, OwnWatch, ViewMode } from './free-view';
 import type { GameClient, RenderShip } from './game-client';
 import { useHud } from './hud-store';
 import { buildBuoyGeometry, buildIslands, buildLootGeometry, buildPalmGeometry, buoyInstances, PropInstance } from './models/island-geometry';
-import { createOceanGeometry, createOceanMaterial } from './models/ocean-material';
+import { createOceanGeometry, createOceanMaterial, disposeOceanMaterial } from './models/ocean-material';
+import { IslandGlbStore, PORT_GLB, PORT_ROOTS, sameCircles, serverShapes, shapeOf } from './models/island-glb';
+import { isMap10, islandsKey, islandsOf, ISLANDS_1_0_KEY } from './map-islands';
 import { measureSailVisibility, measureShipValues, SailVisibility, ShipValues } from './models/sail-visibility';
 import { createShipMaterial, LOD_PX, ShipMaterial, ShipModel } from './models/ship-geometry';
 import { EntryGate, mapAnisotropyFor, prefetchClasses, setShipMap, ShipGlbStore } from './models/ship-glb';
@@ -85,8 +88,17 @@ export interface OceanPass {
   uniforms: Record<string, unknown>; // uniforms del océano en valores planos (vectores y colores lineales → arrays)
 }
 
+// Una textura (la rejilla de islas del agua) va como su tamaño: el modelo de AD-27 no la lee
 const plainUniform = (v: unknown): unknown =>
-  Array.isArray(v) ? v.map(plainUniform) : v instanceof THREE.Color ? [v.r, v.g, v.b] : v && typeof (v as THREE.Vector4).toArray === 'function' ? (v as THREE.Vector4).toArray() : v;
+  Array.isArray(v)
+    ? v.map(plainUniform)
+    : v instanceof THREE.Color
+      ? [v.r, v.g, v.b]
+      : v instanceof THREE.Texture
+        ? { texture: [v.image.width, v.image.height] }
+        : v && typeof (v as THREE.Vector4).toArray === 'function'
+          ? (v as THREE.Vector4).toArray()
+          : v;
 
 // Estado de render de un barco (malla propia, material propio, temporizadores de efectos)
 interface ShipView extends LabelTarget {
@@ -673,6 +685,11 @@ export class GameRuntime implements OverlayHost, ChipHost {
   readonly views = new Map<string, ShipView>();
   // GLB de las clases (ASSET-SPEC §13): el procedural se pinta mientras carga y si falla
   readonly shipGlb = new ShipGlbStore();
+  // AC-198 (piloto C1): las islas del mapa nuevo en GLB, con el cargador de los barcos
+  private readonly islandGlb = new IslandGlbStore(() => this.shipGlb.sharedLoader());
+  // AC-200 e: el modelo del puerto (D92), con el mismo cargador; baja con la bienvenida y la entrada lo espera
+  private readonly portGlb = new IslandGlbStore(() => this.shipGlb.sharedLoader(), PORT_GLB, PORT_ROOTS);
+  private readonly islandRoots = new Map<string, THREE.Object3D>(); // forma → raíz del GLB en la escena
   private shipMapAnisotropy = 0; // el de los mapas de los GLB, al tener renderer (tanda B)
   // Sombra en el agua de los barcos con su GLB de la receta, con atlas (palanca 4 de D91; ASSET-SPEC §13, fila 6)
   readonly shipShadows = new ShipShadows();
@@ -709,6 +726,7 @@ export class GameRuntime implements OverlayHost, ChipHost {
   focusZ: number = PORT_POSITION.z;
   readonly freeView: FreeView; // vista libre (E13): el foco cuando la cámara no sigue al barco
   private readonly stopViewReturn: () => void;
+  private readonly stopWelcome: () => void;
   private lookX = 0;
   private lookY = 0;
   private lookZ = 0;
@@ -725,13 +743,16 @@ export class GameRuntime implements OverlayHost, ChipHost {
   private readonly ocean: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
   private readonly staticMaterial: THREE.MeshStandardMaterial;
   private readonly islandMesh: THREE.Mesh;
-  private readonly palms: THREE.InstancedMesh;
+  private palms: THREE.InstancedMesh;
+  private islandsKey = ISLANDS_1_0_KEY; // las islas que pinta la escena (map-islands.ts): las de la 1.0 hasta la bienvenida
+  private islandList: readonly IslandDef[] = ISLANDS;
   private readonly buoys: THREE.InstancedMesh;
   private readonly loot: THREE.InstancedMesh;
   private readonly wrecks = new Map<string, WreckState>();
 
   private readonly director: VfxDirector;
-  private readonly navigator = new Navigator(ISLANDS);
+  private navigator = new Navigator(ISLANDS);
+  private routeReady: { nav: Navigator; classId: string } | null = null; // H-1: el grafo de la clase propia, ya preparado
   private readonly materialPool: ShipMaterial[] = [];
   private readonly unsubscribe: (() => void)[] = [];
   private readonly reducedMotionQuery: MediaQueryList | null;
@@ -808,6 +829,10 @@ export class GameRuntime implements OverlayHost, ChipHost {
 
     this.director = new VfxDirector(this);
     this.subscribe(client);
+    // AC-199 e: al llegar la bienvenida, las islas del servidor. Con el mapa de la 1.0 son las mismas y no se rehace nada
+    this.stopWelcome = client.onWelcome((w) => {
+      if (this.src === this.client) this.applyIslands(islandsOf(w));
+    });
     if (ownClass) this.shipGlb.predictOwn(ownClass); // su GLB, antes que el cargador
     this.shipGlb.warm(); // con manifiesto, el cargador baja mientras se conecta (el transcodificador, después del GLB propio)
   }
@@ -840,8 +865,71 @@ export class GameRuntime implements OverlayHost, ChipHost {
     this.hoverId = null;
     this.src = src;
     this.subscribe(src);
+    this.applyIslands(islandsOf(src.welcome));
     this.labels?.sync(this.views.values());
     this.snapFrame();
+  }
+
+  // AC-199 e: la escena pinta los círculos de la fuente (la bienvenida del servidor; sin ella, los de la 1.0). Si cambian, se
+  // rehacen el agua (su shader lleva el número de círculos y la rejilla de candidatos), las islas, las palmeras y el navegador
+  // del marcador de destino. Se hace una vez, al entrar, no por frame (el grafo cuesta de 4 a 18 ms, AC-199 e)
+  private applyIslands(islands: readonly IslandDef[]): void {
+    const key = islandsKey(islands);
+    if (key === this.islandsKey) return;
+    this.islandsKey = key;
+    this.islandList = islands;
+    const list = [...islands];
+    this.navigator = new Navigator(list);
+    const ocean = this.ocean.material;
+    this.ocean.material = createOceanMaterial(list);
+    disposeOceanMaterial(ocean);
+    // Las raíces del GLB son de otro mapa: fuera, y vuelven a entrar si sus círculos siguen siendo los del servidor
+    for (const root of this.islandRoots.values()) this.scene.remove(root);
+    this.islandRoots.clear();
+    this.rebuildIslandGeometry();
+    // AC-198 c: con el mapa nuevo, islands.glb baja después de la entrada (updateFrame); hasta entonces, la versión sencilla.
+    // AC-200 e: el puerto, ya, y la entrada lo espera (updateEntry)
+    if (!isMap10(list)) {
+      this.islandGlb.request();
+      if (list.some((c) => shapeOf(c.id) === 'PORT')) this.portGlb.request();
+    }
+  }
+
+  // Las islas procedurales: con el mapa de la 1.0, las de siempre; con otro, la versión sencilla de cada círculo menos los de
+  // las formas que ya pinta su GLB (AC-200 e)
+  private rebuildIslandGeometry(): void {
+    const map10 = isMap10(this.islandList);
+    const list = map10 ? [...this.islandList] : this.islandList.filter((c) => !this.islandRoots.has(shapeOf(c.id)));
+    const built = buildIslands(list, { simple: !map10 });
+    this.islandMesh.geometry.dispose();
+    this.islandMesh.geometry = built.geometry;
+    const palms = this.instanced(this.palms.geometry, built.palms);
+    this.scene.remove(this.palms);
+    this.palms.dispose();
+    this.palms = palms;
+    this.scene.add(palms);
+  }
+
+  // AC-199 e: una raíz de islands.glb entra solo si sus círculos son los del servidor; entonces sale su versión sencilla
+  private placeIslandRoots(): void {
+    const models = [...this.portGlb.take(), ...this.islandGlb.take()];
+    if (!models.length) return;
+    const shapes = serverShapes(this.islandList);
+    let placed = false;
+    for (const m of models) {
+      const server = shapes.get(m.shape);
+      if (!server || !sameCircles(m.circles, server) || this.islandRoots.has(m.shape)) {
+        console.warn(`[island-glb] ${m.sbId}: sus círculos no son los del servidor; se queda la versión sencilla`);
+        continue;
+      }
+      m.root.traverse((o) => {
+        o.renderOrder = RENDER_ORDER.islands;
+      });
+      this.scene.add(m.root);
+      this.islandRoots.set(m.shape, m.root);
+      placed = true;
+    }
+    if (placed) this.rebuildIslandGeometry();
   }
 
   private instanced(geometry: THREE.BufferGeometry, items: PropInstance[]): THREE.InstancedMesh {
@@ -969,12 +1057,11 @@ export class GameRuntime implements OverlayHost, ChipHost {
     if (!this.reducedMotion) this.shakeAt = now;
   }
 
-  // Marcador de destino local e inmediato (AC-14): se ajusta con la misma función pura de la simulación
+  // Marcador de destino local e inmediato (AC-14): se ajusta con la misma función pura que el servidor (H-1, click-marker.ts)
   placeClickMarker(x: number, z: number): ClickMarker | null {
     const me = this.src.getShip(this.src.myShipId);
-    if (!me || me.state !== 'alive') return null;
-    const radius = SHIP_CLASSES[me.classId]?.radius ?? 5;
-    const dest = this.navigator.nearestNavigable({ x, z }, radius);
+    if (!me || me.state !== 'alive' || !SHIP_CLASSES[me.classId]) return null;
+    const dest = markerDestination(this.navigator, me, x, z);
     this.clickMarker = {
       x: dest.x,
       z: dest.z,
@@ -1281,6 +1368,7 @@ export class GameRuntime implements OverlayHost, ChipHost {
     this.gl = state.gl;
     this.rootScene = state.scene;
     this.updateEntry(now);
+    this.prepareOwnRoute();
     if (this.paused) {
       this.labels?.frame(now);
       this.chips?.frame(now);
@@ -1288,6 +1376,11 @@ export class GameRuntime implements OverlayHost, ChipHost {
     }
     if (!this.shipMapAnisotropy) this.shipGlb.setMapAnisotropy((this.shipMapAnisotropy = mapAnisotropyFor(state.gl.capabilities.getMaxAnisotropy())));
     this.shipGlb.pump(state.gl);
+    // AC-198 c: islands.glb, en segundo plano después de la entrada (el barco propio, primero). AC-200 e: el puerto, antes,
+    // porque la entrada lo espera
+    this.portGlb.pump(state.gl);
+    if (this.entry.shownAt) this.islandGlb.pump(state.gl);
+    this.placeIslandRoots();
     this.src.update(now);
     if (this.src !== this.client) this.client.update(now); // drena sus eventos aunque no se dibuje
     const step = Math.min(dt, 0.1);
@@ -1319,12 +1412,23 @@ export class GameRuntime implements OverlayHost, ChipHost {
   // QA-59 y O-66
   readonly vfxClock = { frames: 0, step: 0, dts: new Float64Array(256) };
 
+  // H-1: el grafo y los cruces del margen de la clase propia, fuera del clic (como el servidor al crear el mundo, AC-171).
+  // Una vez por navegador y clase: tras la bienvenida, al cambiar de barco o de mapa. No se hace en applyIslands porque ahí
+  // aún no se conoce el barco propio
+  private prepareOwnRoute(): void {
+    const classId = this.src.getShip(this.src.myShipId)?.classId;
+    if (!classId || !SHIP_CLASSES[classId]) return;
+    if (this.routeReady?.nav === this.navigator && this.routeReady.classId === classId) return;
+    this.navigator.prepare([navClearance(classId)]);
+    this.routeReady = { nav: this.navigator, classId };
+  }
+
   // Antes de updateShips: si el GLB propio acaba de llegar, el frame que abre la entrada ya lo pinta
   private updateEntry(now: number): void {
     if (this.entry.shownAt) return;
     const mine = this.src.myShipId ? this.views.get(this.src.myShipId) : undefined;
     const classId = mine ? mine.ship.classId : null;
-    const opened = this.entry.update(now, this.shipGlb.waiting(classId), classId !== null && this.shipGlb.loaded(classId));
+    const opened = this.entry.update(now, this.shipGlb.waiting(classId), classId !== null && this.shipGlb.loaded(classId), this.portGlb.waiting);
     if (opened && this.entryCover) this.entryCover.hidden = true;
   }
 
@@ -1784,19 +1888,22 @@ export class GameRuntime implements OverlayHost, ChipHost {
   dispose(): void {
     this.unsubscribe.forEach((u) => u());
     this.stopViewReturn();
+    this.stopWelcome();
     this.detachOverlays();
     for (const view of this.views.values()) view.mesh.material.dispose();
     for (const m of this.materialPool) m.dispose();
     this.views.clear();
     this.effects.dispose();
     this.ocean.geometry.dispose();
-    this.ocean.material.dispose();
+    disposeOceanMaterial(this.ocean.material);
     this.islandMesh.geometry.dispose();
     this.palms.geometry.dispose();
     this.buoys.geometry.dispose();
     this.loot.geometry.dispose();
     this.staticMaterial.dispose();
     this.shipShadows.dispose();
+    this.islandGlb.dispose();
+    this.portGlb.dispose();
     this.shipGlb.dispose();
     this.scene.clear();
   }

@@ -76,7 +76,7 @@ import {
   WRECK_LIFETIME,
   WRECK_PICKUP_RADIUS
 } from './constants';
-import { Navigator, segmentPointDistance } from './nav';
+import { Navigator, routeTo, segmentPointDistance } from './nav';
 import { NpcAi, Player, PlayerView, Ship, ShipSnapshot, World } from './types';
 import { Vec2, angleDelta, createRng, distance, forward, headingTo, normalizeAngle } from './vec';
 import { maxHpFor } from './stats';
@@ -244,7 +244,9 @@ function pirateSpot(world: World, sector: number, checkPlayers: boolean, classId
     fallback ??= p;
     if (!checkPlayers || farFromPlayers(world, p)) return p;
   }
-  return fallback ?? { x: sx * 380, z: sz * 380 };
+  // Último recurso: el agua más cercana a (±380, ±380). En la 1.0 ese punto ya es navegable y sale tal cual; en la 1.1 cae
+  // dentro de la cala de su sector (G1–G4), y sin esto el barco aparecería en la roca (C3)
+  return fallback ?? navigatorOf(world).nearestNavigable({ x: sx * 380, z: sz * 380 }, radius);
 }
 
 function newShip(world: World, classId: string, name: string, ownerId: string | null, pos: Vec2, heading: number): Ship {
@@ -498,9 +500,7 @@ const fail = (reason: string): { ok: false; reason: string } => ({ ok: false, re
 // El destino es el punto navegable más cercano al pedido y, si la clase no llega a él, el alcanzable más cercano: el
 // último waypoint de la ruta (§6, punto 1b; AC-172)
 function setDestination(world: World, ship: Ship, target: Vec2): void {
-  const clearance = navClearance(ship.classId);
-  const nav = navigatorOf(world);
-  ship.path = nav.findPath(ship.pos, nav.nearestNavigable(target, clearance), clearance);
+  ship.path = routeTo(navigatorOf(world), ship.pos, target, ship.classId);
   ship.destination = { ...ship.path[ship.path.length - 1] };
 }
 

@@ -1,7 +1,7 @@
 // Rutas que esquivan islas (§6): grafo de visibilidad con nodos en anillos alrededor de cada isla,
 // inflados por el margen de navegación del barco (`clearance` = L/2 + 2, desde el borde de la isla),
 // y A* sobre ese grafo (~100 nodos frente a 40 000 celdas de rejilla).
-import { IslandDef, NAV_LIMIT, NAV_NODE_SLACK } from './constants';
+import { IslandDef, NAV_LIMIT, NAV_NODE_SLACK, navClearance } from './constants';
 import { Vec2, distance } from './vec';
 
 const NODES_PER_ISLAND = 16;
@@ -392,4 +392,13 @@ export class Navigator {
     const nearest = reached.reduce((best, i) => (distance(pos(i), to) < distance(pos(best), to) ? i : best));
     return nearest === START ? [from] : route(nearest);
   }
+}
+
+// La ruta de un barco de la clase `classId` hacia `target` (AC-14, AC-18, AC-172): al punto navegable más cercano con el
+// margen de su clase o, si no se alcanza, al alcanzable más cercano; el último waypoint es su destino. La usan setDestination
+// del servidor y el marcador de destino del cliente (H-1, src/client/click-marker.ts), así que el marcador cae donde para el
+// barco. Vive aquí y no en world.ts para que el cliente no importe el mundo
+export function routeTo(nav: Navigator, from: Vec2, target: Vec2, classId: string): Vec2[] {
+  const clearance = navClearance(classId);
+  return nav.findPath(from, nav.nearestNavigable(target, clearance), clearance);
 }

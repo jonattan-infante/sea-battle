@@ -177,12 +177,39 @@ export function fallbackSizes(): FallbackSizes {
   return Object.fromEntries(Object.entries(table).filter(([k]) => !k.startsWith('_')));
 }
 
+// Las raíces de la escena y el id del GLB (§13, paso 4c), que da el nombre del archivo y la fila de la tabla de 4b. Con 1 raíz
+// (un barco, el puerto o la isla del piloto), el id es su sb_id; si se da `id` (el nombre del archivo sin el hash), tiene que
+// ser ese. Con varias (`islands.glb`, ASSET-SPEC §9.7: una raíz island_<id> por isla, con su malla, que comparten material y
+// atlas), el id es el del archivo y hace falta darlo; cada raíz lleva un sb_id válido y distinto, y sb_kind "island". Los
+// sb_id de las islas llevan mayúsculas (island_I1, island_E1a). Devuelve el id (undefined si no se sabe) y los incumplimientos
+export const SB_ID = /^[A-Za-z0-9_]+$/;
+export function glbId(json: Json, id?: string): { id: string | undefined; roots: number; problems: string[] } {
+  const roots = ((json.scenes ?? []) as { nodes?: number[] }[])[(json.scene as number | undefined) ?? 0]?.nodes ?? [];
+  const extras = roots.map((i) => ((json.nodes as { extras?: { sb_id?: unknown; sb_kind?: unknown } }[])[i].extras ?? {}));
+  const problems: string[] = [];
+  if (id !== undefined && !SB_ID.test(id)) problems.push(`el id del archivo «${id}» no es válido`);
+  if (roots.length === 0) return { id: undefined, roots: 0, problems: [...problems, 'la escena no tiene raíces'] };
+  if (roots.length === 1) {
+    const sbId = typeof extras[0].sb_id === 'string' ? extras[0].sb_id : undefined;
+    if (id !== undefined && sbId !== undefined && id !== sbId) problems.push(`el archivo es «${id}» y su raíz, «${sbId}»`);
+    return { id: sbId, roots: 1, problems };
+  }
+  const ids = extras.map((e) => e.sb_id);
+  extras.forEach((e, k) => {
+    if (typeof e.sb_id !== 'string' || !SB_ID.test(e.sb_id)) problems.push(`raíz ${k}: sin un sb_id válido (${String(e.sb_id)})`);
+    else if (ids.indexOf(e.sb_id) !== k) problems.push(`raíz ${k}: sb_id ${e.sb_id} repetido`);
+    if (e.sb_kind !== 'island') problems.push(`raíz ${k}: sb_kind ${String(e.sb_kind)}; con varias raíces solo valen islas (§9.7)`);
+  });
+  if (id === undefined) problems.push(`${roots.length} raíces: falta el id del archivo, que da su nombre y su fila en ${FALLBACK_SIZES_FILE}`);
+  return { id, roots: roots.length, problems };
+}
+
 // AS-V10 con respaldo (D90): cada textura con KHR_texture_basisu lleva en `source` un PNG o JPEG del BIN, en potencia de 2,
-// no mayor que su KTX2 y con el lado y el formato que la tabla de 4b da al sb_id de la raíz (`sizes`, por defecto
-// FALLBACK_SIZES_FILE); la KTX2 trae todos sus mipmaps, y la extensión no está en extensionsRequired. Con el paso 4c, la
-// KTX2 es una `uri` <nombre>.<hash de su contenido>.ktx2 de la misma carpeta, que se lee con `external` (null si no está).
-// Devuelve los incumplimientos (vacío si cumple)
-export function fallbackProblems(glb: Uint8Array, { external = () => null, sizes }: { external?: (uri: string) => Uint8Array | null; sizes?: FallbackSizes } = {}): string[] {
+// no mayor que su KTX2 y con el lado y el formato que la tabla de 4b da al id del GLB (glbId: el sb_id de su raíz o, con
+// varias raíces, `id`; `sizes`, por defecto FALLBACK_SIZES_FILE); la KTX2 trae todos sus mipmaps, y la extensión no está en
+// extensionsRequired. Con el paso 4c, la KTX2 es una `uri` <nombre>.<hash de su contenido>.ktx2 de la misma carpeta, que se
+// lee con `external` (null si no está). Devuelve los incumplimientos (vacío si cumple)
+export function fallbackProblems(glb: Uint8Array, { external = () => null, sizes, id }: { external?: (uri: string) => Uint8Array | null; sizes?: FallbackSizes; id?: string } = {}): string[] {
   const { json, bin } = readGlb(glb);
   const images = (json.images ?? []) as Image[];
   const bufferViews = (json.bufferViews ?? []) as BufferView[];
@@ -192,12 +219,14 @@ export function fallbackProblems(glb: Uint8Array, { external = () => null, sizes
     return bin.subarray(v.byteOffset ?? 0, (v.byteOffset ?? 0) + v.byteLength);
   };
   const pow2 = (n: number) => n > 0 && (n & (n - 1)) === 0;
-  const problems: string[] = [];
-  const roots = ((json.scenes ?? []) as { nodes?: number[] }[])[(json.scene as number | undefined) ?? 0]?.nodes ?? [];
-  const sbId = roots.length === 1 ? ((json.nodes as { extras?: { sb_id?: string } }[])[roots[0]].extras?.sb_id) : undefined;
+  const root = glbId(json, id);
+  const problems: string[] = [...root.problems];
+  const sbId = root.id;
   const want = sbId === undefined ? undefined : (sizes ?? fallbackSizes())[sbId];
   if (((json.textures ?? []) as Texture[]).some((t) => t.extensions?.[BASISU])) {
-    if (sbId === undefined) problems.push(`la raíz no lleva sb_id en sus extras (AS-V03): no se sabe qué respaldo pide ${FALLBACK_SIZES_FILE}`);
+    if (sbId === undefined) {
+      if (root.roots === 1) problems.push(`la raíz no lleva sb_id en sus extras (AS-V03): no se sabe qué respaldo pide ${FALLBACK_SIZES_FILE}`);
+    }
     else if (!want) problems.push(`${sbId} no está en ${FALLBACK_SIZES_FILE}`);
   }
   ((json.textures ?? []) as Texture[]).forEach((t, i) => {

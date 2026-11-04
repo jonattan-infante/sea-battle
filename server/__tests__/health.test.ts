@@ -8,8 +8,14 @@ describe('/healthz', () => {
       players: 3,
       uptimeSeconds: 60,
       commit: '434b1605c1c6',
-      i2: false
+      i2: false,
+      map: '1.0'
     });
+  });
+
+  test('map dice el mapa del mundo: 1.1 solo con SEA_BATTLE_MAP=1.1, y 1.0 con cualquier otro valor o sin ella', () => {
+    expect(healthPayload(0, 0, 0, { SEA_BATTLE_MAP: '1.1' }).map).toBe('1.1');
+    for (const v of [undefined, '', '1.0', '1', '11', '1,1', '1.2', ' 1.1', '1.1 ']) expect({ v, map: healthPayload(0, 0, 0, { SEA_BATTLE_MAP: v }).map }).toEqual({ v, map: '1.0' });
   });
 
   test('AC-187: i2 dice si el I2 está encendido, y solo SEA_BATTLE_I2=1 lo enciende', () => {
