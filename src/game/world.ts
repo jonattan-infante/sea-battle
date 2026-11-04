@@ -72,7 +72,7 @@ import {
   WRECK_LIFETIME,
   WRECK_PICKUP_RADIUS
 } from './constants';
-import { Navigator, segmentPointDistance } from './nav';
+import { Navigator, routeTo, segmentPointDistance } from './nav';
 import { NpcAi, Player, PlayerView, Ship, ShipSnapshot, World } from './types';
 import { Vec2, angleDelta, createRng, distance, forward, headingTo, normalizeAngle } from './vec';
 import { maxHpFor } from './stats';
@@ -496,9 +496,7 @@ const fail = (reason: string): { ok: false; reason: string } => ({ ok: false, re
 // El destino es el punto navegable más cercano al pedido y, si la clase no llega a él, el alcanzable más cercano: el
 // último waypoint de la ruta (§6, punto 1b; AC-172)
 function setDestination(world: World, ship: Ship, target: Vec2): void {
-  const clearance = navClearance(ship.classId);
-  const nav = navigatorOf(world);
-  ship.path = nav.findPath(ship.pos, nav.nearestNavigable(target, clearance), clearance);
+  ship.path = routeTo(navigatorOf(world), ship.pos, target, ship.classId);
   ship.destination = { ...ship.path[ship.path.length - 1] };
 }
 

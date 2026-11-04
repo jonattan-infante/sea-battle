@@ -3,10 +3,11 @@
 // sin estado de React por frame (CLAUDE.md, regla 3). Fuentes: ART-DIRECTION, ASSET-SPEC y VFX-SPEC.
 import * as THREE from 'three';
 import type { RootState } from '@react-three/fiber';
-import { CANNON_LEVELS, INTERPOLATION_DELAY_MS, MAX_CANNON_RANGE, IslandDef, ISLANDS, PORT_POSITION, PVP_ENABLED, SAFE_ZONE_RADIUS, SHIP_CLASSES, SINKING_TIME } from '../game/constants';
+import { CANNON_LEVELS, INTERPOLATION_DELAY_MS, MAX_CANNON_RANGE, IslandDef, ISLANDS, navClearance, PORT_POSITION, PVP_ENABLED, SAFE_ZONE_RADIUS, SHIP_CLASSES, SINKING_TIME } from '../game/constants';
 import { Navigator } from '../game/nav';
 import { GameEvent, PlayerView, Welcome, WreckView } from '../game/types';
 import { CAMERA, computePpm0, DAMAGE_TEXT, DamageTextKind, frameRangeM, LABEL, LIGHTING, MOBILE_MAX_WIDTH, RING_COLORS, ZOOM } from './art';
+import { markerDestination } from './click-marker';
 import { ChipHost, EdgeChipLayer } from './edge-chip-layer';
 import { Attack, AttackerTracker } from './edge-chips';
 import { FreeView, OwnWatch, ViewMode } from './free-view';
@@ -751,6 +752,7 @@ export class GameRuntime implements OverlayHost, ChipHost {
 
   private readonly director: VfxDirector;
   private navigator = new Navigator(ISLANDS);
+  private routeReady: { nav: Navigator; classId: string } | null = null; // H-1: el grafo de la clase propia, ya preparado
   private readonly materialPool: ShipMaterial[] = [];
   private readonly unsubscribe: (() => void)[] = [];
   private readonly reducedMotionQuery: MediaQueryList | null;
@@ -1055,12 +1057,11 @@ export class GameRuntime implements OverlayHost, ChipHost {
     if (!this.reducedMotion) this.shakeAt = now;
   }
 
-  // Marcador de destino local e inmediato (AC-14): se ajusta con la misma función pura de la simulación
+  // Marcador de destino local e inmediato (AC-14): se ajusta con la misma función pura que el servidor (H-1, click-marker.ts)
   placeClickMarker(x: number, z: number): ClickMarker | null {
     const me = this.src.getShip(this.src.myShipId);
-    if (!me || me.state !== 'alive') return null;
-    const radius = SHIP_CLASSES[me.classId]?.radius ?? 5;
-    const dest = this.navigator.nearestNavigable({ x, z }, radius);
+    if (!me || me.state !== 'alive' || !SHIP_CLASSES[me.classId]) return null;
+    const dest = markerDestination(this.navigator, me, x, z);
     this.clickMarker = {
       x: dest.x,
       z: dest.z,
@@ -1367,6 +1368,7 @@ export class GameRuntime implements OverlayHost, ChipHost {
     this.gl = state.gl;
     this.rootScene = state.scene;
     this.updateEntry(now);
+    this.prepareOwnRoute();
     if (this.paused) {
       this.labels?.frame(now);
       this.chips?.frame(now);
@@ -1409,6 +1411,17 @@ export class GameRuntime implements OverlayHost, ChipHost {
   // Solo cuenta: ni el step ni lo que se emite cambian. Va aquí, tras frame(), para no mover las líneas de arriba que citan
   // QA-59 y O-66
   readonly vfxClock = { frames: 0, step: 0, dts: new Float64Array(256) };
+
+  // H-1: el grafo y los cruces del margen de la clase propia, fuera del clic (como el servidor al crear el mundo, AC-171).
+  // Una vez por navegador y clase: tras la bienvenida, al cambiar de barco o de mapa. No se hace en applyIslands porque ahí
+  // aún no se conoce el barco propio
+  private prepareOwnRoute(): void {
+    const classId = this.src.getShip(this.src.myShipId)?.classId;
+    if (!classId || !SHIP_CLASSES[classId]) return;
+    if (this.routeReady?.nav === this.navigator && this.routeReady.classId === classId) return;
+    this.navigator.prepare([navClearance(classId)]);
+    this.routeReady = { nav: this.navigator, classId };
+  }
 
   // Antes de updateShips: si el GLB propio acaba de llegar, el frame que abre la entrada ya lo pinta
   private updateEntry(now: number): void {
