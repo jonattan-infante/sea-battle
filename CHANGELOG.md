@@ -6,6 +6,17 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ## [Unreleased]
 
+## [1.1.4] - 2026-11-04
+
+### Corregido
+
+- **El Capitán pirata ya no gira en el sitio junto a una isla.** Cuando su punto de órbita caía en la orilla, daba vueltas sin avanzar. Ahora mira cuánto mar libre le queda en cada sentido de la órbita: si el suyo se cierra y el otro está más libre, da la vuelta, con 15 s como mínimo entre un cambio y otro. Si no le queda mar libre en ningún sentido, como en un canal entre dos islas, se queda quieto a tiro y sigue disparando. Los piratas y la cañonera navegan igual que antes. En mar abierto, el Capitán también.
+- **Interno: pruebas del regreso del Capitán a su guarida (AC-112).** Al llegar, su registro de daño queda vacío. A un jugador que se desconecta lo sigue atacando durante sus 10 s de gracia, y cuando su barco desaparece, el Capitán vuelve sin disparar. La prueba de 10 minutos ya no exige que el Capitán vuelva a la guarida, porque eso dependía del azar.
+
+### Cambiado
+
+- **Interno: la CI corre en Node 24 y en Ubuntu 26.04.** Las acciones de GitHub pasan a versiones que usan Node 24: checkout v5.1.0, setup-node v5.0.0, upload-artifact v6.0.0 y download-artifact v7.0.0. El runner queda fijado en `ubuntu-26.04`, la imagen que ya usaba. Se acaban los avisos de Node 20 y de `ubuntu-latest`.
+
 ## [1.1.3] - 2026-11-02
 
 ### Cambiado
@@ -185,7 +196,8 @@ Detalle y criterios en `docs/game/BACKLOG.md`, «Conocidos de la 1.0.0».
 - **clerk-js fijada en 5.128.0** (`src/lib/clerk-js.ts`). El navegador carga esa versión y no la última 5.x, así que Clerk no puede cambiar textos ni comportamiento en prod sin un deploy nuestro. Mantenimiento: cada subida de `@clerk/nextjs` o de clerk-js cambia la versión fijada a propósito, en un commit propio, y vuelve a pasar las pruebas de los textos en español del inicio de sesión y el registro (AC-140 c y AD-35 d). Así ningún texto nuevo de Clerk en inglés llega a prod sin que nadie lo vea.
 - **Node 24 en todo**: local, CI y Railway usan la misma versión mayor. La fijan `engines.node` (`24.x`) en `package.json`, `.nvmrc` y la CI, que lee `.nvmrc`. Si `verify` corre con otra versión mayor, falla `server/__tests__/node-runtime.test.ts`.
 
-[Unreleased]: https://github.com/jonattan-infante/sea-battle/compare/v1.1.3...HEAD
+[Unreleased]: https://github.com/jonattan-infante/sea-battle/compare/v1.1.4...HEAD
+[1.1.4]: https://github.com/jonattan-infante/sea-battle/compare/v1.1.3...v1.1.4
 [1.1.3]: https://github.com/jonattan-infante/sea-battle/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/jonattan-infante/sea-battle/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/jonattan-infante/sea-battle/compare/v1.1.0...v1.1.1
