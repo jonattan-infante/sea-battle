@@ -38,6 +38,8 @@ import {
   PIVOT_MIN_ANGLE,
   PIVOT_SPEED,
   PIVOT_ZONE,
+  NAV_REPLAN_TICKS,
+  NAV_REPLAN_HULL_SLACK,
   MERCHANT_ROUTE_POINTS,
   NAV_LIMIT,
   NPC_POPULATION,
@@ -735,6 +737,9 @@ function speedCapOf(world: World, ship: Ship): number {
   }
 }
 
+// Desfase de un barco en los ciclos de NAV_REPLAN_TICKS: el número de su id (ship-N), para no comprobar todos en el mismo tick
+const shipPhase = (ship: Ship) => Number(ship.id.slice(5)) || 0;
+
 function moveShip(world: World, ship: Ship, dt: number): void {
   const stats = classOf(ship);
   let desired = 0;
@@ -746,6 +751,16 @@ function moveShip(world: World, ship: Ship, dt: number): void {
     // Waypoints intermedios: pasar al siguiente al acercarse
     const skipRadius = Math.max(4, stats.radius);
     while (ship.path.length > 1 && distance(ship.pos, ship.path[0]) < skipRadius) ship.path.shift();
+    // Mercantes NPC, cada NAV_REPLAN_TICKS y desfasados por barco: si la recta hasta el siguiente waypoint pasa a menos del
+    // casco + NAV_REPLAN_HULL_SLACK de la costa, re-planifica desde donde está (C3)
+    if (
+      ship.kind === 'merchant' &&
+      ship.ai !== null &&
+      (world.tick + shipPhase(ship)) % NAV_REPLAN_TICKS === 0 &&
+      !nav.segmentClearFrom(ship.pos, ship.path[0], stats.radius + NAV_REPLAN_HULL_SLACK)
+    ) {
+      ship.path = nav.findPath(ship.pos, ship.destination, navClearance(ship.classId));
+    }
     const wp = ship.path[0];
     const dist = distance(ship.pos, wp);
     const final = ship.path.length === 1;

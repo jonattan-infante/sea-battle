@@ -307,12 +307,23 @@ export class Navigator {
     return graph;
   }
 
+  // La recta desde la posición de un barco: si ya está dentro de la zona inflada (p. ej., tras un empuje físico), los tramos
+  // desde el origen solo pueden mantener o aumentar su distancia actual a la isla, nunca acercarse más. Es el criterio con
+  // el que findPath sale en línea recta y con el que moveShip comprueba que la ruta sigue libre (C3)
+  segmentClearFrom(from: Vec2, to: Vec2, clearance: number): boolean {
+    return this.segmentClear(from, to, this.startClearance(from, clearance));
+  }
+
+  private startClearance(from: Vec2, clearance: number): number {
+    return Math.min(clearance, Math.max(0, this.edgeClearance(from) - EPS));
+  }
+
   // Waypoints desde `from` (excluido) hasta `to` (incluido) o, si `to` no se alcanza, hasta el punto alcanzable más
   // cercano a `to`: el último waypoint es siempre el destino real
   findPath(from: Vec2, to: Vec2, clearance: number): Vec2[] {
     // Si el barco ya está dentro de la zona inflada (p. ej., tras un empuje físico), los tramos desde el
     // origen solo pueden mantener o aumentar su distancia actual a la isla, nunca acercarse más
-    const startClear = Math.min(clearance, Math.max(0, this.edgeClearance(from) - EPS));
+    const startClear = this.startClearance(from, clearance);
     if (this.segmentClear(from, to, startClear)) return [to];
     const { nodes, edges, weights } = this.graphFor(clearance);
     const n = nodes.length;

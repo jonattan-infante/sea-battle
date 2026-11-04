@@ -101,9 +101,9 @@ describe('E0 — Arquitectura de la simulación', () => {
 
   // p50 y p99 del tick en 2 000 ticks (tras 200 de calentamiento del JIT) con 20 jugadores con intenciones aleatorias,
   // 20 NPC y el jefe (H-305; con el I2 encendido, el peor caso). Mismas semillas en cada llamada: la carga de la simulación
-  // es idéntica y solo cambia la de la máquina
-  function tickTimes(): { p50: number; p99: number } {
-    const world = createWorld({ seed: 3, i2: true });
+  // es idéntica y solo cambia la de la máquina. Con el mapa que se le pase: el de hoy (1.0) o el de la 1.1 (C3)
+  function tickTimes(map: C.MapDef): { p50: number; p99: number } {
+    const world = createWorld({ seed: 3, i2: true, map });
     const boss = spawnCaptain(world);
     expect(boss).not.toBeNull();
     const rng = createRng(5);
@@ -133,10 +133,13 @@ describe('E0 — Arquitectura de la simulación', () => {
 
   // DT-05: la carga ajena de la máquina (otro Jest en paralelo) solo suma tiempo a un tick, nunca lo resta, así que el
   // menor de 3 p99 estima el coste de la simulación; un p99 suelto medía también la máquina
-  test('AC-03: con 20 jugadores con intenciones aleatorias, 20 NPC y el jefe, el menor de 3 p99 del tick (2 000 ticks cada uno) es ≤ 4 ms', () => {
-    const runs = [tickTimes(), tickTimes(), tickTimes()];
+  test.each([
+    ['1.0', C.MAP_1_0],
+    ['1.1', C.MAP_1_1]
+  ])('AC-03: con el mapa %s, 20 jugadores con intenciones aleatorias, 20 NPC y el jefe, el menor de 3 p99 del tick (2 000 ticks cada uno) es ≤ 4 ms', (id, map) => {
+    const runs = [tickTimes(map), tickTimes(map), tickTimes(map)];
     const best = Math.min(...runs.map((r) => r.p99));
-    console.log(`AC-03: p99 ${runs.map((r) => r.p99.toFixed(3)).join(' · ')} ms (p50 ${runs.map((r) => r.p50.toFixed(3)).join(' · ')} ms) → menor ${best.toFixed(3)} ms`);
+    console.log(`AC-03: p99 ${runs.map((r) => r.p99.toFixed(3)).join(' · ')} ms (p50 ${runs.map((r) => r.p50.toFixed(3)).join(' · ')} ms) → menor ${best.toFixed(3)} ms (mapa ${id})`);
     expect(best).toBeLessThanOrEqual(4);
   });
 

@@ -1,8 +1,8 @@
-import { ISLANDS, NAV_LIMIT, PIVOT_MIN_ANGLE, PIVOT_SPEED, SHIP_CLASSES, navClearance } from '../constants';
+import { ISLANDS, MAP_1_0, MAP_1_1, NAV_LIMIT, PIVOT_MIN_ANGLE, PIVOT_SPEED, SHIP_CLASSES, navClearance } from '../constants';
 import { segmentPointDistance } from '../nav';
 import { Ship, World } from '../types';
-import { createRng, distance, forward } from '../vec';
-import { moveTo, navigator, stop } from '../world';
+import { Vec2, createRng, distance, forward, headingTo } from '../vec';
+import { createWorld, moveTo, navigator, navigatorOf, stop } from '../world';
 import { DT, emptyWorld, i2World, percentile, placeCaptain, placeGunboat, placeMerchant, placePirate, placePlayer, run, runUntil } from './helpers';
 
 describe('E1 — Navegación', () => {
@@ -101,6 +101,60 @@ describe('E1 — Navegación', () => {
     },
     120_000
   );
+
+  // H1 (QA-70; producto, 2026-11-04, BACKLOG :914): la re-planificación de la ruta es solo de los mercantes NPC (C3,
+  // AC-173). Un barco de jugador calcula su ruta 1 vez por orden de moveTo, aunque pase junto a la costa: un contador sobre el
+  // Navigator del mapa (compartido por los mundos del mismo mapa) cuenta las llamadas a findPath de cada ruta, desde la orden
+  // hasta la llegada. Rutas junto a la costa, con la semilla de AC-20: el barco va a la velocidad máxima por el borde del
+  // margen de una isla al azar, con el rumbo tangente a ella, y recibe la orden de ir al otro lado de esa isla (la ruta la
+  // rodea). Es el caso en que el arco de giro lo saca de la recta junto a la costa: con el mutante replan-todos (re-planificar
+  // cualquier barco) re-planifica en 9 de las 10 combinaciones de clase y mapa (sonda de dev-npc, 2026-11-04); parado y con
+  // el rumbo al azar, casi nunca
+  test.each([
+    ['1.0', MAP_1_0],
+    ['1.1', MAP_1_1]
+  ])('AC-20 (H1): mapa %s — un barco de jugador de cada una de las 5 clases, en 50 rutas que rodean una isla desde su costa, llama a findPath 1 vez por cada moveTo', (id, map) => {
+    const ROUTES = 50;
+    const report: string[] = [];
+    for (const classId of ['sloop', 'brig', 'frigate', 'pirate', 'merchant']) {
+      const clearance = navClearance(classId);
+      const nav = navigatorOf(createWorld({ seed: 0, spawnNpcs: false, map }));
+      const rng = createRng(2026);
+      const routes: { from: Vec2; to: Vec2; heading: number }[] = [];
+      for (let tries = 0; routes.length < ROUTES && tries < 5000; tries++) {
+        const isl = map.islands[Math.floor(rng() * map.islands.length)];
+        const a = rng() * Math.PI * 2;
+        // Desde el borde del margen (el punto navegable más cercano a uno de dentro de la isla) hasta el lado opuesto
+        const from = nav.nearestNavigable({ x: isl.x + Math.sin(a) * isl.radius * 0.5, z: isl.z + Math.cos(a) * isl.radius * 0.5 }, clearance);
+        const to = nav.nearestNavigable({ x: isl.x - Math.sin(a) * (isl.radius + 60), z: isl.z - Math.cos(a) * (isl.radius + 60) }, clearance);
+        if (nav.findPath(from, to, clearance).length >= 2) routes.push({ from, to, heading: headingTo(from, isl) + Math.PI / 2 });
+      }
+      const findPath = jest.spyOn(nav, 'findPath');
+      const extra: string[] = [];
+      let arrived = 0;
+      try {
+        routes.forEach(({ from, to, heading }, i) => {
+          const world = createWorld({ seed: i, spawnNpcs: false, map });
+          const ship = placePlayer(world, 'a', from.x, from.z, heading);
+          ship.classId = classId;
+          ship.speed = SHIP_CLASSES[classId].maxSpeed;
+          const before = findPath.mock.calls.length;
+          moveTo(world, 'a', to);
+          const t = runUntil(world, 300, () => ship.destination === null && ship.speed === 0);
+          if (t !== Infinity) arrived++;
+          const calls = findPath.mock.calls.length - before;
+          if (calls !== 1) extra.push(`ruta ${i} (${from.x.toFixed(1)}, ${from.z.toFixed(1)}) → (${to.x.toFixed(1)}, ${to.z.toFixed(1)}): ${calls} llamadas`);
+        });
+      } finally {
+        findPath.mockRestore();
+      }
+      report.push(`${classId} ${routes.length} rutas, ${arrived} llegan, ${extra.length} con más de 1 llamada`);
+      // Medido: sin las 50 rutas junto a la costa, el test no prueba lo que dice
+      expect({ classId, routes: routes.length }).toEqual({ classId, routes: ROUTES });
+      expect({ classId, extra }).toEqual({ classId, extra: [] });
+    }
+    console.log(`AC-20 (H1), mapa ${id}: ${report.join(' · ')}`);
+  }, 120_000);
 
   test.each(['sloop', 'brig', 'frigate', 'pirate', 'merchant'])('AC-21: %s — un clic dentro de una isla lleva a L/2 + 2 ±1 m del borde', (classId) => {
     const margin = SHIP_CLASSES[classId].length / 2 + 2;
