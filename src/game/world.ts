@@ -1158,8 +1158,10 @@ function fleePoint(world: World, ship: Ship, target: Ship, hostile: HostileAiSta
   return navigableFor(world, p, navClearance(ship.classId)) ? p : null;
 }
 
-// Punto de la órbita del Capitán (C3, variante d; constants.ts, CAPTAIN_ARC_*): el arco libre en su sentido decide si sigue,
-// acorta el paso o invierte; sin arco en ninguno de los 2, se queda en el punto de la órbita a su altura
+/**
+ * Punto de la órbita del Capitán (C3, variante d; constants.ts, CAPTAIN_ARC_*): el arco libre en su sentido decide si sigue,
+ * acorta el paso o invierte; sin arco en ninguno de los 2, se queda en el punto de la órbita a su altura (ai.orbitHold).
+ */
 function captainOrbitPoint(world: World, ship: Ship, bearing: number, onOrbit: (angle: number) => Vec2): Vec2 {
   const ai = ship.ai!;
   const clearance = navClearance(ship.classId);
@@ -1187,6 +1189,12 @@ function captainOrbitPoint(world: World, ship: Ship, bearing: number, onOrbit: (
   return onOrbit(bearing);
 }
 
+/**
+ * IA de los barcos hostiles (pirata, Capitán y cañonera) en un tick, según ai.state:
+ * - combat: se acerca, orbita o se aleja de su objetivo; si lo pierde, se aleja demasiado o sale de su correa, pasa a return.
+ * - return: vuelve a ai.origin y, al llegar, recupera la vida, vacía el registro de daño y pasa a patrol (§9).
+ * - patrol: entra en combat si ve un objetivo a tiro de aggro; si no, espera y elige un punto navegable cerca de su origen.
+ */
 function updatePirate(world: World, ship: Ship, dt: number): void {
   const ai = ship.ai!;
   const hostile = hostileAiOf(ship);
