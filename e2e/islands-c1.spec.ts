@@ -271,8 +271,8 @@ test.describe('C1: las islas del mapa de la 1.1 en el cliente', () => {
   });
 
   // AC-200 e (BACKLOG :1726): el PR del cargador del puerto trae el e2e de «0 peticiones a la red en la visita siguiente» con
-  // el puerto real
-  test('con la 1.1, island_port.glb y su KTX2 se sirven con caché de un año, y en la visita siguiente hacen 0 peticiones a la red (AC-200 e)', async ({ context, page }) => {
+  // el puerto real. O-2 de QA-71 (:1694): también islands.glb y su KTX2
+  test('con la 1.1, island_port.glb, islands.glb y sus KTX2 se sirven con caché de un año, y en la visita siguiente hacen 0 peticiones a la red (AC-200 e, O-2)', async ({ context, page }) => {
     test.setTimeout(120_000);
     const server = await startOwnServer({ SEA_BATTLE_MAP: '1.1', SEA_BATTLE_NPCS: '0' });
     try {
@@ -280,19 +280,24 @@ test.describe('C1: las islas del mapa de la 1.1 en el cliente', () => {
       const req = islandRequests(page);
       await enterGame(page, server.url);
       await hasRoot(page, 'PORT');
-      expect([req.port.length, req.portKtx2.length]).toEqual([1, 1]);
-      const pieces = [new URL(req.port[0].url()).pathname, new URL(req.portKtx2[0].url()).pathname];
-      expect(pieces[0]).toBe(PORT_GLB);
-      const headers = await Promise.all([req.port[0], req.portKtx2[0]].map(async (r) => { const res = await r.response(); return `${res?.status()} ${res?.headers()['cache-control']}`; }));
-      console.log(`C1 · puerto, 1.ª visita: ${JSON.stringify(Object.fromEntries(pieces.map((p, k) => [p, headers[k]])))}`);
+      await hasRoot(page, 'I1');
+      // La KTX2 de islands.glb llega después de la raíz (D90: hasta entonces, el respaldo)
+      await expect.poll(() => [req.port.length, req.portKtx2.length, req.glb.length, req.ktx2.length], { timeout: 30_000 }).toEqual([1, 1, 1, 1]);
+      const reqs = [req.port[0], req.portKtx2[0], req.glb[0], req.ktx2[0]];
+      const pieces = reqs.map((r) => new URL(r.url()).pathname);
+      expect([pieces[0], pieces[2]]).toEqual([PORT_GLB, ISLANDS_GLB]);
+      const headers = await Promise.all(reqs.map(async (r) => { const res = await r.response(); await res?.finished(); return `${res?.status()} ${res?.headers()['cache-control']}`; }));
+      console.log(`C1 · escenario, 1.ª visita: ${JSON.stringify(Object.fromEntries(pieces.map((p, k) => [p, headers[k]])))}`);
       expect(headers).toEqual(pieces.map(() => '200 public, max-age=31536000, immutable'));
       await page.close();
 
       const again = await context.newPage();
       await enterGame(again, server.url);
       await hasRoot(again, 'PORT');
+      await hasRoot(again, 'I1');
+      await expect.poll(async () => (await network(again, pieces)).map((x) => x.requests), { timeout: 30_000 }).toEqual(pieces.map(() => 1));
       const next = await network(again, pieces);
-      console.log(`C1 · puerto, visita siguiente: ${JSON.stringify(next)}`);
+      console.log(`C1 · escenario, visita siguiente: ${JSON.stringify(next)}`);
       expect(next).toEqual(pieces.map((p) => ({ path: p, requests: 1, toNetwork: 0, bytes: 0, body: true })));
     } finally {
       await server.kill();
