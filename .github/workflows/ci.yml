@@ -14,7 +14,7 @@ permissions:
 jobs:
   verify:
     # Sin if: un check obligatorio saltado cuenta como verde y dejaría fusionar un PR en rojo (H-29)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     # Postgres real para los tests de persistencia (AC-97, AC-129 a AC-133)
     services:
@@ -36,8 +36,8 @@ jobs:
       NEXT_TELEMETRY_DISABLED: '1'
       TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
     steps:
-      - uses: actions/checkout@v4.4.0
-      - uses: actions/setup-node@v4.4.0
+      - uses: actions/checkout@v5.1.0
+      - uses: actions/setup-node@v5.0.0
         with:
           # La misma versión mayor que Railway (DT-14): .nvmrc y engines.node de package.json
           node-version-file: .nvmrc
@@ -61,7 +61,7 @@ jobs:
   # fallo se repite una vez y, si pasa, sale como «flaky» en el informe. No es un check obligatorio: eso lo decide Jonattan
   e2e:
     if: github.event_name == 'pull_request' && github.event.action != 'labeled'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     permissions:
       contents: read
@@ -83,8 +83,8 @@ jobs:
       # llvmpipe por EGL sin pantalla (playwright.config.ts)
       EGL_PLATFORM: surfaceless
     steps:
-      - uses: actions/checkout@v4.4.0
-      - uses: actions/setup-node@v4.4.0
+      - uses: actions/checkout@v5.1.0
+      - uses: actions/setup-node@v5.0.0
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -125,14 +125,14 @@ jobs:
         run: python3 scripts/ci/redact_clerk.py check blob-report test-results
       - name: Informe del shard (blob)
         if: ${{ !cancelled() && steps.clean.outcome == 'success' }}
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v6.0.0
         with:
           name: e2e-blob-${{ matrix.shard }}
           path: blob-report
           retention-days: 7
       - name: Trazas de los fallos (test-results)
         if: ${{ failure() && steps.clean.outcome == 'success' }}
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v6.0.0
         with:
           name: e2e-test-results-${{ matrix.shard }}
           path: test-results
@@ -142,7 +142,7 @@ jobs:
   e2e-report:
     needs: e2e
     if: ${{ !cancelled() && needs.e2e.result != 'skipped' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -150,13 +150,13 @@ jobs:
       group: ${{ github.event.action == 'labeled' && format('e2e-report-labeled-{0}', github.run_id) || format('e2e-report-pr-{0}', github.event.pull_request.number) }}
       cancel-in-progress: true
     steps:
-      - uses: actions/checkout@v4.4.0
-      - uses: actions/setup-node@v4.4.0
+      - uses: actions/checkout@v5.1.0
+      - uses: actions/setup-node@v5.0.0
         with:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - uses: actions/download-artifact@v4.3.0
+      - uses: actions/download-artifact@v7.0.0
         with:
           pattern: e2e-blob-*
           path: all-blob-reports
@@ -181,7 +181,7 @@ jobs:
           python3 scripts/ci/redact_clerk.py redact playwright-report e2e-results.json
           python3 scripts/ci/redact_clerk.py check playwright-report e2e-results.json
       - name: Informe HTML
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v6.0.0
         with:
           name: e2e-html-report
           path: |
@@ -201,7 +201,7 @@ jobs:
       && github.event.pull_request.head.repo.full_name == github.repository
       && contains(github.event.pull_request.labels.*.name, 'staging')
       && ((github.event.action == 'labeled' && github.event.label.name == 'staging') || github.event.action == 'synchronize')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     environment:
       name: staging
@@ -210,7 +210,7 @@ jobs:
       group: staging
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v4.4.0
+      - uses: actions/checkout@v5.1.0
       - name: Probar el token de staging (solo lectura)
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
@@ -231,7 +231,7 @@ jobs:
   deploy-production:
     needs: verify
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     environment:
       name: production
@@ -242,7 +242,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4.4.0
+      - uses: actions/checkout@v5.1.0
       - name: Probar el token de prod (solo lectura)
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
