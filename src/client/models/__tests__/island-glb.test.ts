@@ -2,31 +2,12 @@
 // public/models: sus raíces traen los círculos del mapa de la 1.1 (AC-199 e) y la costa de la del piloto, I1, cae dentro de
 // su colisión (AC-199 a). Y el cargador: baja una vez, después de pedirlo, entrega solo la raíz del piloto y libera el resto
 import fs from 'fs';
-import path from 'path';
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { MAP_1_1 } from '../../../game/constants';
-import { editGlb } from '../../../../scripts/glb/glb-fallback';
 import { Circle, IslandGlbStore, ISLANDS_GLB, PILOT_ROOTS, sameCircles, serverShapes, shapeOf, takeRoots } from '../island-glb';
 import type { GlbLoader, TextureUpgrade } from '../ship-glb';
-
-const ROOT = path.join(__dirname, '..', '..', '..', '..');
-const FILE = path.join(ROOT, 'public', ISLANDS_GLB);
-
-// La escena de islands.glb sin texturas: sin navegador no hay descodificador de imágenes, y aquí solo cuentan la geometría y
-// los extras de las raíces
-async function islandsScene(): Promise<THREE.Object3D> {
-  const bytes = editGlb(new Uint8Array(fs.readFileSync(FILE)), (json) => {
-    for (const m of (json.materials ?? []) as { pbrMetallicRoughness?: { baseColorTexture?: unknown } }[]) delete m.pbrMetallicRoughness?.baseColorTexture;
-    delete json.textures;
-    delete json.images;
-    delete json.samplers;
-    json.extensionsUsed = (json.extensionsUsed as string[]).filter((e) => e !== 'KHR_texture_basisu');
-  });
-  const gltf = await new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).parseAsync(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer, '');
-  return gltf.scene;
-}
+// La escena de islands.glb sin texturas y la ruta del archivo, compartidas con island-coast-ships.test.ts
+import { ISLANDS_FILE as FILE, islandsScene } from './island-coast';
 
 describe('islands.glb (ASSET-SPEC §9.7) frente al mapa de la 1.1', () => {
   test('el archivo está en public/models con el nombre de ISLANDS_GLB, y la raíz del piloto es I1', () => {
