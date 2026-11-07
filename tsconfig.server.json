@@ -12,5 +12,5 @@
     "types": ["node"]
   },
   "include": ["server/**/*.ts", "src/game/**/*.ts", "src/lib/auth-bypass.ts"],
-  "exclude": ["**/__tests__/**"]
+  "exclude": ["**/__tests__/**", "**/*.test.ts"]
 }
