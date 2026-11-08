@@ -1,6 +1,7 @@
-// Piloto C1 del mapa nuevo (AC-198; ASSET-SPEC §9.7): islands.glb, con una raíz por isla, y su cargador. Sobre el archivo de
-// public/models: sus raíces traen los círculos del mapa de la 1.1 (AC-199 e) y la costa de la del piloto, I1, cae dentro de
-// su colisión (AC-199 a). Y el cargador: baja una vez, después de pedirlo, entrega solo la raíz del piloto y libera el resto
+// Las islas del mapa nuevo (AC-198, AC-210 b; ASSET-SPEC §9.7): islands.glb, con una raíz por isla, y su cargador. Sobre el
+// archivo de public/models: sus 15 raíces traen los círculos del mapa de la 1.1 (AC-199 e) y la costa de I1, la del piloto C1,
+// cae dentro de su colisión (AC-199 a). Y el cargador: baja una vez, después de pedirlo, entrega las raíces pedidas (las 15
+// de PILOT_ROOTS) y libera el resto
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
@@ -15,15 +16,16 @@ import { ISLANDS_FILE as FILE, PUBLIC_DIR, islandsScene } from './island-coast';
 const PORT_FILE = path.join(PUBLIC_DIR, PORT_GLB);
 
 describe('islands.glb (ASSET-SPEC §9.7) frente al mapa de la 1.1', () => {
-  test('el archivo está en public/models con el nombre de ISLANDS_GLB, y la raíz del piloto es I1', () => {
+  test('el archivo está en public/models con el nombre de ISLANDS_GLB, y PILOT_ROOTS son sus 15 raíces (AC-210 b)', async () => {
     expect(fs.existsSync(FILE)).toBe(true);
-    expect(PILOT_ROOTS).toEqual(['island_I1']);
+    const all = (await islandsScene()).children.map((r) => r.userData.sb_id as string);
+    expect(PILOT_ROOTS).toHaveLength(15);
+    expect([...PILOT_ROOTS].sort()).toEqual([...all].sort());
   });
 
-  test('AC-199 e: las 15 raíces traen los círculos de su forma en el mapa de la 1.1, y la del piloto entra', async () => {
+  test('AC-199 e: las 15 raíces de PILOT_ROOTS traen los círculos de su forma en el mapa de la 1.1, y entran todas', async () => {
     const scene = await islandsScene();
-    const all = scene.children.map((r) => r.userData.sb_id as string);
-    const { models, problems } = takeRoots(scene, all);
+    const { models, problems } = takeRoots(scene, PILOT_ROOTS);
     expect(problems).toEqual([]);
     const server = serverShapes(MAP_1_1.islands);
     expect(models.map((m) => m.shape).sort()).toEqual([...server.keys()].filter((k) => k !== 'PORT').sort());
@@ -32,7 +34,7 @@ describe('islands.glb (ASSET-SPEC §9.7) frente al mapa de la 1.1', () => {
 
   test('AC-199 a, en I1: nada sobre el agua sale más de 0,5 m de su colisión, y la costa en la flotación cae entre 0 y 3 m por dentro', async () => {
     const scene = await islandsScene();
-    const { models } = takeRoots(scene, PILOT_ROOTS);
+    const { models } = takeRoots(scene, ['island_I1']);
     expect(models).toHaveLength(1);
     const circles = serverShapes(MAP_1_1.islands).get('I1')!;
     const outside = (x: number, z: number) => Math.min(...circles.map(([cx, cz, r]) => Math.hypot(x - cx, z - cz) - r));
@@ -140,7 +142,7 @@ function scene(ids: string[], material = new THREE.MeshStandardMaterial({ map: n
 }
 
 describe('IslandGlbStore (AC-198 c)', () => {
-  test('sin request no baja nada; con request baja una vez y entrega solo la raíz del piloto, y libera la geometría de las demás', async () => {
+  test('sin request no baja nada; con request baja una vez y entrega las 15 raíces pedidas, y libera la geometría de lo demás', async () => {
     const { calls, loader, fetchBytes } = fake();
     const store = new IslandGlbStore(() => loader, ISLANDS_GLB, PILOT_ROOTS, fetchBytes);
     store.pump(gl);
@@ -149,14 +151,16 @@ describe('IslandGlbStore (AC-198 c)', () => {
     store.pump(gl);
     store.pump(gl);
     expect(calls.map((c) => c.url)).toEqual([ISLANDS_GLB]);
-    const { s, geometries } = scene(['island_E1a', 'island_I1', 'island_I5']);
+    // Una raíz que no se pide (island_port no está en islands.glb ni en PILOT_ROOTS), en medio de las 15
+    const { s, geometries } = scene([...PILOT_ROOTS.slice(0, 7), 'island_port', ...PILOT_ROOTS.slice(7)]);
     const freed: number[] = [];
     geometries.forEach((g, k) => g.addEventListener('dispose', () => freed.push(k)));
     calls[0].resolve(s);
     await settle();
     const got = store.take();
-    expect(got.map((m) => [m.shape, m.sbId])).toEqual([['I1', 'island_I1']]);
-    expect(freed.sort()).toEqual([0, 2]);
+    expect(got.map((m) => m.sbId)).toEqual([...PILOT_ROOTS]);
+    expect(got.map((m) => m.shape)).toEqual(PILOT_ROOTS.map(shapeOfRoot));
+    expect(freed).toEqual([7]);
     expect(store.take()).toEqual([]);
     store.request();
     store.pump(gl);
@@ -168,7 +172,7 @@ describe('IslandGlbStore (AC-198 c)', () => {
     const store = new IslandGlbStore(() => loader, ISLANDS_GLB, PILOT_ROOTS, fetchBytes);
     store.request();
     store.pump(gl);
-    const { s, material } = scene(['island_I1']);
+    const { s, material } = scene([...PILOT_ROOTS]);
     const fallback = material.map!;
     const ktx2 = new THREE.CompressedTexture([], 16, 16);
     let freed = 0;
@@ -176,7 +180,7 @@ describe('IslandGlbStore (AC-198 c)', () => {
     let release!: (p: TextureUpgrade[]) => void;
     calls[0].resolve(s, new Promise((r) => (release = r)));
     await settle();
-    expect(store.take()).toHaveLength(1);
+    expect(store.take()).toHaveLength(15);
     expect(material.map).toBe(fallback);
     release([[fallback, ktx2]]);
     await settle();
@@ -218,15 +222,15 @@ describe('IslandGlbStore (AC-198 c)', () => {
     }
   });
 
-  test('una raíz del piloto que falta en el GLB se avisa', async () => {
+  test('una raíz de las 15 que falta en el GLB se avisa, y las otras 14 se entregan', async () => {
     const { calls, loader, fetchBytes } = fake();
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const store = new IslandGlbStore(() => loader, ISLANDS_GLB, PILOT_ROOTS, fetchBytes);
     store.request();
     store.pump(gl);
-    calls[0].resolve(scene(['island_I5']).s);
+    calls[0].resolve(scene(PILOT_ROOTS.filter((id) => id !== 'island_I1')).s);
     await settle();
-    expect(store.take()).toEqual([]);
+    expect(store.take().map((m) => m.sbId)).toEqual(PILOT_ROOTS.filter((id) => id !== 'island_I1'));
     expect(warn.mock.calls.map((c) => String(c[0]))).toEqual([`[island-glb] ${ISLANDS_GLB}: island_I1: no está en el GLB`]);
     warn.mockRestore();
   });

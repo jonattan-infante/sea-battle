@@ -1,9 +1,10 @@
-// Islas del mapa nuevo en GLB (AC-198, piloto C1; ASSET-SPEC §9.7): un solo islands.glb con una raíz island_<id> por isla,
-// cada una con su posición en el mundo, su malla y sus círculos (`sb_circles`). Baja en segundo plano después del barco
-// propio y se pinta solo la raíz del piloto (I1); las demás esperan a C3 y se liberan sin subirlas a la GPU (AC-198 c).
-// Una raíz solo entra si sus círculos son los de la bienvenida del servidor (AC-199 e): lo que se ve es lo que choca. Si no,
-// se queda la versión sencilla. Comparte con los barcos el cargador (un solo KTX2Loader y un solo transcodificador) y el
-// respaldo de la textura (D90): se pinta con el respaldo y cambia a la KTX2 al llegar
+// Islas del mapa nuevo en GLB (AC-198; ASSET-SPEC §9.7): un solo islands.glb con una raíz island_<id> por isla, cada una con
+// su posición en el mundo, su malla y sus círculos (`sb_circles`). Baja en segundo plano después del barco propio, y desde la
+// 1.2 se pintan sus 15 raíces (AC-210 b; el piloto C1 pintaba solo I1). Lo que no sea una de ellas se libera sin subirlo a la
+// GPU (AC-198 c). Una raíz solo entra si sus círculos son los de la bienvenida del servidor (AC-199 e): lo que se ve es lo
+// que choca. Si no cuadra, o falta, se queda la versión sencilla de su forma y lo dice la consola. Comparte con los barcos el
+// cargador (un solo KTX2Loader y un solo transcodificador) y el respaldo de la textura (D90): se pinta con el respaldo y
+// cambia a la KTX2 al llegar
 import * as THREE from 'three';
 import type { IslandDef } from '../../game/constants';
 import { fetchGlb, GlbLoader, TextureUpgrade } from './ship-glb';
@@ -11,7 +12,25 @@ import { fetchGlb, GlbLoader, TextureUpgrade } from './ship-glb';
 // /models/<id>.<hash de su contenido>.glb, con su islands_atlas.<hash>.ktx2 aparte (paso 4c, scripts/glb/stage-model.ts),
 // desde la entrega A1 de ux (ASSET-SPEC §9.7, sha256 1b8aa368… con la KTX2 dentro)
 export const ISLANDS_GLB = '/models/islands.31481120.glb';
-export const PILOT_ROOTS: readonly string[] = ['island_I1'];
+// Las 15 raíces de islands.glb (AC-210 b): los 3 escollos, las 4 calas, las 6 islas de la 1.0 y las 2 nuevas. El nombre
+// viene del piloto (C1), cuando solo iba I1; lo leen los tests y las sondas de QA
+export const PILOT_ROOTS: readonly string[] = [
+  'island_E1a',
+  'island_E1b',
+  'island_E1c',
+  'island_G1',
+  'island_G2',
+  'island_G3',
+  'island_G4',
+  'island_I1',
+  'island_I2',
+  'island_I3',
+  'island_I4',
+  'island_I5',
+  'island_I6',
+  'island_T1',
+  'island_T2'
+];
 // El puerto de D92 (ASSET-SPEC §9.8): un archivo con su raíz island_port, el mismo cargador y el mismo paso 4c, con la KTX2
 // aparte (island_port_atlas.<hash>.ktx2). Sus 7 sb_circles son los PORT.k de la bienvenida
 export const PORT_GLB = '/models/island_port.64aadaf2.glb';
@@ -136,7 +155,7 @@ export class IslandGlbStore {
           void upgrades.then((pairs) => pairs.forEach(([, k]) => k?.dispose()));
           return;
         }
-        disposeGeometries(scene); // las otras raíces, hasta C3
+        disposeGeometries(scene); // lo que quede en la escena y no sea una de las raíces pedidas
         this.ready.push(...models);
         this.kept.push(...models);
         this.upgrade(models, upgrades);

@@ -1,6 +1,6 @@
 // Las islas que pinta el cliente (AC-199 e): salen de la bienvenida del servidor, los mismos círculos que su colisión, y no
-// de una copia. Sin bienvenida (antes de entrar, o en las escenas sintéticas de QA), las de la 1.0, que son las del juego
-// mientras el mapa nuevo esté apagado. Sin three ni DOM: la usan runtime.ts y los tests
+// de una copia. Sin bienvenida, las de la 1.0: antes de la bienvenida no hay lienzo (GameApp monta GameCanvas con ella), así
+// que solo las pintan las escenas sintéticas de QA. Sin three ni DOM: la usan runtime.ts y los tests
 import { IslandDef, ISLANDS } from '../game/constants';
 import type { Welcome } from '../game/types';
 
