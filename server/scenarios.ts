@@ -133,7 +133,7 @@ export const EDGE_ATTACK = { pirate: { x: 0, z: 215 }, standoff: 52, accuracy: 0
 
 export const SCENARIOS = ['showcase', 'shipyard', 'targets', 'endurance', 'repair', 'legibility', 'captain', 'captain-down', 'legibility-i2', 'legibility-i2-90', 'danger', 'xp', 'xp-13', 'xp-12', 'view-return', 'edge-attack', 'volley-miss'] as const;
 export type ScenarioName = (typeof SCENARIOS)[number];
-// Escenarios con NPC del I2: con el I2 apagado no existen (AC-187), así que exigen SEA_BATTLE_I2=1
+// Escenarios con NPC del I2: con el I2 apagado no existen (AC-187), así que no arrancan con SEA_BATTLE_I2=0
 export const I2_SCENARIOS: readonly ScenarioName[] = ['captain', 'captain-down', 'legibility-i2', 'legibility-i2-90', 'danger'];
 
 export function parseScenario(value: string | undefined): ScenarioName | null {

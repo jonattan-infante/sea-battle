@@ -8,7 +8,7 @@ import { migrate } from './db/migrate';
 import { createPool } from './db/pool';
 import { createGameServer, GameServer, GameServerOptions } from './game-server';
 import { createPgStore } from './persistence';
-import { i2Enabled, mapId, mapOfId } from './features';
+import { i2Enabled, mapId, mapOfId, unrecognizedSwitches } from './features';
 import { applyScenario, I2_SCENARIOS, parseScenario } from './scenarios';
 
 type Env = Record<string, string | undefined>;
@@ -36,7 +36,7 @@ export async function startGame(io: Server, env: Env = process.env, log: (msg: s
   // Escenarios de prueba: solo con el modo invitado permitido, que nunca se activa en Railway
   const scenario = isAuthBypassAllowed(env) && parseScenario(env.SEA_BATTLE_SCENARIO);
   const i2 = i2Enabled(env);
-  if (scenario && I2_SCENARIOS.includes(scenario) && !i2) throw new Error(`El escenario «${scenario}» necesita el I2 encendido (SEA_BATTLE_I2=1, AC-187)`);
+  if (scenario && I2_SCENARIOS.includes(scenario) && !i2) throw new Error(`El escenario «${scenario}» necesita el I2 encendido (sin SEA_BATTLE_I2=0, AC-187)`);
   const map = mapId(env);
   let pool: Pool | null = null;
   if (env.DATABASE_URL) {
@@ -50,9 +50,12 @@ export async function startGame(io: Server, env: Env = process.env, log: (msg: s
   } else {
     log('⚠️  Sin DATABASE_URL: el progreso vive solo en memoria (se pierde al reiniciar)');
   }
-  log(i2 ? '🏴‍☠️ I2 encendido (SEA_BATTLE_I2=1): el Capitán pirata y las cañoneras entran en partida' : 'I2 apagado: sin Capitán pirata ni cañoneras (se enciende con SEA_BATTLE_I2=1)');
-  if (env.SEA_BATTLE_MAP && env.SEA_BATTLE_MAP !== map) log(`Aviso: SEA_BATTLE_MAP=«${env.SEA_BATTLE_MAP}» no se reconoce: mapa 1.0`);
-  log(map === '1.1' ? 'Mapa 1.1 (SEA_BATTLE_MAP=1.1): las islas de la 1.1 y los amarres del puerto' : 'Mapa 1.0 (se cambia con SEA_BATTLE_MAP=1.1)');
+  // AC-210 (d): una línea por interruptor, y antes su aviso si el valor no se reconoce
+  const warnings = unrecognizedSwitches(env);
+  warnings.filter((w) => w.startsWith('Aviso: SEA_BATTLE_I2')).forEach(log);
+  log(i2 ? 'I2 encendido (por defecto): el Capitán pirata y las cañoneras entran en partida (se apaga con SEA_BATTLE_I2=0)' : 'I2 apagado (SEA_BATTLE_I2=0, palanca de emergencia): sin Capitán pirata ni cañoneras');
+  warnings.filter((w) => w.startsWith('Aviso: SEA_BATTLE_MAP')).forEach(log);
+  log(map === '1.1' ? 'Mapa 1.1 (por defecto): las islas de la 1.1 y los amarres del puerto (se cambia con SEA_BATTLE_MAP=1.0)' : 'Mapa 1.0 (SEA_BATTLE_MAP=1.0, palanca de emergencia): las islas de la 1.0, sin amarres');
   let game: GameServer;
   try {
     game = createGameServer(io, {

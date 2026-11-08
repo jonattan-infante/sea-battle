@@ -105,8 +105,8 @@ const EPS = 1e-6;
 export interface CreateWorldOptions {
   seed?: number;
   spawnNpcs?: boolean;
-  i2?: boolean; // AC-187: apagado por defecto, como en staging y prod
-  map?: MapDef; // por defecto, el de la 1.0 (el del juego); MAP_1_1 es el de la 1.1, aún sin activar (constants.ts)
+  i2?: boolean; // AC-187: apagado por defecto, la base de los tests (E-1); el servidor lo enciende salvo SEA_BATTLE_I2=0 (AC-210)
+  map?: MapDef; // por defecto, el de la 1.0, la base de los tests (E-1); el servidor pone el de la 1.1 (MAP_1_1) salvo SEA_BATTLE_MAP=1.0
 }
 
 export function createWorld(options: CreateWorldOptions = {}): World {

@@ -73,8 +73,10 @@ export interface GameServerOptions {
   probeIntervalMs?: number; // con la BD caída, cada cuánto se comprueba si volvió (por defecto 1 s)
   metrics?: boolean; // AC-142: el proceso registra sus métricas cada minuto con jugadores (server/metrics.ts)
   metricsIntervalMs?: number; // por defecto 60 s (los tests lo acortan)
-  i2?: boolean; // AC-187: I2 encendido (SEA_BATTLE_I2=1, server/features.ts); apagado por defecto
-  map?: MapDef; // mapa del mundo (SEA_BATTLE_MAP, server/features.ts); por defecto, el de la 1.0 (createWorld)
+  i2?: boolean; // AC-187: I2 encendido. Sin la opción, apagado (createWorld, la base de los tests); el arranque (bootstrap.ts) lo
+  // pasa siempre, encendido salvo con SEA_BATTLE_I2=0 (server/features.ts, AC-210)
+  map?: MapDef; // mapa del mundo. Sin la opción, el de la 1.0 (createWorld, la base de los tests); el arranque lo pasa siempre, el de
+  // la 1.1 salvo con SEA_BATTLE_MAP=1.0 (server/features.ts, AC-210)
 }
 
 export interface GameServer {
