@@ -53,7 +53,7 @@ async function startStandard(page: Page, i2 = false) {
       const v = rt.view(id);
       return !!v && inside(rt.project(v.ship.x, v.ship.z));
     }).length;
-    return { ships, island: inside(rt.project(260, 200)) }; // I1
+    return { ships, island: inside(rt.project(260, 200)) }; // I1, la isla de la esquina (arriba a la izquierda, encuadre B de AC-210)
   }, setup.ids);
   expect(onScreen.ships).toBe(41);
   expect(onScreen.island).toBe(true);

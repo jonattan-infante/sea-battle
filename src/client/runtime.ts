@@ -25,7 +25,7 @@ import { FloatingTextLayer, LabelLayer, LabelTarget, OverlayHost, ReloadState, S
 import { DAMAGE_FX, Effects, RENDER_ORDER, rgba } from './vfx/effects';
 import { makeRing, RING_MODE, RingSpec } from './vfx/rings';
 import { VolleyRandom, volleySide } from './vfx/volley';
-import { damageScene, galleryScene, heroScene, SceneName, showcaseScene, standardScene, SyntheticSource } from './synthetic-scene';
+import { damageScene, galleryScene, heroScene, islandsForScene, SceneName, showcaseScene, standardScene, SyntheticSource } from './synthetic-scene';
 
 const deg = Math.PI / 180;
 const CAM_RIGHT = new THREE.Vector3(1, 0, 0); // guiñada 0: derecha en pantalla = +X
@@ -59,6 +59,7 @@ export interface RenderSource {
   readonly player: PlayerView | null;
   readonly welcome: Welcome | null;
   readonly focus?: { x: number; z: number } | null;
+  readonly islands?: readonly IslandDef[]; // las islas de una fuente sin bienvenida (la escena sintética); si no, las de la bienvenida
   update(nowMs: number): void;
   serverTime(nowMs?: number): number;
   getShip(id: string | null | undefined): RenderShip | undefined;
@@ -865,7 +866,7 @@ export class GameRuntime implements OverlayHost, ChipHost {
     this.hoverId = null;
     this.src = src;
     this.subscribe(src);
-    this.applyIslands(islandsOf(src.welcome));
+    this.applyIslands(src.islands ?? islandsOf(src.welcome));
     this.labels?.sync(this.views.values());
     this.snapFrame();
   }
@@ -1272,8 +1273,10 @@ export class GameRuntime implements OverlayHost, ChipHost {
     const view = name === 'standard'
       ? { w: 1440, h: 900, ppm: computePpm0(1440, 900, MAX_CANNON_RANGE), sinT: this.sinT }
       : { w: this.viewW, h: this.viewH, ppm: this.targetPpm(), sinT: this.sinT };
-    const spec = name === 'hero' ? heroScene(view) : name === 'showcase' ? showcaseScene() : name === 'damage' ? damageScene() : name === 'gallery' ? galleryScene() : standardScene(view, { i2: options.i2 });
-    const source = new SyntheticSource(options.myShipId ? { ...spec, myShipId: options.myShipId } : spec);
+    // AC-210: las islas que pinta y usa la escena (islandsForScene): las de la bienvenida en las de prueba; las de la 1.0 en la portada
+    const islands = islandsForScene(name, this.client.welcome);
+    const spec = name === 'hero' ? heroScene(view) : name === 'showcase' ? showcaseScene() : name === 'damage' ? damageScene() : name === 'gallery' ? galleryScene() : standardScene(view, { i2: options.i2, islands });
+    const source = new SyntheticSource(options.myShipId ? { ...spec, myShipId: options.myShipId } : spec, islands);
     this.setSource(source);
     return source;
   }
