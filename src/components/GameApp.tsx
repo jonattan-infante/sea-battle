@@ -564,7 +564,11 @@ export default function GameApp({ guest }: { guest: boolean }) {
     };
   }, [actions, runtime]);
 
-  // ---- Puente de depuración de solo lectura para los harnesses e2e y de rendimiento ----
+  // ---- Puerta de pruebas del navegador para los arneses e2e, de rendimiento y remotos ----
+  // No es de solo lectura: además de leer el estado, select marca un objetivo en el HUD y runtime() da el runtime entero, con el
+  // cliente (un guion manda con él las mismas órdenes que un jugador, que el servidor valida) y las escenas sintéticas
+  // (startScene, que solo se ven en la pantalla de quien las abre). Va en el juego de producción; si se queda es la propuesta E-3
+  // de AC-210, pendiente del dueño
   useEffect(() => {
     if (!runtime) return;
     const { client } = runtime;
