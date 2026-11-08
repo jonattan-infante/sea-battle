@@ -170,7 +170,7 @@ describe('arranque con SEA_BATTLE_I2 (server/bootstrap.ts)', () => {
     expect(seen && { c: seen.c, k: seen.k, n: seen.n }).toEqual({ c: GUNBOAT_CLASS, k: 'pirate', n: 'Cañonera pirata' });
   });
 
-  test.each(['captain', 'captain-down', 'legibility-i2', 'legibility-i2-90', 'danger'])('el escenario "%s" no arranca con SEA_BATTLE_I2=0, y sin la variable sí', async (scenario) => {
+  test.each(['captain', 'captain-down', 'legibility-i2', 'legibility-i2-90', 'danger', 'combat-i2'])('el escenario "%s" no arranca con SEA_BATTLE_I2=0, y sin la variable sí', async (scenario) => {
     const server = ioOnly();
     await expect(startGame(server, { SEA_BATTLE_NPCS: '0', AUTH_BYPASS: '1', SEA_BATTLE_SCENARIO: scenario, SEA_BATTLE_I2: '0' })).rejects.toThrow(/necesita el I2 encendido \(sin SEA_BATTLE_I2=0/);
     const { game: g } = await startGame(server, { SEA_BATTLE_NPCS: '0', AUTH_BYPASS: '1', SEA_BATTLE_SCENARIO: scenario });
@@ -178,7 +178,21 @@ describe('arranque con SEA_BATTLE_I2 (server/bootstrap.ts)', () => {
     if (scenario === 'captain-down') expect([...g.world.ships.values()].map((s) => s.classId)).toEqual([CAPTAIN_CLASS]);
     if (scenario.startsWith('legibility-i2')) expect([...g.world.ships.values()].map((s) => s.classId).sort()).toEqual([CAPTAIN_CLASS, GUNBOAT_CLASS, 'merchant', 'pirate']);
     if (scenario === 'danger') expect([...g.world.ships.values()].map((s) => s.classId).sort()).toEqual([GUNBOAT_CLASS, 'pirate']);
+    if (scenario === 'combat-i2') expect([...g.world.ships.values()].map((s) => s.classId).sort()).toEqual([CAPTAIN_CLASS, GUNBOAT_CLASS, ...Array(5).fill('merchant')]);
     g.stop();
     server.close();
+  });
+
+  // Como todos los escenarios, "combat-i2" (E-2) solo se aplica con el modo invitado permitido (server/bootstrap.ts:37), que
+  // nunca corre en Railway: sin AUTH_BYPASS el mundo arranca sin sus barcos ni su oro
+  test('sin el modo invitado, SEA_BATTLE_SCENARIO=combat-i2 no se aplica', async () => {
+    const server = ioOnly();
+    const { game: g } = await startGame(server, { SEA_BATTLE_NPCS: '0', SEA_BATTLE_SCENARIO: 'combat-i2' });
+    try {
+      expect([[...g.world.ships.values()].map((s) => s.classId), g.world.startingGold]).toEqual([[], undefined]);
+    } finally {
+      g.stop(); // también si falla: sin parar el juego, Jest no sale
+      server.close();
+    }
   });
 });

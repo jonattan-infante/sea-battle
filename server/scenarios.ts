@@ -2,6 +2,7 @@
 // invitado permitido (nunca en Railway); en producción el mundo es siempre el del GDD.
 import { CANNON_LEVELS, CAPTAIN_CLASS, CAPTAIN_KILLS_TO_SPAWN, GUNBOAT_CLASS, LEVEL_XP, SHIP_CLASSES, WRECK_LIFETIME, navClearance } from '../src/game/constants';
 import { Ship, World } from '../src/game/types';
+import { headingTo } from '../src/game/vec';
 import { navigatorOf, spawnCaptain, spawnGunboat, spawnMerchant, spawnPirate } from '../src/game/world';
 
 // Punto de captura en mar abierto, fuera de la zona segura (r 110) y a ≥ 60 m de cualquier isla
@@ -131,10 +132,29 @@ export const VIEW_RETURN = { pirate: { x: 0, z: 150 }, hull: 0.3 } as const;
 // `volley-miss` (AC-119, una andanada contra ti devuelve la cámara aunque falle): el mismo pirata, con puntería 0
 export const EDGE_ATTACK = { pirate: { x: 0, z: 215 }, standoff: 52, accuracy: 0.25 } as const;
 
-export const SCENARIOS = ['showcase', 'shipyard', 'targets', 'endurance', 'repair', 'legibility', 'captain', 'captain-down', 'legibility-i2', 'legibility-i2-90', 'danger', 'xp', 'xp-13', 'xp-12', 'view-return', 'edge-attack', 'volley-miss'] as const;
+// Combate del I2 (AC-90, bloque B-I2 de QA; producto, BACKLOG :1943; E-2): el Capitán y una cañonera con su IA de combate,
+// anclados en su puesto (anchored: disparan desde allí, sin acercarse ni orbitar) y con puntería baja, y 5 mercantes quietos
+// y sin IA en corro alrededor del puesto del jugador, que reaparecen en su sitio (como en endurance), de blanco para sus
+// andanadas. El jugador entra con el oro de los cañones N2 + N3, los compra en el puerto y navega hasta `self`; allí queda a
+// tiro de los dos (alcance 65 m) y a 28 m de los mercantes (N3: 80 m). En el marco útil de 1440×900 salen los dos del I2,
+// a 1,0× y a 1,5× (la del arnés), e I5 entera a 1,5×, con su modelo de la 1.1 (T2 asoma arriba, bajo el HUD). Todo fuera de
+// la zona segura y de la exclusión del puerto, y navegable con la 1.1 y con la 1.0 (server/__tests__/scenarios.test.ts).
+// Puntería 0,08: el Capitán (6 cañones de 28, recarga 4 s) quita 3,36 de vida/s y la cañonera (6 de 20, recarga 5 s), 1,92;
+// juntos, 317/min de media a una Balandra de 800, que aguanta 60 s atacando sin reparar (483 de media; sd ≈ 85) y reparando
+// bajo fuego gana 12/s (1,5 %/s)
+export const COMBAT_I2 = {
+  self: { x: -60, z: 280 },
+  captain: { x: -110, z: 255 },
+  gunboat: { x: -15, z: 245 },
+  merchants: 5,
+  merchantRadius: 28,
+  accuracy: 0.08
+} as const;
+
+export const SCENARIOS = ['showcase', 'shipyard', 'targets', 'endurance', 'repair', 'legibility', 'captain', 'captain-down', 'legibility-i2', 'legibility-i2-90', 'danger', 'xp', 'xp-13', 'xp-12', 'view-return', 'edge-attack', 'volley-miss', 'combat-i2'] as const;
 export type ScenarioName = (typeof SCENARIOS)[number];
 // Escenarios con NPC del I2: con el I2 apagado no existen (AC-187), así que no arrancan con SEA_BATTLE_I2=0
-export const I2_SCENARIOS: readonly ScenarioName[] = ['captain', 'captain-down', 'legibility-i2', 'legibility-i2-90', 'danger'];
+export const I2_SCENARIOS: readonly ScenarioName[] = ['captain', 'captain-down', 'legibility-i2', 'legibility-i2-90', 'danger', 'combat-i2'];
 
 export function parseScenario(value: string | undefined): ScenarioName | null {
   return (SCENARIOS as readonly string[]).includes(value ?? '') ? (value as ScenarioName) : null;
@@ -227,6 +247,31 @@ function placeScenario(world: World, name: ScenarioName): void {
     pirate.destination = null;
     pirate.path = [];
     pirate.accuracyOverride = ENDURANCE_PIRATE_ACCURACY;
+    return;
+  }
+  if (name === 'combat-i2') {
+    world.startingGold = CANNON_LEVELS[1].price + CANNON_LEVELS[2].price;
+    const { self } = COMBAT_I2;
+    for (let i = 0; i < COMBAT_I2.merchants; i++) {
+      const a = (2 * Math.PI * i) / COMBAT_I2.merchants;
+      const m = spawnMerchant(world);
+      m.pos = { x: self.x + Math.cos(a) * COMBAT_I2.merchantRadius, z: self.z + Math.sin(a) * COMBAT_I2.merchantRadius };
+      m.heading = a + Math.PI / 2;
+      m.destination = null;
+      m.path = [];
+      m.ai = null;
+      m.respawnPos = { ...m.pos };
+    }
+    for (const [ship, at] of [[spawnCaptain(world, COMBAT_I2.captain)!, COMBAT_I2.captain], [spawnGunboat(world, 0)!, COMBAT_I2.gunboat]] as const) {
+      ship.pos = { ...at };
+      ship.heading = headingTo(at, self) + Math.PI / 2; // de costado al puesto del jugador
+      ship.ai!.origin = { ...at };
+      ship.holdPosition = true; // DT-04
+      ship.anchored = true; // en combate dispara desde su puesto (AC-124)
+      ship.destination = null;
+      ship.path = [];
+      ship.accuracyOverride = COMBAT_I2.accuracy;
+    }
     return;
   }
   if (name === 'legibility') {

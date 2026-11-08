@@ -98,7 +98,7 @@ describe('arranque con SEA_BATTLE_MAP (server/bootstrap.ts)', () => {
 
   // Escenarios con la 1.1 (C3), que desde AC-210 es la de por defecto: todos los de SCENARIOS, sin NPC y sin variables de
   // mapa ni del I2 (los del I2 lo tienen por defecto). O arrancan con todos sus barcos en sitios navegables, o no arrancan y
-  // el error nombra el escenario, el barco y la posición. Hoy arrancan los 17. Con la 1.0 (E-1), con el I2 si lo piden
+  // el error nombra el escenario, el barco y la posición. Hoy arrancan los 18. Con la 1.0 (E-1), con el I2 si lo piden
   const env = (scenario: string, map?: string) => ({
     SEA_BATTLE_NPCS: '0',
     AUTH_BYPASS: '1',
@@ -130,7 +130,7 @@ describe('arranque con SEA_BATTLE_MAP (server/bootstrap.ts)', () => {
     expect(g.world.islands).toBe(MAP_1_0.islands);
   });
 
-  // Hoy los 17 escenarios son navegables con la 1.1, así que ninguno lanza: lo que bootstrap pasa a applyScenario se
+  // Hoy los 18 escenarios son navegables con la 1.1, así que ninguno lanza: lo que bootstrap pasa a applyScenario se
   // comprueba aparte, espiando la llamada (la implementación de verdad sigue corriendo)
   test.each([
     ['sin SEA_BATTLE_MAP (la 1.1)', true, undefined],
