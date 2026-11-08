@@ -47,7 +47,7 @@
 - **Bucle largo (1.1, ≈1–7 h)**: Goleta y Navío de línea (§6) e insignias de Teniente y Almirante (§10b).
 
 ## 3. Alcance
-
+**Regla de publicación (Jonattan, 2026-11-07):** «Todo lo que sale a prod debe salir visible o si no no tiene sentido, salvo una excepción justificada». Lo que entra en una versión sale encendido por defecto. Lo que un jugador no vea con los valores por defecto lleva una excepción escrita, que Jonattan ve antes del botón (BACKLOG AC-210). Por eso la 1.2 sale con el mapa de la 1.1, las 15 islas con su modelo y el I2 encendidos.
 ### Dentro (vertical slice)
 | Área | Contenido |
 |---|---|
