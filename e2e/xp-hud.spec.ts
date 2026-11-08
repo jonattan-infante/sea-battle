@@ -29,6 +29,12 @@ async function open(browser: Browser, server: OwnServer, size: Size, contexts: B
   return page;
 }
 
+// Punto de encuentro de AC-153, en la zona segura y en agua abierta al norte del puerto de D92 (el borde de su unión llega a
+// z = 30; la zona segura, a 110 m). Con el mapa por defecto (AC-210) los jugadores aparecen en los amarres del puerto, al azar
+// entre los libres, y un punto a +30 m en x del barco de A caía a veces dentro del puerto, donde B no llega nunca (auditoría de
+// AC-210). A va primero aquí, y los demás se ponen a la misma distancia en x que antes, ya en agua abierta
+const MEET = { x: 0, z: 90 };
+
 async function arrive(page: Page, x: number, z: number) {
   await sailTo(page, x, z);
   await waitFor(() => me(page), (s) => !!s && Math.hypot(s.x - x, s.z - z) < 4, 45_000, 200);
@@ -328,6 +334,7 @@ test.describe('HUD de la experiencia (1.1)', () => {
     try {
       const a = await open(browser, server, 'desktop', contexts);
       const b = await open(browser, server, 'desktop', contexts);
+      await arrive(a, MEET.x, MEET.z);
       const meA = (await me(a))!;
       const meB = (await me(b))!;
       await arrive(b, meA.x + 30, meA.z);
@@ -376,11 +383,12 @@ test.describe('HUD de la experiencia (1.1)', () => {
       await b.getByTestId('buy-ship-brig').click();
       await waitFor(() => me(b), (s) => s?.classId === 'brig', 5000, 50);
       await b.keyboard.press('Escape');
+      await arrive(a, MEET.x, MEET.z);
       const meA = (await me(a))!;
       const meB = (await me(b))!;
       await arrive(b, meA.x + 35, meA.z);
-      // La de 844×390 sale en otro punto del anillo de entrada y ve poco en vertical: se pone a 25 m de B, que queda a la
-      // izquierda del centro, por debajo del panel del objetivo y lejos de los botones
+      // La de 844×390 sale en otro amarre y ve poco en vertical: se pone a 25 m de B, que queda a la izquierda del centro, por
+      // debajo del panel del objetivo y lejos de los botones
       await arrive(l, meA.x + 60, meA.z);
       await a.waitForTimeout(500);
 

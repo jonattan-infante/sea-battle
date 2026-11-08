@@ -1,7 +1,8 @@
 // Harness e2e, de rendimiento y de capturas. Corre contra un build de producción propio en .next-e2e
 // (`npm run build:e2e`; los scripts test:e2e, test:perf y qa:capture ya lo hacen).
 // Servidores: invitado con NPC (3100), invitado sin NPC para medir reposo y con 2 000 de oro (3101), sin invitado (3102)
-// y escenario determinista de capturas (3103).
+// y escenario determinista de capturas (3103). Ninguno fija el mapa ni el I2: corren lo de por defecto, el mapa 1.1 con el
+// I2 (AC-210). Un spec que necesite la palanca de E-1 (SEA_BATTLE_MAP=1.0 o SEA_BATTLE_I2=0) la pide con startOwnServer.
 import { defineConfig, devices } from '@playwright/test';
 
 // PW_PORT_BASE permite correr una copia aislada del harness en paralelo sin chocar con otra corrida (por defecto 3100).

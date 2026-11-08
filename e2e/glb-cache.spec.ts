@@ -10,6 +10,7 @@ import { expect, Page, test } from '@playwright/test';
 import { contentHash, E2E_PREFIX } from '../scripts/glb/content-hash';
 import { externalKtx2Fixture } from '../scripts/glb/e2e-models';
 import { enterGame, entryOf, glbBeforeEntry } from './helpers';
+import { startOwnServer } from './own-server';
 
 const FIXTURE = fs.readFileSync(path.join(__dirname, 'fixtures', 'ship_sloop_etc1s_meshopt.glb'));
 const SHIP_URL = `/models/${E2E_PREFIX}ship_sloop.${contentHash(FIXTURE)}.glb`;
@@ -87,19 +88,27 @@ const network = (page: Page, paths: string[]) =>
   );
 
 test.describe('Caché de la cadena de carga de los GLB (AC-193 c)', () => {
-  test('sin ningún GLB que pueda salir (ninguno de una clase del jugador y el I2 apagado), la primera visita no baja la cadena de carga: 0 peticiones al cargador, a /basis y a /models, y se entra como hoy', async ({ page }) => {
-    const seen = track(page);
-    await enterGame(page);
-    await page.waitForTimeout(2_000); // la precarga de los demás GLB arranca al entrar (prefetchAll): sin GLB que pueda salir, nada
-    await seen.settled();
-    const entry = await entryOf(page);
-    console.log(`AC-193 c sin GLB que pueda salir: ${seen.scripts.length} js leídos, firmas ${JSON.stringify([...seen.loaderChunks])}, entrada ${JSON.stringify(entry)}`);
-    expect(seen.unread).toEqual([]);
-    expect(seen.scripts.length).toBeGreaterThan(5); // se leyó el código de la página: la ausencia de firmas no es vacía
-    expect([...seen.loaderChunks.keys()]).toEqual([]);
-    expect(seen.paths().filter((p) => p.startsWith('/basis/') || p.startsWith('/models/'))).toEqual([]);
-    expect(entry).toMatchObject({ lastWaitAt: 0, withGlb: false, capped: false, coverHidden: true });
-    expect(entry.shownAt).toBe(entry.firstFrameAt);
+  // Sin ningún GLB que pueda salir solo se juega con las 2 palancas de E-1 (AC-210 d): con el mapa 1.1 se piden los del puerto y
+  // las islas, y con el I2 los de la Cañonera y el Capitán. Antes iba contra el servidor compartido, cuando era lo de por defecto
+  test('sin ningún GLB que pueda salir (SEA_BATTLE_MAP=1.0 y SEA_BATTLE_I2=0, E-1; ninguno de una clase del jugador), la primera visita no baja la cadena de carga: 0 peticiones al cargador, a /basis y a /models, y se entra como hoy', async ({ page }) => {
+    test.setTimeout(120_000);
+    const server = await startOwnServer({ SEA_BATTLE_MAP: '1.0', SEA_BATTLE_I2: '0' });
+    try {
+      const seen = track(page);
+      await enterGame(page, server.url);
+      await page.waitForTimeout(2_000); // la precarga de los demás GLB arranca al entrar (prefetchAll): sin GLB que pueda salir, nada
+      await seen.settled();
+      const entry = await entryOf(page);
+      console.log(`AC-193 c sin GLB que pueda salir: ${seen.scripts.length} js leídos, firmas ${JSON.stringify([...seen.loaderChunks])}, entrada ${JSON.stringify(entry)}`);
+      expect(seen.unread).toEqual([]);
+      expect(seen.scripts.length).toBeGreaterThan(5); // se leyó el código de la página: la ausencia de firmas no es vacía
+      expect([...seen.loaderChunks.keys()]).toEqual([]);
+      expect(seen.paths().filter((p) => p.startsWith('/basis/') || p.startsWith('/models/'))).toEqual([]);
+      expect(entry).toMatchObject({ lastWaitAt: 0, withGlb: false, capped: false, coverHidden: true });
+      expect(entry.shownAt).toBe(entry.firstFrameAt);
+    } finally {
+      await server.kill();
+    }
   });
 
   test('con manifiesto, la cadena de carga y los GLB se sirven con caché de un año, y en la visita siguiente hacen 0 peticiones a la red', async ({ context, page }) => {

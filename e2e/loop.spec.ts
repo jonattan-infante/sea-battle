@@ -323,18 +323,22 @@ test.describe('Puerto', () => {
       const netB = trackSocket(b);
       await enterGame(a, SHIPYARD);
       await enterGame(b, SHIPYARD);
-      const meA = (await me(a))!;
       const meB = (await me(b))!;
       expect(await goldOf(a, 'player-gold')).toBe(2000);
 
-      // B se coloca a 65 m de A en el mismo anillo del puerto (zona segura): fuera del alcance N1 (60 m) y dentro del
-      // N2 (70 m). Así el alcance nuevo se ve en el panel del objetivo de A. 1.1 (AC-153): B, en la zona segura, no es
-      // atacable, y su fila dice «✕ No atacable» con cualquier alcance; el alcance se lee del objetivo del HUD (inRange)
-      const r = Math.hypot(meA.x, meA.z);
-      const phi = 2 * Math.asin(65 / (2 * r));
-      const spot = { x: meA.x * Math.cos(phi) - meA.z * Math.sin(phi), z: meA.x * Math.sin(phi) + meA.z * Math.cos(phi) };
+      // B se coloca a 65 m de A, los 2 en la zona segura: fuera del alcance N1 (60 m) y dentro del N2 (70 m). Así el alcance
+      // nuevo se ve en el panel del objetivo de A. 1.1 (AC-153): B, en la zona segura, no es atacable, y su fila dice «✕ No
+      // atacable» con cualquier alcance; el alcance se lee del objetivo del HUD (inRange). Antes B iba a 65 m de A en su mismo
+      // anillo de aparición; con el mapa por defecto (AC-210) los 2 aparecen en amarres del puerto de D92, y ese punto caía a
+      // menudo dentro del puerto (auditoría de AC-210). Ahora A y B van a 2 puntos de agua abierta al norte del puerto (su
+      // unión llega a z = 30), a 86 m del centro, dentro de la zona segura (110 m)
+      const spotA = { x: -32, z: 80 };
+      const spot = { x: 33, z: 80 };
+      await sailTo(a, spotA.x, spotA.z);
       await sailTo(b, spot.x, spot.z);
+      await arrive(a, spotA.x, spotA.z, 2.5);
       await arrive(b, spot.x, spot.z, 2.5);
+      const meA = (await me(a))!;
       await a.waitForTimeout(500);
       const seen = (await ships(a)).find((s) => s.id === meB.id)!;
       const gap = Math.hypot(seen.x - meA.x, seen.z - meA.z);

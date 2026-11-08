@@ -1,8 +1,8 @@
-// Piloto C1 del mapa nuevo (AC-198 c, AC-199 e y AC-200 e): con el mapa de la 1.1 encendido en el servidor
-// (SEA_BATTLE_MAP=1.1), el cliente pinta los 50 círculos de su bienvenida, primero en la versión sencilla y después con la
-// raíz de la isla piloto (I1) de islands.glb y el puerto de island_port.glb (AC-200 e: la entrada lo espera hasta 0,5 s y,
-// mientras no llega, la ciudad y el muelle este van en empedrado). Con el mapa de la 1.0 (por defecto), ni se pide
-// islands.glb ni island_port.glb, ni cambia nada.
+// Las islas del mapa nuevo en el cliente (AC-198 c, AC-199 e, AC-200 e y AC-210 b): con el mapa de la 1.1, que desde la 1.2
+// es el del servidor sin variables, el cliente pinta los 50 círculos de su bienvenida, primero en la versión sencilla y
+// después con las 15 raíces de islands.glb y el puerto de island_port.glb (AC-200 e: la entrada lo espera hasta 0,5 s y,
+// mientras no llega, la ciudad y el muelle este van en empedrado). Con el mapa de la 1.0 (SEA_BATTLE_MAP=1.0, la palanca de
+// E-1), ni se pide islands.glb ni island_port.glb, ni cambia nada.
 // El agua con la rejilla frente a la lista y su tiempo los mide aparte el turno de C1 (qa-artifacts/c1, en el Mac con GPU)
 import fs from 'fs';
 import path from 'path';
@@ -10,9 +10,10 @@ import { expect, Page, Request, test, TestInfo } from '@playwright/test';
 import * as THREE from 'three';
 import { ISLANDS, MAP_1_1 } from '../src/game/constants';
 import { islandsKey } from '../src/client/map-islands';
-import { ISLANDS_GLB, PORT_GLB } from '../src/client/models/island-glb';
+import { ISLANDS_GLB, PILOT_ROOTS, PORT_GLB, shapeOfRoot } from '../src/client/models/island-glb';
 import { buildIslands, PORT_PAVED_COLOR } from '../src/client/models/island-geometry';
 import { OWN_GLB_WAIT_MS } from '../src/client/models/ship-glb';
+import { editGlb } from '../scripts/glb/glb-fallback';
 import { enterGame } from './helpers';
 import { startOwnServer } from './own-server';
 
@@ -126,25 +127,72 @@ const drawn = (page: Page) =>
     };
   });
 
+// AC-210 (b): lo que pinta el runtime cuando islands.glb ya se procesó (su cargador terminó y el runtime tomó sus raíces): las
+// formas de la bienvenida con su modelo y las que siguen en la versión sencilla. Se espera a eso, y no a que estén las 15,
+// para que una raíz que no entra caiga por aserción y no por tiempo
+const glbDone = (page: Page) =>
+  expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const rt = window.__SEA_BATTLE__!.runtime() as unknown as { islandGlb: { state: string; ready: unknown[] }; islandRoots: Map<string, unknown> };
+          return rt.islandGlb.state === 'done' && rt.islandGlb.ready.length === 0 && rt.islandRoots.has('PORT');
+        }),
+      { timeout: 30_000 }
+    )
+    .toBe(true);
+const shapesDrawn = (page: Page) =>
+  page.evaluate(() => {
+    const rt = window.__SEA_BATTLE__!.runtime() as unknown as { islandList: { id: string }[]; islandRoots: Map<string, unknown> };
+    const shapes = [...new Set(rt.islandList.map((c) => c.id.split('.')[0]))];
+    return { withModel: shapes.filter((s) => rt.islandRoots.has(s)).sort(), simple: shapes.filter((s) => !rt.islandRoots.has(s)).sort() };
+  });
+
+// El mutante de AC-210 (b): AC210_MUTANT=<sb_id> (o 1, que es island_G2) sirve islands.glb con el primer círculo de esa raíz
+// 1 m más al este. Su forma tiene que quedarse en la versión sencilla, y el test de las 15 caer por aserción
+function mutantGlb(): { sbId: string; body: Buffer } | null {
+  const raw = process.env.AC210_MUTANT;
+  if (!raw) return null;
+  const sbId = raw === '1' ? 'island_G2' : raw;
+  const file = path.join(__dirname, '..', 'public', ISLANDS_GLB);
+  let moved = 0;
+  const bytes = editGlb(new Uint8Array(fs.readFileSync(file)), (json) => {
+    for (const n of (json.nodes ?? []) as { extras?: { sb_id?: string; sb_circles?: number[][] } }[])
+      if (n.extras?.sb_id === sbId && n.extras.sb_circles?.length) {
+        n.extras.sb_circles[0][0] += 1;
+        moved++;
+      }
+  });
+  if (moved !== 1) throw new Error(`AC210_MUTANT: ${sbId} no es una raíz de ${ISLANDS_GLB}`);
+  return { sbId, body: Buffer.from(bytes) };
+}
+
 const trianglesOf = (simple: boolean, circles = MAP_1_1.islands) => {
   const g = buildIslands(circles, { simple }).geometry;
   return g.index ? g.index.count / 3 : g.attributes.position.count / 3;
 };
 
 test.describe('C1: las islas del mapa de la 1.1 en el cliente', () => {
-  test('con el mapa de la 1.0 (por defecto), las 7 islas de siempre y ninguna petición de islands.glb, island_port.glb ni sus KTX2', async ({ page }) => {
-    const req = islandRequests(page);
-    await enterGame(page);
-    await page.waitForTimeout(3_000); // islands.glb se pediría al abrirse la entrada
-    const d = await drawn(page);
-    const entry = await entryOf(page);
-    console.log(`C1 · mapa 1.0: ${d.circles} círculos · raíces ${JSON.stringify(d.roots)} · peticiones islands.glb ${req.glb.length} · KTX2 ${req.ktx2.length} · island_port.glb ${req.port.length} · su KTX2 ${req.portKtx2.length} · entrada ${JSON.stringify(entry)} · vértices de empedrado ${await drawnCobble(page)}`);
-    expect(d.key).toBe(islandsKey(ISLANDS));
-    expect(d.welcomeKey).toBe(islandsKey(ISLANDS));
-    expect(d.roots).toEqual([]);
-    expect(req.glb.length + req.ktx2.length + req.port.length + req.portKtx2.length).toBe(0);
-    expect(entry.portCapped).toBe(false);
-    expect(await drawnCobble(page)).toBe(0);
+  // E-1 de AC-210: la palanca de emergencia. Antes iba contra el servidor compartido, cuando el 1.0 era el de por defecto
+  test('con SEA_BATTLE_MAP=1.0 (la palanca de E-1), las 7 islas de siempre y ninguna petición de islands.glb, island_port.glb ni sus KTX2', async ({ page }) => {
+    test.setTimeout(120_000);
+    const server = await startOwnServer({ SEA_BATTLE_MAP: '1.0', SEA_BATTLE_NPCS: '0' });
+    try {
+      const req = islandRequests(page);
+      await enterGame(page, server.url);
+      await page.waitForTimeout(3_000); // islands.glb se pediría al abrirse la entrada
+      const d = await drawn(page);
+      const entry = await entryOf(page);
+      console.log(`C1 · mapa 1.0 (SEA_BATTLE_MAP=1.0): ${d.circles} círculos · raíces ${JSON.stringify(d.roots)} · peticiones islands.glb ${req.glb.length} · KTX2 ${req.ktx2.length} · island_port.glb ${req.port.length} · su KTX2 ${req.portKtx2.length} · entrada ${JSON.stringify(entry)} · vértices de empedrado ${await drawnCobble(page)}`);
+      expect(d.key).toBe(islandsKey(ISLANDS));
+      expect(d.welcomeKey).toBe(islandsKey(ISLANDS));
+      expect(d.roots).toEqual([]);
+      expect(req.glb.length + req.ktx2.length + req.port.length + req.portKtx2.length).toBe(0);
+      expect(entry.portCapped).toBe(false);
+      expect(await drawnCobble(page)).toBe(0);
+    } finally {
+      await server.kill();
+    }
   });
 
   test('con la 1.1 e islands.glb e island_port.glb bloqueados, pinta los 50 círculos de la bienvenida en la versión sencilla, con el empedrado del puerto (AC-199 e, AC-200 e)', async ({ page }, info) => {
@@ -304,10 +352,19 @@ test.describe('C1: las islas del mapa de la 1.1 en el cliente', () => {
     }
   });
 
-  test('con la 1.1, islands.glb llega una vez con su KTX2 y pone la isla piloto I1, y island_port.glb, el puerto; el frame más largo mientras llega, al log (AC-198 c, AC-200 e)', async ({ page }, info) => {
+  // AC-210 (b), contra el mapa por defecto (sin SEA_BATTLE_MAP): las 15 raíces de islands.glb con su modelo y 0 formas en la
+  // versión sencilla. Con AC210_MUTANT, una raíz con un círculo movido 1 m se queda sencilla y las otras 14 con modelo, y el
+  // test cae por aserción
+  test('AC-210 (b): sin SEA_BATTLE_MAP, islands.glb llega una vez con su KTX2 y pone sus 15 islas con su modelo y 0 sencillas, e island_port.glb, el puerto; el frame más largo mientras llega, al log (AC-198 c, AC-200 e)', async ({ page }, info) => {
     test.setTimeout(120_000);
-    const server = await startOwnServer({ SEA_BATTLE_MAP: '1.1', SEA_BATTLE_NPCS: '0' });
+    const server = await startOwnServer({ SEA_BATTLE_NPCS: '0' });
     try {
+      const mutant = mutantGlb();
+      if (mutant) await page.route(GLB, (r) => r.fulfill({ status: 200, contentType: 'model/gltf-binary', body: mutant.body }));
+      const warnings: string[] = [];
+      page.on('console', (m) => {
+        if (m.text().startsWith('[island-glb]')) warnings.push(m.text());
+      });
       const req = islandRequests(page);
       // Duración de cada frame (entre rAF), con su instante: la ventana es de la petición de islands.glb a 1 s después de
       // que I1 está en la escena
@@ -330,12 +387,17 @@ test.describe('C1: las islas del mapa de la 1.1 en el cliente', () => {
       });
       await enterGame(page, server.url);
       const entry = await entryOf(page);
-      await expect
-        .poll(() => page.evaluate(() => (window.__SEA_BATTLE__!.runtime() as unknown as { islandRoots: Map<string, unknown> }).islandRoots.has('I1')), { timeout: 20_000 })
-        .toBe(true);
-      await expect
-        .poll(() => page.evaluate(() => (window.__SEA_BATTLE__!.runtime() as unknown as { islandRoots: Map<string, unknown> }).islandRoots.has('PORT')), { timeout: 20_000 })
-        .toBe(true);
+      await glbDone(page);
+      const shapes = await shapesDrawn(page);
+      const expected = { withModel: [...PILOT_ROOTS.map(shapeOfRoot), 'PORT'].sort(), simple: [] as string[] };
+      console.log(
+        `AC-210 (b)${mutant ? `, mutante ${mutant.sbId} con un círculo movido 1 m` : ''}: ${shapes.withModel.length - (shapes.withModel.includes('PORT') ? 1 : 0)} islas con su modelo ${JSON.stringify(shapes.withModel)} · ` +
+          `${shapes.simple.length} sencillas ${JSON.stringify(shapes.simple)} · consola ${JSON.stringify(warnings)}`
+      );
+      // Las 2 cuentas en una aserción, para que el fallo enseñe las 2: cuántas con modelo y cuáles sencillas
+      expect({ islandsWithModel: shapes.withModel.filter((s) => s !== 'PORT').length, port: shapes.withModel.includes('PORT'), simple: shapes.simple }).toEqual({ islandsWithModel: 15, port: true, simple: [] });
+      expect(shapes).toEqual(expected);
+      expect(warnings).toEqual([]);
       const placedAt = await page.evaluate(() => (window as unknown as { __C1_I1_AT__: number | null }).__C1_I1_AT__);
       expect(placedAt, 'el frame en que I1 entra en la escena').not.toBeNull();
       await page.waitForTimeout(1_000);
@@ -349,20 +411,19 @@ test.describe('C1: las islas del mapa de la 1.1 en el cliente', () => {
       const longest = win.length ? Math.max(...win) : NaN;
       const islandsT = await transferred([...req.glb, ...req.ktx2]);
       const scenery = await transferred([...req.glb, ...req.ktx2, ...req.port, ...req.portKtx2]);
-      const withoutI1 = MAP_1_1.islands.filter((c) => !['I1', 'PORT'].includes(c.id.split('.')[0]));
-      console.log(`C1 · mapa 1.1 con islands.glb (${ISLANDS_GLB}) e island_port.glb (${PORT_GLB}): I1 puesta ${(placedAt! - from).toFixed(1)} ms después de pedir islands.glb (el frame en que entra en la escena, en el reloj de la página) · raíces ${JSON.stringify(d.roots)} · peticiones islands.glb ${req.glb.length} · KTX2 ${req.ktx2.length} · island_port.glb ${req.port.length} · su KTX2 ${req.portKtx2.length} · entrada ${JSON.stringify(entry)} (tope ${OWN_GLB_WAIT_MS} ms) · islands.glb y su KTX2, transferidos ${islandsT.bytes} B · escenario transferido ${scenery.bytes} B (ux: ${UX_SCENERY_BYTES} B; cota ${SCENERY_BYTES} B) (${scenery.detail}) · frame más largo mientras llega ${longest.toFixed(1)} ms en ${win.length} frames (umbral de producto 50 ms: ${longest > 50 ? 'PASA, a producto antes de C3' : 'por debajo'}) · triángulos procedurales ${d.triangles} (la versión sencilla sin I1 ni el puerto: ${trianglesOf(true, withoutI1)}) · vértices de empedrado ${await drawnCobble(page)}`);
+      console.log(`C1 · mapa por defecto con islands.glb (${ISLANDS_GLB}) e island_port.glb (${PORT_GLB}): las 15 islas puestas ${(placedAt! - from).toFixed(1)} ms después de pedir islands.glb (el frame en que I1 entra en la escena, en el reloj de la página; las 15 entran en el mismo) · raíces ${JSON.stringify(d.roots)} · peticiones islands.glb ${req.glb.length} · KTX2 ${req.ktx2.length} · island_port.glb ${req.port.length} · su KTX2 ${req.portKtx2.length} · entrada ${JSON.stringify(entry)} (tope ${OWN_GLB_WAIT_MS} ms) · islands.glb y su KTX2, transferidos ${islandsT.bytes} B · escenario transferido ${scenery.bytes} B (ux: ${UX_SCENERY_BYTES} B; cota ${SCENERY_BYTES} B) (${scenery.detail}) · frame más largo mientras llega ${longest.toFixed(1)} ms en ${win.length} frames (umbral de producto 50 ms: ${longest > 50 ? 'PASA, a producto' : 'por debajo'}) · triángulos procedurales ${d.triangles} (la versión sencilla sin ninguna forma: ${trianglesOf(true, [])}) · vértices de empedrado ${await drawnCobble(page)}`);
       expect(d.key).toBe(islandsKey(MAP_1_1.islands));
-      expect(d.roots).toEqual(['I1', 'PORT']);
+      expect(d.roots).toEqual(expected.withModel);
       expect(req.glb.length).toBe(1);
       expect(req.ktx2.length).toBe(1);
       expect(req.port.length).toBe(1);
       expect(req.portKtx2.length).toBe(1);
       expect(scenery.bytes).toBeLessThanOrEqual(SCENERY_BYTES);
-      expect(d.triangles).toBe(trianglesOf(true, withoutI1)); // I1 y el puerto salen de la malla sencilla: los pintan sus GLB
+      expect(d.triangles).toBe(trianglesOf(true, [])); // las 16 formas salen de la malla sencilla: las pintan sus GLB
       expect(await drawnCobble(page)).toBe(0);
       expect(Number.isFinite(glbAt)).toBe(true);
       expect(win.length).toBeGreaterThan(0);
-      await shot(page, info, 'c1-piloto-i1-puerto');
+      await shot(page, info, 'ac210-15-islas-puerto');
     } finally {
       await server.kill();
     }
