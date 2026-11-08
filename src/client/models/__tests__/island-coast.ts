@@ -1,6 +1,6 @@
 // La costa visible de las islas: la malla cortada por la flotación (y = 0). Lo usan island-glb.test.ts (AC-199 a, la escena
-// de islands.glb) e island-coast-ships.test.ts («se ve / se choca» en I1, con la malla de islands.glb en la 1.1 y la
-// procedural en la 1.0)
+// de islands.glb) e island-coast-ships.test.ts («se ve / se choca» en las 16 formas, con la malla de islands.glb y la de
+// island_port.glb en la 1.1, y la procedural en la 1.0)
 import fs from 'fs';
 import path from 'path';
 import * as THREE from 'three';
@@ -98,4 +98,32 @@ export function landAt(tris: Triangles, x: number, z: number): boolean {
     if (w0 * tris[t + 1] + w1 * tris[t + 4] + w2 * tris[t + 7] > 0) return true;
   }
   return false;
+}
+
+// landAt con los triángulos repartidos en una rejilla de celdas de `cell` m por su caja en planta: cada consulta mira solo los
+// de su celda. Da lo mismo que landAt (un triángulo que cubre el punto está en la celda del punto) y deja que el barrido de
+// las 16 formas quepa en el tiempo de verify
+export function landGrid(tris: Triangles, cell = 4): (x: number, z: number) => boolean {
+  const cells = new Map<string, number[]>();
+  const key = (i: number, j: number) => `${i},${j}`;
+  for (let t = 0; t < tris.length; t += 9) {
+    const xs = [tris[t], tris[t + 3], tris[t + 6]];
+    const zs = [tris[t + 2], tris[t + 5], tris[t + 8]];
+    for (let i = Math.floor(Math.min(...xs) / cell); i <= Math.floor(Math.max(...xs) / cell); i++)
+      for (let j = Math.floor(Math.min(...zs) / cell); j <= Math.floor(Math.max(...zs) / cell); j++) {
+        const k = key(i, j);
+        if (!cells.has(k)) cells.set(k, []);
+        cells.get(k)!.push(t);
+      }
+  }
+  const one = new Float64Array(9);
+  return (x, z) => {
+    const list = cells.get(key(Math.floor(x / cell), Math.floor(z / cell)));
+    if (!list) return false;
+    for (const t of list) {
+      for (let e = 0; e < 9; e++) one[e] = tris[t + e];
+      if (landAt(one, x, z)) return true;
+    }
+    return false;
+  };
 }
