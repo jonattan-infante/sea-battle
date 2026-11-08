@@ -133,9 +133,10 @@ describe('E0 — Arquitectura de la simulación', () => {
 
   // DT-05: la carga ajena de la máquina (otro Jest en paralelo) solo suma tiempo a un tick, nunca lo resta, así que el
   // menor de 3 p99 estima el coste de la simulación; un p99 suelto medía también la máquina
+  // AC-210 (c): el mapa del juego (GAME_MAP, el del servidor sin variables) y el de la 1.0, la palanca de E-1
   test.each([
-    ['1.0', C.MAP_1_0],
-    ['1.1', C.MAP_1_1]
+    [`del juego (${C.GAME_MAP.id})`, C.GAME_MAP],
+    ['1.0 (E-1)', C.MAP_1_0]
   ])('AC-03: con el mapa %s, 20 jugadores con intenciones aleatorias, 20 NPC y el jefe, el menor de 3 p99 del tick (2 000 ticks cada uno) es ≤ 4 ms', (id, map) => {
     const runs = [tickTimes(map), tickTimes(map), tickTimes(map)];
     const best = Math.min(...runs.map((r) => r.p99));
