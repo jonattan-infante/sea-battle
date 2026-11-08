@@ -68,8 +68,8 @@ function guestId(): string {
   }
 }
 
-// Usuario de prueba de los e2e de persistencia (?testUser=, AC-97): solo en modo invitado, y el servidor lo rechaza fuera
-// de ese modo (server/auth.ts)
+// Usuario de prueba de los e2e de persistencia (?testUser=, AC-97): solo en modo invitado; fuera de ese modo el servidor
+// lo ignora y sigue por Clerk, que pide la sesión (server/auth.ts:30-38)
 function testUserParam(): string | null {
   try {
     return new URLSearchParams(window.location.search).get('testUser');
