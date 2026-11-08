@@ -1,3 +1,4 @@
+import fs from 'fs';
 import { GAME_MAP, ISLANDS, MAP_1_0, MAP_1_1, NAV_LIMIT, PIVOT_MIN_ANGLE, PIVOT_SPEED, SHIP_CLASSES, navClearance } from '../constants';
 import { Ship, World } from '../types';
 import { Vec2, createRng, distance, forward, headingTo } from '../vec';
@@ -63,7 +64,17 @@ describe('E1 — Navegación', () => {
   });
 
   // AC-20 con el mapa del juego (las 1 000 rutas por clase): en ac20-<clase>.test.ts, un archivo por clase para que Jest los
-  // reparta (ac20-routes.ts), con las 7 clases del juego (AC-210 c)
+  // reparta (ac20-routes.ts), con las 7 clases del juego (AC-210 c). Este test vigila que no falte ni sobre ninguno (O-8 de
+  // QA-74): una clase nueva en SHIP_CLASSES sin su archivo, o un archivo de una clase que ya no existe, lo ponen en rojo
+  test('AC-20: un archivo ac20-<clase>.test.ts por cada clase de SHIP_CLASSES, ni uno más ni uno menos, y cada uno corre su clase', () => {
+    const files = fs.readdirSync(__dirname).flatMap((f) => {
+      const m = /^ac20-(.+)\.test\.ts$/.exec(f);
+      return m ? [m[1]] : [];
+    });
+    expect(files.sort()).toEqual(Object.keys(SHIP_CLASSES).sort());
+    const runs = files.map((c) => [c, fs.readFileSync(`${__dirname}/ac20-${c}.test.ts`, 'utf8').includes(`ac20RoutesTest('${c}')`)]);
+    expect(runs).toEqual(files.map((c) => [c, true]));
+  });
 
   // H1 (QA-70; producto, 2026-11-04, BACKLOG :914): la re-planificación de la ruta es solo de los mercantes NPC (C3,
   // AC-173). Un barco de jugador calcula su ruta 1 vez por orden de moveTo, aunque pase junto a la costa: un contador sobre el

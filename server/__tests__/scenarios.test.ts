@@ -646,9 +646,10 @@ describe('escenario "combat-i2" (AC-90, bloque B-I2), con el I2 encendido', () =
   });
 
   // Lo que mide el bloque B-I2, sin cliente: un jugador con cañones N3 quieto en el puesto ataca al mercante vivo más
-  // cercano durante 60 s y después repara 60 s. Con 3 semillas: ≥ 20 andanadas propias en los 60 s de ataque, los dos del
-  // I2 disparan en cada tercio, siguen vivos y en su puesto, y el barco propio no se hunde ni atacando ni reparando
-  test.each([1, 2, 3])('semilla %i: 60 s atacando con N3 (≥ 20 andanadas) y 60 s reparando; los dos del I2 disparan en cada tercio, siguen vivos y en su puesto, y el barco propio no se hunde', (seed) => {
+  // cercano durante 60 s y después repara 60 s. Con 3 semillas: ≥ 18 andanadas propias en los 60 s de ataque (el umbral del
+  // bloque, BACKLOG :1943; 20 es el máximo con la recarga de 3 s, y con él un tick de retraso lo rompía: O-6 de QA-74), los
+  // dos del I2 disparan en cada tercio, siguen vivos y en su puesto, y el barco propio no se hunde ni atacando ni reparando
+  test.each([1, 2, 3])('semilla %i: 60 s atacando con N3 (≥ 18 andanadas) y 60 s reparando; los dos del I2 disparan en cada tercio, siguen vivos y en su puesto, y el barco propio no se hunde', (seed) => {
     const { w, captain, gunboat, merchants } = setup(seed);
     const player = addPlayer(w, 'bot', 'Bot');
     player.upgrades.cannons = 3;
@@ -681,7 +682,7 @@ describe('escenario "combat-i2" (AC-90, bloque B-I2), con el I2 encendido', () =
       if (ship.state === 'alive' && !ship.repairing && ship.hp < ship.maxHp) setRepair(w, 'bot', true);
     }, 60);
     console.log(`combat-i2, semilla ${seed}: ${volleys} andanadas propias en 60 s · Capitán ${thirds[captain.id].join('/')} y cañonera ${thirds[gunboat.id].join('/')} por tercio · vida ${hpAfterAttack} tras atacar y ${ship.hp} tras reparar`);
-    expect(volleys).toBeGreaterThanOrEqual(20);
+    expect(volleys).toBeGreaterThanOrEqual(18);
     expect({ captain: thirds[captain.id].every((n) => n >= 1), gunboat: thirds[gunboat.id].every((n) => n >= 1) }).toEqual({ captain: true, gunboat: true });
     for (const [s, at] of [[captain, COMBAT_I2.captain], [gunboat, COMBAT_I2.gunboat]] as const) {
       expect([s.classId, s.state, dist(s.pos, at) <= 0.5]).toEqual([s.classId, 'alive', true]);

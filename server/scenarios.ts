@@ -138,7 +138,7 @@ export const EDGE_ATTACK = { pirate: { x: 0, z: 215 }, standoff: 52, accuracy: 0
 // andanadas. El jugador entra con el oro de los cañones N2 + N3, los compra en el puerto y navega hasta `self`; allí queda a
 // tiro de los dos (alcance 65 m) y a 28 m de los mercantes (N3: 80 m). En el marco útil de 1440×900 salen los dos del I2,
 // a 1,0× y a 1,5× (la del arnés), e I5 entera a 1,5×, con su modelo de la 1.1 (T2 asoma arriba, bajo el HUD). Todo fuera de
-// la zona segura y de la exclusión del puerto, y navegable con la 1.1 y con la 1.0 (server/__tests__/scenarios.test.ts).
+// la zona segura y de la exclusión del puerto, y navegable con el mapa del juego (GAME_MAP; server/__tests__/scenarios.test.ts).
 // Puntería 0,08: el Capitán (6 cañones de 28, recarga 4 s) quita 3,36 de vida/s y la cañonera (6 de 20, recarga 5 s), 1,92;
 // juntos, 317/min de media a una Balandra de 800, que aguanta 60 s atacando sin reparar (483 de media; sd ≈ 85) y reparando
 // bajo fuego gana 12/s (1,5 %/s)
