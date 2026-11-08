@@ -1,5 +1,4 @@
 import { GAME_MAP, ISLANDS, MAP_1_0, MAP_1_1, NAV_LIMIT, PIVOT_MIN_ANGLE, PIVOT_SPEED, SHIP_CLASSES, navClearance } from '../constants';
-import { segmentPointDistance } from '../nav';
 import { Ship, World } from '../types';
 import { Vec2, createRng, distance, forward, headingTo } from '../vec';
 import { createWorld, moveTo, navigator, navigatorOf, stop } from '../world';
@@ -63,47 +62,8 @@ describe('E1 — Navegación', () => {
     expect(ship.speed).toBe(0);
   });
 
-  // Segmento del casco (proa a popa, longitud L, sin bauprés) frente a cada círculo de las islas del mapa
-  function hullTouchesIsland(x: number, z: number, heading: number, length: number, islands = GAME_MAP.islands): boolean {
-    const fx = Math.sin(heading) * (length / 2);
-    const fz = Math.cos(heading) * (length / 2);
-    const bow = { x: x + fx, z: z + fz };
-    const stern = { x: x - fx, z: z - fz };
-    return islands.some((isl) => segmentPointDistance(bow, stern, { x: isl.x, z: isl.z }) < isl.radius - 1e-6);
-  }
-
-  // AC-210 (c): con el mapa del juego (GAME_MAP, el del servidor sin variables), no con el de createWorld por defecto (el 1.0,
-  // la base de los tests), como pedía AC-171 (BACKLOG :1606)
-  test.each(['sloop', 'brig', 'frigate', 'pirate', 'merchant'])(
-    `AC-20: %s — 1 000 rutas aleatorias con el mapa del juego (${GAME_MAP.id}): el casco nunca toca una isla y el 100 %% llega a ≤ 2 m`,
-    (classId) => {
-      const rng = createRng(2026);
-      const clearance = navClearance(classId);
-      const length = SHIP_CLASSES[classId].length;
-      const nav = navigatorOf(createWorld({ seed: 0, spawnNpcs: false, map: GAME_MAP }));
-      let arrived = 0;
-      let touched = 0;
-      for (let i = 0; i < 1000; i++) {
-        const world = createWorld({ seed: i, spawnNpcs: false, map: GAME_MAP });
-        const from = nav.nearestNavigable({ x: (rng() * 2 - 1) * 480, z: (rng() * 2 - 1) * 480 }, clearance);
-        const to = nav.nearestNavigable({ x: (rng() * 2 - 1) * 480, z: (rng() * 2 - 1) * 480 }, clearance);
-        const ship = placePlayer(world, 'a', from.x, from.z, rng() * Math.PI * 2);
-        ship.classId = classId;
-        moveTo(world, 'a', to);
-        const target = ship.destination!;
-        let violated = false;
-        const t = runUntil(world, 300, () => {
-          if (!violated && hullTouchesIsland(ship.pos.x, ship.pos.z, ship.heading, length)) violated = true;
-          return ship.destination === null && ship.speed === 0;
-        });
-        if (violated) touched++;
-        if (t !== Infinity && distance(ship.pos, target) <= 2) arrived++;
-      }
-      expect({ classId, touched }).toEqual({ classId, touched: 0 });
-      expect({ classId, arrived }).toEqual({ classId, arrived: 1000 });
-    },
-    120_000
-  );
+  // AC-20 con el mapa del juego (las 1 000 rutas por clase): en ac20-<clase>.test.ts, un archivo por clase para que Jest los
+  // reparta (ac20-routes.ts), con las 7 clases del juego (AC-210 c)
 
   // H1 (QA-70; producto, 2026-11-04, BACKLOG :914): la re-planificación de la ruta es solo de los mercantes NPC (C3,
   // AC-173). Un barco de jugador calcula su ruta 1 vez por orden de moveTo, aunque pase junto a la costa: un contador sobre el
