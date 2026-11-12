@@ -94,7 +94,7 @@ test.describe('Vista libre (E13)', () => {
     const net = trackSocket(page); // antes de entrar: el WebSocket se abre al conectar y no se ve el que ya existe
     await enterGame(page);
     await minimapCenter(page, { x: 250, z: -250 });
-    await page.waitForTimeout(200);
+    await expect.poll(async () => { const f = await camera(page); return Math.hypot(f.x - 250, f.z + 250); }, { message: 'AC-117 no pone tiempo: el foco a ≤ 5 m de (250, −250), con un tope de holgura (QA-75 O-9)', timeout: 10_000 }).toBeLessThanOrEqual(5);
     const c = await camera(page);
     console.log(`AC-117: foco tras el clic en el minimapa ${c.x.toFixed(1)}, ${c.z.toFixed(1)} (punto 250, −250) · modo ${c.mode}`);
     expect(c.mode).toBe('free');
