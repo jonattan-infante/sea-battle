@@ -26,6 +26,7 @@ El Capitán pirata, las cañoneras y ese aviso ya navegaban desde el 7 de noviem
 - **Interno: las pruebas de rutas usan el mapa nuevo,** con las 7 clases de barco. Otra prueba lanza barcos de 3 clases contra la costa de las 16 formas, en 8 rumbos, y ningún casco toca tierra.
 - **Interno: un escenario de prueba de combate con el Capitán y una cañonera,** para medir el rendimiento del juego con ellos. Solo existe en el modo invitado de pruebas, que nunca corre en Railway.
 - **Interno: las pruebas de navegador esperan hasta 120 s a que entre cada página** (antes, 30). Con el mapa nuevo y varias páginas abiertas a la vez, el WebGL por software de la CI tarda más en dibujarlas.
+- **Interno: 6 pruebas de la cámara y del HUD pasan a correr solo con tarjeta gráfica,** en el Mac, antes de cada versión. Miden lo que tarda una transición, y con el mapa nuevo el WebGL por software de la CI no les da los frames que necesitan.
 
 ### Operación
 
@@ -34,6 +35,7 @@ El Capitán pirata, las cañoneras y ese aviso ya navegaban desde el 7 de noviem
 ### Límites conocidos
 
 - **La portada todavía enseña las islas de antes.** El juego ya usa el mapa nuevo; la portada se pondrá al día en una próxima versión.
+- **Sin tarjeta gráfica, el mapa nuevo va muy lento.** Si tu navegador dibuja el juego por software, sin la tarjeta gráfica (por ejemplo, en una máquina virtual), la 1.2 va a unos 4 fps en un equipo de 2 núcleos, frente a unos 12 de la 1.1, y cuesta jugar. Si puedes, activa la aceleración por hardware del navegador. Se estudia para una próxima versión.
 
 ## [1.1.4] - 2026-11-04
 
