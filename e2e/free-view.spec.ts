@@ -102,7 +102,7 @@ test.describe('Vista libre (E13)', () => {
     expect(sentOf(net, C2S.moveTo)).toHaveLength(0);
   });
 
-  test('AC-118: 2 s con una flecha pulsada mueven la vista 300 ±30 m; S detiene el barco y no mueve la vista', async ({ page }) => {
+  test('AC-118: 2 s con una flecha pulsada mueven la vista 300 ±30 m; S detiene el barco y no mueve la vista @gpu', async ({ page }) => {
     const net = trackSocket(page); // antes de entrar: el WebSocket se abre al conectar y no se ve el que ya existe
     await enterGame(page);
     const start = await camera(page);

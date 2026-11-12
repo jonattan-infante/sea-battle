@@ -345,7 +345,7 @@ test.describe('Placas y HUD', () => {
     expect.soft(r.returnMs ?? Infinity, 'vuelta sin fundido').toBeLessThanOrEqual(100);
   });
 
-  test('AD-32 (390×844) @mobile: ninguna placa se cruza con el minimapa, Atacar ni los avisos (también uno que entra); vuelve en ≤ 250 ms', async ({ page }) => {
+  test('AD-32 (390×844) @mobile: ninguna placa se cruza con el minimapa, Atacar ni los avisos (también uno que entra); vuelve en ≤ 250 ms @gpu', async ({ page }) => {
     test.setTimeout(150_000);
     await setup(page);
     const c0 = await commits(page);
