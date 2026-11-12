@@ -398,6 +398,8 @@ test.describe('C1: las islas del mapa de la 1.1 en el cliente', () => {
       expect({ islandsWithModel: shapes.withModel.filter((s) => s !== 'PORT').length, port: shapes.withModel.includes('PORT'), simple: shapes.simple }).toEqual({ islandsWithModel: 15, port: true, simple: [] });
       expect(shapes).toEqual(expected);
       expect(warnings).toEqual([]);
+      // __C1_I1_AT__ se fija en el callback de rAF y glbDone no espera a un frame: se espera a que lo fije (QA-75 O-1)
+      await page.waitForFunction(() => (window as unknown as { __C1_I1_AT__: number | null }).__C1_I1_AT__ !== null, null, { timeout: 10_000 });
       const placedAt = await page.evaluate(() => (window as unknown as { __C1_I1_AT__: number | null }).__C1_I1_AT__);
       expect(placedAt, 'el frame en que I1 entra en la escena').not.toBeNull();
       await page.waitForTimeout(1_000);

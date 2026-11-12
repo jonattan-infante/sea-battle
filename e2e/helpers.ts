@@ -84,7 +84,9 @@ export async function enterGame(page: Page, base = ''): Promise<void> {
   });
   (page as unknown as { __dialogs: string[] }).__dialogs = dialogs;
   await page.goto(`${base}/game`);
-  await page.waitForFunction(() => window.__SEA_BATTLE__?.ready() === true, null, { timeout: 30_000 });
+  // 120 s y no 30: con el mapa 1.1 y varias páginas abiertas, el WebGL por CPU de la CI tarda 25–42 s en entrar desde la
+  // 2.ª página (QA-75 H-1). Ningún AC mide la entrada con este tope: eso es AC-193 (c)
+  await page.waitForFunction(() => window.__SEA_BATTLE__?.ready() === true, null, { timeout: 120_000 });
 }
 
 // El GLB de la Balandra en el manifiesto antes de entrar (AC-193). GameApp asigna window.__SEA_BATTLE__ en el efecto que
