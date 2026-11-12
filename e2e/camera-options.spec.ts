@@ -334,7 +334,16 @@ test.describe('Cambiar de modo (E18, AC-207)', () => {
     const s = (await me(page))!;
     const v = await view(page);
     expect(v.mode).toBe('free');
-    expect(Math.abs(v.x - s.x - 300)).toBeLessThanOrEqual(30);
+    // Lo que pide AC-207 es la vista lejos del barco; los 300 m son la velocidad de AC-118, que vigila el Mac (QA-75 O-9)
+    const shipOutside = await page.evaluate(() => {
+      const dbg = window.__SEA_BATTLE__!;
+      const m = dbg.me() as { x: number; z: number } | null;
+      const p = m && dbg.runtime().project(m.x, m.z);
+      return !!p && !(Math.abs(p.sx - innerWidth / 2) <= 0.05 * innerWidth && Math.abs(p.sy - innerHeight / 2) <= 0.05 * innerHeight);
+    });
+    console.log(`AC-207: la vista a ${(v.x - s.x).toFixed(1)} m del barco en x · el barco fuera del 10 % central: ${shipOutside}`);
+    expect(v.x - s.x, 'la vista a ≥ 150 m del barco en x').toBeGreaterThanOrEqual(150);
+    expect(shipOutside, 'el barco fuera del 10 % central').toBe(true);
     await openOptions(page);
     net.reset();
     // Elegir «Centrada» y mirar cada frame desde el clic: el barco en el 10 % central desde los 300 ms (como AC-119)
@@ -437,7 +446,7 @@ async function setKey(page: Page, action: string, code: string): Promise<void> {
 }
 
 test.describe('Teclas a elegir (E18, AC-208, AC-209)', () => {
-  test('AC-208 en «Libre»: con «arriba» en W, W mueve la vista 300 ±30 m y ↑ no; con Detener en X, X detiene y S no', async ({ page }) => {
+  test('AC-208 en «Libre»: con «arriba» en W, W sube la vista al menos 30 m y casi nada de lado, y ↑ no la mueve; con Detener en X, X detiene y S no', async ({ page }) => {
     await presetOptions(page, 'free');
     const net = trackSocket(page);
     await enterGame(page);
@@ -461,7 +470,8 @@ test.describe('Teclas a elegir (E18, AC-208, AC-209)', () => {
     const w = await hold('KeyW');
     const arrow = await hold('ArrowUp');
     console.log(`AC-208: W ${w.up.toFixed(1)} m hacia arriba · ↑ ${arrow.up.toFixed(1)} m`);
-    expect(Math.abs(w.up - 300)).toBeLessThanOrEqual(30);
+    expect(w.up, 'W sube la vista al menos 30 m').toBeGreaterThanOrEqual(30);
+    expect(Math.abs(w.side), 'y casi nada de lado: menos de la décima parte de lo que sube').toBeLessThan(w.up / 10);
     expect(Math.hypot(arrow.up, arrow.side)).toBeLessThanOrEqual(0.5);
 
     net.reset();

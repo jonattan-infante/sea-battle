@@ -74,8 +74,9 @@ export function mapOf(id: string, shapes: IslandShape[], moorings: readonly Moor
   return { id, shapes, islands, moorings };
 }
 
-// El mapa del juego: el de la 1.0 (con los arquetipos que la 1.1 da a sus 7 formas). Comparte la lista ISLANDS, y con
-// ella el navegador y sus grafos (world.ts)
+// El mapa de la 1.0 (con los arquetipos que la 1.1 da a sus 7 formas): el de createWorld por defecto, la base de los tests,
+// y la palanca de emergencia del servidor (SEA_BATTLE_MAP=1.0; E-1 de AC-210). Comparte la lista ISLANDS, y con ella el
+// navegador y sus grafos (world.ts)
 const ARCHETYPES_1_0: Record<string, IslandArchetype> = { PORT: 'port', I1: 'tropical', I2: 'rocky', I3: 'rocky', I4: 'rocky', I5: 'tropical', I6: 'tropical' };
 export const MAP_1_0: MapDef = {
   ...mapOf('1.0', ISLANDS.map((i) => ({ id: i.id, archetype: ARCHETYPES_1_0[i.id], circles: [{ x: i.x, z: i.z, radius: i.radius }] })), []),
@@ -101,8 +102,8 @@ export const PORT_SHAPE_1_1: IslandShape = {
 
 // Islas de la 1.1 (D83, aprobada por Jonattan el 2026-10-18; GDD §4, ASSET-SPEC §9.7): uniones de círculos (AC-199,
 // opción B). Las 6 islas de la 1.0 conservan su círculo o crecen alrededor de él, T1 y T2 son nuevas, E1 son los 3
-// escollos y G1–G4 las 4 calas: con el puerto de D92, 50 círculos en 16 formas, la tabla de scripts/ux/mapa/circulos.py. Todavía no es el mapa
-// del juego: lo usan los tests de la lógica del mapa nuevo con createWorld({ map: MAP_1_1 })
+// escollos y G1–G4 las 4 calas: con el puerto de D92, 50 círculos en 16 formas, la tabla de scripts/ux/mapa/circulos.py. Es el mapa
+// del juego desde la 1.2: el servidor lo pone sin variables (server/features.ts, AC-210 a)
 export const ISLAND_SHAPES_1_1: IslandShape[] = [
   PORT_SHAPE_1_1,
   { id: 'I1', archetype: 'tropical', circles: [{ x: 260, z: 200, radius: 45 }, { x: 212, z: 214, radius: 30 }, { x: 305, z: 182, radius: 28 }, { x: 225, z: 150, radius: 8 }, { x: 275, z: 255, radius: 7 }] },
@@ -141,6 +142,11 @@ export const MOORINGS_1_1: readonly Mooring[] = [
 ];
 export const MAP_1_1: MapDef = mapOf('1.1', ISLAND_SHAPES_1_1, MOORINGS_1_1);
 
+// El mapa del juego: el que pone el servidor sin variables, como en staging y prod (server/features.ts, AC-210 a). Lo leen
+// también los tests que miden «el mapa del juego» (AC-20, AC-22 y AC-03 de AC-171, AC-210 c), así que siguen al valor por
+// defecto sin nombrar un mapa. createWorld sigue con MAP_1_0 por defecto: la base de los tests (E-1)
+export const GAME_MAP: MapDef = MAP_1_1;
+
 // Un amarre está libre (AC-176) si ningún barco vivo, de cualquier clase, tiene el centro a < freeRadius m de su eje: el
 // segmento de Q a Q + length m en el rumbo ψ (46 = 2 + 42 + 2: el Navío entero, con 2 m de holgura a cada lado)
 export const MOORING_AXIS = { length: 46, freeRadius: 12 } as const;
@@ -165,6 +171,13 @@ export const NAV_NODE_SLACK = 1; // holgura de los nodos del grafo de rutas sobr
 export const PIVOT_MIN_ANGLE = Math.PI / 4;
 export const PIVOT_SPEED = 1;
 export const PIVOT_ZONE = 8; // m por encima del margen de navegación
+// Mercantes NPC (C3): cada NAV_REPLAN_TICKS comprueban que la recta desde donde están hasta su siguiente waypoint no pasa a
+// menos de su radio + NAV_REPLAN_HULL_SLACK de la costa; si pasa, re-planifican desde ahí. La ruta se calcula una vez, y el
+// arco de giro del mercante que volvía de la huida a 8,8 m/s junto a T2 lo sacaba de la recta: la nueva pasaba a 6,38 m de
+// la costa (radio 7) y metía el casco 13,7 s. Con el margen entero en vez del casco, y para todos los barcos, cambiaban 201
+// de 900 rutas del jugador sin evitar ningún contacto y una ruta de AC-20 entraba en un ciclo (producto, 2026-11-03)
+export const NAV_REPLAN_TICKS = 10;
+export const NAV_REPLAN_HULL_SLACK = 1; // m sobre el radio del casco
 export const TURN_FACTORS = [
   { maxAngle: 45 * deg, factor: 1 },
   { maxAngle: 90 * deg, factor: 0.6 },

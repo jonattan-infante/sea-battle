@@ -19,7 +19,7 @@ import {
 } from '../constants';
 import { Navigator, segmentPointDistance } from '../nav';
 import { Vec2, angleDelta, distance, forward } from '../vec';
-import { addPlayer, createWorld, moveTo, navigatorOf, respawn, shipOfPlayer, step } from '../world';
+import { addPlayer, createWorld, moveTo, navigatorOf, respawn, shipOfPlayer, spawnMerchant, spawnPirate, step } from '../world';
 import { DT, placeCaptain, placeGunboat, placePlayer, run, runUntil } from './helpers';
 
 // Mapa de la 1.1 (GDD §4; puesto 5). Las islas de MAP_1_1 son las de D83, aprobada por Jonattan el 2026-10-18, y el puerto,
@@ -705,5 +705,93 @@ describe('E16 — Rutas del puerto (AC-177, con las islas de D83 y el puerto de 
     }
     console.log(`AC-177 (b) margen ${margin}: ${out.join(' · ')}`);
     expect(worst).toBeLessThanOrEqual(1.15);
+  });
+});
+
+// C3 (1.2): el último recurso de pirateSpot, cuando sus 120 intentos caen en roca. Era el punto fijo (±380, ±380), que
+// en la 1.1 queda 4,03 m dentro de la cala de su sector (G1–G4, radio 13, centro en ±373,66). Ahora es el punto navegable
+// más cercano a él: en la 1.0, (±380, ±380) ya es agua y sale el mismo punto que antes
+describe('E16 — Último recurso de pirateSpot (C3)', () => {
+  // Los 120 intentos del sector SE (3) caen en el centro de I1 (260, 200), que es roca en los 2 mapas: el RNG alterna el
+  // valor del ángulo, en [0,12, π/2 − 0,12], y el del radio, en el anillo pirata de 300 a 460 m
+  const I1 = { x: 260, z: 200 };
+  function rngIntoI1(): () => number {
+    const a = Math.atan2(I1.z, I1.x);
+    const r = Math.hypot(I1.x, I1.z);
+    const values = [(a - 0.12) / (Math.PI / 2 - 0.24), (r - 300) / 160];
+    let k = 0;
+    return () => values[k++ % 2];
+  }
+  const CORNER = { x: 380, z: 380 };
+
+  test('con la 1.1, un pirata cuyos 120 intentos caen en roca aparece en agua navegable junto a (380, 380), no dentro de la cala G4', () => {
+    const world = world11();
+    world.rng = rngIntoI1();
+    const pirate = spawnPirate(world, 3);
+    const clearance = navClearance('pirate');
+    const nav = navigatorOf(world);
+    expect(nav.navigable(I1, clearance)).toBe(false);
+    expect(nav.navigable(CORNER, clearance)).toBe(false);
+    expect({ pos: pirate.pos, navigable: nav.navigable(pirate.pos, clearance) }).toEqual({ pos: pirate.pos, navigable: true });
+    expect(distance(pirate.pos, CORNER)).toBeLessThan(25);
+  });
+
+  test('con la 1.0, el mismo pirata aparece exactamente en (380, 380), como antes', () => {
+    const world = createWorld({ seed: 1, spawnNpcs: false });
+    world.rng = rngIntoI1();
+    const pirate = spawnPirate(world, 3);
+    expect(navigatorOf(world).navigable(I1, navClearance('pirate'))).toBe(false);
+    expect(pirate.pos).toEqual(CORNER);
+  });
+});
+
+describe('E16 — Mercante que vuelve de la huida junto a T2 (C3, AC-173)', () => {
+  // El caso de la semilla 5 de AC-173 con el mapa de la 1.1 (ship-19, t = 541,35 s): el mercante deja de huir a 25 m de la
+  // costa, a 8,8 m/s y con rumbo −39°, y vuelve a su ruta. La ruta se calcula una vez desde ahí y la recta pasa a 0,95 m
+  // del margen de T2; el arco de giro a esa velocidad la saca de la recta, el casco entra en la costa y pushOut lo frena a
+  // 0,19 m/s durante 13,7 s
+  const START = { x: -115.87, z: 183.21 };
+  const TARGET = { x: -167.3, z: 55.9 };
+
+  test('el mercante llega a su waypoint sin pasar más de 10 s parado y sin que el casco toque la costa', () => {
+    const world = world11(5, true);
+    const nav = navigatorOf(world);
+    const ship = spawnMerchant(world);
+    const ai = ship.ai!;
+    const clearance = navClearance('merchant');
+    ship.pos = { ...START };
+    ship.heading = (-39.1 * Math.PI) / 180;
+    ship.speed = 8.8;
+    ai.state = 'route';
+    ai.threatId = null;
+    ai.route = [TARGET];
+    ai.routeIndex = 0;
+    // Lo mismo que setDestination al volver de la huida (world.ts, updateMerchant)
+    ship.path = nav.findPath(ship.pos, nav.nearestNavigable(TARGET, clearance), clearance);
+    ship.destination = { ...ship.path[ship.path.length - 1] };
+    expect(ship.path).toHaveLength(1);
+
+    const radius = SHIP_CLASSES.merchant.radius;
+    let slow = 0;
+    let worstSlow = 0;
+    let minCoast = Infinity;
+    let arrivedAt: number | null = null;
+    for (let tick = 1; tick <= 30 / DT; tick++) {
+      step(world, DT);
+      slow = ship.destination && ship.speed < 0.5 ? slow + DT : 0;
+      worstSlow = Math.max(worstSlow, slow);
+      minCoast = Math.min(minCoast, nav.edgeClearance(ship.pos) - radius);
+      // Al llegar se para y vuelve a pedir el mismo punto (su ruta es solo ese): ahí ya no cuenta como atasco
+      if (distance(ship.pos, TARGET) <= 3) {
+        arrivedAt = +(tick * DT).toFixed(2);
+        break;
+      }
+    }
+    // Si cae, el rojo enseña los segundos parado, lo que el casco entra en la costa (m, ≤ 0) o dónde acabó, en vez de true/false
+    expect({
+      stuckOver10s: worstSlow > 10 ? +worstSlow.toFixed(2) : false,
+      hullTouchesCoast: minCoast <= 0.01 ? +minCoast.toFixed(2) : false,
+      arrived: arrivedAt !== null ? true : { x: +ship.pos.x.toFixed(1), z: +ship.pos.z.toFixed(1), distance: +distance(ship.pos, TARGET).toFixed(1) }
+    }).toEqual({ stuckOver10s: false, hullTouchesCoast: false, arrived: true });
   });
 });

@@ -1,7 +1,8 @@
 // O-40 (ART-DIRECTION §4.3, D43): con el I2 encendido, la Cañonera pirata sale en el minimapa como un ▬ de 11 × 5 px,
 // horizontal, a DPR 1 y 2; el pirata de al lado sigue con su ◆. Servidor propio con el escenario "danger"
-// (server/scenarios.ts): la cañonera y el pirata quietos, sin IA, a 60 m. El jugador se queda donde aparece, a 60–90 m del
-// puerto: su ▲ queda lejos de los dos. Dos medidas:
+// (server/scenarios.ts): la cañonera y el pirata quietos, sin IA, a 60 m. El jugador se queda donde aparece, en un amarre
+// del puerto de D92 con el mapa por defecto (AC-176, AC-210; antes, a 60–90 m del puerto): su ▲ queda lejos de los dos. Dos
+// medidas:
 // (a) las llamadas de dibujo del canvas del minimapa (se envuelve CanvasRenderingContext2D con un script de inicio): el
 //     trazado de cada fill y stroke, su color, su grosor y si hay transformación, del último redibujado completo; la forma
 //     se ata al barco por su posición. En 1440×900 a DPR 1 y 2 y en 390×844 a DPR 2.
@@ -222,7 +223,13 @@ test.describe('Marcadores de D63 en el minimapa', () => {
 // ⚓ del puerto (D73, D87; ART-DIRECTION §4.3, r11 52dd3a1): en lugar del disco de arena del puerto, el ancla de la lámina
 // D87. De las llamadas de dibujo del minimapa: los 2 trazos del ancla (el único trazado con elipse) con su transformación,
 // llevados a px CSS: 13 px de alto (17 unidades del viewBox), el centro de su caja (12, 11) en el puerto, 3,5 px de
-// #07121b y 1,5 de arena con extremos redondos; y ningún disco de arena centrado en el puerto
+// #07121b y 1,5 de arena con extremos redondos. Debajo, con el mapa por defecto (el 1.1, AC-210), lo de D96: la costa del
+// puerto de D92 círculo a círculo (sus 7 discos de arena, todos a menos de 10 px CSS del centro), encima el disco #07121b de
+// 10 px de radio centrado en el puerto, que la tapa, y encima el ⚓. Antes este test asertaba «ningún disco de arena a ≤ 1,5
+// px del puerto», que era lo de D73 con el puerto de un solo círculo del mapa 1.0; con el 1.1, los discos de PORT.0 y PORT.1
+// caen a 1,2–1,4 px del centro en el mapa de 86 px y los contaba como el disco viejo (auditoría de AC-210). La costa va
+// debajo de todo (D96, ART-DIRECTION §4.3), así que no tapa marcadores. Lo del 1.0, sin costa ni disco, lo cubre el
+// unitario de D73 (src/client/__tests__/minimap-markers.test.ts:320)
 const D87_ANCHOR = [
   ['moveTo', 14.5, 5],
   ['arc', 12, 5, 2.5, 0, 6.283],
@@ -235,7 +242,7 @@ const D87_ANCHOR = [
 ];
 
 test.describe('⚓ del puerto en el minimapa', () => {
-  test('D87: el puerto sale como el ⚓ de la lámina, de 13 px de alto y centrado en el puerto, y sin su disco de arena, a DPR 1 y 2 (1440×900 y 390×844)', async ({ browser }) => {
+  test('D87 y D96: el puerto sale como el ⚓ de la lámina, de 13 px de alto y centrado en el puerto, encima del disco de D96 que tapa la costa del puerto, a DPR 1 y 2 (1440×900 y 390×844)', async ({ browser }) => {
     test.setTimeout(120_000);
     const server = await startOwnServer({ SEA_BATTLE_NPCS: '0' });
     try {
@@ -253,11 +260,20 @@ test.describe('⚓ del puerto en el minimapa', () => {
             const recs = (window as unknown as { __o40: { last: { op: string; style: string; lineWidth: number; m: number[]; cap: string; path: (string | number)[][] }[] } }).__o40.last ?? [];
             const anchor = recs.filter((r) => r.path.some((p) => p[0] === 'ellipse'));
             const port = cssW / 2; // el puerto está en (0, 0): el centro del mapa
-            const discs = recs.filter((r) => r.op === 'fill' && r.style === '#e6cf9a' && r.path.length === 1 && r.path[0][0] === 'arc' && Math.hypot(Number(r.path[0][1]) / dpr - port, Number(r.path[0][2]) / dpr - port) <= 1.5);
+            // Discos de un solo arco y su distancia al puerto, en px CSS, con su orden de dibujo
+            const disc = (r: (typeof recs)[number]) => r.op === 'fill' && r.path.length === 1 && r.path[0][0] === 'arc';
+            const fromPort = (r: (typeof recs)[number]) => Math.hypot(Number(r.path[0][1]) / dpr - port, Number(r.path[0][2]) / dpr - port);
+            const indexed = recs.map((r, i) => ({ r, i }));
+            const coast = indexed.filter(({ r }) => disc(r) && r.style === '#e6cf9a' && fromPort(r) < 10);
+            const badge = indexed.filter(({ r }) => disc(r) && r.style === '#07121b' && fromPort(r) <= 0.5);
+            const firstAnchor = indexed.find(({ r }) => r.path.some((p) => p[0] === 'ellipse'))?.i ?? -1;
             return {
               dpr,
               cssW,
-              discs: discs.length,
+              coast: coast.length,
+              badges: badge.map(({ r }) => +(Number(r.path[0][3]) / dpr).toFixed(3)),
+              // D96: la costa, después el disco y después el ⚓
+              layers: coast.length && badge.length ? Math.max(...coast.map((c) => c.i)) < badge[0].i && badge[0].i < firstAnchor : false,
               strokes: anchor.map((r) => {
                 const [sa, , , sd, e, f] = r.m;
                 return {
@@ -276,7 +292,9 @@ test.describe('⚓ del puerto en el minimapa', () => {
           });
           console.log(`D87 ⚓ ${size}: ${JSON.stringify(a)}`);
           expect(a.dpr).toBe(options.deviceScaleFactor);
-          expect.soft(a.discs, `${size}: sin disco de arena en el puerto`).toBe(0);
+          expect.soft(a.coast, `${size}: la costa del puerto de D92, 7 discos de arena junto al centro (D96)`).toBe(7);
+          expect.soft(a.badges, `${size}: un disco #07121b de 10 px de radio centrado en el puerto (D96)`).toEqual([10]);
+          expect.soft(a.layers, `${size}: orden de capas de D96: costa, disco y ⚓`).toBe(true);
           expect.soft(a.strokes.map((s) => [s.op, s.style, s.width, s.cap]), `${size}: 2 trazos, 3,5 px de contorno y 1,5 de arena, redondos`).toEqual([
             ['stroke', '#07121b', 3.5, 'round round'],
             ['stroke', '#e6cf9a', 1.5, 'round round']

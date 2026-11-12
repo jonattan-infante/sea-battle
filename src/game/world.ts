@@ -38,6 +38,8 @@ import {
   PIVOT_MIN_ANGLE,
   PIVOT_SPEED,
   PIVOT_ZONE,
+  NAV_REPLAN_TICKS,
+  NAV_REPLAN_HULL_SLACK,
   MERCHANT_ROUTE_POINTS,
   NAV_LIMIT,
   NPC_POPULATION,
@@ -76,7 +78,7 @@ import {
   WRECK_LIFETIME,
   WRECK_PICKUP_RADIUS
 } from './constants';
-import { Navigator, segmentPointDistance } from './nav';
+import { Navigator, routeTo, segmentPointDistance } from './nav';
 import { NpcAi, Player, PlayerView, Ship, ShipSnapshot, World } from './types';
 import { Vec2, angleDelta, createRng, distance, forward, headingTo, normalizeAngle } from './vec';
 import { maxHpFor } from './stats';
@@ -103,8 +105,8 @@ const EPS = 1e-6;
 export interface CreateWorldOptions {
   seed?: number;
   spawnNpcs?: boolean;
-  i2?: boolean; // AC-187: apagado por defecto, como en staging y prod
-  map?: MapDef; // por defecto, el de la 1.0 (el del juego); MAP_1_1 es el de la 1.1, aún sin activar (constants.ts)
+  i2?: boolean; // AC-187: apagado por defecto, la base de los tests (E-1); el servidor lo enciende salvo SEA_BATTLE_I2=0 (AC-210)
+  map?: MapDef; // por defecto, el de la 1.0, la base de los tests (E-1); el servidor pone el de la 1.1 (MAP_1_1) salvo SEA_BATTLE_MAP=1.0
 }
 
 export function createWorld(options: CreateWorldOptions = {}): World {
@@ -244,7 +246,9 @@ function pirateSpot(world: World, sector: number, checkPlayers: boolean, classId
     fallback ??= p;
     if (!checkPlayers || farFromPlayers(world, p)) return p;
   }
-  return fallback ?? { x: sx * 380, z: sz * 380 };
+  // Último recurso: el agua más cercana a (±380, ±380). En la 1.0 ese punto ya es navegable y sale tal cual; en la 1.1 cae
+  // dentro de la cala de su sector (G1–G4), y sin esto el barco aparecería en la roca (C3)
+  return fallback ?? navigatorOf(world).nearestNavigable({ x: sx * 380, z: sz * 380 }, radius);
 }
 
 function newShip(world: World, classId: string, name: string, ownerId: string | null, pos: Vec2, heading: number): Ship {
@@ -498,9 +502,7 @@ const fail = (reason: string): { ok: false; reason: string } => ({ ok: false, re
 // El destino es el punto navegable más cercano al pedido y, si la clase no llega a él, el alcanzable más cercano: el
 // último waypoint de la ruta (§6, punto 1b; AC-172)
 function setDestination(world: World, ship: Ship, target: Vec2): void {
-  const clearance = navClearance(ship.classId);
-  const nav = navigatorOf(world);
-  ship.path = nav.findPath(ship.pos, nav.nearestNavigable(target, clearance), clearance);
+  ship.path = routeTo(navigatorOf(world), ship.pos, target, ship.classId);
   ship.destination = { ...ship.path[ship.path.length - 1] };
 }
 
@@ -735,6 +737,9 @@ function speedCapOf(world: World, ship: Ship): number {
   }
 }
 
+// Desfase de un barco en los ciclos de NAV_REPLAN_TICKS: el número de su id (ship-N), para no comprobar todos en el mismo tick
+const shipPhase = (ship: Ship) => Number(ship.id.slice(5)) || 0;
+
 function moveShip(world: World, ship: Ship, dt: number): void {
   const stats = classOf(ship);
   let desired = 0;
@@ -746,6 +751,16 @@ function moveShip(world: World, ship: Ship, dt: number): void {
     // Waypoints intermedios: pasar al siguiente al acercarse
     const skipRadius = Math.max(4, stats.radius);
     while (ship.path.length > 1 && distance(ship.pos, ship.path[0]) < skipRadius) ship.path.shift();
+    // Mercantes NPC, cada NAV_REPLAN_TICKS y desfasados por barco: si la recta hasta el siguiente waypoint pasa a menos del
+    // casco + NAV_REPLAN_HULL_SLACK de la costa, re-planifica desde donde está (C3)
+    if (
+      ship.kind === 'merchant' &&
+      ship.ai !== null &&
+      (world.tick + shipPhase(ship)) % NAV_REPLAN_TICKS === 0 &&
+      !nav.segmentClearFrom(ship.pos, ship.path[0], stats.radius + NAV_REPLAN_HULL_SLACK)
+    ) {
+      ship.path = nav.findPath(ship.pos, ship.destination, navClearance(ship.classId));
+    }
     const wp = ship.path[0];
     const dist = distance(ship.pos, wp);
     const final = ship.path.length === 1;

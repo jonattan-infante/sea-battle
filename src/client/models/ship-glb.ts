@@ -289,6 +289,12 @@ export class ShipGlbStore {
     if (!this.disposed && !this.loader && this.ownGlb()) this.loader = this.makeLoader();
   }
 
+  // El cargador de los barcos, para las islas (island-glb.ts): un solo KTX2Loader, con su transcodificador y sus workers.
+  // Lo libera dispose(), no quien lo pide
+  sharedLoader(): GlbLoader {
+    return (this.loader ??= this.makeLoader());
+  }
+
   // Opción A de AC-193 c (BACKLOG :1745): antes de la bienvenida, el GLB de la clase propia predicha (la última del
   // jugador en este navegador o, si no hay, la de salida) empieza a bajar ya, y antes que el cargador, que también hace
   // falta para el primer frame con el modelo. Solo GLB del manifiesto: si la clase aún no tiene URL, la descarga empieza
@@ -473,18 +479,21 @@ export class EntryGate {
   shownAt = 0;
   withGlb = false; // el barco propio entró ya con su GLB
   capped = false; // se abrió por el tope, con el procedural
+  portCapped = false; // AC-200 e: se abrió por el tope sin el modelo del puerto (con su versión sencilla)
 
-  update(now: number, waiting: boolean, loaded: boolean): boolean {
+  // portWaiting (AC-200 e, PROVISIONAL): el modelo del puerto, pedido y sin llegar. La entrada lo espera con el mismo tope
+  update(now: number, waiting: boolean, loaded: boolean, portWaiting = false): boolean {
     if (this.shownAt) return false;
     if (!this.firstFrameAt) this.firstFrameAt = now;
     const capped = now - this.firstFrameAt >= this.waitMs;
-    if (waiting && !capped) {
+    if ((waiting || portWaiting) && !capped) {
       this.lastWaitAt = now;
       return false;
     }
     this.shownAt = now;
     this.withGlb = loaded;
     this.capped = waiting;
+    this.portCapped = portWaiting;
     return true;
   }
 }

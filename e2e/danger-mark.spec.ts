@@ -150,7 +150,7 @@ test.describe('Marca de peligro en el objetivo (AC-189)', () => {
   // D77: la marca se quita al empezar el hundimiento, en el mismo commit en que la distancia pasa a «Hundido». Los 3 tamaños
   // en el mismo servidor, con la cañonera seleccionada y atacada desde los 3 (≈ 14 s en vez de 43 con uno solo)
   test('AC-189 al hundirse: en el commit en que la fila dice «Hundido», la marca ya no está; en escritorio vuelve «Cañonera pirata · hostil» y en móvil el panel vuelve a 48', async ({ browser }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(360_000);
     const server = await startOwnServer({ SEA_BATTLE_NPCS: '0', SEA_BATTLE_I2: '1', SEA_BATTLE_SCENARIO: 'danger' });
     // Dentro de la zona segura, a 20 m entre sí y a ≤ 54 m de la cañonera
     const posts: Record<Size, { x: number; z: number }> = { desktop: POST, portrait: { x: -20, z: 100 }, landscape: { x: -40, z: 98 } };

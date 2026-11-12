@@ -1,12 +1,15 @@
 import fs from 'fs';
 import path from 'path';
+import { CAMERA, computePpm0, HUD_RESERVE, ZOOM } from '../../src/client/art';
 import {
   CANNON_LEVELS,
   CAPTAIN_CLASS,
+  GAME_MAP,
   GUNBOAT_CLASS,
   INTEREST_RADIUS,
   LEVEL_XP,
   ISLANDS,
+  MAX_CANNON_RANGE,
   NAV_LIMIT,
   PIRATE_AGGRO_RADIUS,
   navClearance,
@@ -26,6 +29,7 @@ import {
   applyScenario,
   CAPTAIN_BAIT_POINT,
   CAPTAIN_DOWN_POINT,
+  COMBAT_I2,
   DANGER,
   BLIND_GUNNER_POINT,
   EDGE_ATTACK,
@@ -40,6 +44,7 @@ import {
   parseScenario,
   REPAIR_START_HULL,
   ScenarioName,
+  strandedShips,
   SCENARIOS,
   SHOWCASE_POINT,
   TARGET_FAN,
@@ -580,6 +585,110 @@ describe('escenario "endurance" (AC-91)', () => {
     expect(load.damageTaken).toBeGreaterThan(0);
     expect(load.repairs).toBeGreaterThanOrEqual(3);
     expect(load.deaths).toBe(0);
+  });
+});
+
+// Combate del I2 (AC-90, bloque B-I2 de QA; producto, BACKLOG :1943; E-2), con el mapa del juego y el I2 encendido
+describe('escenario "combat-i2" (AC-90, bloque B-I2), con el I2 encendido', () => {
+  const setup = (seed: number) => {
+    const w = createWorld({ seed, spawnNpcs: false, map: GAME_MAP, i2: true });
+    applyScenario(w, 'combat-i2', { requireNavigable: true });
+    const ships = [...w.ships.values()];
+    return {
+      w,
+      ships,
+      captain: ships.find((s) => s.classId === CAPTAIN_CLASS)!,
+      gunboat: ships.find((s) => s.classId === GUNBOAT_CLASS)!,
+      merchants: ships.filter((s) => s.kind === 'merchant')
+    };
+  };
+  const dist = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.hypot(a.x - b.x, a.z - b.z);
+
+  test('con el mapa del juego y requireNavigable arranca, con todos sus barcos en sitio navegable', () => {
+    const { w, ships } = setup(1);
+    expect(w.islands).toBe(GAME_MAP.islands);
+    expect(strandedShips(w, new Set())).toEqual([]);
+    expect(ships.map((s) => s.classId).sort()).toEqual([CAPTAIN_CLASS, GUNBOAT_CLASS, ...Array(COMBAT_I2.merchants).fill('merchant')]);
+  });
+
+  test('el Capitán y la cañonera con su IA, anclados en su puesto y con puntería baja; 5 mercantes quietos que reaparecen en su sitio; oro para N2 + N3', () => {
+    const { w, captain, gunboat, merchants } = setup(1);
+    for (const [ship, at] of [[captain, COMBAT_I2.captain], [gunboat, COMBAT_I2.gunboat]] as const) {
+      expect([ship.classId, ship.ai?.state, ship.ai?.origin, ship.pos, ship.anchored, ship.holdPosition]).toEqual([ship.classId, 'patrol', at, at, true, true]);
+      expect(ship.accuracyOverride).toBe(COMBAT_I2.accuracy);
+      expect(ship.accuracyOverride).toBeLessThan(SHIP_CLASSES[ship.classId].cannon!.accuracy);
+    }
+    expect(merchants).toHaveLength(COMBAT_I2.merchants);
+    for (const m of merchants) expect([m.ai, m.respawnPos, dist(m.pos, COMBAT_I2.self)]).toEqual([null, m.pos, expect.closeTo(COMBAT_I2.merchantRadius, 6)]);
+    expect(addPlayer(w, 'u1', 'Ana').gold).toBe(CANNON_LEVELS[1].price + CANNON_LEVELS[2].price);
+  });
+
+  test('el puesto, fuera de la zona segura y a tiro de los dos; los mercantes, a tiro del N3; los del I2, fuera de la exclusión del puerto; en el marco útil de 1440×900, los dos del I2 a 1,0× y 1,5×, e I5 entera a 1,5×', () => {
+    const { captain, gunboat, merchants } = setup(1);
+    expect(Math.hypot(COMBAT_I2.self.x, COMBAT_I2.self.z)).toBeGreaterThan(SAFE_ZONE_RADIUS);
+    for (const s of [captain, gunboat]) {
+      expect(dist(s.pos, COMBAT_I2.self)).toBeLessThanOrEqual(SHIP_CLASSES[s.classId].cannon!.range);
+      expect(Math.hypot(s.pos.x, s.pos.z)).toBeGreaterThan(PIRATE_PORT_EXCLUSION);
+    }
+    for (const m of merchants) expect(dist(m.pos, COMBAT_I2.self)).toBeLessThanOrEqual(CANNON_LEVELS[2].range);
+    // La cámara del juego con N3 centrada en el puesto (src/client/art.ts): el marco útil de 1440×900 deja fuera los 12 px
+    // de los lados y las reservas del HUD de arriba y de abajo. A 1,0× (por defecto) y a 1,5× (la del arnés de AC-90, B-I2)
+    const s = Math.sin(CAMERA.elevation);
+    const { top, bottom } = HUD_RESERVE.desktop;
+    const inUseful = (zoom: number, p: { x: number; z: number }, r = 0) => {
+      const ppm = computePpm0(1440, 900, MAX_CANNON_RANGE) / zoom;
+      const [sx, sy] = [720 + (p.x - COMBAT_I2.self.x) * ppm, 450 + (p.z - COMBAT_I2.self.z) * ppm * s];
+      return sx - r * ppm >= ZOOM.sideMarginPx && sx + r * ppm <= 1440 - ZOOM.sideMarginPx && sy - r * ppm * s >= top && sy + r * ppm * s <= 900 - bottom;
+    };
+    for (const zoom of [1, 1.5]) expect([zoom, inUseful(zoom, captain.pos), inUseful(zoom, gunboat.pos)]).toEqual([zoom, true, true]);
+    const i5 = GAME_MAP.islands.filter((i) => i.id.startsWith('I5.'));
+    expect([i5.length, i5.every((i) => inUseful(1.5, i, i.radius))]).toEqual([3, true]);
+  });
+
+  // Lo que mide el bloque B-I2, sin cliente: un jugador con cañones N3 quieto en el puesto ataca al mercante vivo más
+  // cercano durante 60 s y después repara 60 s. Con 3 semillas: ≥ 18 andanadas propias en los 60 s de ataque (el umbral del
+  // bloque, BACKLOG :1943; 20 es el máximo con la recarga de 3 s, y con él un tick de retraso lo rompía: O-6 de QA-74), los
+  // dos del I2 disparan en cada tercio, siguen vivos y en su puesto, y el barco propio no se hunde ni atacando ni reparando
+  test.each([1, 2, 3])('semilla %i: 60 s atacando con N3 (≥ 18 andanadas) y 60 s reparando; los dos del I2 disparan en cada tercio, siguen vivos y en su puesto, y el barco propio no se hunde', (seed) => {
+    const { w, captain, gunboat, merchants } = setup(seed);
+    const player = addPlayer(w, 'bot', 'Bot');
+    player.upgrades.cannons = 3;
+    const ship = shipOfPlayer(w, 'bot')!;
+    ship.pos = { ...COMBAT_I2.self };
+    ship.protectedUntil = 0;
+    const merchantIds = new Set(merchants.map((m) => m.id));
+    const thirds = { [captain.id]: [0, 0, 0], [gunboat.id]: [0, 0, 0] };
+    let own = 0;
+    let sunk = 0;
+    const run = (seconds: number, act: () => void, t0: number) => {
+      for (let i = 0; i < seconds * TICK_RATE; i++) {
+        act();
+        step(w, 1 / TICK_RATE);
+        for (const e of drainEvents(w)) {
+          if (e.type === 'volley' && e.shipId === ship.id) own++;
+          if (e.type === 'volley' && thirds[e.shipId] && t0 === 0) thirds[e.shipId][Math.min(2, Math.floor(i / (20 * TICK_RATE)))]++;
+          if (e.type === 'sunk' && e.shipId === ship.id) sunk++;
+        }
+      }
+    };
+    run(60, () => {
+      if (ship.state !== 'alive' || ship.attackTargetId) return;
+      const next = [...w.ships.values()].filter((s) => merchantIds.has(s.id) && s.state === 'alive').sort((a, b) => dist(a.pos, ship.pos) - dist(b.pos, ship.pos))[0];
+      if (next) attack(w, 'bot', next.id);
+    }, 0);
+    const volleys = own;
+    const hpAfterAttack = ship.hp;
+    run(60, () => {
+      if (ship.state === 'alive' && !ship.repairing && ship.hp < ship.maxHp) setRepair(w, 'bot', true);
+    }, 60);
+    console.log(`combat-i2, semilla ${seed}: ${volleys} andanadas propias en 60 s · Capitán ${thirds[captain.id].join('/')} y cañonera ${thirds[gunboat.id].join('/')} por tercio · vida ${hpAfterAttack} tras atacar y ${ship.hp} tras reparar`);
+    expect(volleys).toBeGreaterThanOrEqual(18);
+    expect({ captain: thirds[captain.id].every((n) => n >= 1), gunboat: thirds[gunboat.id].every((n) => n >= 1) }).toEqual({ captain: true, gunboat: true });
+    for (const [s, at] of [[captain, COMBAT_I2.captain], [gunboat, COMBAT_I2.gunboat]] as const) {
+      expect([s.classId, s.state, dist(s.pos, at) <= 0.5]).toEqual([s.classId, 'alive', true]);
+    }
+    expect([sunk, ship.state]).toEqual([0, 'alive']);
+    expect(ship.hp).toBeGreaterThan(hpAfterAttack);
   });
 });
 
