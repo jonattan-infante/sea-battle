@@ -1403,7 +1403,7 @@ Si A tumba el proceso o pierde progreso, el fallo es P0, y con la 1.0 ya en prod
   - (g) **Cabe** en 1440×900, 390×844 y 844×390: ningún texto recortado (`scrollWidth ≤ clientWidth` en cada fila y en las dos líneas de lo que falta), con los dos casos más largos, «Te faltan 1900 XP para Contramaestre (nivel 9)» y «Te faltan 13.000 XP para Almirante (nivel 17)». La página no hace scroll (GDD §5): si la lista no cabe, se desplaza dentro de la pantalla.
   - (h) **Coste cero.** Abrirla y cerrarla envía 0 mensajes y no pide nada al servidor: usa la XP que el cliente ya tiene (`PlayerView.xp`, AC-151). Con ella abierta y sin eventos, 0 commits de React en 10 s (AC-83) y 0 mensajes (AC-86). Si llega XP con ella abierta, se actualiza al cambiar, como el resto del HUD (≤ 10 Hz).
 
-  *Por qué es P0:* hoy las cifras de la XP solo están en el `title` de la barra (`src/components/hud/Hud.tsx:112-113` en `4b4c688`; D76), que en móvil no se ve, y ninguna pantalla enseña los niveles ni las 5 insignias. Es lo que preguntó Jonattan («¿Dónde veo los rangos? o las insignias posibles?»), y lo pide como necesario. Sin ella, el objetivo 1, «esto te permite tener insignias de nivel», se ve a medias. Cuesta poco: es solo cliente, sin servidor, red ni BD. La forma es de game-ux (D78) y la implementa dev-render después de la marca de peligro (AC-189; «Orden de ataque», puesto 3), **y solo con el visto bueno de Jonattan a la lámina de D78** (AC-192, regla de `CLAUDE.md` del 2026-10-18).
+  *Por qué es P0:* hoy las cifras de la XP solo están en el `title` de la barra (`src/components/hud/Hud.tsx:112-113` en `4b4c688`; D76), que en móvil no se ve, y ninguna pantalla enseña los niveles ni las 5 insignias. Es lo que preguntó Jonattan («¿Dónde veo los rangos? o las insignias posibles?»), y lo pide como necesario. Sin ella, el objetivo 1, «esto te permite tener insignias de nivel», se ve a medias. Cuesta poco: es solo cliente, sin servidor, red ni BD. La forma es de game-ux (D78) y la implementa dev-render después de la marca de peligro (AC-189; «Orden de ataque», puesto 3), **y solo con el visto bueno de Jonattan a la lámina de D78** (AC-192, regla de `CLAUDE.md` del 2026-10-18). *2026-11-15 (producto):* no está en la 1.2.0, y pasa a la 1.2.x como P1 (ver «AC-190, la pantalla de niveles, a la 1.2.x», al final del archivo).
 
   Casos de la lógica de la pantalla (la misma `xpProgress` del HUD, `src/client/hud-logic.ts:78` en `4b4c688`):
 
@@ -2195,3 +2195,16 @@ Va al final del archivo para no mover las líneas que se citan.
 - **«O-4» y «el comentario de `ci.yml`» son la misma pieza,** la 10: es el O-4 de QA-75. El O-4 de QA-74 es el unitario de AC-158, la 5.
 - **La 1.2.x no es una versión con fecha:** cada pieza sale cuando esté, con su PR y el veredicto de QA. Las que cambian lo que se ve (la 3 y el aviso de la 4) pasan antes por el «Flujo de láminas».
 - **Lo que no está en la lista:** la Goleta, el Navío, las familias y el Galeón siguen en el backlog (H-1501, H-1502, H-1701 y H-1702), sin versión. Su orden lo fija producto aparte, con la delegación de Jonattan del 2026-10-17. La Goleta y el Navío piden antes el OK de Jonattan a sus láminas en un entorno desplegado (`:1549`).
+
+### AC-190, la pantalla de niveles, a la 1.2.x (producto, 2026-11-15)
+
+*De* la guía del jugador del PR de documentación y del lead: en `801c185` no hay pantalla de niveles. `N` está reservada y no hace nada (`src/client/key-bindings.ts:21-22` y `:30`; fuera de ese archivo, ningún código atiende `KeyN`). Sin embargo, GDD §5 y §10b la describían como si existiera; queda anotado en el GDD de r11, en la fila de la tecla y en §10b. Va al final del archivo para no mover las líneas que se citan.
+
+- **Faltaba en la lista de la 1.2.x (`:2179-2193`).** AC-190 (`:1396`) pasó de la 1.1 a la 1.2 (`:491`), pero AC-210 no la incluía, y la 1.2.0 salió sin ella. Jonattan aprobó su lámina, D78 (`:371`).
+- **Entra como la pieza 14, P1, de dev,** y va la primera entre las de dev, delante del prepare (la pieza 2). *Por qué:*
+  - es lo que pidió Jonattan como necesario («¿Dónde veo los rangos? o las insignias posibles?», `:1406`);
+  - sin ella, las cifras de la XP solo están en el `title` de la barra, que en móvil no se ve (`src/components/hud/Hud.tsx:66-67` en `801c185`);
+  - tiene la lámina aprobada, y es solo cliente, sin servidor, red ni BD.
+- **Criterio:** la letra de AC-190, de (a) a (h). En (d), las filas 5 y 9 no dicen nada, porque la Goleta y el Navío no están en el juego. Las insignias son las del juego: QA compara la pantalla con D78, y las insignias, con su propia lámina (`:343`).
+- **No pide lámina nueva** mientras se construya como D78. Si cambia algo de lo que se ve, vuelve al «Flujo de láminas».
+- **En el ROADMAP** va en «Ahora» (el texto va en el mensaje de producto al lead).
