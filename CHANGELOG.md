@@ -6,6 +6,37 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-12
+
+### Añadido
+
+- **Un mapa nuevo.** El mar sigue midiendo 1 × 1 km, con el puerto en el centro y la misma zona segura de 110 m, pero ahora tiene 8 islas, 4 calas piratas y un paso entre escollos. Cerca del puerto hay dos islotes con poblados de pescadores, y cuanto más te alejas, más oscuro y rocoso es el paisaje. Cada zona pirata se reconoce por el suyo: el acantilado al noreste, el volcán al noroeste, la roca al suroeste y los escollos y la selva al sureste. Al fondo de cada una hay una cala pirata, la guarida del Capitán. Las 6 islas de siempre siguen en su sitio, con otra forma y con sus islotes. Como antes, las islas cortan el paso, pero no paran los disparos.
+- **Un paso entre escollos.** Al sureste, 3 rocas a flor de agua dejan pasos estrechos. Caben la Balandra y el Bergantín; la Fragata, las cañoneras y el Capitán pirata, no. Si te persigue un barco grande, puedes escapar por ahí. No hace falta calcularlo: haz clic al otro lado y la ruta cruza el paso o lo rodea según tu barco.
+- **Un puerto con forma de isla,** con ciudad, fuerte, muelles, un palmar y 12 amarres.
+- **El Capitán pirata, el jefe del mar.** Aparece cuando se han hundido 10 piratas o cañoneras en el servidor desde que cayó el anterior, en la guarida de la zona pirata con menos jugadores, y todos reciben el aviso, por ejemplo «¡Capitán pirata en el noroeste, sector B2!». Su icono se ve en el minimapa desde cualquier punto, y nunca hay dos a la vez. Tiene 1 800 de vida y cañones que llegan a 65 m. Si se aleja más de 150 m de su guarida, o tú te alejas más de 110 m de él, vuelve a la guarida y recupera toda la vida. Hundirlo da 600 de oro y 240 de experiencia, repartidos según el daño, y deja una caja de restos de 150 de oro. El aviso de su hundimiento nombra a quienes se reparten el botín.
+- **Cañoneras piratas.** Hay 4, una por zona pirata, en lugar de 4 de los 12 piratas: ahora son 8 piratas y 4 cañoneras. Mantienen la distancia: sus cañones llegan a 65 m, más que los de nivel 1 (60 m), y si te acercas a menos de 55 m se alejan sin dejar de disparar. Son más lentas que cualquiera de tus barcos, así que puedes alcanzarlas. Tienen 900 de vida, dan 210 de oro y 60 de experiencia, dejan una caja de 50 y reaparecen a los 45 s.
+- **«Demasiado fuerte para tu barco».** El panel del objetivo te avisa cuando hundir ese barco tú solo te costaría más de la mitad de tu vida. Con la Balandra y los cañones de nivel 1, sale con las cañoneras y con el Capitán; con los cañones de nivel 2, deja de salir con las cañoneras.
+
+El Capitán pirata, las cañoneras y ese aviso ya navegaban desde el 7 de noviembre de 2026. Desde esta versión son parte fija del juego.
+
+### Cambiado
+
+- **Apareces atracado en el puerto.** Al entrar al juego y al zarpar tras hundirte, tu barco aparece atracado de popa en un amarre libre, con la proa hacia el mar. Si los 12 amarres están ocupados, apareces junto al puerto, como antes.
+- **La primera vez que entras, el juego descarga los modelos de las islas y del puerto.** Las siguientes veces ya los tiene tu navegador y no descarga nada. Con una conexión lenta, al entrar puedes ver el puerto y las islas un momento en una versión sencilla, con la misma costa, hasta que llegan.
+- **Interno: las pruebas de rutas usan el mapa nuevo,** con las 7 clases de barco. Otra prueba lanza barcos de 3 clases contra la costa de las 16 formas, en 8 rumbos, y ningún casco toca tierra.
+- **Interno: un escenario de prueba de combate con el Capitán y una cañonera,** para medir el rendimiento del juego con ellos. Solo existe en el modo invitado de pruebas, que nunca corre en Railway.
+- **Interno: las pruebas de navegador esperan hasta 120 s a que entre cada página** (antes, 30). Con el mapa nuevo y varias páginas abiertas a la vez, el WebGL por software de la CI tarda más en dibujarlas.
+- **Interno: 6 pruebas de la cámara y del HUD pasan a correr solo con tarjeta gráfica,** en el Mac, antes de cada versión. Miden lo que tarda una transición, y con el mapa nuevo el WebGL por software de la CI no les da los frames que necesitan.
+
+### Operación
+
+- **El mapa nuevo, el Capitán pirata y las cañoneras vienen encendidos sin ninguna variable.** `SEA_BATTLE_I2=1` ya no hace falta, y dejarla puesta no cambia nada ni da avisos. Para una emergencia, `SEA_BATTLE_MAP=1.0` vuelve al mapa de la 1.0 y `SEA_BATTLE_I2=0` apaga el Capitán y las cañoneras, con un redespliegue y sin tocar código. El arranque escribe qué mapa queda y si el Capitán y las cañoneras están encendidos, y `/healthz` lo dice en `map` e `i2`.
+
+### Límites conocidos
+
+- **La portada todavía enseña las islas de antes.** El juego ya usa el mapa nuevo; la portada se pondrá al día en una próxima versión.
+- **Sin tarjeta gráfica, el mapa nuevo va muy lento.** Si tu navegador dibuja el juego por software, sin la tarjeta gráfica (por ejemplo, en una máquina virtual), la 1.2 va a unos 4 fps en un equipo de 2 núcleos, frente a unos 12 de la 1.1, y cuesta jugar. Si puedes, activa la aceleración por hardware del navegador. Se estudia para una próxima versión.
+
 ## [1.1.4] - 2026-11-04
 
 ### Corregido
@@ -196,7 +227,8 @@ Detalle y criterios en `docs/game/BACKLOG.md`, «Conocidos de la 1.0.0».
 - **clerk-js fijada en 5.128.0** (`src/lib/clerk-js.ts`). El navegador carga esa versión y no la última 5.x, así que Clerk no puede cambiar textos ni comportamiento en prod sin un deploy nuestro. Mantenimiento: cada subida de `@clerk/nextjs` o de clerk-js cambia la versión fijada a propósito, en un commit propio, y vuelve a pasar las pruebas de los textos en español del inicio de sesión y el registro (AC-140 c y AD-35 d). Así ningún texto nuevo de Clerk en inglés llega a prod sin que nadie lo vea.
 - **Node 24 en todo**: local, CI y Railway usan la misma versión mayor. La fijan `engines.node` (`24.x`) en `package.json`, `.nvmrc` y la CI, que lee `.nvmrc`. Si `verify` corre con otra versión mayor, falla `server/__tests__/node-runtime.test.ts`.
 
-[Unreleased]: https://github.com/jonattan-infante/sea-battle/compare/v1.1.4...HEAD
+[Unreleased]: https://github.com/jonattan-infante/sea-battle/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/jonattan-infante/sea-battle/compare/v1.1.4...v1.2.0
 [1.1.4]: https://github.com/jonattan-infante/sea-battle/compare/v1.1.3...v1.1.4
 [1.1.3]: https://github.com/jonattan-infante/sea-battle/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/jonattan-infante/sea-battle/compare/v1.1.1...v1.1.2
