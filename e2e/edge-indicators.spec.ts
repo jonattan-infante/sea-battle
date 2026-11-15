@@ -93,7 +93,7 @@ async function eightAndBlocked(page: Page, label: string, blocked: Point) {
 test.describe('Indicadores de borde y Centrar (E13)', () => {
   test.beforeEach(({ page }) => presetOptions(page, 'free')); // E18: la vista libre es la cámara «Libre» (AC-207)
 
-  test('AC-121 y AD-30 en 1440×900: 8 direcciones, el rayo sobre el minimapa y Centrar, y bajo la barra de acciones sí sale', async ({ page }) => {
+  test('AC-121 y AD-30 en 1440×900: 8 direcciones, el rayo sobre el minimapa y Centrar, y bajo la barra de acciones sí sale @gpu', async ({ page }) => {
     await enterGame(page);
     await expect(page.getByTestId('recenter')).toHaveCount(0); // Centrar solo existe en vista libre
     await eightAndBlocked(page, '1440×900', { x: 150, z: -60 });
@@ -127,14 +127,14 @@ test.describe('Indicadores de borde y Centrar (E13)', () => {
       await waitFor(() => mode(page), (m) => m === 'follow', 2000, 20);
       const ms = Date.now() - t0;
       console.log(`AC-119 ${how}: seguimiento a los ${ms} ms (con la ida y vuelta de Playwright)`);
-      expect(await centred()).toBe(true);
+      // Se espera al estado, con un tope de holgura: el fundido de 150 ms del chip lo vigila :96 en el Mac (QA-75 O-9)
+      await expect.poll(centred, { message: `${how}: el barco en el 10 % central`, timeout: 10_000 }).toBe(true);
       await expect(page.getByTestId('recenter')).toHaveCount(0);
-      await page.waitForTimeout(250);
-      expect(await chips(page)).toHaveLength(0);
+      await expect.poll(() => chips(page), { message: `${how}: 0 chips`, timeout: 10_000 }).toHaveLength(0);
     }
   });
 
-  test('AC-121 y AD-30 @mobile en 390×844 (el rayo sobre Centrar) y 844×390 (sobre Reparar)', async ({ page }) => {
+  test('AC-121 y AD-30 @mobile en 390×844 (el rayo sobre Centrar) y 844×390 (sobre Reparar) @gpu', async ({ page }) => {
     test.setTimeout(120_000);
     await enterGame(page);
     await eightAndBlocked(page, '390×844', { x: 80, z: 110 });

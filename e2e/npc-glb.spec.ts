@@ -1,7 +1,7 @@
 // La Cañonera y el Capitán de D91 en GLB (punto 3 de dev-render; ASSET-SPEC §13, sus filas): entran por el cargador de los
 // barcos (src/client/models/ship-glb.ts), con el .glb y su .ktx2 aparte (paso 4c) en public/models. El cliente solo baja
 // en segundo plano los modelos de los barcos que pueden salir (BACKLOG :423): la bienvenida lista las clases de NPC del
-// mundo, y con el I2 apagado no están la Cañonera ni el Capitán
+// mundo, y con el I2 apagado (SEA_BATTLE_I2=0, la palanca de E-1 de AC-210) no están la Cañonera ni el Capitán
 import fs from 'fs';
 import path from 'path';
 import { expect, Page, test } from '@playwright/test';
@@ -32,14 +32,21 @@ const npcClasses = (page: Page) =>
   page.evaluate(() => (window.__SEA_BATTLE__!.runtime() as unknown as { src: { welcome: { npcClasses: string[] } | null } }).src.welcome?.npcClasses ?? null);
 
 test.describe('Precarga de los GLB de los barcos que pueden salir (BACKLOG :423)', () => {
-  test('con el I2 apagado no se pide ni el .glb ni el .ktx2 de la Cañonera ni del Capitán', async ({ page }) => {
-    const requests = countRequests(page);
-    await enterGame(page);
-    await page.waitForTimeout(3_000); // la precarga de los demás GLB arranca al entrar (prefetchAll)
-    const classes = await npcClasses(page);
-    console.log(`BACKLOG :423, I2 apagado: npcClasses ${JSON.stringify(classes)} · peticiones ${JSON.stringify(requests())}`);
-    expect(classes).toEqual(['pirate', 'merchant']);
-    expect(requests()).toEqual(each(0));
+  // Antes iba contra el servidor compartido, cuando el I2 apagado era lo de por defecto (AC-210)
+  test('con el I2 apagado (SEA_BATTLE_I2=0, E-1) no se pide ni el .glb ni el .ktx2 de la Cañonera ni del Capitán', async ({ page }) => {
+    test.setTimeout(120_000);
+    const server = await startOwnServer({ SEA_BATTLE_I2: '0' });
+    try {
+      const requests = countRequests(page);
+      await enterGame(page, server.url);
+      await page.waitForTimeout(3_000); // la precarga de los demás GLB arranca al entrar (prefetchAll)
+      const classes = await npcClasses(page);
+      console.log(`BACKLOG :423, I2 apagado: npcClasses ${JSON.stringify(classes)} · peticiones ${JSON.stringify(requests())}`);
+      expect(classes).toEqual(['pirate', 'merchant']);
+      expect(requests()).toEqual(each(0));
+    } finally {
+      await server.kill();
+    }
   });
 
   test('con el I2 encendido se piden 1 vez el .glb y el .ktx2 de cada uno, y las dos clases acaban con su GLB y su KTX2', async ({ page }) => {
