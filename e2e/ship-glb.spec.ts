@@ -10,6 +10,7 @@ import { contentHash, E2E_PREFIX } from '../scripts/glb/content-hash';
 import { externalKtx2Fixture } from '../scripts/glb/e2e-models';
 import { addFallback, solidPng } from '../scripts/glb/glb-fallback';
 import { enterGame, entryOf, glbBeforeEntry } from './helpers';
+import { OwnServer, startOwnServer } from './own-server';
 
 const URL_OK = '/models/test/ship_sloop.glb';
 const URL_404 = '/models/test/missing.glb';
@@ -167,12 +168,20 @@ test.describe('Barcos en GLB (ASSET-SPEC §13)', () => {
 
   // AC-193 c, opción B (producto, 2026-10-18): la entrada espera al GLB propio, como mucho 0,5 s sobre la de hoy (el primer
   // frame). Los tiempos de SwiftShader no valen como cifra: se comprueba en qué frame se abre, que no depende de su duración
-  test('AC-193 c (B): sin ningún GLB que pueda salir (ninguno de una clase del jugador y el I2 apagado) se entra en el primer frame, como hoy', async ({ page }) => {
-    await enterGame(page);
-    const entry = await entryOf(page);
-    console.log(`AC-193 c entrada sin GLB: ${JSON.stringify(entry)}`);
-    expect(entry).toMatchObject({ lastWaitAt: 0, withGlb: false, capped: false, coverHidden: true });
-    expect(entry.shownAt).toBe(entry.firstFrameAt);
+  // «Sin ningún GLB que pueda salir» solo pasa con las 2 palancas de E-1 (AC-210 d): con el mapa 1.1 se piden el puerto y las
+  // islas, y con el I2, la Cañonera y el Capitán. Estos 3 tests iban contra el servidor compartido, cuando era lo de por defecto
+  test('AC-193 c (B): sin ningún GLB que pueda salir (SEA_BATTLE_MAP=1.0 y SEA_BATTLE_I2=0, E-1; ninguno de una clase del jugador) se entra en el primer frame, como hoy', async ({ page }) => {
+    test.setTimeout(120_000);
+    const server = await startOwnServer({ SEA_BATTLE_MAP: '1.0', SEA_BATTLE_I2: '0' });
+    try {
+      await enterGame(page, server.url);
+      const entry = await entryOf(page);
+      console.log(`AC-193 c entrada sin GLB: ${JSON.stringify(entry)}`);
+      expect(entry).toMatchObject({ lastWaitAt: 0, withGlb: false, capped: false, coverHidden: true });
+      expect(entry.shownAt).toBe(entry.firstFrameAt);
+    } finally {
+      await server.kill();
+    }
   });
 
   // Sin WebGL no hay frames que abran la entrada. En la 1.0.3 se ve el canvas vacío con el HUD: R3F crea el renderer
@@ -180,39 +189,52 @@ test.describe('Barcos en GLB (ASSET-SPEC §13)', () => {
   // La entrada debe hacer lo mismo, con y sin GLB en el manifiesto (producto, AC-193 c): sin GLB que pueda salir la portada
   // se quita al conectarla; con él, GameCanvas avisa al runtime (rendererFailed) de que three no pudo crear el renderer
   for (const withGlb of [false, true]) {
-    test(`AC-193 c (B): sin WebGL y ${withGlb ? 'con GLB en el manifiesto' : 'sin ningún GLB que pueda salir (ninguno de una clase del jugador y el I2 apagado)'}, la portada no se queda: se ve el HUD, como en la 1.0.3`, async ({ page }) => {
-      await page.addInitScript(() => {
-        const getContext = HTMLCanvasElement.prototype.getContext as (this: HTMLCanvasElement, type: string, ...rest: unknown[]) => unknown;
-        (HTMLCanvasElement.prototype as unknown as { getContext: typeof getContext }).getContext = function (type, ...rest) {
-          return /webgl/i.test(type) ? null : getContext.call(this, type, ...rest);
-        };
-      });
-      if (withGlb) {
-        const bytes = fs.readFileSync(FIXTURE);
-        await page.route(`**${URL_OK}`, (route) => route.fulfill({ body: bytes, contentType: 'model/gltf-binary' }));
-        await glbBeforeEntry(page, URL_OK);
+    test(`AC-193 c (B): sin WebGL y ${withGlb ? 'con GLB en el manifiesto' : 'sin ningún GLB que pueda salir (SEA_BATTLE_MAP=1.0 y SEA_BATTLE_I2=0, E-1; ninguno de una clase del jugador)'}, la portada no se queda: se ve el HUD, como en la 1.0.3`, async ({ page }) => {
+      test.setTimeout(120_000);
+      // Con GLB, el servidor compartido, con el mapa y el I2 por defecto; sin ninguno, las 2 palancas de E-1
+      const server: OwnServer | null = withGlb ? null : await startOwnServer({ SEA_BATTLE_MAP: '1.0', SEA_BATTLE_I2: '0' });
+      try {
+        await page.addInitScript(() => {
+          const getContext = HTMLCanvasElement.prototype.getContext as (this: HTMLCanvasElement, type: string, ...rest: unknown[]) => unknown;
+          (HTMLCanvasElement.prototype as unknown as { getContext: typeof getContext }).getContext = function (type, ...rest) {
+            return /webgl/i.test(type) ? null : getContext.call(this, type, ...rest);
+          };
+        });
+        if (withGlb) {
+          const bytes = fs.readFileSync(FIXTURE);
+          await page.route(`**${URL_OK}`, (route) => route.fulfill({ body: bytes, contentType: 'model/gltf-binary' }));
+          await glbBeforeEntry(page, URL_OK);
+        }
+        await page.goto(`${server?.url ?? ''}/game`);
+        await expect(page.getByTestId('player-frame')).toBeVisible({ timeout: 30_000 });
+        await expect(page.locator('.game-root > [data-testid="loading"]')).toBeHidden();
+        const entry = await entryOf(page);
+        console.log(`AC-193 c entrada sin WebGL (${withGlb ? 'con' : 'sin'} GLB): ${JSON.stringify(entry)}`);
+        expect(entry.firstFrameAt).toBe(0); // de verdad no hubo ningún frame
+      } finally {
+        await server?.kill();
       }
-      await page.goto('/game');
-      await expect(page.getByTestId('player-frame')).toBeVisible({ timeout: 30_000 });
-      await expect(page.locator('.game-root > [data-testid="loading"]')).toBeHidden();
-      const entry = await entryOf(page);
-      console.log(`AC-193 c entrada sin WebGL (${withGlb ? 'con' : 'sin'} GLB): ${JSON.stringify(entry)}`);
-      expect(entry.firstFrameAt).toBe(0); // de verdad no hubo ningún frame
     });
   }
 
   // Sin GLB que pueda salir, la entrada es la de hoy también antes del primer frame: la portada se quita al conectarla, sin
   // esperar a ninguno. Con requestAnimationFrame parado no llega ningún frame aunque haya WebGL
-  test('AC-193 c (B): sin ningún GLB que pueda salir (ninguno de una clase del jugador y el I2 apagado) la portada no espera a ningún frame, como hoy', async ({ page }) => {
-    await page.addInitScript(() => {
-      window.requestAnimationFrame = () => 0;
-    });
-    await page.goto('/game');
-    await expect(page.getByTestId('player-frame')).toBeVisible({ timeout: 30_000 });
-    await expect(page.locator('.game-root > [data-testid="loading"]')).toBeHidden();
-    const entry = await entryOf(page);
-    console.log(`AC-193 c entrada sin frames y sin GLB: ${JSON.stringify(entry)}`);
-    expect(entry.firstFrameAt).toBe(0);
+  test('AC-193 c (B): sin ningún GLB que pueda salir (SEA_BATTLE_MAP=1.0 y SEA_BATTLE_I2=0, E-1; ninguno de una clase del jugador) la portada no espera a ningún frame, como hoy', async ({ page }) => {
+    test.setTimeout(120_000);
+    const server = await startOwnServer({ SEA_BATTLE_MAP: '1.0', SEA_BATTLE_I2: '0' });
+    try {
+      await page.addInitScript(() => {
+        window.requestAnimationFrame = () => 0;
+      });
+      await page.goto(`${server.url}/game`);
+      await expect(page.getByTestId('player-frame')).toBeVisible({ timeout: 30_000 });
+      await expect(page.locator('.game-root > [data-testid="loading"]')).toBeHidden();
+      const entry = await entryOf(page);
+      console.log(`AC-193 c entrada sin frames y sin GLB: ${JSON.stringify(entry)}`);
+      expect(entry.firstFrameAt).toBe(0);
+    } finally {
+      await server.kill();
+    }
   });
 
   test('AC-193 c (B): con el GLB propio a tiempo, el barco propio entra ya con él', async ({ page }) => {
@@ -233,22 +255,30 @@ test.describe('Barcos en GLB (ASSET-SPEC §13)', () => {
     expect(requests).toHaveLength(1); // la descarga anticipada es la que usa el pump
   });
 
-  test('AC-193 c (B): la espera nunca bloquea: con la descarga del modelo abortada se entra dentro del tope con el de hoy', async ({ page }) => {
-    const warnings: string[] = [];
-    const errors: string[] = [];
-    page.on('console', (m) => (m.type() === 'warning' ? warnings : m.type() === 'error' ? errors : []).push(m.text()));
-    await page.route(`**${URL_OK}`, (route) => route.abort());
-    await glbBeforeEntry(page, URL_OK);
-    await enterGame(page);
-    const entry = await entryOf(page);
-    const view = await ownView(page);
-    console.log(`AC-193 c entrada con la descarga abortada: ${JSON.stringify({ entry, view, warnings })}`);
-    expect(entry).toMatchObject({ withGlb: false, capped: false, coverHidden: true }); // el fallo abre la entrada sin esperar al tope
-    expect(entry.lastWaitAt - entry.firstFrameAt).toBeLessThan(OWN_GLB_WAIT_MS);
-    expect(view.modelMap).toBeNull();
-    expect(warnings.filter((w) => w.startsWith('[ship-glb] sloop'))).toHaveLength(1);
-    // La petición abortada la cuenta el navegador como error de red; el juego no añade ninguno
-    expect(errors.filter((e) => !e.includes('net::ERR_FAILED'))).toEqual([]);
+  // Con el mapa 1.0 de E-1 (AC-210 d): con el 1.1, la entrada espera también al puerto de D92 (AC-200 e), y entonces que se
+  // abra antes del tope ya no dice nada del fallo del barco propio. Antes iba contra el servidor compartido, con el 1.0 de por defecto
+  test('AC-193 c (B): la espera nunca bloquea: con la descarga del modelo abortada se entra dentro del tope con el de hoy (SEA_BATTLE_MAP=1.0, E-1)', async ({ page }) => {
+    test.setTimeout(120_000);
+    const server = await startOwnServer({ SEA_BATTLE_MAP: '1.0' });
+    try {
+      const warnings: string[] = [];
+      const errors: string[] = [];
+      page.on('console', (m) => (m.type() === 'warning' ? warnings : m.type() === 'error' ? errors : []).push(m.text()));
+      await page.route(`**${URL_OK}`, (route) => route.abort());
+      await glbBeforeEntry(page, URL_OK);
+      await enterGame(page, server.url);
+      const entry = await entryOf(page);
+      const view = await ownView(page);
+      console.log(`AC-193 c entrada con la descarga abortada: ${JSON.stringify({ entry, view, warnings })}`);
+      expect(entry).toMatchObject({ withGlb: false, capped: false, coverHidden: true }); // el fallo abre la entrada sin esperar al tope
+      expect(entry.lastWaitAt - entry.firstFrameAt).toBeLessThan(OWN_GLB_WAIT_MS);
+      expect(view.modelMap).toBeNull();
+      expect(warnings.filter((w) => w.startsWith('[ship-glb] sloop'))).toHaveLength(1);
+      // La petición abortada la cuenta el navegador como error de red; el juego no añade ninguno
+      expect(errors.filter((e) => !e.includes('net::ERR_FAILED'))).toEqual([]);
+    } finally {
+      await server.kill();
+    }
   });
 
   test('AC-193 c (B): si el GLB no llega a tiempo, se entra en el primer frame tras el tope con el de hoy, y cambia al llegar', async ({ page }) => {
@@ -273,102 +303,115 @@ test.describe('Barcos en GLB (ASSET-SPEC §13)', () => {
   });
 
   // Salida 1 de AC-193 c (D90): con el respaldo en el GLB, la entrada no espera al transcodificador de KTX2, que ya no baja
-  // al crear el cargador sino después del GLB propio. Aquí se retiene /basis/ hasta comprobar la entrada y el respaldo
-  test('AC-193 c, salida 1 (D90): con el transcodificador retenido, el barco propio entra ya con el respaldo; al llegar, cambia a la KTX2 con el mismo programa', async ({ page }) => {
+  // al crear el cargador sino después del GLB propio. Aquí se retiene /basis/ hasta comprobar la entrada y el respaldo. Con
+  // las 2 palancas de E-1 (AC-210 d): con el mapa 1.1 o el I2, las KTX2 del puerto, de las islas y de los NPC piden el mismo
+  // transcodificador, y «se pidió después del GLB propio» dejaría de ser del barco. Antes, contra el servidor compartido
+  test('AC-193 c, salida 1 (D90): con el transcodificador retenido, el barco propio entra ya con el respaldo; al llegar, cambia a la KTX2 con el mismo programa (SEA_BATTLE_MAP=1.0 y SEA_BATTLE_I2=0, E-1)', async ({ page }) => {
     test.setTimeout(120_000);
-    const bytes = withFallback();
-    const errors: string[] = [];
-    page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
-    let glbDone = 0;
-    const basisAt: number[] = [];
-    page.on('requestfinished', (r) => r.url().endsWith(URL_FALLBACK) && (glbDone ||= Date.now()));
-    let release!: () => void;
-    const held = new Promise<void>((r) => (release = r));
-    await page.route(`**${URL_FALLBACK}`, (route) => route.fulfill({ body: bytes, contentType: 'model/gltf-binary' }));
-    await page.route('**/basis/**', async (route) => {
-      basisAt.push(Date.now());
-      await held;
-      await route.continue();
-    });
-    await glbBeforeEntry(page, URL_FALLBACK, 60_000); // un tope que SwiftShader no alcance: si la entrada esperase a /basis/, no se abriría
-    await page.goto('/game');
-    // Como enterGame, pero con expect.poll: si la entrada esperase al transcodificador, el rojo sería por aserción
-    await expect.poll(() => page.evaluate(() => window.__SEA_BATTLE__?.ready() === true), { timeout: 30_000 }).toBe(true);
-    const entry = await entryOf(page);
-    await page.waitForTimeout(1_000);
-    const before = { ...(await ownMap(page)), ...(await ownPixels(page)) };
-    console.log(`AC-193 c salida 1, con /basis/ retenido: ${JSON.stringify({ entry, before, glbDone, basisAt })}`);
-    expect(entry).toMatchObject({ withGlb: true, capped: false, coverHidden: true });
-    expect(before).toMatchObject({ compressed: false, flipY: false, colorSpace: 'srgb', materialMap: true, oneDrawCall: true });
-    expect(before.green).toBeGreaterThan(50);
-    // El transcodificador se pidió (lo pide la KTX2 del GLB propio), y después de que el GLB terminase de bajar
-    expect(basisAt.length).toBeGreaterThan(0);
-    expect(glbDone).toBeGreaterThan(0);
-    expect(basisAt[0]).toBeGreaterThanOrEqual(glbDone);
-    release();
-    await expect.poll(async () => (await ownMap(page)).compressed, { timeout: 30_000 }).toBe(true);
-    await page.waitForTimeout(500);
-    const after = { ...(await ownMap(page)), ...(await ownPixels(page)) };
-    console.log(`AC-193 c salida 1, con la KTX2: ${JSON.stringify(after)}`);
-    // Mismo programa del material del barco: el cambio de mapa no compila otro (D90). El total del renderer no se aserta
-    // (O-47): un programa ajeno al barco se compila cuando quiere y lo sube de 7 a 8 sin que el del barco cambie
-    console.log(`AC-193 c salida 1, programas del renderer (sin asertar): ${before.programs} → ${after.programs}`);
-    expect(before.program).toEqual(expect.any(Number));
-    expect(after.program).toBe(before.program);
-    expect([after.flipY, after.colorSpace, after.materialMap, after.oneDrawCall]).toEqual([before.flipY, before.colorSpace, true, true]);
-    expect(after.magenta).toBeGreaterThan(50);
-    expect(before.green - after.green).toBeGreaterThan(50);
-    expect(errors).toEqual([]);
+    const server = await startOwnServer({ SEA_BATTLE_MAP: '1.0', SEA_BATTLE_I2: '0' });
+    try {
+      const bytes = withFallback();
+      const errors: string[] = [];
+      page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+      let glbDone = 0;
+      const basisAt: number[] = [];
+      page.on('requestfinished', (r) => r.url().endsWith(URL_FALLBACK) && (glbDone ||= Date.now()));
+      let release!: () => void;
+      const held = new Promise<void>((r) => (release = r));
+      await page.route(`**${URL_FALLBACK}`, (route) => route.fulfill({ body: bytes, contentType: 'model/gltf-binary' }));
+      await page.route('**/basis/**', async (route) => {
+        basisAt.push(Date.now());
+        await held;
+        await route.continue();
+      });
+      await glbBeforeEntry(page, URL_FALLBACK, 60_000); // un tope que SwiftShader no alcance: si la entrada esperase a /basis/, no se abriría
+      await page.goto(`${server.url}/game`);
+      // Como enterGame, pero con expect.poll: si la entrada esperase al transcodificador, el rojo sería por aserción
+      await expect.poll(() => page.evaluate(() => window.__SEA_BATTLE__?.ready() === true), { timeout: 30_000 }).toBe(true);
+      const entry = await entryOf(page);
+      await page.waitForTimeout(1_000);
+      const before = { ...(await ownMap(page)), ...(await ownPixels(page)) };
+      console.log(`AC-193 c salida 1, con /basis/ retenido: ${JSON.stringify({ entry, before, glbDone, basisAt })}`);
+      expect(entry).toMatchObject({ withGlb: true, capped: false, coverHidden: true });
+      expect(before).toMatchObject({ compressed: false, flipY: false, colorSpace: 'srgb', materialMap: true, oneDrawCall: true });
+      expect(before.green).toBeGreaterThan(50);
+      // El transcodificador se pidió (lo pide la KTX2 del GLB propio), y después de que el GLB terminase de bajar
+      expect(basisAt.length).toBeGreaterThan(0);
+      expect(glbDone).toBeGreaterThan(0);
+      expect(basisAt[0]).toBeGreaterThanOrEqual(glbDone);
+      release();
+      await expect.poll(async () => (await ownMap(page)).compressed, { timeout: 30_000 }).toBe(true);
+      await page.waitForTimeout(500);
+      const after = { ...(await ownMap(page)), ...(await ownPixels(page)) };
+      console.log(`AC-193 c salida 1, con la KTX2: ${JSON.stringify(after)}`);
+      // Mismo programa del material del barco: el cambio de mapa no compila otro (D90). El total del renderer no se aserta
+      // (O-47): un programa ajeno al barco se compila cuando quiere y lo sube de 7 a 8 sin que el del barco cambie
+      console.log(`AC-193 c salida 1, programas del renderer (sin asertar): ${before.programs} → ${after.programs}`);
+      expect(before.program).toEqual(expect.any(Number));
+      expect(after.program).toBe(before.program);
+      expect([after.flipY, after.colorSpace, after.materialMap, after.oneDrawCall]).toEqual([before.flipY, before.colorSpace, true, true]);
+      expect(after.magenta).toBeGreaterThan(50);
+      expect(before.green - after.green).toBeGreaterThan(50);
+      expect(errors).toEqual([]);
+    } finally {
+      await server.kill();
+    }
   });
 
   // Paso 4c de §13: con la KTX2 en su .ktx2 aparte, la entrada no la espera (la HIPÓTESIS de ASSET-SPEC :792), y el
-  // transcodificador se pide mientras baja, no al tenerla (KTX2Loader.load solo lo pide después). Se retiene el .ktx2
-  test('AC-193 c, paso 4c: con el .ktx2 aparte retenido, el barco propio entra con el respaldo y el transcodificador se pide sin esperarlo; al llegar, cambia a la KTX2 con el mismo programa', async ({ page }) => {
+  // transcodificador se pide mientras baja, no al tenerla (KTX2Loader.load solo lo pide después). Se retiene el .ktx2. Con
+  // las 2 palancas de E-1, como la salida 1: con el mapa 1.1 o el I2, otra KTX2 pediría el transcodificador por su cuenta
+  test('AC-193 c, paso 4c: con el .ktx2 aparte retenido, el barco propio entra con el respaldo y el transcodificador se pide sin esperarlo; al llegar, cambia a la KTX2 con el mismo programa (SEA_BATTLE_MAP=1.0 y SEA_BATTLE_I2=0, E-1)', async ({ page }) => {
     test.setTimeout(120_000);
-    const ext = externalKtx2Fixture(new Uint8Array(fs.readFileSync(FIXTURE)));
-    const ktx2Url = `/models/test/${ext.ktx2File}`;
-    const errors: string[] = [];
-    page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
-    const ktx2At: number[] = [];
-    const basisAt: number[] = [];
-    let release!: () => void;
-    const held = new Promise<void>((r) => (release = r));
-    await page.route(`**${URL_EXT}`, (route) => route.fulfill({ body: Buffer.from(ext.glb), contentType: 'model/gltf-binary' }));
-    await page.route(`**${ktx2Url}`, async (route) => {
-      ktx2At.push(Date.now());
-      await held;
-      await route.fulfill({ body: Buffer.from(ext.ktx2), contentType: 'image/ktx2' });
-    });
-    await page.route('**/basis/**', (route) => {
-      basisAt.push(Date.now());
-      return route.continue();
-    });
-    await glbBeforeEntry(page, URL_EXT, 60_000); // un tope que SwiftShader no alcance: si la entrada esperase al .ktx2, no se abriría
-    await page.goto('/game');
-    await expect.poll(() => page.evaluate(() => window.__SEA_BATTLE__?.ready() === true), { timeout: 30_000 }).toBe(true);
-    const entry = await entryOf(page);
-    // Con el .ktx2 aún retenido: el plugin pide el transcodificador en el parse
-    await expect.poll(() => basisAt.length, { timeout: 15_000 }).toBeGreaterThan(0);
-    await page.waitForTimeout(1_000);
-    const before = { ...(await ownMap(page)), ...(await ownPixels(page)) };
-    console.log(`AC-193 c paso 4c, con el .ktx2 retenido: ${JSON.stringify({ entry, before, ktx2At, basisAt })}`);
-    expect(entry).toMatchObject({ withGlb: true, capped: false, coverHidden: true });
-    expect(before).toMatchObject({ compressed: false, flipY: false, colorSpace: 'srgb', materialMap: true, oneDrawCall: true });
-    expect(before.green).toBeGreaterThan(50);
-    expect(ktx2At.length).toBe(1);
-    release();
-    await expect.poll(async () => (await ownMap(page)).compressed, { timeout: 30_000 }).toBe(true);
-    await page.waitForTimeout(500);
-    const after = { ...(await ownMap(page)), ...(await ownPixels(page)) };
-    console.log(`AC-193 c paso 4c, con la KTX2: ${JSON.stringify(after)}`);
-    // Como en la salida 1: solo el programa del material del barco (O-47)
-    console.log(`AC-193 c paso 4c, programas del renderer (sin asertar): ${before.programs} → ${after.programs}`);
-    expect(before.program).toEqual(expect.any(Number));
-    expect(after.program).toBe(before.program);
-    expect([after.flipY, after.colorSpace, after.materialMap, after.oneDrawCall]).toEqual([before.flipY, before.colorSpace, true, true]);
-    expect(after.magenta).toBeGreaterThan(50);
-    expect(before.green - after.green).toBeGreaterThan(50);
-    expect(errors).toEqual([]);
+    const server = await startOwnServer({ SEA_BATTLE_MAP: '1.0', SEA_BATTLE_I2: '0' });
+    try {
+      const ext = externalKtx2Fixture(new Uint8Array(fs.readFileSync(FIXTURE)));
+      const ktx2Url = `/models/test/${ext.ktx2File}`;
+      const errors: string[] = [];
+      page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+      const ktx2At: number[] = [];
+      const basisAt: number[] = [];
+      let release!: () => void;
+      const held = new Promise<void>((r) => (release = r));
+      await page.route(`**${URL_EXT}`, (route) => route.fulfill({ body: Buffer.from(ext.glb), contentType: 'model/gltf-binary' }));
+      await page.route(`**${ktx2Url}`, async (route) => {
+        ktx2At.push(Date.now());
+        await held;
+        await route.fulfill({ body: Buffer.from(ext.ktx2), contentType: 'image/ktx2' });
+      });
+      await page.route('**/basis/**', (route) => {
+        basisAt.push(Date.now());
+        return route.continue();
+      });
+      await glbBeforeEntry(page, URL_EXT, 60_000); // un tope que SwiftShader no alcance: si la entrada esperase al .ktx2, no se abriría
+      await page.goto(`${server.url}/game`);
+      await expect.poll(() => page.evaluate(() => window.__SEA_BATTLE__?.ready() === true), { timeout: 30_000 }).toBe(true);
+      const entry = await entryOf(page);
+      // Con el .ktx2 aún retenido: el plugin pide el transcodificador en el parse
+      await expect.poll(() => basisAt.length, { timeout: 15_000 }).toBeGreaterThan(0);
+      await page.waitForTimeout(1_000);
+      const before = { ...(await ownMap(page)), ...(await ownPixels(page)) };
+      console.log(`AC-193 c paso 4c, con el .ktx2 retenido: ${JSON.stringify({ entry, before, ktx2At, basisAt })}`);
+      expect(entry).toMatchObject({ withGlb: true, capped: false, coverHidden: true });
+      expect(before).toMatchObject({ compressed: false, flipY: false, colorSpace: 'srgb', materialMap: true, oneDrawCall: true });
+      expect(before.green).toBeGreaterThan(50);
+      expect(ktx2At.length).toBe(1);
+      release();
+      await expect.poll(async () => (await ownMap(page)).compressed, { timeout: 30_000 }).toBe(true);
+      await page.waitForTimeout(500);
+      const after = { ...(await ownMap(page)), ...(await ownPixels(page)) };
+      console.log(`AC-193 c paso 4c, con la KTX2: ${JSON.stringify(after)}`);
+      // Como en la salida 1: solo el programa del material del barco (O-47)
+      console.log(`AC-193 c paso 4c, programas del renderer (sin asertar): ${before.programs} → ${after.programs}`);
+      expect(before.program).toEqual(expect.any(Number));
+      expect(after.program).toBe(before.program);
+      expect([after.flipY, after.colorSpace, after.materialMap, after.oneDrawCall]).toEqual([before.flipY, before.colorSpace, true, true]);
+      expect(after.magenta).toBeGreaterThan(50);
+      expect(before.green - after.green).toBeGreaterThan(50);
+      expect(errors).toEqual([]);
+    } finally {
+      await server.kill();
+    }
   });
 
   test('AC-193 c, salida 1 (D90): si el transcodificador no llega, se queda el respaldo, con un aviso', async ({ page }) => {
@@ -550,7 +593,11 @@ test.describe('Barcos en GLB (ASSET-SPEC §13)', () => {
     });
     console.log(`AC-193 c opción A, con una Goleta guardada: ${JSON.stringify(got)}`);
     expect([got.welcomeBeforeTrap, got.welcomeAt > 0]).toEqual([false, true]); // la trampa llegó antes que la bienvenida
-    expect(got.models.map(([p, when]) => [p, when])).toEqual([[URL_OK, 'después']]);
+    // Antes de la bienvenida, ningún modelo; después, el propio una vez y nunca la Goleta. Con el mapa y el I2 por defecto
+    // (AC-210), después de la bienvenida bajan también el puerto, las islas y los NPC del I2, que no son predicción: antes se
+    // asertaba que URL_OK era la única petición a /models/, porque con el 1.0 y el I2 apagado no había otras
+    expect(got.models.filter(([, when]) => when === 'antes')).toEqual([]);
+    expect(got.models.filter(([p]) => p === URL_OK || p === URL_SCHOONER).map(([p, when]) => [p, when])).toEqual([[URL_OK, 'después']]);
     expect(errors).toEqual([]);
   });
 });

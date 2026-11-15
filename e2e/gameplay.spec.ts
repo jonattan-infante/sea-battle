@@ -3,9 +3,13 @@ import { PORTS } from '../playwright.config';
 import { HINTS } from '../src/client/hints';
 import { SHIP_CLASSES } from '../src/game/constants';
 import { AMBUSH_POINT, BLIND_GUNNER_POINT, SHOWCASE_POINT } from '../server/scenarios';
-import { clickWater, dialogsOf, enterGame, hud, me, ships, trackSocket, waitFor } from './helpers';
+import { clickWater, dialogsOf, enterGame, expectMoored, hud, me, ships, trackSocket, waitFor } from './helpers';
 import { intentNames } from './net';
 import { OwnServer, startOwnServer } from './own-server';
+
+// Agua abierta dentro de la zona segura, al norte del puerto de D92 (el borde de su unión llega a z = 30): ahí empiezan las
+// pruebas del clic que antes salían del anillo de aparición de la 1.0 (AC-210)
+const OPEN_WATER = { x: 0, z: 80 };
 
 test.describe('Landing', () => {
   test('AC-10: con AUTH_BYPASS aparece "Jugar como invitado"; sin él no existe en el DOM', async ({ page }) => {
@@ -66,6 +70,11 @@ test.describe('Partida como invitado', () => {
     const OFFSETS_X = [0, -100, 100, -200, 200];
     const px = (v: number) => (v === Infinity ? 'ninguno en pantalla' : `${v.toFixed(0)} px`);
     await enterGame(page);
+    // Con el mapa por defecto (AC-210) el barco aparece amarrado al puerto de D92, y un clic a 120 px (~24 m) hacia el muelle
+    // cae en tierra: el servidor lo lleva al punto navegable más cercano, a veces donde ya está, y el barco no se mueve
+    // (auditoría de AC-210). Antes de las corridas zarpa a agua abierta al norte del puerto, a 50 m de su borde
+    await sailTo(page, OPEN_WATER.x, OPEN_WATER.z);
+    await waitFor(() => me(page), (s) => !!s && Math.hypot(s.x - OPEN_WATER.x, s.z - OPEN_WATER.z) < 3, 45_000, 200);
     const markers: number[] = [];
     const moves: number[] = [];
     for (let run = 0; run < 10; run++) {
@@ -759,7 +768,10 @@ async function expectKillerOnOneLine(page: Page, label: string) {
   expect(height).toBeLessThanOrEqual(24);
 }
 
-// AC-101: el gesto emite exactamente 1 respawn y en ≤ 1 s el barco existe con el 100 % de la vida (AC-63: a 60–90 m)
+// AC-101: el gesto emite exactamente 1 respawn y en ≤ 1 s el barco existe con el 100 % de la vida. Dónde aparece: con el mapa
+// por defecto (el 1.1, AC-210), en un amarre libre de D92 según AC-176 (BACKLOG :1099, decisión de producto del 2026-11-07:
+// el sucesor del anillo de 60–90 m de AC-63 es la regla del amarre). El anillo queda para el mapa 1.0 y para los 12 amarres
+// ocupados, y lo cubre el unitario de AC-176 (src/game/__tests__/map.test.ts)
 async function expectSailWith(page: Page, net: ReturnType<typeof trackSocket>, start: { classId: string }, label: string, gesture: () => Promise<void>) {
   const button = page.getByTestId('btn-respawn');
   await expect(button).toBeEnabled({ timeout: 12_000 });
@@ -770,12 +782,10 @@ async function expectSailWith(page: Page, net: ReturnType<typeof trackSocket>, s
   const ship = await waitFor(() => me(page), (s) => !!s && s.state === 'alive' && s.hp === s.maxHp, 2000, 25);
   const elapsed = Date.now() - t0;
   await page.waitForTimeout(1000);
-  const fromPort = Math.hypot(ship!.x, ship!.z);
-  console.log(`AC-101 (${label}): ${respawnsSent(net)} respawn · vivo con ${ship!.hp}/${ship!.maxHp} a los ${elapsed} ms · a ${fromPort.toFixed(1)} m del puerto`);
+  console.log(`AC-101 (${label}): ${respawnsSent(net)} respawn · vivo con ${ship!.hp}/${ship!.maxHp} a los ${elapsed} ms`);
   expect(respawnsSent(net)).toBe(1);
   expect(elapsed).toBeLessThanOrEqual(1000);
-  expect(fromPort).toBeGreaterThanOrEqual(60);
-  expect(fromPort).toBeLessThanOrEqual(90);
+  await expectMoored(page, `AC-63, reaparición (${label})`);
   expect(ship!.classId).toBe(start.classId);
   await expect(page.getByTestId('death-card')).toHaveCount(0);
   expect(dialogsOf(page)).toEqual([]);

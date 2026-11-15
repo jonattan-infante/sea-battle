@@ -97,7 +97,7 @@ test.describe('Cámara', () => {
     });
   });
 
-  test('AC-24 @mobile: al comprar el cañón N2 y luego el N3, ppm₀ pasa a 2,61 y a 2,29 en 390×844 al cerrar la tienda, en 600 ms', async ({ page }) => {
+  test('AC-24 @mobile: al comprar el cañón N2 y luego el N3, ppm₀ pasa a 2,61 y a 2,29 en 390×844 al cerrar la tienda, en 600 ms @gpu', async ({ page }) => {
     // En móvil la tienda se abre con el botón Puerto del HUD móvil (m-port) y se cierra con su botón de cerrar (sin teclado)
     await buyCannonsAndCheckFrame(page, 'móvil', 2.82, [2.61, 2.29], {
       open: () => page.getByTestId('m-port').tap(),
@@ -105,7 +105,7 @@ test.describe('Cámara', () => {
     });
   });
 
-  test('AC-25: la rueda pasa por exactamente 3 niveles (0,7×, 1,0× y 1,5×) y la página no hace scroll', async ({ page }) => {
+  test('AC-25: la rueda pasa por exactamente 3 niveles (0,7×, 1,0× y 1,5×) y la página no hace scroll @gpu', async ({ page }) => {
     await enterGame(page);
     // Registra si cada wheel llegó a la ventana con preventDefault (la página no puede desplazarse con él)
     await page.evaluate(() => {
