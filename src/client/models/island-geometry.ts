@@ -7,6 +7,14 @@ import { PALETTE, TOP_FACE } from '../art';
 import { GeoBuilder, lin, trs } from './geometry-utils';
 
 const deg = Math.PI / 180;
+// AC-200 e (ASSET-SPEC §9.8 :707 y ART-DIRECTION :561 de r11): en la versión sencilla del puerto, la tapa de los 3 círculos de
+// la ciudad y del muelle este va en empedrado, no en hierba, para que se lea como puerto. Son los de puerto_forma.py (v3,
+// :29): ciudad este (14, 8, 22), ciudad oeste (−12, 8, 22) y muelle este (31, −6, 17); se eligen por centro y radio. El color,
+// liso: albedo #8E7A5B (#998461 en pantalla), la media del empedrado del modelo en esa tapa, sin la compensación de D17 (ux,
+// r11 444a870, ASSET-SPEC :707), para que no cambie de tono al llegar el modelo
+export const PORT_PAVED_COLOR = '#8E7A5B';
+export const PORT_PAVED_CIRCLES: readonly [number, number, number][] = [[14, 8, 22], [-12, 8, 22], [31, -6, 17]];
+const isPaved = (c: IslandDef) => c.id.split('.')[0] === 'PORT' && PORT_PAVED_CIRCLES.some(([x, z, r]) => c.x === x && c.z === z && c.radius === r);
 const BEACH_WATERLINE = 1 - 0.12 * (0.6 / 1.4); // radio de la playa en y = 0 relativo a la base (cilindro 0,88r→r de −0,6 a +0,8)
 
 export interface PropInstance {
@@ -39,7 +47,7 @@ function cylinderSides(radial: number): (t: number) => 'side' | 'top' | 'bottom'
   return (t) => (t < 2 * radial ? 'side' : t < 3 * radial ? 'top' : 'bottom');
 }
 
-function addIsland(g: GeoBuilder, island: IslandDef, palms: PropInstance[], waterline: number[]): void {
+function addIsland(g: GeoBuilder, island: IslandDef, palms: PropInstance[], waterline: number[], simple: boolean): void {
   const rnd = createRng(islandSeed(island.id));
   const r = island.radius;
   const isPort = island.id === 'PORT';
@@ -75,7 +83,12 @@ function addIsland(g: GeoBuilder, island: IslandDef, palms: PropInstance[], wate
   const topR = 0.62 * r * (1 + (rnd() * 2 - 1) * 0.08);
   const baseR = 0.74 * r * (1 + (rnd() * 2 - 1) * 0.08);
   const plateauPart = cylinderSides(n - 2);
-  g.add(new THREE.CylinderGeometry(topR, baseR, 1.0, n - 2), trs(island.x + dx, 1.3, island.z + dz), lin(TOP_FACE.grass.albedo), (t) => plateauPart(t) === 'bottom');
+  const paved = simple && isPaved(island);
+  const grass = lin(TOP_FACE.grass.albedo);
+  const cobble = lin(PORT_PAVED_COLOR);
+  g.add(new THREE.CylinderGeometry(topR, baseR, 1.0, n - 2), trs(island.x + dx, 1.3, island.z + dz), paved ? (_x, _y, _z, t) => (plateauPart(t) === 'top' ? cobble : grass) : grass, (t) => plateauPart(t) === 'bottom');
+  // Versión sencilla (AC-200 e; ART-DIRECTION §8.6, «Mientras se descargan»): la playa y la meseta, sin props
+  if (simple) return;
 
   // Colina rocosa (r ≥ 35): base grass.dark, cima rock.dark
   if (r >= 35 && !isPort) {
@@ -176,7 +189,8 @@ function addTown(g: GeoBuilder, island: IslandDef, rnd: () => number): void {
   g.add(new THREE.PlaneGeometry(2, 1.3), trs(fx + 1, 1.8 + 9 - 0.65, fz), lin(PALETTE.portFlag));
 }
 
-export function buildIslands(islands: IslandDef[]): IslandBuild {
+// simple: la versión sencilla de cada círculo, para el mapa nuevo mientras no llega el modelo de su isla (AC-200 e)
+export function buildIslands(islands: readonly IslandDef[], options: { simple?: boolean } = {}): IslandBuild {
   const g = new GeoBuilder();
   const palms: PropInstance[] = [];
   const triangles: Record<string, number> = {};
@@ -184,7 +198,7 @@ export function buildIslands(islands: IslandDef[]): IslandBuild {
   for (const island of islands) {
     const before = g.triangles;
     waterlineRadii[island.id] = [];
-    addIsland(g, island, palms, waterlineRadii[island.id]);
+    addIsland(g, island, palms, waterlineRadii[island.id], options.simple ?? false);
     triangles[island.id] = g.triangles - before;
   }
   return { geometry: g.build(), palms, triangles, waterlineRadii };
