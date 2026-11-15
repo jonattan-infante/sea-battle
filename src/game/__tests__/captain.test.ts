@@ -183,6 +183,9 @@ describe('H-305 — Correa del capitán (AC-112)', () => {
         expect(d0).toBeGreaterThan(CAPTAIN.leash);
         expect(d0).toBeLessThanOrEqual(CAPTAIN.leash + 10 * DT + 1e-6); // el primer tick fuera (10 m/s)
         expect(cap.attackTargetId).toBeNull();
+        // H3 (QA-70; producto, 2026-11-04): daño hecho con el Capitán ya de regreso. El registro se vacía al llegar, no al
+        // salir: esta entrada tampoco puede quedar para el combate siguiente
+        seedDamage(world, cap, target);
       }
       if (leftAt >= 0 && cap.ai!.state === 'patrol') {
         arrivedHp = cap.hp;
