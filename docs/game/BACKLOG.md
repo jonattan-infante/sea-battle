@@ -2166,7 +2166,7 @@ Va al final del archivo para no mover las líneas que se citan.
 
 ### La 1.2.0, aceptada, y lo que pasa a la 1.2.x (producto, 2026-11-15)
 
-*De* QA-75 §19.4, §19.8 y §19.9 (r11 `324bc91` y `eaa5340`) y del lead. Jonattan fusionó el PR #84, que es la historia limpia del #83 con el mismo árbol (`f10dbdd7…`, el de `009f8ad`), y aprobó el deploy. `main` está en `801c185`, con el tag `v1.2.0`, y el `/healthz` de prod da `map` 1.1 e `i2` true. Va al final del archivo para no mover las líneas que se citan.
+*De* QA-75 §19.4, §19.8 y §19.9 (r11 `324bc91` y `eaa5340`) y del lead. Jonattan fusionó el PR #84, que es la historia limpia del #83 con el mismo árbol (`f10dbdd7…`, el de `009f8ad`), y aprobó el deploy. `main` está en `801c185`, con el tag `v1.2.0`, y el `/healthz` de prod da `map` 1.1 e `i2` true. Va al final del archivo para no mover las líneas que se citan. *2026-11-15, Jonattan, literal (dato del lead):* «1. Terminada.», sobre la 1.2; «2. Ok», sobre el PR de documentación; y «3. Si cerrar», sobre el #83, que quedó cerrado sin fusionar. **Con eso, Jonattan da la 1.2 por terminada.**
 
 **1. Producto acepta AC-210 y la 1.2.0 como hechas.** Se cumple lo que pide `:1927` en «Hecho»:
 - AC-210, de (a) a (e): APROBADO por QA en el candidato (QA-75 §19.4, `:1058`). Todo lo de la tabla de `:1931-1951` está cerrado o lo pasó producto a la 1.2.x, y la regresión y staging están APROBADOS (§19.4, §19.5 y §19.8).
