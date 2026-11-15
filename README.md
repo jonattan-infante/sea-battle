@@ -2,118 +2,93 @@
 
 Batallas navales multijugador en el navegador, inspiradas en Seafight: navega con un clic, hunde piratas y mercantes con ataques persistentes y mejora tu barco con el botín.
 
-## Características
+**[Juega en seabattle.jonattan.dev](https://seabattle.jonattan.dev)**, en el navegador y sin instalar nada. Para entrar hace falta crear una cuenta.
 
-- Servidor autoritativo (Socket.IO) con simulación pura y determinista en `src/game/` a 20 Hz
-- Red por deltas a 10 Hz dentro de un área de interés de 300 m; sin tráfico cuando no pasa nada
-- Render con React Three Fiber sin re-renders por frame; HUD en React a ≤ 10 Hz
-- Autenticación con Clerk; modo invitado solo en local (`AUTH_BYPASS=1`)
+![El puerto de Sea Battle 1.2, con la ciudad, el fuerte y el faro, y una Balandra atracada en un amarre](docs/img/sea-battle-1-2-puerto.webp)
 
-Documentación del juego en `docs/game/`: `GDD.md` y `BACKLOG.md` (producto), `ART-DIRECTION.md`, `ASSET-SPEC.md` y `VFX-SPEC.md` (UX) y `TECH-ARCHITECTURE.md` (desarrollo). El equipo de agentes (producto, UX, desarrollo y QA) está definido en `CLAUDE.md` y `.claude/agents/`.
+## Para jugar
 
-## Configuración del Entorno de Desarrollo
+### Cómo se juega
+
+- **Navegar:** haz clic (o toca) en el agua. Tu barco va solo hasta allí y esquiva las islas. `S` lo detiene.
+- **Atacar:** selecciona un barco con un clic (o con `Tab`) y pulsa `Espacio` o **Atacar**. Tus cañones disparan solos mientras esté a tiro.
+- **Reparar:** `R` o **Reparar**. El barco se para y recupera vida, gratis.
+- **Puerto:** dentro de la zona segura, `P` o **Puerto** abre el astillero, donde compras mejoras y barcos con el oro del botín.
+- **Cámara:** sigue a tu barco. En **Opciones** puedes elegir la cámara **Libre**, y con **Centrar** (`C`) vuelves al barco. La rueda del ratón o el pellizco acercan y alejan la vista.
+- **Niveles:** hundir barcos da experiencia. Hay 20 niveles y 5 insignias.
+
+Todo lo demás está en la [guía del jugador](docs/GUIA-DEL-JUGADOR.md).
+
+### Qué hay nuevo y qué viene
+
+- **Versión actual: 1.2.0.** Un mapa nuevo con 8 islas, 4 calas piratas, un paso entre escollos y un puerto con forma de isla, y el Capitán pirata y las cañoneras como parte fija del juego. El detalle de cada versión está en el [CHANGELOG](CHANGELOG.md).
+- **Lo que viene**, en lenguaje llano y sin fechas, está en la [hoja de ruta](ROADMAP.md).
+- **Para que vaya fluido**, el navegador tiene que usar la tarjeta gráfica (la «aceleración por hardware», que suele venir activada). Sin ella, el mapa nuevo va muy lento.
+
+---
+
+## Para desarrolladores
+
+### Puesta en marcha
 
 1. Clona el repositorio:
-```bash
-git clone <repository-url>
-cd sea-battle
-```
-
+   ```bash
+   git clone https://github.com/jonattan-infante/sea-battle.git
+   cd sea-battle
+   ```
 2. Usa Node 24 (el de Railway; lo fijan `.nvmrc` y `engines` en `package.json`) e instala las dependencias:
-```bash
-nvm use
-npm install
-```
-
-3. Copia el archivo de variables de entorno:
-```bash
-cp .env.example .env.local
-```
-
-4. Configura las variables de entorno en `.env.local`:
-   - Obtén las claves de Clerk desde [Clerk Dashboard](https://dashboard.clerk.com/)
-
-5. Ejecuta el servidor de desarrollo:
-```bash
-npm run dev          # con Clerk
-npm run dev:guest    # modo invitado local (AUTH_BYPASS=1), sin cuenta
-```
-
-Abre [http://localhost:3000](http://localhost:3000) en tu navegador.
-
-## Deployment en Railway
-
-> **Nota:** este proyecto usa un servidor Node personalizado (`server/index.ts`, compilado a `dist/server/index.js`) con Socket.IO, que requiere conexiones WebSocket persistentes. Por eso **no** se despliega en Vercel (serverless no soporta servidores persistentes). Railway sí los soporta.
-
-### Prerrequisitos
-
-- Cuenta en [Railway](https://railway.app)
-- Cuenta en [Clerk](https://clerk.com)
-
-### Pasos para Deployment
-
-1. **Sube el código a GitHub** y crea un nuevo proyecto en Railway desde ese repositorio.
-
-2. **Configura Railway:**
-   - Railway (Railpack) toma la versión de Node de `engines.node` en `package.json` (24.x)
-   - Railway detecta `npm run build` (build: `next build` + `tsc -p tsconfig.server.json`) y `npm start` (start: `NODE_ENV=production node dist/server/index.js`) desde `package.json`
-   - **Nunca** definas `AUTH_BYPASS` en Railway: el servidor se niega a arrancar si lo detecta junto a las variables `RAILWAY_*`
-   - Genera un dominio público en la pestaña "Settings" > "Networking"
-
-3. **Configura Clerk:**
-   - Ve a [Clerk Dashboard](https://dashboard.clerk.com/)
-   - Copia las claves de producción:
-     - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
-     - `CLERK_SECRET_KEY`
-   - Configura las URLs de redirección con el dominio de Railway:
-     - Sign-in URL: `https://tu-app.railway.app/sign-in`
-     - Sign-up URL: `https://tu-app.railway.app/sign-up`
-     - After sign-in URL: `https://tu-app.railway.app/`
-     - After sign-up URL: `https://tu-app.railway.app/`
-
-4. **Configura Variables de Entorno en Railway:**
+   ```bash
+   nvm use
+   npm install
    ```
-   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_...
-   CLERK_SECRET_KEY=sk_live_...
-   NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
-   NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
-   NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/
-   NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/
-   NEXT_PUBLIC_APP_URL=https://tu-app.railway.app
+3. Copia las variables de entorno y pon tus claves de [Clerk](https://dashboard.clerk.com/) en `.env.local`:
+   ```bash
+   cp .env.example .env.local
    ```
-   `PORT` la inyecta Railway automáticamente.
+4. Arranca el servidor de desarrollo y abre [http://localhost:3000](http://localhost:3000):
+   ```bash
+   npm run dev          # con Clerk
+   npm run dev:guest    # modo invitado local (AUTH_BYPASS=1), sin cuenta
+   ```
 
-5. **Deploy:** Railway construye y arranca el servicio automáticamente en cada push.
-
-### Notas sobre WebSockets
-
-- Socket.IO corre en el mismo servidor que Next.js (`server/index.ts`), en el `PORT` que inyecta Railway. `/healthz` devuelve el estado y los jugadores en línea
-- El cliente conecta a `window.location.origin`, así que no hace falta URL extra de socket
-
-### Solución de Problemas
-
-- Asegúrate de que todas las variables de entorno estén configuradas correctamente
-- Verifica que las URLs de Clerk estén configuradas con el dominio correcto de Railway
-- Revisa los logs del servicio en el dashboard de Railway (`Deployments` > `View Logs`)
-
-## Scripts Disponibles
+### Scripts
 
 | Script | Qué hace |
 |---|---|
-| `npm run dev` / `npm run dev:guest` | Servidor de desarrollo (con Clerk / en modo invitado local) |
-| `npm run build` | Build de producción: Next.js + servidor en `dist/` |
-| `npm start` | Servidor de producción |
+| `npm run dev` / `npm run dev:guest` | Servidor de desarrollo, con Clerk o en modo invitado local |
+| `npm run build` / `npm start` | Build de producción (Next.js + servidor en `dist/`) y su arranque |
+| `npm run typecheck` | TypeScript estricto: cliente, servidor y tests |
 | `npm test` | Jest: simulación por criterio de aceptación, protocolo y servidor con sockets reales |
-| `npm run test:e2e` | Playwright contra el build de producción (requiere `npm run build`) |
-| `npm run test:perf` | Rendimiento: commits de React, frames de WebSocket y draw calls |
-| `npm run qa:capture` | Capturas estándar en `qa-artifacts/` |
-| `npm run verify` | typecheck + test + build (lo mismo que la CI) |
+| `npm run test:map11` | Jest: la economía del mapa 1.1 con 20 semillas |
+| `npm run test:e2e` | Playwright: jugabilidad y multijugador sobre el build de pruebas |
+| `npm run test:perf` | Rendimiento: commits de React, mensajes de red y draw calls |
+| `npm run test:soak` | 10 minutos de juego sin fugas de memoria, DOM ni geometrías (`AC91_MINUTES=2` para el modo corto) |
+| `npm run test:stress` | Servidor lleno con bots, en local |
+| `npm run qa:capture` | Capturas de escritorio y móvil en `qa-artifacts/` |
+| `npm run verify` | typecheck + test + scripts + build: la puerta de la CI |
 
-## Tecnologías Utilizadas
+### Arquitectura
 
-- [Next.js](https://nextjs.org/) - Framework React
-- [Socket.io](https://socket.io/) - WebSockets en tiempo real
-- [Three.js](https://threejs.org/) - Renderizado 3D
-- [Clerk](https://clerk.com/) - Autenticación
-- [Tailwind CSS](https://tailwindcss.com/) - Estilos
-- [Zustand](https://zustand-demo.pmnd.rs/) - Gestión de estado
+- Servidor autoritativo (Socket.IO) con una simulación pura y determinista en `src/game/`, a 20 Hz.
+- Red por deltas a 10 Hz dentro de un área de interés de 300 m, y sin tráfico cuando nadie actúa.
+- Render con React Three Fiber, sin re-renders por frame; el HUD en React a 10 Hz como mucho.
+- Autenticación con Clerk; el modo invitado solo existe en local (`AUTH_BYPASS=1`).
+
+La documentación del juego está en `docs/game/`: `GDD.md` y `BACKLOG.md` (producto), `ART-DIRECTION.md`, `ASSET-SPEC.md` y `VFX-SPEC.md` (diseño) y `TECH-ARCHITECTURE.md` (desarrollo). El equipo de agentes (producto, diseño, desarrollo y QA) está definido en `CLAUDE.md` y `.claude/agents/`.
+
+### Despliegue
+
+Corre en Railway, con un servidor Node propio. Cómo se despliega este proyecto y cómo montar el tuyo: [docs/DEPLOY.md](docs/DEPLOY.md).
+
+### Tecnologías
+
+- [Next.js](https://nextjs.org/): framework React
+- [Socket.IO](https://socket.io/): WebSockets en tiempo real
+- [Three.js](https://threejs.org/) con [React Three Fiber](https://r3f.docs.pmnd.rs/): render 3D
+- [Clerk](https://clerk.com/): autenticación
+- [Tailwind CSS](https://tailwindcss.com/): estilos
+- [Zustand](https://zustand-demo.pmnd.rs/): gestión de estado
+
+## Licencia
+
+[MIT](LICENSE).
