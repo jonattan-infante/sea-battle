@@ -2163,3 +2163,35 @@ Va al final del archivo para no mover las líneas que se citan.
 | Las 4 rocas a ≤ 0,5 m, y quitar la excepción | ux | en la próxima reexportación de `islands.glb`, P3 | — |
 
 **Para el texto del PR #83** (sustituye a la línea de `:2127`): «AC-192: el cotejo de las 28 capturas con D83 y D92 da APROBADO (QA-75 §19.2). De AC-174, los evaluadores de (b) corren ahora. La sonda de AC-103 y AC-199 (a) en las 16 formas (QA-75 §19.7) da que nada sobre el agua sale más de 0,5 m de su colisión, que los escollos tienen su radio y que no hay paredes invisibles: del borde de la colisión a lo visible hay como mucho 2,79 m. Producto precisa la medida para las piezas sueltas (rocas y pilotes), y 4 rocas que salen de 0,51 a 0,60 m en la flotación quedan como excepción con nombre: pasan del tope menos de 1 px. El test permanente y la regla de grises (c) pasan a una 1.2.x. Ninguno frena: son P1». *2026-11-14 (lead):* el PR la lleva con un cambio: los evaluadores de AC-174 (b) y AC-178 no corren ahora, y dice «sus evaluadores quedan pendientes» (ver la fila de (b) en `:2123`).
+
+### La 1.2.0, aceptada, y lo que pasa a la 1.2.x (producto, 2026-11-15)
+
+*De* QA-75 §19.4, §19.8 y §19.9 (r11 `324bc91` y `eaa5340`) y del lead. Jonattan fusionó el PR #84, que es la historia limpia del #83 con el mismo árbol (`f10dbdd7…`, el de `009f8ad`), y aprobó el deploy. `main` está en `801c185`, con el tag `v1.2.0`, y el `/healthz` de prod da `map` 1.1 e `i2` true. Va al final del archivo para no mover las líneas que se citan.
+
+**1. Producto acepta AC-210 y la 1.2.0 como hechas.** Se cumple lo que pide `:1927` en «Hecho»:
+- AC-210, de (a) a (e): APROBADO por QA en el candidato (QA-75 §19.4, `:1058`). Todo lo de la tabla de `:1931-1951` está cerrado o lo pasó producto a la 1.2.x, y la regresión y staging están APROBADOS (§19.4, §19.5 y §19.8).
+- El botón de Jonattan: una sola aprobación, la suya, en `production` (§19.9, AC-182 b). El job desplegó `801c185` y creó `v1.2.0` y su release, y el arranque sale sin errores y sin migraciones (AC-182 c, con los recuentos del lead).
+- Las 3 excepciones, E-1, E-2 y E-3, las aprobó Jonattan (`:1955`).
+- *Lo que no se pide para la 1.2:* la prueba con cuenta en prod de AC-182 (d) y AC-134 (e) (QA-75 `:1227`). El paso 5 (`:1968`) solo pedía (c). La 1.2 no trae migraciones, y en staging el usuario QA de Clerk, con su progreso de antes (un Bergantín, nivel 7), entra atracado y sin errores (QA-75 §19.5, `:1100`).
+
+**2. Lo que pasa a la 1.2.x,** por orden de trabajo. Primero va lo que ve el jugador, después las guardas de la CI y al final los P3.
+
+| # | Qué | Prioridad | Quién | Criterio | Nota |
+|---|---|---|---|---|---|
+| 1 | Los evaluadores de AC-174 (b), los escollos, y de AC-178, el puerto | P1 (los 2 AC son P1, `:1953`) | QA | La letra de `:1617` (b) y la de `:1636`, con las capturas que ya hay | En pausa hasta que Jonattan decida la cuenta de Claude Code (`:2123`). Sin turno |
+| 2 | El prepare, fuera de los frames, y medir la long task de 81 ms de la entrada | P2 | dev | `:2102` (≤ 6 ms con PREPARE-V2 en reposo) y `:2103` | Lo nota cada jugador al entrar y al cambiar de barco. Pide turno del Mac para medir |
+| 3 | La portada con el mapa 1.1 | P2 | ux, con lámina y el OK de Jonattan si cambia lo que se ve; después, dev | `:1936` | Es un límite conocido del CHANGELOG 1.2.0: «La portada todavía enseña las islas de antes» |
+| 4 | AC-211, jugar sin tarjeta gráfica | (a) y (b), P2; (c), P2 si en 2 semanas de prod ≥ 1 % de las entradas son por software, y P3 si no | producto, ux y dev | `:2007`, y el dato de Fedora de `:2014` | El aviso de (b) lleva lámina y el OK de Jonattan. Es otro límite conocido del CHANGELOG 1.2.0 |
+| 5 | El unitario de AC-158, la curva de XP | P2 | dev | `:1948`: la sonda de QA-73 convertida en test, con sus 5 aserciones | Es O-4 de QA-74 (`:1984`). Ligero |
+| 6 | El test de AC-199 (a) en las 16 raíces, con la excepción de las 4 rocas | P2 | dev-npc; QA comprueba sus 3 mutantes | `:2144-2149` y `:2161-2162` | Ligero |
+| 7 | AC-174 (c), la regla de grises sobre las capturas del juego | P2 | ux (la regla) y QA (la corrida) | `:2125` | Sin turno |
+| 8 | AC-143 en staging, con el modo remoto de `e2e/stress` | P2 | dev-npc (el arnés) y QA (la corrida) | `:2072` | Se le encargó a dev-npc en una rama propia el 2026-11-12 (`:2064`); el estado lo lleva el lead. Hoy, AC-143 está NO VERIFICADO |
+| 9 | El barrido de la familia de H-2, con el flaky de AC-19 (`mobile-robustness.spec.ts:174`) | P3; sube a P2 si la cuenta de AC-204 no llega a 10 por flaky de esta familia | QA (la lista) y dev | `:2038` y `:2047` | La cuenta la lleva el lead |
+| 10 | O-4 de QA-75: el comentario de `.github/workflows/ci.yml:78-80` | P3 | dev | `:1982` (b): el `git diff` solo toca comentarios | — |
+| 11 | Las 4 rocas, a ≤ 0,5 m, y quitar la excepción del test | P3 | ux | `:2151-2155` y `:2163` | En la próxima reexportación de `islands.glb` que se haga por otro motivo |
+| 12 | `ART-DIRECTION.md:536`: quitar «y palmeras» | P3 | ux | `:2113-2117` | Lo abre el lead al cerrar la 1.2, porque ahora no hay ux en el equipo |
+| 13 | La pausa de 10,8 s entre andanadas de `combat-i2` | P3, solo si se vuelve a usar el escenario | dev-npc | `:2092` | Lo lista QA-75 §19.4 (`:1074`) |
+
+- **«O-4» y «el comentario de `ci.yml`» son la misma pieza,** la 10: es el O-4 de QA-75. El O-4 de QA-74 es el unitario de AC-158, la 5.
+- **La 1.2.x no es una versión con fecha:** cada pieza sale cuando esté, con su PR y el veredicto de QA. Las que cambian lo que se ve (la 3 y el aviso de la 4) pasan antes por el «Flujo de láminas».
+- **Lo que no está en la lista:** la Goleta, el Navío, las familias y el Galeón siguen en el backlog (H-1501, H-1502, H-1701 y H-1702), sin versión. Su orden lo fija producto aparte, con la delegación de Jonattan del 2026-10-17. La Goleta y el Navío piden antes el OK de Jonattan a sus láminas en un entorno desplegado (`:1549`).
