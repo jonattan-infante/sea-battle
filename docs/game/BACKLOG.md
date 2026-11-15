@@ -2048,7 +2048,7 @@ AC-210 y lo que lleva turno en esta tabla son P0 de la 1.2. AC-174, AC-178 y AC-
 
 ### Triaje de AC-143 en staging (producto, 2026-11-12)
 
-*Con* lo que dice QA de AC-143 (`:1302-1315`): (a), las líneas `📈 Métricas` del log de Railway, es ligero; (b), los bots, no se puede correr, porque `e2e/stress/run.ts` solo funciona en local (levanta su Postgres y su servidor, y los bots entran con `testUser`, que el servidor solo acepta con el modo invitado, `server/auth.ts:30`); (c), el navegador, existe (`latency.spec.ts`, `test:remote`) y va en el Mac, porque mide frames; y (d), las filas de la BD de staging, pide `railway ssh` o el túnel con llave desde el árbol principal, que los agentes no tienen. Va al final del archivo para no mover las líneas que se citan.
+*Con* lo que dice QA de AC-143 (`:1302-1315`): (a), las líneas «Métricas» (marcadas con U+1F4C8) del log de Railway, es ligero; (b), los bots, no se puede correr, porque `e2e/stress/run.ts` solo funciona en local (levanta su Postgres y su servidor, y los bots entran con `testUser`, que el servidor solo acepta con el modo invitado, `server/auth.ts:30`); (c), el navegador, existe (`latency.spec.ts`, `test:remote`) y va en el Mac, porque mide frames; y (d), las filas de la BD de staging, pide `railway ssh` o el túnel con llave desde el árbol principal, que los agentes no tienen. Va al final del archivo para no mover las líneas que se citan.
 
 **AC-143 no se ha corrido nunca.** Era P1 de H-904 en la 1.1, sobre su candidato en staging (`:276` y `:300`), y en el corte de la 1.1 producto lo pasó a la 1.2 (`:491`, punto 8), porque AC-142 daba mucho margen y lo que añade AC-143 es la red de Railway, que no cambiaba. Ningún QA-REPORT de r11 le da veredicto: solo lo nombran QA-63 y QA-75. Es un encargo de Jonattan del 2026-10-12 (H-904, `:50`).
 
@@ -2062,7 +2062,7 @@ AC-210 y lo que lleva turno en esta tabla son P0 de la 1.2. AC-174, AC-178 y AC-
 
 **El modo remoto del arnés: P2 para una 1.2.x, y AC-143 se simplifica.**
 - **Se encarga ya a dev-npc, en una rama propia y no en el PR #83,** porque es un arnés y no sale con el juego. Va por detrás de cualquier cosa que pida la 1.2. Si está listo y QA lo corre en staging antes del botón, su veredicto entra en la 1.2; si no, se corre después contra lo que haya en staging.
-- **Lo que tiene que hacer** (lo de QA): apuntar a la URL de staging; entrar con sesiones de Clerk dev de los 19 usuarios, en tandas de ≤ 5 cada 10 s (`:1310`); y escribir los minutos de la corrida en UTC, para cortar con ellos las líneas `📈 Métricas` del log de Railway. Los bots corren en Fedora, que tiene CPU de sobra para node, y (c) en el Mac, en un turno que ya tenga otra cosa esencial.
+- **Lo que tiene que hacer** (lo de QA): apuntar a la URL de staging; entrar con sesiones de Clerk dev de los 19 usuarios, en tandas de ≤ 5 cada 10 s (`:1310`); y escribir los minutos de la corrida en UTC, para cortar con ellos las líneas «Métricas» (marcadas con U+1F4C8) del log de Railway. Los bots corren en Fedora, que tiene CPU de sobra para node, y (c) en el Mac, en un turno que ya tenga otra cosa esencial.
 - **(d) sale de AC-143** (tachado en `:1306`). Lo cubre AC-142, que compara en local, con Postgres 18 y el mismo código, las filas con el último frame (0 distintas en QA-75 §8). Leerlo en staging pediría acceso a su BD, que solo tienen el lead y Jonattan, para una medida que no añade nada.
 - **Los 19 usuarios** los crea el lead cuando QA vaya a correr, como ya decía `:1309`, y producto lo registra con fecha y motivo.
 
