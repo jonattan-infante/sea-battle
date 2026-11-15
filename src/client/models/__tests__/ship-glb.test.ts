@@ -25,7 +25,7 @@ import {
   TextureUpgrade
 } from '../ship-glb';
 import { contentHash, E2E_PREFIX, HASHED_GLB, HASHED_KTX2, unhashedModels } from '../../../../scripts/glb/content-hash';
-import { addFallback, editGlb, externalizeKtx2, externalUris, fallbackProblems, readGlb, solidPng } from '../../../../scripts/glb/glb-fallback';
+import { addFallback, editGlb, externalizeKtx2, externalUris, fallbackProblems, glbId, readGlb, solidPng } from '../../../../scripts/glb/glb-fallback';
 import { basisuWithFallback } from '../basisu-fallback';
 import { writeGlb, GlbOptions } from './glb-writer';
 
@@ -553,6 +553,19 @@ describe('AC-193 c, opción B: la entrada espera al GLB propio con un tope de 0,
     expect([1000, 1600, 2999, 3000].map((t) => longer.update(t, true, false))).toEqual([false, false, false, true]);
   });
 
+  test('AC-200 e: con el puerto pedido espera también a él, con el mismo tope, y anota si entró sin él', () => {
+    const arrives = new EntryGate();
+    expect([arrives.update(1000, false, false, true), arrives.update(1300, false, false, true), arrives.update(1316, false, false, false)]).toEqual([false, false, true]);
+    expect(arrives).toMatchObject({ shownAt: 1316, lastWaitAt: 1300, capped: false, portCapped: false });
+    const late = new EntryGate();
+    expect([1000, 1499, 1516].map((t) => late.update(t, false, false, true))).toEqual([false, false, true]);
+    expect(late).toMatchObject({ shownAt: 1516, capped: false, portCapped: true });
+    // El barco llega y el puerto no: espera al puerto hasta el tope
+    const both = new EntryGate();
+    expect([both.update(1000, true, false, true), both.update(1200, false, true, true), both.update(1516, false, true, true)]).toEqual([false, false, true]);
+    expect(both).toMatchObject({ withGlb: true, capped: false, portCapped: true });
+  });
+
   test('si el GLB falla, entra en ese frame con el modelo de hoy', () => {
     const gate = new EntryGate();
     gate.update(1000, true, false);
@@ -969,7 +982,9 @@ describe('AS-V10 (D90): cada textura KTX2 de un GLB lleva su respaldo', () => {
       ['ship_line_es', 256, 'image/png'],
       ['ship_line_gb', 256, 'image/png'],
       ['npc_pirate_gunboat', 128, 'image/png'], // la medida de ux, en ASSET-SPEC §13 (la Cañonera y el Capitán de la receta)
-      ['npc_pirate_captain', 128, 'image/png']
+      ['npc_pirate_captain', 128, 'image/png'],
+      ['islands', 128, 'image/png'], // la medida de ux en ASSET-SPEC §9.7 (las 15 islas, una fila por archivo) y §9.8 (el puerto)
+      ['island_port', 256, 'image/jpeg']
     ]);
     const line = (fallback: Uint8Array, sbId: string | null = 'ship_line_es', mimeType = 'image/png') => {
       const ext = externalizeKtx2(addFallback(fixture(), fallback), 'ship_line_es');
@@ -996,6 +1011,41 @@ describe('AS-V10 (D90): cada textura KTX2 de un GLB lleva su respaldo', () => {
     expect(line(jpeg(256), 'ship_line_es', 'image/jpeg')).toEqual(['textura 0: respaldo image/jpeg; la tabla pide image/png para ship_line_es']);
     expect(line(solidPng(CYAN, 256), 'ship_line_xx')).toEqual(['ship_line_xx no está en scripts/glb/respaldo-tamanos.json']);
     expect(line(solidPng(CYAN, 256), null)).toEqual(['la raíz no lleva sb_id en sus extras (AS-V03): no se sabe qué respaldo pide scripts/glb/respaldo-tamanos.json']);
+  });
+
+  // Paso 4c con varias raíces (ASSET-SPEC §9.7: islands.glb, una raíz island_<id> por isla con sb_kind "island"): el id del
+  // GLB es el del archivo, que hay que dar, y su fila de la tabla es la de ese id. Con 1 raíz, el id es su sb_id; si se da
+  // otro, no pasa. El fixture (la Balandra) con su raíz cambiada a isla y una 2.ª raíz sin hijos: el validador solo lee
+  // las raíces de la escena y sus extras
+  test('paso 4c con varias raíces: pasan con el id del archivo y su fila; no, sin id, con una raíz que no es isla, sin sb_id o con uno repetido; con 1 raíz, el id dado tiene que ser su sb_id', () => {
+    const islas = (roots: (Json | null)[]) =>
+      editGlb(addFallback(fixture(), solidPng(CYAN, 16)), (json) => {
+        const nodes = json.nodes as Json[];
+        const scene = (json.scenes as { nodes: number[] }[])[0];
+        const first = scene.nodes[0];
+        scene.nodes = roots.map((extras, k) => {
+          const i = k === 0 ? first : nodes.push({ name: `raiz_${k}` }) - 1;
+          if (extras === null) delete nodes[i].extras;
+          else nodes[i].extras = { sb_version: 1, ...extras };
+          return i;
+        });
+      });
+    const isla = (sb_id: string) => ({ sb_kind: 'island', sb_id });
+    const sizes = { islas: { lado: 16, mimeType: 'image/png' }, island_I1: { lado: 16, mimeType: 'image/png' } };
+    const two = islas([isla('island_I1'), isla('island_E1a')]);
+    expect(fallbackProblems(two, { sizes, id: 'islas' })).toEqual([]);
+    expect(glbId(readGlb(two).json, 'islas')).toEqual({ id: 'islas', roots: 2, problems: [] });
+    expect(fallbackProblems(two, { sizes })).toEqual(['2 raíces: falta el id del archivo, que da su nombre y su fila en scripts/glb/respaldo-tamanos.json']);
+    expect(fallbackProblems(two, { sizes, id: 'islotes' })).toEqual(['islotes no está en scripts/glb/respaldo-tamanos.json']);
+    expect(fallbackProblems(two, { sizes, id: 'islas.v2' })).toEqual(['el id del archivo «islas.v2» no es válido', 'islas.v2 no está en scripts/glb/respaldo-tamanos.json']);
+    expect(fallbackProblems(islas([isla('island_I1'), { sb_kind: 'ship', sb_id: 'ship_sloop' }]), { sizes, id: 'islas' })).toEqual(['raíz 1: sb_kind ship; con varias raíces solo valen islas (§9.7)']);
+    expect(fallbackProblems(islas([isla('island_I1'), isla('island_I1')]), { sizes, id: 'islas' })).toEqual(['raíz 1: sb_id island_I1 repetido']);
+    expect(fallbackProblems(islas([isla('island_I1'), null]), { sizes, id: 'islas' })).toEqual(['raíz 1: sin un sb_id válido (undefined)', 'raíz 1: sb_kind undefined; con varias raíces solo valen islas (§9.7)']);
+    // 1 raíz: el piloto island_I1 (con mayúscula, como todas las islas) pasa con su sb_id, dado o no; con otro id, no
+    const one = islas([isla('island_I1')]);
+    expect(fallbackProblems(one, { sizes })).toEqual([]);
+    expect(fallbackProblems(one, { sizes, id: 'island_I1' })).toEqual([]);
+    expect(fallbackProblems(one, { sizes, id: 'islas' })).toEqual(['el archivo es «islas» y su raíz, «island_I1»']);
   });
 
   test('addFallback deja la KTX2 en la extensión, el PNG en texture.source y la extensión solo en extensionsUsed', () => {
@@ -1061,7 +1111,8 @@ describe('AS-V10 (D90): cada textura KTX2 de un GLB lleva su respaldo', () => {
     const bytes = (f: string) => new Uint8Array(fs.readFileSync(path.join(dir, f)));
     const glbs = files.filter((f) => f.endsWith('.glb'));
     const beside = (uri: string) => (files.includes(uri) ? bytes(uri) : null);
-    expect(glbs.map((f) => [f, fallbackProblems(bytes(f), { external: beside })] as const).filter(([, p]) => p.length > 0)).toEqual([]);
+    // El id de cada GLB es su nombre sin el hash: el sb_id de su raíz o, con varias raíces (islands.glb), el del archivo
+    expect(glbs.map((f) => [f, fallbackProblems(bytes(f), { external: beside, id: f.split('.')[0] })] as const).filter(([, p]) => p.length > 0)).toEqual([]);
     const linked = new Set(glbs.flatMap((f) => externalUris(bytes(f))));
     expect(files.filter((f) => f.endsWith('.ktx2') && !linked.has(f))).toEqual([]);
   });

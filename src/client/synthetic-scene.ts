@@ -3,7 +3,11 @@
 // runtime los dibuje exactamente igual que una partida. Tres escenas: la portada de la landing
 // (ART-DIRECTION §16.1), la escena estándar de AC-89 (20 jugadores + 20 NPC + 1, con ≥ 6 duelos) y un
 // escaparate para capturas antes/después (barco propio protegido, objetivo fuera de alcance, estela, placas).
-import { CANNON_LEVELS, CANNONBALL_SPEED, ISLANDS, IslandDef, SHIP_CLASSES, ShipKind } from '../game/constants';
+// Islas (AC-210, producto, BACKLOG :1936): las escenas de prueba (la estándar, la galería, la de daño y el escaparate) van con
+// las del mapa del juego, las de la bienvenida del cliente conectado o GAME_MAP sin ella (sceneIslands): la estándar es la de
+// AC-89 y AC-200 (b), y sus capturas no pueden enseñar barcos sobre los lóbulos de la 1.1. La portada (hero) sigue en la 1.2
+// con las de la 1.0 (ISLANDS), como en 4cd8c45. islandsForScene las reparte; el runtime las pinta
+import { CANNON_LEVELS, CANNONBALL_SPEED, GAME_MAP, ISLANDS, IslandDef, SHIP_CLASSES, ShipKind } from '../game/constants';
 import { GameEvent, PlayerView, Welcome, WreckView } from '../game/types';
 import { createRng } from '../game/vec';
 import type { RenderShip } from './game-client';
@@ -66,10 +70,25 @@ interface Duel extends SceneDuel {
   next: number;
 }
 
+// Las islas de una escena: las de la bienvenida del cliente conectado, que son las que manda el servidor (con el mapa por
+// defecto, las de la 1.1; con la palanca de E-1, las de la 1.0, como pide el A/B de AC-90), o las del mapa del juego si no
+// hay bienvenida. Las escenas se abren desde la partida (runtime.startScene, por el puente de pruebas), así que en la
+// práctica siempre hay bienvenida
+export function sceneIslands(welcome: Pick<Welcome, 'islands'> | null | undefined): readonly IslandDef[] {
+  return welcome?.islands?.length ? welcome.islands : GAME_MAP.islands;
+}
+
+// Las islas que pinta y usa cada escena: las del mapa del juego en las de prueba; en la portada (hero), las de la 1.0, como en
+// 4cd8c45 (producto, AC-210)
+export function islandsForScene(name: SceneName, welcome: Pick<Welcome, 'islands'> | null | undefined): readonly IslandDef[] {
+  return name === 'hero' ? ISLANDS : sceneIslands(welcome);
+}
+
 export class SyntheticSource implements RenderSource {
   readonly myShipId: string | null;
   readonly player: PlayerView | null = null;
   readonly welcome: Welcome | null = null;
+  readonly islands: readonly IslandDef[]; // las que pinta el runtime con esta fuente (no tiene bienvenida)
   readonly focus: { x: number; z: number };
   readonly spec: SceneSpec;
   private readonly ships: RenderShip[] = [];
@@ -82,8 +101,9 @@ export class SyntheticSource implements RenderSource {
   private readonly t0 = performance.now();
   private time = 0;
 
-  constructor(spec: SceneSpec) {
+  constructor(spec: SceneSpec, islands: readonly IslandDef[]) {
     this.spec = spec;
+    this.islands = islands;
     this.focus = spec.focus;
     this.myShipId = spec.myShipId ?? null;
     this.rng = createRng(spec.seed);
@@ -195,8 +215,10 @@ export class SyntheticSource implements RenderSource {
   }
 }
 
-function island(id: string): IslandDef {
-  return ISLANDS.find((i) => i.id === id) ?? ISLANDS[1];
+// El círculo principal de una isla: el de su id con un solo círculo (la 1.0) o el primero de su forma, «<id>.0» (la 1.1, donde
+// es el mismo círculo que en la 1.0 para I1, I4 e I5)
+function island(id: string, islands: readonly IslandDef[]): IslandDef {
+  return islands.find((i) => i.id === id || i.id === `${id}.0`) ?? islands.find((i) => !i.id.startsWith('PORT')) ?? islands[0];
 }
 
 // Punto del agua en una fracción de la pantalla para una cámara con foco `focus`
@@ -225,7 +247,7 @@ export function heroScene(view: SceneView): SceneSpec {
   const layout = portrait
     ? { island: 'I4', at: [1.0, 0.07], frigate: [0.4, 0.55], pirate: [0.62, 0.72] }
     : { island: 'I1', at: [1.0, 0.04], frigate: [0.56, 0.4], pirate: [0.76, 0.64] };
-  const isle = island(layout.island);
+  const isle = island(layout.island, ISLANDS); // las de la 1.0, como en 4cd8c45 (islandsForScene)
   const focus = focusFor(view, isle, layout.at[0], layout.at[1]);
   const speed = 1.2;
   const ship = (id: string, kind: ShipKind, classId: string, name: string, fx: number, fy: number, heading: number, hp: number): SceneShip => {
@@ -251,12 +273,20 @@ export function heroScene(view: SceneView): SceneSpec {
 
 // AC-89: 20 barcos de jugadores + 20 NPC (12 piratas y 8 mercantes) + 1 Fragata en lugar del jefe (P2), todos en
 // pantalla con el zoom por defecto, una isla en una esquina, 8 duelos simultáneos y daño variado (humo y fuego).
+// Encuadre (AC-210, opción B de producto, BACKLOG :1936): I1 arriba a la izquierda, con la cala G4 también en pantalla. Con I1
+// arriba a la derecha, como hasta la 1.1, los escollos de E1 caían en el centro y los 41 no cabían fuera de su margen
 // i2: la población del I2 de GDD §0 (8 piratas, 4 Cañoneras y 8 mercantes) con el Capitán en el sitio de la Fragata, en las
-// mismas posiciones, rumbos, vidas y duelos (producto, P2 del punto 3 de dev-render)
-export function standardScene(view: SceneView, options: { i2?: boolean } = {}): SceneSpec {
+// mismas posiciones, rumbos, vidas y duelos (producto, P2 del punto 3 de dev-render). islands: las del mapa del juego
+// (sceneIslands). standard-scene.test.ts comprueba que ningún punto de la órbita de ningún barco queda a menos de su margen
+// (radio + navClearance) de un círculo, con las islas de la 1.0 y con las de la 1.1 (AC-210)
+export function standardScene(view: SceneView, options: { i2?: boolean; islands?: readonly IslandDef[] } = {}): SceneSpec {
   const rng = createRng(89);
-  const isle = island('I1');
-  const focus = focusFor(view, isle, 0.94, 0.1);
+  const islands = options.islands ?? GAME_MAP.islands;
+  const isle = island('I1', islands);
+  const focus = focusFor(view, isle, 0.06, 0.1);
+  // Se colocan fuera de las islas pintadas y de las del juego: con la palanca de E-1 (la 1.0) los barcos quedan donde con el
+  // mapa por defecto, así que el A/B de AC-89 y AC-90 entre los dos mapas solo cambia las islas
+  const avoid = [...islands, ...GAME_MAP.islands];
   const players = ['sloop', 'brig', 'frigate'];
   const roster: { kind: ShipKind; classId: string; name: string }[] = [];
   for (let i = 0; i < 20; i++) roster.push({ kind: 'player', classId: players[i % 3], name: `Capitán ${i + 1}` });
@@ -266,7 +296,7 @@ export function standardScene(view: SceneView, options: { i2?: boolean } = {}): 
   roster.push(options.i2 ? npc('captain') : { kind: 'player', classId: 'frigate', name: 'Capitán 21' });
 
   // Rejilla que salta las celdas pegadas a cualquier isla visible; con más columnas si no caben los 41
-  const clear = (p: { x: number; z: number }) => ISLANDS.every((i) => Math.hypot(p.x - i.x, p.z - i.z) >= i.radius + 22);
+  const clear = (p: { x: number; z: number }) => avoid.every((i) => Math.hypot(p.x - i.x, p.z - i.z) >= i.radius + 26);
   let cells: { x: number; z: number }[] = [];
   for (let cols = 7; cols <= 10 && cells.length < roster.length; cols++) {
     cells = [];
