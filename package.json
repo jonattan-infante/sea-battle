@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit",
     "test": "jest",
     "test:watch": "jest --watch",
+    "test:map11": "jest --testMatch \"**/__map11__/**/*.test.ts\"",
     "test:e2e": "npm run build:e2e && playwright test --grep-invert \"@perf|@capture|@soak\"",
     "test:perf": "npm run build:e2e && playwright test --grep @perf",
     "test:soak": "npm run build:e2e && playwright test --grep @soak",

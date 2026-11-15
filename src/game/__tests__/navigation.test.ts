@@ -1,8 +1,8 @@
-import { ISLANDS, NAV_LIMIT, PIVOT_MIN_ANGLE, PIVOT_SPEED, SHIP_CLASSES, navClearance } from '../constants';
-import { segmentPointDistance } from '../nav';
+import fs from 'fs';
+import { GAME_MAP, ISLANDS, MAP_1_0, MAP_1_1, NAV_LIMIT, PIVOT_MIN_ANGLE, PIVOT_SPEED, SHIP_CLASSES, navClearance } from '../constants';
 import { Ship, World } from '../types';
-import { createRng, distance, forward } from '../vec';
-import { moveTo, navigator, stop } from '../world';
+import { Vec2, createRng, distance, forward, headingTo } from '../vec';
+import { createWorld, moveTo, navigator, navigatorOf, stop } from '../world';
 import { DT, emptyWorld, i2World, percentile, placeCaptain, placeGunboat, placeMerchant, placePirate, placePlayer, run, runUntil } from './helpers';
 
 describe('E1 — Navegación', () => {
@@ -63,44 +63,72 @@ describe('E1 — Navegación', () => {
     expect(ship.speed).toBe(0);
   });
 
-  // Segmento del casco (proa a popa, longitud L, sin bauprés) frente a cada isla
-  function hullTouchesIsland(x: number, z: number, heading: number, length: number): boolean {
-    const fx = Math.sin(heading) * (length / 2);
-    const fz = Math.cos(heading) * (length / 2);
-    const bow = { x: x + fx, z: z + fz };
-    const stern = { x: x - fx, z: z - fz };
-    return ISLANDS.some((isl) => segmentPointDistance(bow, stern, { x: isl.x, z: isl.z }) < isl.radius - 1e-6);
-  }
+  // AC-20 con el mapa del juego (las 1 000 rutas por clase): en ac20-<clase>.test.ts, un archivo por clase para que Jest los
+  // reparta (ac20-routes.ts), con las 7 clases del juego (AC-210 c). Este test vigila que no falte ni sobre ninguno (O-8 de
+  // QA-74): una clase nueva en SHIP_CLASSES sin su archivo, o un archivo de una clase que ya no existe, lo ponen en rojo
+  test('AC-20: un archivo ac20-<clase>.test.ts por cada clase de SHIP_CLASSES, ni uno más ni uno menos, y cada uno corre su clase', () => {
+    const files = fs.readdirSync(__dirname).flatMap((f) => {
+      const m = /^ac20-(.+)\.test\.ts$/.exec(f);
+      return m ? [m[1]] : [];
+    });
+    expect(files.sort()).toEqual(Object.keys(SHIP_CLASSES).sort());
+    const runs = files.map((c) => [c, fs.readFileSync(`${__dirname}/ac20-${c}.test.ts`, 'utf8').includes(`ac20RoutesTest('${c}')`)]);
+    expect(runs).toEqual(files.map((c) => [c, true]));
+  });
 
-  test.each(['sloop', 'brig', 'frigate', 'pirate', 'merchant'])(
-    'AC-20: %s — 1 000 rutas aleatorias: el casco nunca toca una isla y el 100 %% llega a ≤ 2 m',
-    (classId) => {
-      const rng = createRng(2026);
+  // H1 (QA-70; producto, 2026-11-04, BACKLOG :914): la re-planificación de la ruta es solo de los mercantes NPC (C3,
+  // AC-173). Un barco de jugador calcula su ruta 1 vez por orden de moveTo, aunque pase junto a la costa: un contador sobre el
+  // Navigator del mapa (compartido por los mundos del mismo mapa) cuenta las llamadas a findPath de cada ruta, desde la orden
+  // hasta la llegada. Rutas junto a la costa, con la semilla de AC-20: el barco va a la velocidad máxima por el borde del
+  // margen de una isla al azar, con el rumbo tangente a ella, y recibe la orden de ir al otro lado de esa isla (la ruta la
+  // rodea). Es el caso en que el arco de giro lo saca de la recta junto a la costa: con el mutante replan-todos (re-planificar
+  // cualquier barco) re-planifica en 9 de las 10 combinaciones de clase y mapa (sonda de dev-npc, 2026-11-04); parado y con
+  // el rumbo al azar, casi nunca
+  test.each([
+    ['1.0', MAP_1_0],
+    ['1.1', MAP_1_1]
+  ])('AC-20 (H1): mapa %s — un barco de jugador de cada una de las 5 clases, en 50 rutas que rodean una isla desde su costa, llama a findPath 1 vez por cada moveTo', (id, map) => {
+    const ROUTES = 50;
+    const report: string[] = [];
+    for (const classId of ['sloop', 'brig', 'frigate', 'pirate', 'merchant']) {
       const clearance = navClearance(classId);
-      const length = SHIP_CLASSES[classId].length;
-      let arrived = 0;
-      let touched = 0;
-      for (let i = 0; i < 1000; i++) {
-        const world = emptyWorld(i);
-        const from = navigator.nearestNavigable({ x: (rng() * 2 - 1) * 480, z: (rng() * 2 - 1) * 480 }, clearance);
-        const to = navigator.nearestNavigable({ x: (rng() * 2 - 1) * 480, z: (rng() * 2 - 1) * 480 }, clearance);
-        const ship = placePlayer(world, 'a', from.x, from.z, rng() * Math.PI * 2);
-        ship.classId = classId;
-        moveTo(world, 'a', to);
-        const target = ship.destination!;
-        let violated = false;
-        const t = runUntil(world, 300, () => {
-          if (!violated && hullTouchesIsland(ship.pos.x, ship.pos.z, ship.heading, length)) violated = true;
-          return ship.destination === null && ship.speed === 0;
-        });
-        if (violated) touched++;
-        if (t !== Infinity && distance(ship.pos, target) <= 2) arrived++;
+      const nav = navigatorOf(createWorld({ seed: 0, spawnNpcs: false, map }));
+      const rng = createRng(2026);
+      const routes: { from: Vec2; to: Vec2; heading: number }[] = [];
+      for (let tries = 0; routes.length < ROUTES && tries < 5000; tries++) {
+        const isl = map.islands[Math.floor(rng() * map.islands.length)];
+        const a = rng() * Math.PI * 2;
+        // Desde el borde del margen (el punto navegable más cercano a uno de dentro de la isla) hasta el lado opuesto
+        const from = nav.nearestNavigable({ x: isl.x + Math.sin(a) * isl.radius * 0.5, z: isl.z + Math.cos(a) * isl.radius * 0.5 }, clearance);
+        const to = nav.nearestNavigable({ x: isl.x - Math.sin(a) * (isl.radius + 60), z: isl.z - Math.cos(a) * (isl.radius + 60) }, clearance);
+        if (nav.findPath(from, to, clearance).length >= 2) routes.push({ from, to, heading: headingTo(from, isl) + Math.PI / 2 });
       }
-      expect({ classId, touched }).toEqual({ classId, touched: 0 });
-      expect({ classId, arrived }).toEqual({ classId, arrived: 1000 });
-    },
-    120_000
-  );
+      const findPath = jest.spyOn(nav, 'findPath');
+      const extra: string[] = [];
+      let arrived = 0;
+      try {
+        routes.forEach(({ from, to, heading }, i) => {
+          const world = createWorld({ seed: i, spawnNpcs: false, map });
+          const ship = placePlayer(world, 'a', from.x, from.z, heading);
+          ship.classId = classId;
+          ship.speed = SHIP_CLASSES[classId].maxSpeed;
+          const before = findPath.mock.calls.length;
+          moveTo(world, 'a', to);
+          const t = runUntil(world, 300, () => ship.destination === null && ship.speed === 0);
+          if (t !== Infinity) arrived++;
+          const calls = findPath.mock.calls.length - before;
+          if (calls !== 1) extra.push(`ruta ${i} (${from.x.toFixed(1)}, ${from.z.toFixed(1)}) → (${to.x.toFixed(1)}, ${to.z.toFixed(1)}): ${calls} llamadas`);
+        });
+      } finally {
+        findPath.mockRestore();
+      }
+      report.push(`${classId} ${routes.length} rutas, ${arrived} llegan, ${extra.length} con más de 1 llamada`);
+      // Medido: sin las 50 rutas junto a la costa, el test no prueba lo que dice
+      expect({ classId, routes: routes.length }).toEqual({ classId, routes: ROUTES });
+      expect({ classId, extra }).toEqual({ classId, extra: [] });
+    }
+    console.log(`AC-20 (H1), mapa ${id}: ${report.join(' · ')}`);
+  }, 120_000);
 
   test.each(['sloop', 'brig', 'frigate', 'pirate', 'merchant'])('AC-21: %s — un clic dentro de una isla lleva a L/2 + 2 ±1 m del borde', (classId) => {
     const margin = SHIP_CLASSES[classId].length / 2 + 2;
@@ -141,16 +169,19 @@ describe('E1 — Navegación', () => {
     expect(minNear).toBeLessThanOrEqual(PIVOT_SPEED + 1e-9);
   });
 
-  // p50 y p99 de 1 000 cálculos de ruta aleatorios. Misma semilla en cada llamada: las mismas rutas, solo cambia la carga
-  // de la máquina (findPath no guarda rutas; solo el grafo por margen, que se precalienta antes)
+  // p50 y p99 de 1 000 cálculos de ruta aleatorios en el mapa del juego (GAME_MAP, AC-210 c). Misma semilla en cada llamada:
+  // las mismas rutas, solo cambia la carga de la máquina (findPath no guarda rutas; solo el grafo por margen, que se
+  // precalienta antes)
+  const gameNav = () => navigatorOf(createWorld({ seed: 0, spawnNpcs: false, map: GAME_MAP }));
   function routeTimes(radius: number): { p50: number; p99: number } {
+    const nav = gameNav();
     const rng = createRng(7);
     const times: number[] = [];
     for (let i = 0; i < 1000; i++) {
-      const a = navigator.nearestNavigable({ x: (rng() * 2 - 1) * 480, z: (rng() * 2 - 1) * 480 }, radius);
-      const b = navigator.nearestNavigable({ x: (rng() * 2 - 1) * 480, z: (rng() * 2 - 1) * 480 }, radius);
+      const a = nav.nearestNavigable({ x: (rng() * 2 - 1) * 480, z: (rng() * 2 - 1) * 480 }, radius);
+      const b = nav.nearestNavigable({ x: (rng() * 2 - 1) * 480, z: (rng() * 2 - 1) * 480 }, radius);
       const t0 = performance.now();
-      navigator.findPath(a, b, radius);
+      nav.findPath(a, b, radius);
       times.push(performance.now() - t0);
     }
     return { p50: percentile(times, 50), p99: percentile(times, 99) };
@@ -158,12 +189,12 @@ describe('E1 — Navegación', () => {
 
   // DT-06 (como DT-05 en AC-03): la carga ajena de la máquina solo suma tiempo a una ruta, nunca lo resta, así que el
   // menor de 3 p99 estima el coste del cálculo; un p99 suelto medía también la máquina
-  test('AC-22: el menor de 3 p99 del cálculo de ruta (1 000 rutas cada uno) es ≤ 2 ms', () => {
+  test(`AC-22: con el mapa del juego (${GAME_MAP.id}), el menor de 3 p99 del cálculo de ruta (1 000 rutas cada uno) es ≤ 2 ms`, () => {
     const radius = navClearance('frigate');
-    navigator.findPath({ x: -480, z: -480 }, { x: 480, z: 480 }, radius); // precalienta el grafo
+    gameNav().findPath({ x: -480, z: -480 }, { x: 480, z: 480 }, radius); // precalienta el grafo
     const runs = [routeTimes(radius), routeTimes(radius), routeTimes(radius)];
     const best = Math.min(...runs.map((r) => r.p99));
-    console.log(`AC-22: p99 ${runs.map((r) => r.p99.toFixed(3)).join(' · ')} ms (p50 ${runs.map((r) => r.p50.toFixed(3)).join(' · ')} ms) → menor ${best.toFixed(3)} ms`);
+    console.log(`AC-22 (mapa ${GAME_MAP.id}): p99 ${runs.map((r) => r.p99.toFixed(3)).join(' · ')} ms (p50 ${runs.map((r) => r.p50.toFixed(3)).join(' · ')} ms) → menor ${best.toFixed(3)} ms`);
     expect(best).toBeLessThanOrEqual(2);
   });
 
