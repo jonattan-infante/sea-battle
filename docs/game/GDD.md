@@ -209,7 +209,7 @@ Un puerto de verdad, no una isla con un pueblo: **muelles, amarres donde se apar
 | Aparición | Al entrar al mundo y al zarpar tras hundirse: en un amarre **libre**, elegido al azar con la semilla entre los libres. Un amarre está libre si ningún barco vivo, de cualquier clase, tiene el centro a < 12 m de su **eje**: el segmento de r 30 a r 76 en su rumbo (76 = 30 + 42 + 4, el Navío entero con 2 m de holgura a cada lado). Medir solo hasta el punto de la clase que aparece no basta, porque cada clase atraca a un radio distinto: un Navío atracado (centro a 53 m) dejaría «libre» su amarre para una Balandra (40 m) y los cascos se solaparían (R-04 de QA). Con los 12 ocupados, en el anillo de 60–90 m de la 1.0 | 12 amarres para 20 jugadores: aparecer a la vez más de 12 es raro |
 | Entradas y salidas | **Sin diques ni bocanas sólidas**: se entra y se sale en cualquier rumbo. Desde un amarre hasta el centro de cualquier sector pirata, la ruta que traza el juego mide **≤ 1,16 × la línea recta**, y desde 300 m en 8 rumbos hasta el amarre más cercano, **≤ 1,15** (AC-177) | Dentro de la zona segura no hay combate (§7), así que un canal no tendría función táctica: solo alargaría cada viaje a la tienda y movería AC-60. *El 1,16 de la salida es del 2026-10-19, con D92:* el navegador del juego alarga unos 2 m una sola ruta, la del Navío del amarre 10 a la guarida NE (BACKLOG AC-177) |
 | Tiempo para salir | Desde su amarre, la Balandra deja la zona en ~7 s (70 m) y el Navío en ~9 s (57 m), con la aceleración de §6 | La protección de 15 s (§12) cubre la salida |
-| Tienda | Se abre en cualquier punto de la zona segura (§11, sin cambios). El **astillero** es el edificio que la señala | Cambiar la regla rompería AC-66 y AC-68 sin ganar nada |
+| Tienda | Se abre en cualquier punto de la zona segura (§11, sin cambios). El **astillero** es el edificio que la señala. **1.3:** salvo bajo fuego (§11, «Zona segura bajo fuego (1.3)») | Cambiar la regla rompería AC-66 y AC-68 sin ganar nada. La excepción de la 1.3 impide curarse en mitad de un combate comprando un barco, que sale con la vida llena (BACKLOG AC-252) |
 | Minimapa | Icono propio del puerto (un ancla, por ejemplo) dentro del círculo discontinuo de la zona segura. Entra si pasa la regla de plantillas del minimapa de `game-ux` (AD-29) junto con los marcadores del Capitán y la Cañonera; lo modela ux en su fase 2. Si no la pasa, el puerto se queda con el círculo de la zona segura, como en la 1.0 | Se encuentra el puerto desde cualquier punto, sin confundirlo con un barco |
 
 **Qué debe comunicar el puerto (para `game-ux`):**
@@ -451,8 +451,8 @@ Equilibrio: la Balandra es rápida y frágil; la Fragata es lenta y tiene la may
 | Navío de línea (10, 1.1) | 52,5 | 128,0 |
 
 ### Reglas PvP (P1)
-- Un jugador puede atacar a otro solo si **ambos** están fuera de la zona segura y ninguno tiene protección.
-- Si el objetivo entra en la zona segura, el ataque contra él se cancela.
+- Un jugador puede atacar a otro solo si **ambos** están fuera de la zona segura y ninguno tiene protección. **1.3:** quien está dentro bajo fuego cuenta como fuera (§11, «Zona segura bajo fuego (1.3)»).
+- Si el objetivo entra en la zona segura, el ataque contra él se cancela. **1.3:** solo si entra sin estar bajo fuego; si no, el ataque sigue hasta que caduque su marca (§11).
 
 ## 8. Reparación
 
@@ -504,7 +504,7 @@ Aceleración y frenado: Pirata 3 / 5 m/s², Mercante 2,5 / 4 m/s², Cañonera 2,
   - la cañonera (62 m) caería a ~56 m, fuera de los 62 ±4 m de AC-113 y pegada a su umbral de huida de 55 m.
 
   Como la precisión no depende de la distancia (§7), el daño por segundo no cambia mientras el NPC está a tiro. Aun así, AC-48, AC-53 y AC-60 se vuelven a medir con la corrección.
-- **Atacable** = jugador vivo, fuera de la zona segura y sin protección.
+- **Atacable** = jugador vivo, fuera de la zona segura y sin protección. **1.3:** también dentro de la zona si está bajo fuego, y un hostil suelta al objetivo que está dentro de la zona y fuera de su alcance (§11, «Zona segura bajo fuego (1.3)»).
 
 ### IA del mercante
 - **Ruta**: recorre en bucle una ruta cerrada de 4–6 *waypoints* a 7 m/s.
@@ -746,6 +746,113 @@ Con esas tasas salen los tiempos de la tabla de niveles: XP acumulada de 421 a l
 - **Barcos**: comprar un barco te cambia a él con la vida llena. Los barcos comprados quedan en propiedad y se puede cambiar entre ellos gratis en el puerto.
 - **Total de la progresión**: 2 000 + 6 000 + 500 + 1 500 + 400 + 1 200 + 300 + 900 = **12 800 oro**. **1.1:** con la Goleta (3 000) y el Navío (12 000), el catálogo completo suma **27 800 oro**. Los 12 800 siguen siendo la cifra de AC-60 (§10).
 
+### Zona segura bajo fuego (1.3)
+
+*Pedido de Jonattan del 2026-11-15:* «la zona segura solo sea valida si los jugadores no estan bajo fuego». La regla es de producto (delegación del 2026-10-17); cómo se comunica en el HUD, de `game-ux`. Criterios: BACKLOG E20 (AC-240 a AC-257). Las citas de código de esta subsección son de `a68836f`.
+
+**La regla.** La zona segura protege a un jugador solo si está dentro de los 110 m **y no está bajo fuego**. Está bajo fuego durante **10 s** desde la última andanada que **dispara** o que **le disparan**, de un NPC o de un jugador. Mientras dura, dentro de la zona cuenta como fuera: le pueden atacar, puede atacar y el puerto (tienda y cambio de barco) está cerrado. Dentro y sin marca nadie puede dispararle, así que **nadie puede ponerle bajo fuego dentro de la zona si no lo estaba ya**: la zona deja de cortar un combate en curso, pero sigue sin dejar que empiece uno contra quien está en paz.
+
+```
+                andanada que disparas o que te disparan
+                       (la marca pasa a t + 10 s)
+  [Sin marca] ───────────────────────────────────────► [Bajo fuego] ◄──┐
+       ▲                                                   │   │       │ otra andanada:
+       │      10 s sin andanadas  ·  zarpar tras hundirse   │   └───────┘ vuelve a t + 10 s
+       └───────────────────────────────────────────────────┘
+
+  Protegido por la zona  =  dentro de los 110 m  Y  sin marca
+```
+
+| Lo que hace la zona | Dentro, sin marca | Dentro, bajo fuego | Fuera |
+|---|---|---|---|
+| Los NPC hostiles te eligen y te dañan | No | Sí, si te tienen a tiro (no entran a < 130 m; ver «Los NPC») | Sí |
+| Otros jugadores te atacan | No | Sí | Sí |
+| Atacas a otro jugador | No | Sí, si él es atacable | Sí, si él es atacable |
+| Atacas a un NPC | Sí, y al disparar quedas bajo fuego | Sí | Sí |
+| Tienda y cambio de barco | Sí | **No** | No |
+
+La protección al reaparecer (§12) no cambia y va aparte: mientras dura, nadie te ataca, estés donde estés.
+
+**Qué te pone bajo fuego.** Cada caso lleva la marca a `max(marca, t + 10 s)`; nunca la acorta ni la acumula:
+1. Que se **lance** contra ti una andanada de un NPC o de un jugador, acierte o no. Cuenta el instante del disparo, no el del impacto: así una andanada en vuelo siempre llega (vuela ≤ 0,67 s: 80 m a 120 m/s, §7), aunque cruces los 110 m mientras vuela.
+2. **Disparar tú** una andanada, contra un NPC o contra un jugador.
+
+**Qué no:** seleccionar o armar un ataque sin disparar (p. ej., «Fuera de alcance»), que te persigan sin dispararte, reparar, recoger restos, que otros combatan a tu lado, ni la huida de un mercante.
+
+*Por qué disparar también cuenta:* sin ello queda el abuso contrario. Desde dentro se puede atacar a un NPC (`canAttack`, `src/game/world.ts:209`), y el NPC nunca responde, porque quien está dentro no es atacable. Seafight usa la misma definición de combate para desconectarse: «without moving, shooting or being shot» (REFERENCE §10, S15).
+
+**Cuánto dura: 10 s (`UNDER_FIRE_WINDOW`).** No se reutiliza la ventana de 3 s de la reparación (§8, `REPAIR_UNDER_FIRE_WINDOW`), que sigue igual y aparte:
+- 3 s no supera ninguna recarga del juego (3,0 a 5,0 s; §7 y §9). Entre dos andanadas la marca caducaría, la zona volvería a proteger y el ataque se cancelaría (AC-34): la regla no haría nada contra quien sigue disparando.
+- 10 s es el doble de la recarga más lenta (5,0 s, la cañonera y el galeón): un ataque sostenido no deja caducar la marca, aunque pierda una andanada por quedar un momento fuera de alcance.
+- Es la tercera parte de los 30 s de Seafight para desconectarse (S15): tras un combate, volver a reparar y comprar cuesta 10 s, no 30. Seafight no dice cuánto dura su «involved in battle» (S33 solo dice «recently»): no hay fuente para la cifra, y los 10 s son de producto.
+- Pasar la ventana de la reparación a 10 s cambiaría el balance de §8 sin que nadie lo pida.
+
+**El daño recibido dentro renueva la marca, y es la intención.** Si un perseguidor te sigue dentro y sigue disparando, sigues bajo fuego hasta que deje de disparar 10 s, te hunda o lo hundas. No hay tope, porque no hace falta: (1) dentro y sin marca nadie puede empezar a dispararte, así que la marca solo alarga un combate que ya existía; (2) el perseguidor también está bajo fuego por sus propias andanadas, así que puedes responderle y otros pueden defenderte; (3) cada andanada hace daño, así que acaba en un hundimiento o con el atacante parado, nunca en un bucle. Lo que la regla quita es meterse en los 110 m para salir de un combate perdido, no la zona como lugar tranquilo.
+
+**Los NPC.** Su navegación no cambia: siguen sin entrar en el círculo de 130 m (§9, AC-47), y el interior del puerto sigue siendo un refugio:
+- **Solo el pirata llega a disparar dentro de la zona.** Desde 130 m y con 55 m de alcance, alcanza hasta **75 m del puerto**; los amarres (de 41,8 a 58,6 m del centro, BACKLOG AC-63) quedan fuera. No llegan la cañonera (≥ 200 m del puerto: su anillo empieza a 400 m y su correa es de 200 m), el Capitán (≥ 290 m: guarida a 440 m y correa de 150 m) ni el Galeón (anillo de 250 m y 60 m de alcance).
+- **Regla nueva: un NPC hostil suelta al objetivo que está dentro de la zona y fuera de su alcance,** y pasa a Regreso en ese tick (§9; al llegar recupera la vida). Sin ella, la regla crearía una granja: un jugador bajo fuego a < 75 m del puerto, con más alcance (cañones N2 o N3, 70 u 80 m), dispararía a un pirata clavado en su borde de 130 m sin recibir nada. Con ella, lo que se le acierta mientras se aleja es lo mismo que en la 1.2 al meterse en la zona.
+- Un hostil sí elige como objetivo a quien está dentro bajo fuego y a tiro, y no lo suelta mientras siga así.
+
+**El puerto cierra bajo fuego.** Ni la tienda ni el cambio de barco funcionan bajo fuego, aunque estés dentro de la zona. *Por qué:* comprar un barco te lo da con la vida llena (más arriba), así que sería curarse en mitad de un combate, y comprar Cañones N3 en pleno duelo lo decide un menú. En Seafight se equipa en el refugio, y no se entra en él en pleno combate (S33). Si la tienda está abierta cuando caes bajo fuego, se cierra, como al salir de la zona. Una compra que el servidor ya validó y está escribiendo se entrega igualmente: es la limitación conocida de `applyBuy` (P3, `src/game/world.ts:618-620`), que esta regla no cambia. **Cómo se construye:** la condición va en un helper (`canUsePort(world, ship)`), y en `planBuy` y `planSelectShip` (`world.ts:607` y `:661`) solo cambia la línea de la condición. No se tocan `server/progress.ts`, la forma de `ShopItem` ni `applyPurchase` (BACKLOG AC-252).
+
+**Qué necesita saber el jugador** (lo diseña `game-ux`, con imagen):
+1. **Que está bajo fuego y cuántos segundos faltan,** en cualquier punto del mapa, para decidir si le compensa huir al puerto.
+2. **Al entrar en la zona bajo fuego, que la zona aún no le protege,** en el momento en que cruza los 110 m y con los segundos que faltan. Es el caso que más sorprende: cree que ya está a salvo.
+3. **Dentro, si la zona le protege o no:** el aviso «Zona segura» (§14) tiene 2 estados que se distinguen de un vistazo, también en escala de grises.
+4. **Cuándo vuelve a estar protegido:** el aviso pasa al estado normal en el snapshot en que caduca la marca.
+5. **Por qué no abre el puerto:** el botón Puerto, desactivado, dice que es por estar bajo fuego (no por estar fuera de la zona) y cuántos segundos faltan.
+6. **Si otro jugador dentro de la zona es atacable:** su panel de objetivo dice «En alcance» o «Fuera de alcance» si está bajo fuego, y «✕ No atacable» si no (§14).
+
+La palabra para el jugador es **«bajo fuego»**, la de Jonattan. No se pide un efecto nuevo sobre el barco; si `game-ux` cree que hace falta, lo propone.
+
+**Red.** La marca de cada jugador viaja en su barco como el campo `uf` (el instante en que caduca, en el reloj del servidor, como `pu`), **solo cuando cambia**: como mucho una vez por andanada que lo afecta (los deltas son por campo, `server/game-server.ts:110` y `:333-354`). El cliente cuenta los segundos con su reloj, sin más mensajes. No hay intención nueva, así que el tráfico en reposo sigue en 0 (§13). Con `uf`, el cliente aplica la misma regla de atacable que el servidor (`canAttackClient`, `src/client/hud-logic.ts:239-250`).
+
+**Constantes y nombres.** Son propuesta de producto; dev puede cambiar los nombres si lo dice en el PR, no los valores:
+
+| Nombre | Valor o forma | Qué es |
+|---|---|---|
+| `UNDER_FIRE_WINDOW` | 10 s | Lo que dura la marca desde la última andanada propia o en contra |
+| `Ship.underFireUntil` | Reloj del mundo; −∞ al crear el barco y al zarpar | Instante en que caduca la marca. Solo tiene efecto en jugadores |
+| `isUnderFire(world, ship)` | `ship.underFireUntil > world.time` | Está bajo fuego |
+| `isZoneProtected(world, ship)` | `isInSafeZone(ship.pos) && !isUnderFire(world, ship)` | Sustituye a `isInSafeZone` en las 3 comprobaciones de combate: `world.ts:198`, `:207` y `:896` |
+| `canUsePort(world, ship)` | `isZoneProtected(world, ship)` | Condición del astillero y del cambio de barco (`world.ts:607` y `:661`) |
+| `uf` | Campo del barco en el snapshot | `underFireUntil` hacia el cliente, solo al cambiar |
+| Motivo del rechazo bajo fuego | «Bajo fuego: el puerto abre tras 10 s sin disparos» (provisional; el texto final es de `game-ux`) | Respuesta a `buy` y `selectShip` bajo fuego. Fuera de la zona, los motivos de hoy no cambian |
+
+No cambian `SAFE_ZONE_RADIUS` (110 m), `PIRATE_PORT_EXCLUSION` (130 m), `REPAIR_UNDER_FIRE_WINDOW` (3 s), `SPAWN_PROTECTION` (15 s) ni `DISCONNECT_GRACE` (10 s). El `underFire` del HUD (`src/client/hud-store.ts:24`) es el de la reparación, a 3 s: el estado nuevo no lo reutiliza.
+
+**Casos límite** (los comprueba E20):
+
+| Caso | Qué pasa |
+|---|---|
+| Entrar perseguido | La zona no protege hasta 10 s después de la última andanada. Las andanadas en vuelo llegan. Un pirata te sigue disparando mientras te tenga a tiro (≥ 75 m del puerto); más adentro te suelta |
+| La marca caduca dentro | En ese tick quedas protegido: los ataques contra ti terminan (AC-34) y los NPC te sueltan |
+| Recibes daño dentro | Renueva la marca. Solo puede pasar si ya estabas bajo fuego |
+| PvP, el que huye | El atacante sigue atacando dentro, desde fuera o siguiéndote, y mientras dispara también está bajo fuego |
+| PvP, desde dentro | Sin marca no puedes atacar a un jugador; bajo fuego, sí, si él es atacable. Un tercero sin marca dentro no puede meterse en un combate PvP que ocurre en la zona: tiene que salir o estar bajo fuego. Así ningún combate PvP empieza desde la protección |
+| Morir dentro | Igual que fuera (§10, §10b, §12). Zarpas sin marca y con los 15 s de protección |
+| Desconectarse bajo fuego | La marca sigue corriendo: el barco, que se queda 10 s (§13), es atacable dentro hasta que caduque |
+
+**Contraste con Seafight:**
+
+| Seafight | Fila de REFERENCE | Sea Battle 1.3 |
+|---|---|---|
+| «You will not be allowed access to the Safe Haven if you are currently involved in battle.» | §18, S33 (cita comprobada de nuevo por producto el 2026-11-15) | **Se adopta, en un solo mapa:** se puede entrar, pero la zona no protege mientras dura el combate |
+| «you can not take damage while situated there.» | §18, S33 | Igual, sin marca |
+| «and equip your boat to the best it can be!» | §18, S33 | El puerto cierra bajo fuego: se equipa entre combates |
+| «Click this bar when you want to leave the Safe Haven» | §11, S15 | No se adopta: la zona es un círculo del mismo mapa y se sale navegando (§4) |
+| «The default logout time is 30 seconds without moving, shooting or being shot» | §10, S15 | Se adopta qué es combate (disparar o que te disparen), no los 30 s |
+| «you will simply not repair as much» | §7, S9 | Sin cambios y aparte: la reparación rinde menos durante 3 s desde el último daño (§8) |
+| Cuánto dura «involved in battle» | — | **HIPÓTESIS:** S33 solo dice «recently». Los 10 s son de producto |
+
+**Decisión Q40 (de producto, 2026-11-15, por la delegación de Jonattan).** Va aquí y no en la tabla de §17 para no tocar sus filas. Descartadas:
+1. **Impedir entrar en la zona bajo fuego**, como el refugio de Seafight. En un solo mapa la zona es un círculo en el agua: un muro invisible rompe la navegación por clic (pilar P1) y deja fuera del puerto a quien huye.
+2. **Que solo cuente el daño recibido.** Deja sin respuesta los disparos a NPC desde dentro, y una andanada sin aciertos dejaría caducar la marca por azar.
+3. **Reutilizar la ventana de 3 s de la reparación.** No supera ninguna recarga (ver «Cuánto dura»).
+4. **Que los NPC entren en la zona a perseguir.** Los amarres dejarían de ser un refugio, los NPC caerían sobre quien acaba de aparecer y cambiarían AC-47 y el balance medido (§9). Basta con que suelten al objetivo que no alcanzan.
+5. **Un tope a la renovación dentro de la zona.** Pasado el tope, la zona volvería a cortar el combate: premiaría al que huye frente al que gana, que es lo que el pedido quiere quitar.
+
 ## 12. Muerte y reaparición
 
 | Paso | Regla |
@@ -807,7 +914,7 @@ Con esas tasas salen los tiempos de la tabla de niveles: XP acumulada de 421 a l
 | `cancelAttack` | — | — |
 | `repair` | `{on: boolean}` | Jugador vivo |
 | `buy` | `{itemId}` | §11; desde la 1.1, también el nivel mínimo de la Goleta y del Navío (§6). La 1.1 no añade intenciones: la XP la da el servidor |
-| `selectShip` | `{classId}` | Lo posee y está en la zona segura |
+| `selectShip` | `{classId}` | Lo posee y está en la zona segura. **1.3:** y no está bajo fuego (§11) |
 | `respawn` | — | Está muerto y la cuenta atrás terminó |
 | `viewAt` (I2) | `{x, z}` o `null` | Solo mientras la vista libre se desplaza, como máximo 2/s; `null` al volver al seguimiento. Números finitos, ajustados al mapa |
 
@@ -838,7 +945,7 @@ El layout, la paleta y la forma los define `game-ux`. Aquí solo se fija qué de
 | Puerto en el minimapa (1.1) | Icono propio del puerto dentro de la zona segura (§4) | ≤ 2 Hz, con el minimapa |
 | Vista libre (I2) | Botón **Centrar** visible solo en vista libre e indicador en el borde de la pantalla hacia el barco propio | Fuera de React (el indicador) |
 | Atacante fuera de pantalla (I2) | Si un barco que te está disparando no se ve, un indicador en el borde apunta hacia él mientras dure el ataque y 3 s después. Comparte componente con el indicador de vista libre | Fuera de React |
-| Zona segura | Borde visible en el mundo + aviso "Zona segura" en el HUD | Al cambiar |
+| Zona segura | Borde visible en el mundo + aviso "Zona segura" en el HUD. **1.3:** el aviso dice si la zona protege o no, y un indicador de «bajo fuego» con los segundos que faltan se ve en cualquier punto del mapa (§11, «Zona segura bajo fuego (1.3)») | Al cambiar; la cuenta atrás, ≤ 1 Hz |
 | Protección | Indicador sobre el barco + tiempo restante | Al cambiar |
 | Feed de eventos (P1) | "Hundiste a Pirata +105 oro", "X te hundió" (máx. 4 líneas, 5 s cada una) | Al cambiar |
 | Conexión | Estado + ping si es > 200 ms | Al cambiar |
