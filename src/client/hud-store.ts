@@ -5,7 +5,9 @@ import { ShipKind } from '../game/constants';
 import { PlayerView, ShipState } from '../game/types';
 import type { Rank } from '../game/xp';
 import type { ConnectionState } from './game-client';
-import type { Reward } from './hud-logic';
+import { SHOP_UNAVAILABLE, type Reward } from './hud-logic';
+import { familyDoneText, familyResolved, FAMILY_BUY_FAILED, FAMILY_SELECT_FAILED, FAMILY_TIMEOUT_MS, FamilyIntent, routeNotice } from './shop-logic';
+import type { Notice } from '../game/types';
 
 export type Relation = 'self' | 'player' | 'pirate' | 'merchant';
 export type ActionState = 'idle' | 'armed' | 'firing' | 'repairing';
@@ -70,6 +72,13 @@ export interface FeedLine {
   reward?: Reward;
 }
 
+// El aviso dentro del Astillero (O-48; `.shop__notice`): ok o peligro, como los toasts
+export interface ShopNotice {
+  id: number;
+  kind: 'ok' | 'danger';
+  text: string;
+}
+
 interface HudState {
   connection: ConnectionState;
   reconnectAttempt: number;
@@ -84,6 +93,8 @@ interface HudState {
   goldGain: { id: number; amount: number } | null;
   killedBy: { name: string; relation: Relation } | null;
   saveWarning: boolean; // aviso persistente de AC-132 (D50): la BD no guarda; no es un toast
+  shopNotice: ShopNotice | null; // el aviso dentro del Astillero (O-48): uno a la vez
+  familyIntent: FamilyIntent | null; // la compra o el cambio de familia que espera al servidor (D101)
   freeView: boolean; // vista libre (E13): solo cambia al entrar o salir, nunca por frame (el botón Centrar)
   select: (id: string | null) => void;
   setShopOpen: (open: boolean) => void;
@@ -103,6 +114,8 @@ function scheduleDismiss(id: number, kind: Toast['kind']) {
   clearTimeout(toastTimers.get(id));
   toastTimers.set(id, setTimeout(() => useHud.getState().dismissToast(id), kind === 'achievement' ? ACHIEVEMENT_MS : TOAST_MS));
 }
+let shopNoticeTimer: ReturnType<typeof setTimeout> | undefined;
+let familyTimer: ReturnType<typeof setTimeout> | undefined;
 const FEED_MS = 5000; // AC-78
 const MAX_FEED = 4;
 
@@ -120,9 +133,18 @@ export const useHud = create<HudState>((set) => ({
   goldGain: null,
   killedBy: null,
   saveWarning: false,
+  shopNotice: null,
+  familyIntent: null,
   freeView: false,
   select: (id) => set({ selectedId: id }),
-  setShopOpen: (open) => set({ shopOpen: open }),
+  // Al cerrar el Astillero, su aviso se va con él y no pasa a la columna del HUD, y la familia en espera se olvida (O-48)
+  setShopOpen: (open) => {
+    if (!open) {
+      clearTimeout(shopNoticeTimer);
+      clearTimeout(familyTimer);
+    }
+    set(open ? { shopOpen: true } : { shopOpen: false, shopNotice: null, familyIntent: null });
+  },
   setFreeView: (free) => set((s) => (s.freeView === free ? s : { freeView: free })),
   pushToast: (kind, text, rank, options) => {
     // AC-127: un aviso con el mismo texto que uno visible no se apila; se queda en su sitio y su vida vuelve a empezar. Con
@@ -177,7 +199,8 @@ export function syncUnsaved(unsaved: boolean, now = performance.now()): void {
     warningExit = undefined;
     if (useHud.getState().saveWarning) return;
     warningSince = now;
-    useHud.setState({ saveWarning: true });
+    // La franja manda: el aviso del Astillero con su mismo texto se quita al aparecer (O-48)
+    useHud.setState((s) => ({ saveWarning: true, ...(s.shopNotice?.text === SHOP_UNAVAILABLE ? { shopNotice: null } : {}) }));
     return;
   }
   if (!useHud.getState().saveWarning || warningExit !== undefined) return;
@@ -199,4 +222,49 @@ export function sameShallow<T extends object>(a: T | null, b: T | null): boolean
   const ka = Object.keys(a) as (keyof T)[];
   if (ka.length !== Object.keys(b).length) return false;
   return ka.every((k) => a[k] === b[k]);
+}
+
+// ---- El Astillero (O-48, D101) ----
+
+// Un aviso dentro del Astillero: sustituye al que haya y dura 3,5 s desde el último (§12.5)
+export function pushShopNotice(kind: ShopNotice['kind'], text: string): void {
+  clearTimeout(shopNoticeTimer);
+  const id = nextId++;
+  useHud.setState({ shopNotice: { id, kind, text } });
+  shopNoticeTimer = setTimeout(() => useHud.setState((s) => (s.shopNotice?.id === id ? { shopNotice: null } : s)), TOAST_MS);
+}
+
+function endFamilyIntent(): void {
+  clearTimeout(familyTimer);
+  useHud.setState({ familyIntent: null });
+}
+
+// Cada aviso del servidor (client.onNotice): a la columna del HUD o dentro del Astillero (shop-logic.ts, routeNotice)
+export function noticeArrived(n: Notice): void {
+  const s = useHud.getState();
+  const route = routeNotice(n, s);
+  if (route.clearIntent) endFamilyIntent();
+  if (route.to === 'toast') s.pushToast(route.kind, route.text);
+  else if (route.to === 'shop') pushShopNotice(route.kind, route.text);
+}
+
+// La compra o el cambio de familia sale hacia el servidor: su botón se apaga hasta la respuesta, y sin ella en 5 s vuelve con
+// el aviso de error (D94, D101)
+export function startFamilyIntent(intent: FamilyIntent): void {
+  clearTimeout(familyTimer);
+  useHud.setState({ familyIntent: intent });
+  familyTimer = setTimeout(() => {
+    if (useHud.getState().familyIntent !== intent) return;
+    useHud.setState({ familyIntent: null });
+    pushShopNotice('danger', intent.kind === 'buy' ? FAMILY_BUY_FAILED : FAMILY_SELECT_FAILED);
+  }, FAMILY_TIMEOUT_MS);
+}
+
+// El estado del jugador (client.onPlayer): un cambio de familia no trae aviso del servidor, así que se resuelve aquí, en la
+// misma llamada en que llega la familia nueva (el sello y el aviso, en el mismo commit)
+export function familyArrived(player: Pick<PlayerView, 'family' | 'families'>): void {
+  const intent = useHud.getState().familyIntent;
+  if (!intent || !familyResolved(intent, player)) return;
+  endFamilyIntent();
+  pushShopNotice('ok', familyDoneText(intent.family));
 }

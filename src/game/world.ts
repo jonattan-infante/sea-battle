@@ -90,7 +90,7 @@ import { Navigator, routeTo, segmentPointDistance } from './nav';
 import { NpcAi, Player, PlayerView, Ship, ShipSnapshot, World } from './types';
 import { Vec2, angleDelta, createRng, distance, forward, headingTo, normalizeAngle } from './vec';
 import { BASE_LEVELS, levelsOf, maxHpFor } from './stats';
-import { creditNpcXp, creditPvpXp, levelOf, npcXp, rankLabel, rankOf } from './xp';
+import { creditNpcXp, creditPvpXp, levelOf, levelRequirement, npcXp } from './xp';
 
 export const navigator = new Navigator(MAP_1_0.islands);
 const navigators = new WeakMap<IslandDef[], Navigator>([[MAP_1_0.islands, navigator]]);
@@ -485,15 +485,16 @@ export function addPlayer(world: World, id: string, name: string, initial?: Play
       return existing;
     }
   }
+  const seed = initial ?? world.startingProgress; // el de un escenario de prueba, sin progreso guardado
   const player: Player = existing ?? {
     id,
     name,
     shipId: '',
-    gold: initial?.gold ?? world.startingGold ?? STARTING_GOLD,
-    ships: initial ? copyShips(initial.ships) : { [STARTING_SHIP]: { ...BASE_LEVELS } },
-    activeShip: initial?.activeShip ?? STARTING_SHIP,
-    families: initial ? [...initial.families] : [],
-    family: initial?.family ?? NO_FAMILY,
+    gold: seed?.gold ?? world.startingGold ?? STARTING_GOLD,
+    ships: seed ? copyShips(seed.ships) : { [STARTING_SHIP]: { ...BASE_LEVELS } },
+    activeShip: seed?.activeShip ?? STARTING_SHIP,
+    families: seed ? [...seed.families] : [],
+    family: seed?.family ?? NO_FAMILY,
     kills: 0,
     deaths: 0,
     death: null,
@@ -681,7 +682,7 @@ function itemRefusal(player: Player, item: ShopItem): string | null {
   if (item.kind === 'family') return player.families.includes(item.family) ? 'Ya tienes esa familia' : null;
   if (player.ships[item.classId]) return 'Ya tienes ese barco';
   const minLevel = SHIP_MIN_LEVEL[item.classId];
-  if (minLevel !== undefined && levelOf(player.xp) < minLevel) return `Requiere nivel ${minLevel} (${rankLabel(rankOf(minLevel))})`;
+  if (minLevel !== undefined && levelOf(player.xp) < minLevel) return levelRequirement(minLevel);
   return null;
 }
 

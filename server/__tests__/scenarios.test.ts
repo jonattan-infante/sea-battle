@@ -35,6 +35,7 @@ import {
   BLIND_GUNNER_POINT,
   EDGE_ATTACK,
   ENDURANCE_MERCHANT_RADIUS,
+  FAMILY_13,
   ENDURANCE_MERCHANTS,
   ENDURANCE_PIRATE_OFFSET,
   ENDURANCE_POINT,
@@ -48,6 +49,7 @@ import {
   UNDER_FIRE,
   strandedShips,
   SCENARIOS,
+  SHOP_13,
   SHOWCASE_POINT,
   TARGET_FAN,
   TARGETS_POINT,
@@ -427,6 +429,38 @@ describe('Ship.anchored solo en escenarios de prueba (AC-124, E13)', () => {
     }
     expect(world.ships.size).toBeGreaterThan(1);
     expect([...world.ships.values()].filter((s) => s.anchored)).toEqual([]);
+  });
+});
+
+describe('escenarios de la tienda de la 1.3 (D103 y D101; e2e/shop-13.spec.ts)', () => {
+  test('"shop-13": nivel 4, 2 000 de oro y la británica; navega el Bergantín sin mejorar y tiene la Balandra 3/1/2 y la Fragata 2/3/1', () => {
+    const world = createWorld({ seed: 1, spawnNpcs: false });
+    applyScenario(world, 'shop-13', { requireNavigable: true });
+    const p = addPlayer(world, 'u1', 'Ana');
+    expect([levelOf(p.xp), p.gold, p.activeShip, p.families, p.family]).toEqual([4, 2000, 'brig', ['gb'], 'gb']);
+    expect(p.ships).toEqual({ sloop: { cannons: 3, hull: 1, sails: 2 }, brig: { cannons: 1, hull: 1, sails: 1 }, frigate: { cannons: 2, hull: 3, sails: 1 } });
+    expect(shipOfPlayer(world, 'u1')!.classId).toBe('brig');
+    expect(world.ships.size).toBe(1); // no añade NPC
+    // cada jugador, su copia: una compra de uno no toca al siguiente ni al escenario
+    p.ships.sloop!.hull = 3;
+    expect(addPlayer(world, 'u2', 'Bea').ships.sloop).toEqual({ cannons: 3, hull: 1, sails: 2 });
+    expect(SHOP_13.progress.ships.sloop.hull).toBe(1);
+  });
+
+  test('"family-13": navega la Fragata, sin familia, con 5 500 de oro y la Balandra, las 2 a nivel 1; la XP de siempre', () => {
+    const world = createWorld({ seed: 1, spawnNpcs: false });
+    applyScenario(world, 'family-13', { requireNavigable: true });
+    const p = addPlayer(world, 'u1', 'Ana');
+    expect([p.xp, p.gold, p.activeShip, p.families, p.family]).toEqual([0, 5500, 'frigate', [], 'none']);
+    expect(p.ships).toEqual(FAMILY_13.progress.ships);
+    expect(shipOfPlayer(world, 'u1')!.classId).toBe('frigate');
+  });
+
+  test('el progreso guardado gana al del escenario', () => {
+    const world = createWorld({ seed: 1, spawnNpcs: false });
+    applyScenario(world, 'shop-13');
+    const p = addPlayer(world, 'u1', 'Ana', { gold: 7, ships: { sloop: { cannons: 1, hull: 1, sails: 1 } }, activeShip: 'sloop', families: [], family: 'none' });
+    expect([p.gold, p.activeShip, Object.keys(p.ships), p.family]).toEqual([7, 'sloop', ['sloop'], 'none']);
   });
 });
 

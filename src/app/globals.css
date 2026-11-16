@@ -410,7 +410,7 @@ body {
 @supports (backdrop-filter: blur(3px)) { .modal-scrim--blur { backdrop-filter: blur(3px); } }
 
 /* Tienda (§14) */
-.shop { width: 880px; max-width: calc(100vw - 32px); height: 580px; max-height: calc(100dvh - 32px); display: flex; flex-direction: column; background: var(--paper); color: var(--ink); border: 6px solid var(--wood); border-radius: 12px; box-shadow: inset 0 0 0 1px #c9a24b, 0 20px 50px rgba(0, 0, 0, 0.45); overflow: hidden; }
+.shop { position: relative; width: 880px; max-width: calc(100vw - 32px); height: 672px; max-height: calc(100dvh - 32px); display: flex; flex-direction: column; background: var(--paper); color: var(--ink); border: 6px solid var(--wood); border-radius: 12px; box-shadow: inset 0 0 0 1px #c9a24b, 0 20px 50px rgba(0, 0, 0, 0.45); overflow: hidden; }
 .shop__head { height: 64px; flex: none; display: flex; align-items: center; gap: 12px; padding: 0 12px 0 20px; }
 .shop__title { font-size: 28px; color: var(--ink-title); flex: 1; }
 .shop__gold { background: var(--ui-gold); color: var(--ink); font-weight: 700; border-radius: 999px; padding: 4px 12px; font-variant-numeric: tabular-nums; display: flex; gap: 6px; align-items: center; }
@@ -420,12 +420,13 @@ body {
 .shop__tab { font-size: 15px; font-weight: 600; padding: 10px 0; color: var(--ink-soft); border-bottom: 3px solid transparent; }
 .shop__tab.is-active { color: var(--ink-title); border-bottom-color: var(--ink-title); }
 .shop__unsaved { height: 40px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 20px; background: var(--paper-card); border-bottom: 1px solid var(--paper-line); color: #a23b2a; font-size: 14px; } /* AC-132 (D50, §14) */
-.shop__grid { flex: 1; overflow: auto; padding: 16px 20px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-content: start; }
+.shop__body { flex: 1; min-height: 0; overflow: auto; padding: 16px 20px; position: relative; } /* lo que se desplaza (D103: la lista, la vista de mejoras o la familia) */
+.shop__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-content: start; }
 .card { min-height: 128px; background: var(--paper-card); border: 1px solid var(--paper-line); border-radius: 8px; padding: 12px; display: flex; gap: 12px; }
 .card.is-bought { animation: bought 300ms ease both; }
 .card__icon { flex: none; width: 64px; height: 64px; border-radius: 8px; display: grid; place-items: center; color: var(--ink-title); background: rgba(107, 58, 26, 0.08); }
 .card__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-.card__title { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 18px; font-weight: 600; }
+.card__title { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; font-size: 18px; font-weight: 600; }
 .card__levels { display: flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 500; color: var(--ink-soft); }
 .card__dot { width: 10px; height: 10px; border-radius: 50%; background: var(--paper-line); }
 .card__dot.is-on { background: var(--ui-gold-lo); }
@@ -434,18 +435,75 @@ body {
 .card__foot { margin-top: auto; display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
 .card__price { display: flex; align-items: center; gap: 4px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink); }
 .card__why { font-size: 13px; color: #a23b2a; margin-right: auto; }
+/* AC-162 (D85, §12.9): «Requiere nivel 5 (Marinero)» con la insignia de 16 a 4 px, en una línea propia encima del precio */
+.card__why--level { flex-basis: 100%; display: flex; align-items: center; gap: 4px; margin-right: 0; }
+.card__why--level svg { flex: none; }
 .btn { height: 40px; min-width: 132px; padding: 0 16px; border-radius: 8px; font-weight: 600; font-size: 15px; }
 .btn--primary { background: var(--btn-primary); color: #fff; }
 .btn--primary:hover { filter: brightness(1.1); }
 .btn--secondary { border: 1.5px solid var(--btn-primary); color: var(--btn-primary); background: transparent; }
+.btn--compact { min-width: 0; padding: 0 12.5px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; } /* D103: «Elegir» 66 y «Mejoras» 102 (14 de relleno con el borde) */
+.btn--compact svg { flex: none; }
 .btn:disabled { background: var(--btn-disabled); color: var(--btn-disabled-text); border-color: transparent; cursor: not-allowed; filter: none; }
 .stamp { border: 2px solid var(--ui-gold-lo); color: var(--ui-gold-lo); border-radius: 6px; padding: 4px 10px; font-weight: 700; text-transform: uppercase; font-size: 13px; }
+
+/* 1.3 (D103): la vista previa del modelo, con el fondo CSS de cielo y mar de D94 (horizonte al 70 %) mientras llega */
+.preview { flex: none; position: relative; overflow: hidden; border-radius: 6px; background: linear-gradient(180deg, #4f86ae 0%, #9ec2d6 70%, #1e6a93 70%, #0f3f5c 100%); }
+.preview img { display: block; width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity 150ms ease; }
+.preview img.is-loaded { opacity: 1; }
+.card__preview { width: 112px; aspect-ratio: 19 / 12; align-self: flex-start; }
+.card__new { margin-left: auto; font-size: 13px; font-weight: 500; color: var(--ink-soft); }
+/* Los niveles de un barco (D100): icono de 14 a 4 px de 3 puntos de 8 con 3 de separación; 10 entre mejoras (164 × 14) */
+.lv { flex: none; display: inline-flex; align-items: center; gap: 10px; height: 14px; color: var(--ink-soft); }
+.card__title .lv { margin-left: auto; }
+.lv__group { display: flex; align-items: center; gap: 3px; }
+.lv__group svg { flex: none; margin-right: 1px; }
+.lv__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--paper-line); }
+.lv__dot.is-on { background: var(--ui-gold-lo); }
+/* La vista de mejoras de un barco (D103): «‹ Barcos», la imagen de 190 × 120, el título, sus niveles y el sello o el aviso. El
+   aviso lleva el 8 % de --btn-primary sobre el color de tarjeta, no sobre el papel del panel: #E9E9DB (ART-DIRECTION :1503) */
+.upgrades__back { height: 40px; margin-left: -2px; display: inline-flex; align-items: center; gap: 4px; font-size: 15px; font-weight: 600; color: var(--btn-primary); }
+.upgrades__head { margin-top: 12px; display: grid; grid-template-columns: 190px minmax(0, 1fr); grid-template-rows: auto 1fr; column-gap: 16px; row-gap: 10px; }
+.upgrades__preview { width: 100%; aspect-ratio: 19 / 12; grid-row: 1 / span 2; align-self: start; }
+.upgrades__text { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; }
+.upgrades__title { font-size: 18px; font-weight: 600; color: var(--ink); }
+.upgrades__text .lv { margin-top: 6px; }
+.upgrades__stamp { margin-top: 10px; }
+.upgrades__other { grid-column: 2; align-self: start; padding: 8px 12px; border-left: 3px solid var(--btn-primary); border-radius: 6px; background: linear-gradient(rgba(31, 111, 139, 0.08), rgba(31, 111, 139, 0.08)), var(--paper-card); font-size: 13px; font-weight: 500; color: var(--ink); }
+.upgrades__grid { margin-top: 16px; }
+/* La pestaña Familia de la 1.3 (D101): 3 columnas, la imagen 19:12, la bandera de 30 × 20 y el pie de las tarjetas de barco */
+.shop__grid--family { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.card--family { flex-direction: column; gap: 0; min-height: 0; }
+.card--family.is-current { border-color: var(--ui-gold-lo); box-shadow: inset 0 0 0 1px var(--ui-gold-lo); } /* 2 px sin mover la tarjeta */
+.family__preview { width: 100%; aspect-ratio: 19 / 12; }
+.family__name { margin-top: 10px; height: 27px; display: flex; align-items: center; gap: 8px; font-size: 18px; font-weight: 600; color: var(--ink); }
+.family__flag { flex: none; }
+.family__traits { margin-top: 4px; font-size: 13px; font-weight: 500; color: var(--ink-soft); }
+.card--family .card__foot { padding-top: 12px; }
+.family__note { margin-top: 16px; font-size: 13px; font-weight: 500; color: var(--ink-soft); }
+/* El aviso dentro del Astillero (O-48): centrado a 16 px del borde de abajo del panel, 360 × 36, una línea */
+.shop__notice { position: absolute; left: 0; right: 0; bottom: 16px; z-index: 1; width: 360px; max-width: calc(100% - 32px); margin: 0 auto; color: var(--ui-text); white-space: nowrap; overflow: hidden; }
+
+/* Alto de la ventana < 700 (el apaisado): las imágenes bajan a 104 (familia) y 144 × 91 (vista de mejoras) */
+@media (max-height: 699.98px) {
+  .family__preview { aspect-ratio: auto; height: 104px; }
+  .upgrades__head { grid-template-columns: 144px minmax(0, 1fr); }
+}
 
 @media (max-width: 699.98px) {
   .modal-scrim--sheet { place-items: end center; }
   .shop { width: 100%; max-width: 100%; height: 82dvh; border-width: 4px 0 0 0; border-radius: 16px 16px 0 0; }
   .shop__title { font-size: 24px; }
-  .shop__grid { grid-template-columns: 1fr; padding: 12px 16px; }
+  .shop__body { padding: 12px 16px; }
+  .shop__grid { grid-template-columns: 1fr; }
+  .shop__grid--family { grid-template-columns: 1fr; }
+  .family__preview { aspect-ratio: auto; height: 160px; }
+  .family__traits { white-space: nowrap; }
+  /* la vista de mejoras: la imagen de 144 × 91 y el aviso debajo, a todo el ancho */
+  .upgrades__head { grid-template-columns: 144px minmax(0, 1fr); row-gap: 12px; }
+  .upgrades__preview { grid-row: 1; }
+  .upgrades__other { grid-column: 1 / -1; }
+  .shop__notice { width: auto; max-width: none; left: 16px; right: 16px; }
 }
 
 /* Muerte (§15) */

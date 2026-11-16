@@ -19,6 +19,9 @@ export const HASHED_GLB_NAME = `[a-z0-9_]+\\.${HASH}\\.glb`;
 export const HASHED_GLB = new RegExp(`^${HASHED_GLB_NAME}$`);
 export const HASHED_KTX2_NAME = `[a-z0-9_]+\\.${HASH}\\.ktx2`;
 export const HASHED_KTX2 = new RegExp(`^${HASHED_KTX2_NAME}$`);
+// Las vistas previas de los barcos de la tienda (1.3, D103 y D101): public/previews/<sb_id>_side.<hash>.webp
+export const HASHED_WEBP_NAME = `[a-z0-9_]+\\.${HASH}\\.webp`;
+export const HASHED_WEBP = new RegExp(`^${HASHED_WEBP_NAME}$`);
 
 // Fixtures que build:e2e copia en public/models (fuera de git, .gitignore): no son assets del juego
 export const E2E_PREFIX = 'e2e_';

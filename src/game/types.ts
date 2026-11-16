@@ -152,6 +152,9 @@ export interface World {
   startingGold?: number; // solo escenarios de prueba (server/scenarios.ts); por defecto STARTING_GOLD
   startingXp?: number; // solo escenarios de prueba (server/scenarios.ts); por defecto 0. La XP de la fila gana
   startingHull?: number; // solo escenarios de prueba: fracción de la vida máxima con la que entra un jugador; por defecto 1
+  // solo escenarios de prueba (la tienda de la 1.3): los barcos con sus niveles, el activo y las familias de quien entra sin
+  // progreso guardado. El oro, si lo trae, gana a startingGold
+  startingProgress?: { gold?: number; ships: ShipLevels; activeShip: PlayerShipClass; families: ShipFamily[]; family: FamilyChoice };
 }
 
 // ---- Red (servidor → cliente) ----

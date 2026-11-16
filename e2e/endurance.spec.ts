@@ -7,7 +7,7 @@
 import { CDPSession, expect, Page, test } from '@playwright/test';
 import { ENDURANCE_MERCHANTS, ENDURANCE_POINT } from '../server/scenarios';
 import type { GameEvent, ServerFrame } from '../src/game/types';
-import { commits, enterGame, hud, installCommitCounter, me, ships, waitFor } from './helpers';
+import { commits, enterGame, hud, installCommitCounter, me, openUpgrades, ships, waitFor } from './helpers';
 import { sailTo } from './net';
 import { startOwnServer } from './own-server';
 
@@ -124,6 +124,7 @@ test.describe('Corrida larga @soak', () => {
       // Cañones N2 y N3 en el puerto, con clics reales (el escenario da el oro justo)
       await page.getByTestId('btn-port').click();
       await expect(page.getByTestId('shop')).toBeVisible();
+      await openUpgrades(page, 'sloop'); // 1.3 (D103): las mejoras de la Balandra, desde su tarjeta
       await page.getByTestId('buy-cannons-2').click();
       await expect(page.getByTestId('shop-cannons')).toContainText('Nivel 2/3');
       await page.getByTestId('buy-cannons-3').click();
