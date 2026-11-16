@@ -183,7 +183,14 @@ export const FAMILY_13 = {
   }
 } as const;
 
-export const SCENARIOS = ['showcase', 'shipyard', 'shop-13', 'family-13', 'targets', 'endurance', 'repair', 'legibility', 'captain', 'captain-down', 'legibility-i2', 'legibility-i2-90', 'danger', 'xp', 'xp-13', 'xp-12', 'view-return', 'edge-attack', 'volley-miss', 'combat-i2', 'under-fire'] as const;
+// La medida de AC-227 (c): la entrada con el barco propio con familia y el GLB más pesado de las 10 combinaciones, el Navío
+// español (117 196 B); nivel 9, el del Navío (SHIP_MIN_LEVEL)
+export const NAVIO_13 = {
+  xp: LEVEL_XP[8], // nivel 9 (LEVEL_XP[n] es el umbral del nivel n + 1)
+  progress: { gold: 0, ships: { line: { cannons: 1, hull: 1, sails: 1 } }, activeShip: 'line', families: ['es'], family: 'es' }
+} as const;
+
+export const SCENARIOS = ['showcase', 'shipyard', 'shop-13', 'family-13', 'navio-13', 'targets', 'endurance', 'repair', 'legibility', 'captain', 'captain-down', 'legibility-i2', 'legibility-i2-90', 'danger', 'xp', 'xp-13', 'xp-12', 'view-return', 'edge-attack', 'volley-miss', 'combat-i2', 'under-fire'] as const;
 export type ScenarioName = (typeof SCENARIOS)[number];
 // Escenarios con NPC del I2: con el I2 apagado no existen (AC-187), así que no arrancan con SEA_BATTLE_I2=0
 export const I2_SCENARIOS: readonly ScenarioName[] = ['captain', 'captain-down', 'legibility-i2', 'legibility-i2-90', 'danger', 'combat-i2'];
@@ -265,8 +272,8 @@ function placeScenario(world: World, name: ScenarioName): void {
     m.respawnPos = { ...m.pos };
     return;
   }
-  if (name === 'shop-13' || name === 'family-13') {
-    const s = name === 'shop-13' ? SHOP_13 : FAMILY_13;
+  if (name === 'shop-13' || name === 'family-13' || name === 'navio-13') {
+    const s = name === 'shop-13' ? SHOP_13 : name === 'family-13' ? FAMILY_13 : NAVIO_13;
     const p = s.progress;
     world.startingProgress = { gold: p.gold, ships: JSON.parse(JSON.stringify(p.ships)), activeShip: p.activeShip, families: [...p.families], family: p.family };
     if ('xp' in s) world.startingXp = s.xp;

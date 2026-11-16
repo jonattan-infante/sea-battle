@@ -9,6 +9,7 @@ import path from 'path';
 import { expect, Page, test } from '@playwright/test';
 import { contentHash, E2E_PREFIX } from '../scripts/glb/content-hash';
 import { externalKtx2Fixture } from '../scripts/glb/e2e-models';
+import { SHIP_GLB } from '../src/client/models/ship-glb';
 import { enterGame, entryOf, glbBeforeEntry } from './helpers';
 import { startOwnServer } from './own-server';
 
@@ -88,24 +89,36 @@ const network = (page: Page, paths: string[]) =>
   );
 
 test.describe('Caché de la cadena de carga de los GLB (AC-193 c)', () => {
-  // Sin ningún GLB que pueda salir solo se juega con las 2 palancas de E-1 (AC-210 d): con el mapa 1.1 se piden los del puerto y
-  // las islas, y con el I2 los de la Cañonera y el Capitán. Antes iba contra el servidor compartido, cuando era lo de por defecto
-  test('sin ningún GLB que pueda salir (SEA_BATTLE_MAP=1.0 y SEA_BATTLE_I2=0, E-1; ninguno de una clase del jugador), la primera visita no baja la cadena de carga: 0 peticiones al cargador, a /basis y a /models, y se entra como hoy', async ({ page }) => {
+  // AC-197 (d) en la 1.3: un jugador sin familia no espera a ningún modelo propio. Con las 2 palancas de E-1 (AC-210 d) no hay
+  // puerto, islas ni NPC del I2 con GLB, así que entra en el primer frame y, antes de entrar, no baja nada de la cadena de
+  // carga ni de /models (la predicción de un invitado nuevo es la Balandra sin familia, sin GLB). Después, la precarga baja
+  // las 10 combinaciones con familia (AC-227 c), una vez cada una. Cambia a propósito: hasta la 1.2 no había GLB de ninguna
+  // clase del jugador y se asertaban 0 peticiones al cargador, a /basis y a /models en toda la visita
+  test('AC-197 (d), sin familia (SEA_BATTLE_MAP=1.0 y SEA_BATTLE_I2=0, E-1): entra en el primer frame, sin bajar nada de la cadena de carga ni de /models antes; después, la precarga baja las 10 combinaciones', async ({ page }) => {
     test.setTimeout(120_000);
     const server = await startOwnServer({ SEA_BATTLE_MAP: '1.0', SEA_BATTLE_I2: '0' });
     try {
       const seen = track(page);
       await enterGame(page, server.url);
-      await page.waitForTimeout(2_000); // la precarga de los demás GLB arranca al entrar (prefetchAll): sin GLB que pueda salir, nada
+      await expect
+        .poll(() => page.evaluate(() => (performance.getEntriesByType('resource') as PerformanceResourceTiming[]).filter((e) => /^\/models\/ship_[a-z]+_(gb|es)\.[0-9a-f]{8}\.glb$/.test(new URL(e.name).pathname)).length), { timeout: 60_000 })
+        .toBe(10);
       await seen.settled();
       const entry = await entryOf(page);
-      console.log(`AC-193 c sin GLB que pueda salir: ${seen.scripts.length} js leídos, firmas ${JSON.stringify([...seen.loaderChunks])}, entrada ${JSON.stringify(entry)}`);
+      const chunks = [...seen.loaderChunks.keys()];
+      const timed = await page.evaluate((chunks) => {
+        const all = (performance.getEntriesByType('resource') as PerformanceResourceTiming[]).map((e) => ({ path: new URL(e.name).pathname, start: e.startTime }));
+        return all.filter((e) => e.path.startsWith('/basis/') || e.path.startsWith('/models/') || chunks.includes(e.path));
+      }, chunks);
+      const before = timed.filter((e) => e.start < entry.shownAt).map((e) => e.path);
+      const glbs = timed.filter((e) => e.path.endsWith('.glb')).map((e) => e.path).sort();
+      console.log(`AC-197 (d) sin familia: entrada ${JSON.stringify(entry)} · antes de entrar ${JSON.stringify(before)} · firmas ${JSON.stringify(chunks)} · GLB ${glbs.length}`);
       expect(seen.unread).toEqual([]);
-      expect(seen.scripts.length).toBeGreaterThan(5); // se leyó el código de la página: la ausencia de firmas no es vacía
-      expect([...seen.loaderChunks.keys()]).toEqual([]);
-      expect(seen.paths().filter((p) => p.startsWith('/basis/') || p.startsWith('/models/'))).toEqual([]);
       expect(entry).toMatchObject({ lastWaitAt: 0, withGlb: false, capped: false, coverHidden: true });
       expect(entry.shownAt).toBe(entry.firstFrameAt);
+      expect(before).toEqual([]);
+      expect(chunks.length).toBeGreaterThan(0); // la cadena de carga sí baja, con la precarga
+      expect(glbs).toEqual(Object.entries(SHIP_GLB).filter(([k]) => k.includes(':')).map(([, u]) => u!).sort());
     } finally {
       await server.kill();
     }

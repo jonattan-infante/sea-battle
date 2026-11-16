@@ -7,7 +7,7 @@
 // las del mapa del juego, las de la bienvenida del cliente conectado o GAME_MAP sin ella (sceneIslands): la estándar es la de
 // AC-89 y AC-200 (b), y sus capturas no pueden enseñar barcos sobre los lóbulos de la 1.1. La portada (hero) sigue en la 1.2
 // con las de la 1.0 (ISLANDS), como en 4cd8c45. islandsForScene las reparte; el runtime las pinta
-import { CANNON_LEVELS, CANNONBALL_SPEED, GAME_MAP, ISLANDS, IslandDef, SHIP_CLASSES, ShipKind } from '../game/constants';
+import { CANNON_LEVELS, CANNONBALL_SPEED, FamilyChoice, GAME_MAP, ISLANDS, IslandDef, navClearance, PLAYER_SHIP_ORDER, SHIP_CLASSES, ShipKind } from '../game/constants';
 import { GameEvent, PlayerView, Welcome, WreckView } from '../game/types';
 import { createRng } from '../game/vec';
 import type { RenderShip } from './game-client';
@@ -29,6 +29,7 @@ export interface SceneShip {
   targetId?: string; // objetivo fijo (si no, el del duelo)
   protectedFor?: number; // s de protección desde el inicio de la escena
   level?: number; // nivel de un jugador (1.1, la insignia de su placa); por defecto, el 1
+  family?: FamilyChoice; // familia de un jugador (1.3, el modelo de AC-227); por defecto, sin familia
 }
 
 export interface SceneDuel {
@@ -114,7 +115,8 @@ export class SyntheticSource implements RenderSource {
         id: s.id, kind: s.kind, classId: s.classId, name: s.name, ownerId: s.kind === 'player' ? `owner-${s.id}` : null,
         x: s.x, z: s.z, heading: s.heading, speed: s.speed, hp: Math.round(maxHp * s.hp), maxHp, state: 'alive',
         targetId: s.targetId ?? targets.get(s.id) ?? null, repairing: false, protectedUntil: s.protectedFor ?? 0, underFireUntil: 0, sinkingSince: 0,
-        level: s.kind === 'player' ? s.level ?? 1 : null
+        level: s.kind === 'player' ? s.level ?? 1 : null,
+        family: s.kind === 'player' ? s.family ?? 'none' : null
       };
       this.ships.push(ship);
       this.byId.set(s.id, ship);
@@ -278,8 +280,9 @@ export function heroScene(view: SceneView): SceneSpec {
 // i2: la población del I2 de GDD §0 (8 piratas, 4 Cañoneras y 8 mercantes) con el Capitán en el sitio de la Fragata, en las
 // mismas posiciones, rumbos, vidas y duelos (producto, P2 del punto 3 de dev-render). islands: las del mapa del juego
 // (sceneIslands). standard-scene.test.ts comprueba que ningún punto de la órbita de ningún barco queda a menos de su margen
-// (radio + navClearance) de un círculo, con las islas de la 1.0 y con las de la 1.1 (AC-210)
-export function standardScene(view: SceneView, options: { i2?: boolean; islands?: readonly IslandDef[] } = {}): SceneSpec {
+// (radio + navClearance) de un círculo, con las islas de la 1.0 y con las de la 1.1 (AC-210). families: el peor caso de
+// AC-197 (AC-227 b), con los 20 jugadores en Navío, la mitad de cada familia (alternas); el 21.º, el del jefe, no cambia
+export function standardScene(view: SceneView, options: { i2?: boolean; islands?: readonly IslandDef[]; families?: boolean } = {}): SceneSpec {
   const rng = createRng(89);
   const islands = options.islands ?? GAME_MAP.islands;
   const isle = island('I1', islands);
@@ -288,15 +291,20 @@ export function standardScene(view: SceneView, options: { i2?: boolean; islands?
   // mapa por defecto, así que el A/B de AC-89 y AC-90 entre los dos mapas solo cambia las islas
   const avoid = [...islands, ...GAME_MAP.islands];
   const players = ['sloop', 'brig', 'frigate'];
-  const roster: { kind: ShipKind; classId: string; name: string }[] = [];
-  for (let i = 0; i < 20; i++) roster.push({ kind: 'player', classId: players[i % 3], name: `Capitán ${i + 1}` });
+  const roster: { kind: ShipKind; classId: string; name: string; family?: FamilyChoice }[] = [];
+  for (let i = 0; i < 20; i++) {
+    roster.push(options.families ? { kind: 'player', classId: 'line', name: `Capitán ${i + 1}`, family: i % 2 ? 'es' : 'gb' } : { kind: 'player', classId: players[i % 3], name: `Capitán ${i + 1}` });
+  }
   const npc = (classId: string) => ({ kind: 'pirate' as const, classId, name: SHIP_CLASSES[classId].label });
   for (let i = 0; i < 12; i++) roster.push(options.i2 && i >= 8 ? npc('gunboat') : { kind: 'pirate', classId: 'pirate', name: 'Pirata' });
   for (let i = 0; i < 8; i++) roster.push({ kind: 'merchant', classId: 'merchant', name: 'Mercante' });
   roster.push(options.i2 ? npc('captain') : { kind: 'player', classId: 'frigate', name: 'Capitán 21' });
 
   // Rejilla que salta las celdas pegadas a cualquier isla visible; con más columnas si no caben los 41
-  const clear = (p: { x: number; z: number }) => avoid.every((i) => Math.hypot(p.x - i.x, p.z - i.z) >= i.radius + 26);
+  // Con el peor caso de las familias, la cota que garantiza el margen del Navío en cualquier rumbo: su navClearance, más 2
+  // órbitas (el centro de la órbita está a una de la salida) y el desplazamiento de ±2 m en cada eje. La base no cambia
+  const margin = options.families ? Math.ceil(navClearance('line') + 2 * 5 + 2 * Math.SQRT2) : 26;
+  const clear = (p: { x: number; z: number }) => avoid.every((i) => Math.hypot(p.x - i.x, p.z - i.z) >= i.radius + margin);
   let cells: { x: number; z: number }[] = [];
   for (let cols = 7; cols <= 10 && cells.length < roster.length; cols++) {
     cells = [];
@@ -310,7 +318,7 @@ export function standardScene(view: SceneView, options: { i2?: boolean; islands?
   if (cells.length < roster.length) throw new Error(`La escena estándar no cabe en ${view.w}×${view.h} (está pensada para 1440×900)`);
   const hpFor = (i: number) => (i % 7 === 0 ? 0.2 : i % 5 === 0 ? 0.4 : 0.7 + 0.3 * rng());
   const ships: SceneShip[] = roster.map((r, i) => ({
-    id: `s${i + 1}`, kind: r.kind, classId: r.classId, name: r.name, x: cells[i].x + (rng() - 0.5) * 4, z: cells[i].z + (rng() - 0.5) * 4,
+    id: `s${i + 1}`, kind: r.kind, classId: r.classId, name: r.name, ...(r.family ? { family: r.family } : {}), x: cells[i].x + (rng() - 0.5) * 4, z: cells[i].z + (rng() - 0.5) * 4,
     heading: rng() * Math.PI * 2, hp: hpFor(i), speed: r.kind === 'merchant' ? 2 : 3, orbit: 5
   }));
   // 8 duelos jugador ↔ pirata (en los dos sentidos) entre barcos cercanos
@@ -349,8 +357,9 @@ export function showcaseScene(): SceneSpec {
 }
 
 // AS-V18–V20 y AD-26 (D23 c): las 5 clases quietas, con la vida entera y sin efectos, en el mar abierto de la escena
-// de daño. La prueba pone una en el foco con setPose (con su rumbo) y deja las otras a 2 km
-export function galleryScene(): SceneSpec {
+// de daño. La prueba pone una en el foco con setPose (con su rumbo) y deja las otras a 2 km. families (AC-227, capturas
+// frente a D91, D95, D102 y D104): además, las 5 clases del jugador sin familia y en las 2 familias, «g-<clase>-<familia>»
+export function galleryScene(options: { families?: boolean } = {}): SceneSpec {
   const fx = -120;
   const fz = 260;
   const classes: [string, ShipKind][] = [['sloop', 'player'], ['brig', 'player'], ['frigate', 'player'], ['pirate', 'pirate'], ['merchant', 'merchant'], ['captain', 'pirate'], ['gunboat', 'pirate']];
@@ -358,9 +367,16 @@ export function galleryScene(): SceneSpec {
     name: 'gallery',
     focus: { x: fx, z: fz },
     seed: 23,
-    ships: classes.map(([classId, kind], i): SceneShip => ({
-      id: `g-${classId}`, kind, classId, name: classId, x: fx + (i === 0 ? 0 : 2000 * i), z: fz, heading: Math.PI / 2, hp: 1, speed: 0, orbit: 0
-    })),
+    ships: [
+      ...classes.map(([classId, kind], i): SceneShip => ({
+        id: `g-${classId}`, kind, classId, name: classId, x: fx + (i === 0 ? 0 : 2000 * i), z: fz, heading: Math.PI / 2, hp: 1, speed: 0, orbit: 0
+      })),
+      ...(options.families ? PLAYER_SHIP_ORDER.flatMap((classId) => (['none', 'gb', 'es'] as const).map((family) => ({ classId, family }))) : []).map(
+        ({ classId, family }, i): SceneShip => ({
+          id: `g-${classId}-${family}`, kind: 'player', classId, family, name: `${classId} ${family}`, x: fx + 2000 * (classes.length + i), z: fz, heading: Math.PI / 2, hp: 1, speed: 0, orbit: 0
+        })
+      )
+    ],
     duels: []
   };
 }
