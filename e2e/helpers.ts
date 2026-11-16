@@ -77,6 +77,15 @@ export async function presetOptions(page: Page, camera: CameraMode, keys: Bindin
   );
 }
 
+// 1.3 (D103): no hay pestaña Mejoras; las mejoras de un barco propio se abren con «Mejoras» en su tarjeta de la pestaña
+// Barcos, que es la que abre el Astillero
+export async function openUpgrades(page: Page, classId = 'sloop', touch = false): Promise<void> {
+  const button = page.getByTestId(`upgrades-${classId}`);
+  if (touch) await button.tap();
+  else await button.click();
+  await expect(page.getByTestId('upgrades-view')).toHaveAttribute('data-ship', classId);
+}
+
 export async function enterGame(page: Page, base = ''): Promise<void> {
   const dialogs: string[] = [];
   page.on('dialog', (d) => {

@@ -12,7 +12,7 @@ import { startTempCluster, TempCluster } from '../server/__tests__/pg/cluster';
 import { migrate } from '../server/db/migrate';
 import { createPool } from '../server/db/pool';
 import { SavedProgress } from '../server/progress';
-import { trackSocket, waitFor } from './helpers';
+import { openUpgrades, trackSocket, waitFor } from './helpers';
 import { OwnServer, startOwnServer } from './own-server';
 
 let cluster: TempCluster;
@@ -63,6 +63,7 @@ test('AC-97: con 750 de oro, Cañones N2 y un Bergantín, recargar devuelve exac
   expect(await progress(page)).toEqual(migrated(seeded));
   // La compra pasa por la tienda de verdad: el servidor la escribe en la BD antes de confirmarla (AC-130 a)
   await page.keyboard.press('KeyP');
+  await openUpgrades(page, 'brig'); // 1.3 (D103): las mejoras del Bergantín, desde su tarjeta
   await page.getByTestId('buy-cannons-2').click();
   await expect(page.getByTestId('shop-cannons')).toContainText('Nivel 2/3');
   const expected: SavedProgress = { ...migrated(seeded), gold: 750, ships: { sloop: { cannons: 1, hull: 1, sails: 1 }, brig: { cannons: 2, hull: 1, sails: 1 } } };

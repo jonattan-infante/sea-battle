@@ -2,7 +2,7 @@
 // HUD (ART-DIRECTION §12). React solo pinta cuando cambian los datos del store; lo que avanza con el reloj
 // (recarga, protección, cuenta atrás) se actualiza por ref desde un único requestAnimationFrame.
 import React, { useEffect, useLayoutEffect, useRef } from 'react';
-import { PlayerShipClass, REPAIR_RATE, REPAIR_RATE_UNDER_FIRE } from '../../game/constants';
+import { FamilyChoice, PlayerShipClass, REPAIR_RATE, REPAIR_RATE_UNDER_FIRE, ShipFamily } from '../../game/constants';
 import { rankLabel, rankOf } from '../../game/xp';
 import type { GameClient } from '../../client/game-client';
 import { HINTS } from '../../client/hints';
@@ -48,6 +48,8 @@ export interface HudActions {
   respawn: () => void;
   buy: (itemId: string, ship?: PlayerShipClass) => void; // una mejora lleva su barco (1.3)
   selectShip: (classId: PlayerShipClass) => void;
+  buyFamily: (family: ShipFamily) => void; // 1.3 (AC-222, AC-225): el botón espera la respuesta (D101)
+  selectFamily: (family: FamilyChoice) => void; // 1.3 (AC-223)
   retry: () => void;
   retryLoad: () => Promise<boolean>; // AC-131: true si entra al mundo con su progreso; un solo intento a la vez
   exit: () => Promise<boolean>; // false si el servidor no responde en 2 s (AC-126): no se sale de la partida

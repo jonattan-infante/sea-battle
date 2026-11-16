@@ -3,7 +3,7 @@
 // comprueba la sesión real: N1 al entrar y el cambio de R al comprar un cañón en la tienda.
 import { expect, Page, test } from '@playwright/test';
 import { PORTS } from '../playwright.config';
-import { clickWater, enterGame, me, waitFor } from './helpers';
+import { clickWater, enterGame, me, openUpgrades, waitFor } from './helpers';
 
 const frame = (page: Page) =>
   page.evaluate(() => {
@@ -22,6 +22,7 @@ async function buyCannonsAndCheckFrame(page: Page, label: string, n1: number, [n
   for (const [level, range, ppm0] of [[2, 70, n2], [3, 80, n3]] as const) {
     const before = await frame(page);
     await shop.open();
+    await openUpgrades(page, 'sloop'); // 1.3 (D103): las mejoras de la Balandra, desde su tarjeta
     await page.getByTestId(`buy-cannons-${level}`).click();
     await waitFor(() => page.evaluate(() => (window.__SEA_BATTLE__!.player() as { ships: Record<string, { cannons: number }>; activeShip: string } | null)), (p) => p?.ships[p.activeShip]?.cannons === level, 5000, 50);
     // Con la tienda abierta el encuadre no cambia

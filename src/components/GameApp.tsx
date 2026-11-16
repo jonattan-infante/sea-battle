@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth, useUser } from '@clerk/nextjs';
-import { PlayerShipClass } from '../game/constants';
+import { FamilyChoice, PlayerShipClass, ShipFamily } from '../game/constants';
 import { GameEvent, Welcome } from '../game/types';
 import { probeServerOnce } from '../client/exit-probe';
 import type { Arrow } from '../client/free-view';
@@ -34,7 +34,7 @@ import {
   targetDistance,
   underFireSeconds
 } from '../client/hud-logic';
-import { MeHud, resetSaveWarning, sameShallow, syncUnsaved, TargetHud, useHud } from '../client/hud-store';
+import { familyArrived, MeHud, noticeArrived, resetSaveWarning, sameShallow, startFamilyIntent, syncUnsaved, TargetHud, useHud } from '../client/hud-store';
 import { actionOf, isArrowCode, routeKey, ViewAction } from '../client/key-bindings';
 import { closeOnOtherWindows, useOptions } from '../client/options-store';
 import { predictedShip, rememberShip } from '../client/own-ship-memory';
@@ -333,12 +333,12 @@ export default function GameApp({ guest }: { guest: boolean }) {
         // invitado nunca le marca unsaved, porque no escribe en la BD; si lo hiciera por error, el e2e lo vería
         syncUnsaved(player.unsaved === true);
       }),
-      // El rechazo del servidor a buy o selectShip bajo fuego es el mismo aviso del puerto, con la llama, y sustituye al de
-      // la pulsación en lugar de apilarse (D125)
+      client.onPlayer(familyArrived), // después de guardar el estado: el cambio de familia se resuelve con él (D101)
+      // Con el Astillero abierto, los avisos salen dentro (O-48); la compra de una familia, con su propio aviso (D101). El rechazo
+      // del servidor bajo fuego es el aviso del puerto, con la llama, y sustituye al de la pulsación en lugar de apilarse (D125):
+      // va a la columna del HUD porque bajo fuego el Astillero se cierra (AC-253), y al cerrarse se olvida la familia en curso
       client.onNotice((n) =>
-        isPortUnderFireText(n.text)
-          ? hud.pushToast('danger', n.text, undefined, { key: PORT_FIRE_TOAST_KEY, fire: true })
-          : hud.pushToast(n.kind === 'error' ? 'danger' : 'ok', n.text)
+        isPortUnderFireText(n.text) ? hud.pushToast('danger', n.text, undefined, { key: PORT_FIRE_TOAST_KEY, fire: true }) : noticeArrived(n)
       ),
       client.onEvent(onEvent),
       client.onWelcome((w) => setWelcome(w))
@@ -360,7 +360,7 @@ export default function GameApp({ guest }: { guest: boolean }) {
       setRuntime(null);
       setWelcome(null);
       resetSaveWarning();
-      useHud.setState({ me: null, target: null, player: null, selectedId: null, shopOpen: false, killedBy: null, toasts: [], feed: [] });
+      useHud.setState({ me: null, target: null, player: null, selectedId: null, shopOpen: false, shopNotice: null, familyIntent: null, killedBy: null, toasts: [], feed: [] });
       useOptions.getState().setOpen(false);
     };
     // El nombre se fija al conectar; getToken se lee por ref en cada intento
@@ -457,6 +457,14 @@ export default function GameApp({ guest }: { guest: boolean }) {
       },
       buy: (itemId: string, ship?: PlayerShipClass) => client.buy(itemId, ship),
       selectShip: (classId: PlayerShipClass) => client.selectShip(classId),
+      buyFamily: (family: ShipFamily) => {
+        startFamilyIntent({ kind: 'buy', family });
+        client.buy(`family:${family}`);
+      },
+      selectFamily: (family: FamilyChoice) => {
+        startFamilyIntent({ kind: 'select', family });
+        client.selectFamily(family);
+      },
       retry: () => client.retry(),
       retryLoad: () => client.retryLoad(),
       // AC-126 (DT-03): con el servidor caído, router.push acabaría en la página de error del navegador; antes se sondea
