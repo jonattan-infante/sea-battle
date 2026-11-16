@@ -155,7 +155,7 @@ test('AC-132: con la BD caída en partida, el aviso es el primero de la columna,
   // sale además dentro del Astillero (ART-DIRECTION §14, «Avisos con el Astillero abierto»)
   await expect(page.getByTestId('shop-unsaved')).toBeVisible();
   await expect(page.getByTestId('toasts')).not.toContainText('La tienda no está disponible: no podemos guardar');
-  await expect(page.getByTestId('shop-notice')).not.toHaveText('La tienda no está disponible: no podemos guardar');
+  await expect(page.getByTestId('shop-notice').filter({ hasText: 'La tienda no está disponible: no podemos guardar' })).toHaveCount(0);
   await expect(page.getByTestId('buy-hull-2')).toBeDisabled();
   expect((await progress(page))?.ships.sloop?.cannons).toBe(1);
   expect(await page.evaluate(() => document.querySelector('[data-testid="toasts"]')?.firstElementChild?.getAttribute('data-testid'))).toBe('save-warning');
@@ -200,7 +200,7 @@ test('AC-219 y AC-226 (a): una fila v: 2 (XP, Goleta y Navío como activo) entra
   const shop = page.getByTestId('shop');
   await expect(shop).toBeVisible();
   await page.getByTestId('tab-ships').click();
-  await expect(shop.locator('[data-testid^="ship-"]')).toHaveCount(5);
+  await expect(shop.locator('article[data-testid^="ship-"]')).toHaveCount(5); // las tarjetas, no sus vistas previas (ship-preview-*, D103)
   await expect(shop.getByTestId('ship-line')).toContainText('En uso');
   await page.screenshot({ path: path.join(SHOTS, 'ac226-v2-shop.png') });
 
