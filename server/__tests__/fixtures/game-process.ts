@@ -1,11 +1,14 @@
 // Servidor de juego en un proceso aparte, para los tests que lo matan de verdad (AC-129, AC-130): el mismo arranque que
-// server/index.ts (BD, migración y persistencia, server/bootstrap.ts) y el mismo apagado con SIGTERM (server/shutdown.ts),
-// sin Next.js. Lo lanza game-child.ts, que le manda órdenes de prueba por IPC (sumar oro o XP como si fuera botín)
+// server/index.ts (BD, migración y persistencia, server/bootstrap.ts), el mismo /healthz (healthOf y requestHandler, AC-231)
+// y el mismo apagado con SIGTERM (server/shutdown.ts), sin Next.js: el resto de rutas da 404. Lo lanza game-child.ts, que
+// le manda órdenes de prueba por IPC (sumar oro o XP como si fuera botín)
 import { createServer } from 'http';
 import { AddressInfo } from 'net';
 import { Server } from 'socket.io';
 import { addXp } from '../../../src/game/xp';
-import { startGame } from '../../bootstrap';
+import { healthOf, startGame } from '../../bootstrap';
+import type { Health } from '../../health';
+import { requestHandler } from '../../request-handler';
 import { installShutdown } from '../../shutdown';
 
 export type ChildCommand = { id: number; type: 'addGold' | 'addXp' | 'logError'; userId: string; amount: number };
@@ -15,11 +18,24 @@ async function main(): Promise<void> {
   // node_modules/next/dist/server/next-server.js:216). server/index.ts lo carga y este proceso no: TEST_LOG_UNCAUGHT=1
   // pone el mismo listener (AC-203)
   if (process.env.TEST_LOG_UNCAUGHT === '1') process.on('uncaughtException', (err) => console.error(err));
-  const httpServer = createServer();
+  const startedAt = Date.now();
+  let health: (() => Health) | null = null; // como en server/index.ts: el puerto se abre después del arranque
+  const httpServer = createServer(
+    requestHandler({
+      health: () => health!(),
+      redirect: () => null,
+      next: (_req, res) => {
+        res.writeHead(404);
+        res.end();
+      }
+    })
+  );
   const io = new Server(httpServer);
   const log = (msg: string) => console.log(msg);
   const saveIntervalMs = process.env.TEST_SAVE_INTERVAL_MS ? Number(process.env.TEST_SAVE_INTERVAL_MS) : undefined;
-  const { game, pool } = await startGame(io, process.env, log, { saveIntervalMs });
+  const stack = await startGame(io, process.env, log, { saveIntervalMs });
+  health = healthOf(stack, startedAt);
+  const { game, pool } = stack;
   installShutdown({ game, io, httpServer, pool, log });
   process.on('message', (cmd: ChildCommand) => {
     // AC-203: una línea por stderr, como la que escribe Next con console.error al recoger un error

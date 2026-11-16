@@ -1,12 +1,13 @@
 // Arranque del juego, compartido por server/index.ts y por el proceso de los tests (server/__tests__/fixtures): la BD
-// (DATABASE_URL), sus migraciones y el servidor de juego con el progreso guardado
+// (DATABASE_URL), sus migraciones, el servidor de juego con el progreso guardado y el /healthz de ese arranque (AC-231)
 import type { Pool } from 'pg';
 import type { Server } from 'socket.io';
 import { isAuthBypassAllowed, isRailway } from '../src/lib/auth-bypass';
 import { authenticateHandshake } from './auth';
-import { migrate } from './db/migrate';
+import { migrate, schemaVersion } from './db/migrate';
 import { createPool } from './db/pool';
 import { createGameServer, GameServer, GameServerOptions } from './game-server';
+import { Health, healthPayload } from './health';
 import { createPgStore } from './persistence';
 import { i2Enabled, mapId, mapOfId, unrecognizedSwitches } from './features';
 import { applyScenario, I2_SCENARIOS, parseScenario } from './scenarios';
@@ -21,6 +22,8 @@ export function databaseConfigError(env: Env = process.env): string | null {
 export interface GameStack {
   game: GameServer;
   pool: Pool | null; // null: sin BD (solo fuera de Railway), todo en memoria
+  migrationsApplied: number[] | null; // AC-231 (b): lo que aplicó migrate() en este arranque; null sin BD
+  schemaVersion: number | null; // AC-231 (c): la versión mayor de schema_migrations después de migrar; null sin BD
 }
 
 // Ventana de las métricas en ms (por defecto 60 s): el humo del arnés de estrés la acorta. Menos de 1 s se ignora
@@ -39,10 +42,13 @@ export async function startGame(io: Server, env: Env = process.env, log: (msg: s
   if (scenario && I2_SCENARIOS.includes(scenario) && !i2) throw new Error(`El escenario «${scenario}» necesita el I2 encendido (sin SEA_BATTLE_I2=0, AC-187)`);
   const map = mapId(env);
   let pool: Pool | null = null;
+  let migrationsApplied: number[] | null = null;
+  let version: number | null = null;
   if (env.DATABASE_URL) {
     pool = createPool(env.DATABASE_URL, log);
     try {
-      await migrate(pool, log);
+      migrationsApplied = await migrate(pool, log);
+      version = await schemaVersion(pool);
     } catch (err) {
       await pool.end().catch(() => {});
       throw err;
@@ -75,5 +81,12 @@ export async function startGame(io: Server, env: Env = process.env, log: (msg: s
     await pool?.end().catch(() => {});
     throw err;
   }
-  return { game, pool };
+  return { game, pool, migrationsApplied, schemaVersion: version };
+}
+
+// GET /healthz del proceso (AC-231): lo del arranque se fija aquí, una vez, y cada petición solo lee la memoria; ninguna
+// consulta la BD, así que con la BD caída /healthz responde igual (AC-132). Lo usan server/index.ts y el proceso de los tests
+export function healthOf(stack: GameStack, startedAt: number, env: Env = process.env): () => Health {
+  const boot = { startedAt, migrationsApplied: stack.migrationsApplied, schemaVersion: stack.schemaVersion };
+  return () => healthPayload(stack.game.onlinePlayers(), boot, Date.now(), env);
 }

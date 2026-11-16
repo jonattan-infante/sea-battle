@@ -4,6 +4,7 @@
 // release); acciones fijadas
 import fs from 'fs';
 import path from 'path';
+import { MIGRATIONS } from '../db/migrate';
 
 const CI = fs.readFileSync(path.join(__dirname, '..', '..', '.github', 'workflows', 'ci.yml'), 'utf8');
 const CODE = CI.split('\n').filter((l) => !l.trim().startsWith('#')).join('\n'); // sin los comentarios
@@ -70,6 +71,38 @@ describe('despliegue automático (DT-16)', () => {
   test('el secreto solo va a los pasos que lo usan, nunca a un echo', () => {
     expect(CI).not.toMatch(/echo[^\n]*RAILWAY_TOKEN/);
     for (const line of CI.split('\n').filter((l) => l.includes('secrets.RAILWAY_TOKEN'))) expect(line.trim()).toBe('RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}');
+  });
+
+  // AC-231 (f): después del deploy del proveedor, el job pide /healthz con curl a la URL pública y comprueba cómo arrancó
+  // (commit, migraciones aplicadas y versión del esquema) sin el token ni la API del proveedor. En prod, antes del tag
+  test.each([
+    ['deploy-staging', 'staging', 'https://sea-battle-staging.up.railway.app', 'github.event.pull_request.head.sha', 'check_deploy.py --env staging'],
+    ['deploy-production', 'production', 'https://seabattle.jonattan.dev', 'github.sha', '- name: Tag y release de GitHub']
+  ])('%s comprueba por /healthz cómo arrancó (AC-231): tras el deploy, con su URL y su SHA, sin nada del proveedor', (name, env, url, sha, next) => {
+    const block = job(name);
+    const at = block.indexOf('- name: Cómo arrancó, por /healthz (AC-231)');
+    expect(at).toBeGreaterThan(block.indexOf(`deploy.py --env ${env} --sha "$SHA" --url ${url}`));
+    expect(at).toBeLessThan(block.indexOf(next));
+    const rest = block.slice(at + 1);
+    const step = rest.slice(0, rest.search(/\n {6}- /) < 0 ? undefined : rest.search(/\n {6}- /));
+    expect(step).toContain(`URL: ${url}`);
+    expect(step).toContain(`SHA: \${{ ${sha} }}`);
+    expect(step).toMatch(/\n\s+EXPECTED_COMMIT: \S/);
+    expect(step).toContain("EXPECTED_MIGRATIONS: '[]'");
+    expect(step).toContain('git show "$SHA:server/db/migrate.ts"');
+    expect(step).toMatch(/curl --fail [^\n]*"\$URL\/healthz"/);
+    expect(step).toContain('scripts/ci/check_healthz.py --commit "$EXPECTED_COMMIT" --migrations "$EXPECTED_MIGRATIONS" --migrate-ts');
+    expect(step).not.toMatch(/secrets\.|RAILWAY|scripts\/railway/);
+    // En prod, lo esperado es siempre el commit desplegado. En staging no se fija aquí: la corrida forzada en rojo de
+    // AC-231 pone un SHA falso con un commit temporal del PR, y verify tiene que pasar para que el job llegue a correr
+    if (env === 'production') expect(step).toContain('EXPECTED_COMMIT: ${{ github.sha }}');
+  });
+
+  test('check_healthz.py lee de server/db/migrate.ts la misma versión mayor que MIGRATIONS (AC-231 f)', () => {
+    const { spawnSync } = jest.requireActual('child_process') as typeof import('child_process');
+    const out = spawnSync('python3', ['-B', 'scripts/ci/check_healthz.py', '--schema-version', '--migrate-ts', 'server/db/migrate.ts'], { cwd: path.join(__dirname, '..', '..'), encoding: 'utf8' });
+    expect({ status: out.status, stderr: out.stderr }).toEqual({ status: 0, stderr: '' });
+    expect(Number(out.stdout.trim())).toBe(Math.max(...MIGRATIONS.map((m) => m.version)));
   });
 });
 
