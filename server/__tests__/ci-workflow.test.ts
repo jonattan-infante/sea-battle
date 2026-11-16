@@ -91,7 +91,8 @@ describe('despliegue automático (DT-16)', () => {
     expect(step).toContain("EXPECTED_MIGRATIONS: '[]'");
     expect(step).toContain('git show "$SHA:server/db/migrate.ts"');
     expect(step).toMatch(/curl --fail [^\n]*"\$URL\/healthz"/);
-    expect(step).toContain('scripts/ci/check_healthz.py --commit "$EXPECTED_COMMIT" --migrations "$EXPECTED_MIGRATIONS" --migrate-ts');
+    expect(step).toContain(`scripts/ci/check_healthz.py --commit "$EXPECTED_COMMIT" --migrations "$EXPECTED_MIGRATIONS" --env ${env} --attempt "$RUN_ATTEMPT" --migrate-ts`);
+    expect(step).toContain('RUN_ATTEMPT: ${{ github.run_attempt }}'); // la regla del re-run de prod (AC-231 f), por env y sin secretos
     expect(step).not.toMatch(/secrets\.|RAILWAY|scripts\/railway/);
     // En prod, lo esperado es siempre el commit desplegado. En staging no se fija aquí: la corrida forzada en rojo de
     // AC-231 pone un SHA falso con un commit temporal del PR, y verify tiene que pasar para que el job llegue a correr
