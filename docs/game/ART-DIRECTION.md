@@ -1464,7 +1464,7 @@ Nota: «Solo cambia el aspecto: la vida, la velocidad y los cañones son los mis
 | Aviso | Tipo | Texto (ancho) |
 |---|---|---|
 | Compra o mejora hecha | `.toast--ok` | «Compra realizada» (105,9 px) |
-| Familia elegida | `.toast--ok` | «Tus barcos ahora son de la familia británica» o «… española» (262,2 y 262,7) |
+| Familia elegida | `.toast--ok` | «Tus barcos ahora son de la familia británica» o «… española» (262,2 y 262,7). Al volver a «Sin familia» (AC-223): «Tus barcos vuelven al aspecto de siempre», con las palabras de su tarjeta («El aspecto de siempre · gratis»); es más corto que los otros 2, así que cabe en los 330 px de O-48 (*2026-11-16*, lead como ux, a pregunta de dev) |
 | Rechazo del servidor | `.toast--danger` | El `reason` tal cual: «Necesitas {n} de oro» (141,8 con 12000; 145,2 con 12.000, O-50), «Primero necesitas el nivel anterior» (207,8), «Ya tienes ese barco» (117,9), «No tienes ese barco» (120,4), «Compra en curso» (103,3), «Solo puedes cambiar de barco en el puerto» (258,6), «El astillero solo abre en el puerto» (198,2) y «La tienda no está disponible: no podemos guardar» (**303,3**, el más largo) |
 | La familia no cambió | `.toast--danger` | «No se pudo cambiar la familia. Inténtalo de nuevo.» (300,9) |
 | Otros por el mismo canal | Según su `kind` | Por ejemplo, «El casco ya está intacto» (143,3) o «Tu barco no está a flote» (141,8) |
@@ -1500,7 +1500,7 @@ Nota: «Solo cambia el aspecto: la vida, la velocidad y los cañones son los mis
 | Imagen | A 12 px de «Barcos»: 190 × 120, radio 6, la misma imagen de la lista | 144 × 91 | 144 × 91 |
 | Título | A 16 px de la imagen: «Mejoras de la Fragata» o «Mejoras del Bergantín» (con el artículo de cada barco), 18/600 `--ink`. Debajo, a 6 px, sus 3 niveles (los de la lista) | Igual | Igual |
 | El barco que se navega | A 10 px de los niveles: el sello «EN USO» | Igual | Igual |
-| Otro barco | A 10 px de los niveles, el aviso a todo el ancho de la columna: fondo `rgba(31, 111, 139, 0.08)`, borde izquierdo de 3 px `--btn-primary`, radio 6, relleno de 8 y 12, 13/500 `--ink`: «No es el barco que navegas. La mejora se le aplica igual, y sigues navegando el Bergantín.» | El aviso va debajo de la imagen, a todo el ancho, en 2 líneas | Junto a la imagen, en una línea |
+| Otro barco | A 10 px de los niveles, el aviso a todo el ancho de la columna: fondo `rgba(31, 111, 139, 0.08)` **sobre el color de tarjeta** `#FBF4E2` (en CSS, `linear-gradient(rgba(31, 111, 139, 0.08), rgba(31, 111, 139, 0.08)), #FBF4E2`; da `#E9E9DB`, el de la lámina aprobada: sobre el papel del panel `#F2E6C8` saldría más gris; *2026-11-16*, lead como ux, a pregunta de dev), borde izquierdo de 3 px `--btn-primary`, radio 6, relleno de 8 y 12, 13/500 `--ink`: «No es el barco que navegas. La mejora se le aplica igual, y sigues navegando el Bergantín.» | El aviso va debajo de la imagen, a todo el ancho, en 2 líneas | Junto a la imagen, en una línea |
 | Tarjetas | A 16 px de la cabecera, las 3 tarjetas de mejora de hoy («Tarjeta de mejora», arriba), con los niveles, las cifras y los precios de ese barco (GDD §11) | 1 columna | 2 columnas |
 | Qué cabe sin desplazar | Todo: 492 de 549,5 | Se desplaza (677,9) | Se desplaza (476,5 en 235,5) |
 | Al comprar | La tarjeta sube de nivel ahí mismo, el oro baja, y sale «Compra realizada» en `.shop__notice` (O-48). El barco que se navega no cambia | Igual | Igual |
