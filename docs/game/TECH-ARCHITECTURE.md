@@ -194,6 +194,22 @@ La cámara deja de seguir al barco sin que cambie nada en el servidor salvo el �
 
 Tests: `src/client/__tests__/free-view.test.ts` (la máquina de estados y los `viewAt`), `edge-chips.test.ts` (las 6 pantallas de la lámina y los casos sin converger contra `scripts/ux/calibracion/d89-place.json`, que escribe `scripts/ux/d89-place.py` con `place()` de r11 `87b7488` y el ancho de la pastilla medido con la Barlow 600; invariantes en 96 destinos, separación de 52 px, «+N» y marco útil), `server/__tests__/scenarios.test.ts` (`view-return` y `edge-attack`) y los e2e `free-view.spec.ts` y `edge-indicators.spec.ts` (AD-30 en los 3 tamaños, Centrar, el chip propio, AC-124 y AC-110).
 
+### 2.5 Zona segura bajo fuego (E20, GDD §11 «Zona segura bajo fuego (1.3)»; AC-240 a AC-257)
+
+La zona protege solo a quien está dentro y no está bajo fuego. Toda la regla vive en la simulación (`src/game/world.ts`); la red solo añade un campo y el cliente lo lee.
+
+| Pieza | Dónde | Regla |
+|---|---|---|
+| Marca | `Ship.underFireUntil` (`types.ts`), `UNDER_FIRE_WINDOW` = 10 s (`constants.ts`), `markUnderFire` (`world.ts`) | −∞ al crear el barco y al zarpar (`respawn`). En `updateCombat`, al **lanzar** cada andanada, el tirador y el blanco, si son jugadores, pasan a `max(marca, t + 10)`. Desconectarse no la borra. Es otro estado que el `underFire` de la reparación (`REPAIR_UNDER_FIRE_WINDOW`, 3 s, desde el último daño) |
+| Predicados | `isUnderFire`, `isZoneProtected`, `canUsePort`, `portClosedReason`, `PORT_UNDER_FIRE_TEXT` (`world.ts`) | `isZoneProtected` = `isInSafeZone(pos) && !isUnderFire`. Sustituye a `isInSafeZone` en `isAttackablePlayer`, en el atacante de `canAttack` y en el descarte del impacto (`updateProjectiles`): como la marca se pone al lanzar, una andanada en vuelo siempre llega. `isInSafeZone` queda para lo que solo mira el lugar |
+| Puerto (AC-252) | `planBuy`, `planSelectShip` | Una línea en cada una: `if (!canUsePort(world, ship)) return fail(portClosedReason(ship, '<motivo de fuera>'))`. Dentro de la zona el motivo solo puede ser bajo fuego (texto provisional del GDD); fuera, el de siempre. `applyPurchase`, `ShopItem` y `server/progress.ts` no cambian |
+| NPC hostiles (AC-251) | `huntable`, `pickPirateTarget`, la represalia de `applyDamage` | Un hostil persigue a un jugador atacable salvo si está dentro de la zona y fuera del alcance de sus cañones: entonces lo suelta y pasa a Regreso en ese tick, y la represalia no lo devuelve a Combate. La exclusión de 130 m de `moveShip` no cambia |
+| Red | `ShipSnapshot.uf`, `SNAPSHOT_KEYS` (`server/game-server.ts`) | Solo en barcos de jugador, como `lv`: el instante en que caduca, en tiempo de servidor (−∞ viaja como 0). Es un instante, como `pu`: viaja al entrar en el área y luego solo al cambiar, como mucho una vez por andanada que afecta al barco. Que caduque no genera tráfico (AC-257 a). Suma unos 7 bytes por barco de jugador en un snapshot completo (`,"uf":0`); AC-88 sigue en 10,00 msg/s y 9,50 KB/s en el peor cliente |
+| Cliente | `RenderShip.underFireUntil` (`game-client.ts`), `zoneProtectedClient`, `canAttackClient` (`hud-logic.ts`) | `canAttackClient` aplica la regla de `canAttack` con `uf` y solo pide el reloj del servidor; el cursor del render (`GameRuntime.canAttack`, `runtime.ts`) ahora la usa en lugar de su copia de la regla. El HUD (indicador, aviso de 2 estados, botón Puerto) es H-2005 y espera la imagen de `game-ux`: mientras tanto, el rechazo de la tienda bajo fuego llega como aviso del servidor por el canal de siempre (`ServerFrame.n`) |
+| Estrés | `zoneProtected` (`e2e/stress/bot.ts`) | La clasificación de ataques anulados (O1) y `canAttackNow` usan la misma regla con `uf` |
+
+Tests: `src/game/__tests__/safe-zone-under-fire.test.ts` (AC-240 a AC-252, unitarios; AC-251 b y c con 10 semillas), `server/__tests__/safe-zone-under-fire.test.ts` (Socket.IO real: AC-246, AC-247, AC-248, AC-250, AC-252 con y sin progreso guardado, AC-257 a y b), `src/client/__tests__/attackable.test.ts` (AC-256 unitario: la tabla de 36 filas de `canAttackClient` frente a `canAttack`, y el `GameClient` real leyendo `uf` sin enviar nada) y `e2e/stress/__tests__/bot.test.ts` (O1 con la marca).
+
 ## 3. Capitán pirata (H-305, GDD §9)
 
 | Pieza | Dónde | Regla |

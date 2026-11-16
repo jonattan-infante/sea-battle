@@ -107,7 +107,8 @@ type Point = { x: number; z: number };
 
 // Margen para que un evento en el borde del área (p. ej. una andanada desde fuera) llegue a quien lo ve
 const EVENT_MARGIN = 60;
-const SNAPSHOT_KEYS: (keyof ShipSnapshot)[] = ['k', 'c', 'n', 'o', 'x', 'z', 'h', 's', 'hp', 'mhp', 'st', 't', 'r', 'pu', 'lv'];
+// `uf` (la marca de bajo fuego, §11) es un instante: solo cambia con una andanada que afecta al barco o al zarpar
+const SNAPSHOT_KEYS: (keyof ShipSnapshot)[] = ['k', 'c', 'n', 'o', 'x', 'z', 'h', 's', 'hp', 'mhp', 'st', 't', 'r', 'pu', 'lv', 'uf'];
 
 export function createGameServer(io: Server, options: GameServerOptions): GameServer {
   const tickRate = options.tickRate ?? TICK_RATE;

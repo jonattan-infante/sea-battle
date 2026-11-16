@@ -3,7 +3,7 @@
 // sin estado de React por frame (CLAUDE.md, regla 3). Fuentes: ART-DIRECTION, ASSET-SPEC y VFX-SPEC.
 import * as THREE from 'three';
 import type { RootState } from '@react-three/fiber';
-import { CANNON_LEVELS, INTERPOLATION_DELAY_MS, MAX_CANNON_RANGE, IslandDef, ISLANDS, navClearance, PORT_POSITION, PVP_ENABLED, SAFE_ZONE_RADIUS, SHIP_CLASSES, SINKING_TIME } from '../game/constants';
+import { CANNON_LEVELS, INTERPOLATION_DELAY_MS, MAX_CANNON_RANGE, IslandDef, ISLANDS, navClearance, PORT_POSITION, SHIP_CLASSES, SINKING_TIME } from '../game/constants';
 import { Navigator } from '../game/nav';
 import { GameEvent, PlayerView, Welcome, WreckView } from '../game/types';
 import { CAMERA, computePpm0, DAMAGE_TEXT, DamageTextKind, frameRangeM, LABEL, LIGHTING, MOBILE_MAX_WIDTH, RING_COLORS, ZOOM } from './art';
@@ -12,6 +12,7 @@ import { ChipHost, EdgeChipLayer } from './edge-chip-layer';
 import { Attack, AttackerTracker } from './edge-chips';
 import { FreeView, OwnWatch, ViewMode } from './free-view';
 import type { GameClient, RenderShip } from './game-client';
+import { canAttackClient } from './hud-logic';
 import { useHud } from './hud-store';
 import { buildBuoyGeometry, buildIslands, buildLootGeometry, buildPalmGeometry, buoyInstances, PropInstance } from './models/island-geometry';
 import { createOceanGeometry, createOceanMaterial, disposeOceanMaterial } from './models/ocean-material';
@@ -1176,13 +1177,7 @@ export class GameRuntime implements OverlayHost, ChipHost {
 
   // Cursor sobre un barco (ART-DIRECTION §12.7): mira si es atacable, not-allowed si no
   canAttack(id: string): boolean {
-    const me = this.src.getShip(this.src.myShipId);
-    const target = this.src.getShip(id);
-    if (!me || !target || me.state !== 'alive' || target.state !== 'alive' || me.id === target.id) return false;
-    if (target.kind !== 'player') return true;
-    const now = this.src.serverTime();
-    const safe = (s: RenderShip) => Math.hypot(s.x - PORT_POSITION.x, s.z - PORT_POSITION.z) <= SAFE_ZONE_RADIUS;
-    return PVP_ENABLED && !safe(target) && !safe(me) && target.protectedUntil <= now && me.protectedUntil <= now;
+    return canAttackClient(this.src, this.src.getShip(this.src.myShipId), this.src.getShip(id)); // la regla del panel y de Tab
   }
 
   // La portada de la entrada. Sin manifiesto no hay nada que esperar y se oculta al conectarla, como hoy. Con él, la

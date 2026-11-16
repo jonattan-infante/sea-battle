@@ -73,6 +73,7 @@ import {
   ShipClassStats,
   THREAT_WINDOW,
   TURN_FACTORS,
+  UNDER_FIRE_WINDOW,
   UPGRADE_LEVELS,
   UpgradeId,
   WRECK_LIFETIME,
@@ -188,14 +189,42 @@ export function isProtected(world: World, ship: Ship): boolean {
   return ship.protectedUntil > world.time;
 }
 
+// Bajo fuego (§11, 1.3): durante UNDER_FIRE_WINDOW s desde la última andanada que disparó o que le dispararon
+export function isUnderFire(world: World, ship: Ship): boolean {
+  return ship.underFireUntil > world.time;
+}
+
+// Protegido por la zona segura (§11, 1.3): dentro de los 110 m y sin estar bajo fuego. Es la zona de las reglas de combate;
+// isInSafeZone queda para lo que solo mira el lugar
+export function isZoneProtected(world: World, ship: Ship): boolean {
+  return isInSafeZone(ship.pos) && !isUnderFire(world, ship);
+}
+
+// El astillero y el cambio de barco (§11, AC-252): solo donde la zona protege
+export function canUsePort(world: World, ship: Ship): boolean {
+  return isZoneProtected(world, ship);
+}
+
+// Motivo del rechazo con el puerto cerrado: dentro de la zona solo puede ser por estar bajo fuego; fuera, el de siempre de
+// cada intención. Texto provisional del GDD §11 (el final es de game-ux)
+export const PORT_UNDER_FIRE_TEXT = `Bajo fuego: el puerto abre tras ${UNDER_FIRE_WINDOW} s sin disparos`;
+export function portClosedReason(ship: Ship, outside: string): string {
+  return isInSafeZone(ship.pos) ? PORT_UNDER_FIRE_TEXT : outside;
+}
+
+// Una andanada lanzada marca al tirador y al blanco, si son jugadores: nunca acorta la marca (§11, AC-240)
+function markUnderFire(world: World, ship: Ship): void {
+  if (ship.kind === 'player') ship.underFireUntil = Math.max(ship.underFireUntil, world.time + UNDER_FIRE_WINDOW);
+}
+
 export function isAlive(ship: Ship | undefined): ship is Ship {
   return !!ship && ship.state === 'alive';
 }
 
-// Un jugador al que un pirata o PvP puede atacar: a flote, fuera de la zona segura y sin protección.
-// Un barco desconectado sigue siendo atacable durante el margen de reconexión (AC-96).
+// Un jugador al que un pirata o PvP puede atacar: a flote, sin la protección de la zona segura (fuera o bajo fuego, §11) y
+// sin protección. Un barco desconectado sigue siendo atacable durante el margen de reconexión (AC-96).
 export function isAttackablePlayer(world: World, ship: Ship): boolean {
-  return ship.kind === 'player' && isAlive(ship) && !isInSafeZone(ship.pos) && !isProtected(world, ship);
+  return ship.kind === 'player' && isAlive(ship) && !isZoneProtected(world, ship) && !isProtected(world, ship);
 }
 
 export function canAttack(world: World, attacker: Ship, target: Ship): boolean {
@@ -204,7 +233,7 @@ export function canAttack(world: World, attacker: Ship, target: Ship): boolean {
   if (attacker.kind === 'merchant') return false;
   if (attacker.kind === 'pirate') return isAttackablePlayer(world, target);
   if (target.kind === 'player') {
-    return PVP_ENABLED && isAttackablePlayer(world, target) && !isInSafeZone(attacker.pos) && !isProtected(world, attacker);
+    return PVP_ENABLED && isAttackablePlayer(world, target) && !isZoneProtected(world, attacker) && !isProtected(world, attacker);
   }
   return true;
 }
@@ -275,6 +304,7 @@ function newShip(world: World, classId: string, name: string, ownerId: string | 
     lastDamagedAt: -Infinity,
     damage: [],
     protectedUntil: 0,
+    underFireUntil: -Infinity,
     ai: null,
     disconnectedAt: null
   };
@@ -574,6 +604,7 @@ export function respawn(world: World, playerId: string): ActionResult {
   ship.damage = [];
   ship.lastDamagedAt = -Infinity;
   ship.protectedUntil = world.time + SPAWN_PROTECTION;
+  ship.underFireUntil = -Infinity; // zarpa sin marca (AC-242)
   player.death = null;
   world.events.push({ type: 'respawn', shipId: ship.id });
   return { ok: true };
@@ -604,7 +635,7 @@ export function planBuy(world: World, playerId: string, item: ShopItem): BuyPlan
   const player = world.players.get(playerId);
   const ship = shipOfPlayer(world, playerId);
   if (!player || !isAlive(ship)) return fail('Tu barco no está a flote');
-  if (!isInSafeZone(ship.pos)) return fail('El astillero solo abre en el puerto');
+  if (!canUsePort(world, ship)) return fail(portClosedReason(ship, 'El astillero solo abre en el puerto'));
   const price = itemPrice(item);
   if (item.kind === 'upgrade') {
     if (item.level !== player.upgrades[item.upgrade] + 1 || item.level > MAX_UPGRADE_LEVEL) return fail('Primero necesitas el nivel anterior');
@@ -658,7 +689,7 @@ export function planSelectShip(world: World, playerId: string, classId: PlayerSh
   const ship = shipOfPlayer(world, playerId);
   if (!player || !isAlive(ship)) return fail('Tu barco no está a flote');
   if (!player.ownedShips.includes(classId)) return fail('No tienes ese barco');
-  if (!isInSafeZone(ship.pos)) return fail('Solo puedes cambiar de barco en el puerto');
+  if (!canUsePort(world, ship)) return fail(portClosedReason(ship, 'Solo puedes cambiar de barco en el puerto'));
   return { ok: true };
 }
 
@@ -878,6 +909,9 @@ function updateCombat(world: World, ship: Ship, dt: number): void {
   });
   ship.reload = cannon.reload;
   if (ship.kind === 'player') ship.protectedUntil = 0;
+  // Bajo fuego desde el lanzamiento, no desde el impacto: la andanada en vuelo siempre llega (§11, AC-240 y AC-244)
+  markUnderFire(world, ship);
+  markUnderFire(world, target);
   world.events.push({ type: 'volley', shipId: ship.id, targetId: target.id, from: { ...ship.pos }, to: { ...target.pos }, duration, hits, cannons });
 }
 
@@ -893,7 +927,7 @@ function updateProjectiles(world: World, dt: number): void {
     const owner = world.ships.get(p.ownerShipId);
     // AC-33: si el objetivo se hundió antes del impacto, el daño se ignora
     if (!isAlive(target) || !owner) continue;
-    if (target.kind === 'player' && (isInSafeZone(target.pos) || isProtected(world, target))) continue;
+    if (target.kind === 'player' && (isZoneProtected(world, target) || isProtected(world, target))) continue;
     const damage = p.hits * p.damagePerBall;
     world.events.push({ type: 'impact', shipId: target.id, byShipId: owner.id, damage, hits: p.hits, misses: p.misses, pos: { ...target.pos } });
     if (damage > 0) applyDamage(world, target, damage, owner);
@@ -921,8 +955,8 @@ function applyDamage(world: World, target: Ship, damage: number, attacker: Ship)
   }
   const ai = target.ai;
   if (!ai || attacker.kind !== 'player') return;
-  if (target.kind === 'pirate' && ai.state !== 'combat') {
-    ai.state = 'combat'; // represalia (§9)
+  if (target.kind === 'pirate' && ai.state !== 'combat' && huntable(world, target, attacker)) {
+    ai.state = 'combat'; // represalia (§9), salvo contra quien no puede alcanzar en la zona (AC-251 b)
     ai.targetId = attacker.id;
   } else if (target.kind === 'merchant') {
     ai.state = 'flee';
@@ -1133,21 +1167,29 @@ function pirateDestination(p: Vec2): Vec2 {
   return { x: o.x * (PIRATE_PORT_EXCLUSION + 5), z: o.z * (PIRATE_PORT_EXCLUSION + 5) };
 }
 
+// Un jugador al que un hostil puede perseguir: atacable y, si está dentro de la zona segura (bajo fuego), a su alcance. Los
+// hostiles no entran en los 130 m (§9), así que al que está dentro y fuera de su alcance lo sueltan (§11, AC-251): sin esto,
+// un jugador bajo fuego en la zona le dispararía con más alcance sin recibir nada
+function huntable(world: World, hunter: Ship, s: Ship): boolean {
+  if (!isAttackablePlayer(world, s)) return false;
+  return !isInSafeZone(s.pos) || distance(hunter.pos, s.pos) <= (cannonOf(world, hunter)?.range ?? 0);
+}
+
 function pickPirateTarget(world: World, ship: Ship): Ship | null {
-  // El que más daño le hizo en los últimos 10 s y sigue atacable; si no, el actual; si no, el más cercano a ≤70 m
+  // El que más daño le hizo en los últimos 10 s y sigue a su caza; si no, el actual; si no, el más cercano a ≤70 m
   const recent = ship.damage
     .filter((d) => world.time - d.at <= THREAT_WINDOW)
     .sort((a, b) => b.amount - a.amount);
   for (const entry of recent) {
     const s = world.ships.get(entry.shipId);
-    if (s && isAttackablePlayer(world, s)) return s;
+    if (s && huntable(world, ship, s)) return s;
   }
   const current = ship.ai!.targetId ? world.ships.get(ship.ai!.targetId) : undefined;
-  if (current && isAttackablePlayer(world, current)) return current;
+  if (current && huntable(world, ship, current)) return current;
   let best: Ship | null = null;
   let bestD = hostileAiOf(ship).aggro;
   for (const s of world.ships.values()) {
-    if (!isAttackablePlayer(world, s)) continue;
+    if (!huntable(world, ship, s)) continue;
     const d = distance(s.pos, ship.pos);
     if (d <= bestD) {
       best = s;
@@ -1353,7 +1395,10 @@ export function shipSnapshot(world: World, s: Ship): ShipSnapshot {
     r: s.repairing,
     pu: s.protectedUntil
   };
-  if (player) snap.lv = levelOf(player.xp); // la placa lleva la insignia del jugador; los NPC no (§10b, §14)
+  if (player) {
+    snap.lv = levelOf(player.xp); // la placa lleva la insignia del jugador; los NPC no (§10b, §14)
+    snap.uf = Math.max(0, s.underFireUntil); // la marca de bajo fuego (§11, 1.3); −∞ viaja como 0
+  }
   return snap;
 }
 
