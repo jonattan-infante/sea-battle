@@ -19,6 +19,9 @@ export const NAV_LIMIT = 490;
 export const PORT_POSITION = { x: 0, z: 0 };
 export const PORT_RADIUS = 30;
 export const SAFE_ZONE_RADIUS = 110;
+// Zona segura bajo fuego (§11, 1.3): s que dura la marca desde la última andanada que un jugador dispara o le disparan.
+// Mientras dura, la zona no le protege y el puerto no le abre. No es REPAIR_UNDER_FIRE_WINDOW (§8), que sigue aparte
+export const UNDER_FIRE_WINDOW = 10;
 export const RESPAWN_RING = { min: 60, max: 90 };
 // Punto de último recurso de la aparición, si los 50 intentos en el anillo fallan: navegable para las 5 clases del jugador
 // con el puerto de D92 (GDD §4, «Aparición de respaldo»; AC-176 iii, O-58)
