@@ -306,9 +306,9 @@ const LINE: ShipRecipe = {
     ...[lineDeck(-21) - 0.45, lineDeck(-21) + 0.8].flatMap((y) => [-2.4, 0, 2.4].map((x): BoxDef => ({ size: [1.0, 0.6, 0.06], pos: [x, y, -21.05], kind: 'lantern' })))
   ],
   barrels: [],
-  // PROVISIONAL (dev, a falta de ux): D64 no fija excepciones de fuego y la fórmula no pasa AS-V17 (D22): _01 pisa el
-  // castillo de proa (z ≥ 12; 14,6 % de solape) y _03 cae en el alcázar. Lo mínimo, como la Fragata: _01 a z 9,6 (≤ 1 %) y
-  // _03 a z −12,0, en la tapa del 1.er piso y fuera del 2.º
+  // Excepciones de D22 (ux, ASSET-SPEC §13, «Navío sin familia»): con la fórmula, _01 pisa el castillo de proa (z ≥ 12;
+  // 14,6 % de solape) y _03 cae en el alcázar. Lo mínimo, como la Fragata: _01 a z 9,6 (0,47 %) y _03 a z −12,0, en la tapa
+  // del 1.er piso y fuera del 2.º (0,01 %)
   fire: [{ z: 9.6 }, undefined, { z: -12.0, y: lineDeck(-15) + 1.6 + 0.3 }],
   cannonZ: [-17.5, -14, -10.5, -7, -3.5, 0, 3.5, 7, 10.5, 14], cannonY: 2.05, cannon: [0.26, 0.32, 1.6],
   bands: [{ y: 1.35, z: [-14, -7, 0, 7, 14] }, { y: 2.75, z: [-17.5, -10.5, -3.5, 3.5, 10.5] }], bandH: 0.9, portH: 0.55,
