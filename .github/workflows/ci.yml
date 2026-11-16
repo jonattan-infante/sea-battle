@@ -220,6 +220,22 @@ jobs:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           SHA: ${{ github.event.pull_request.head.sha }}
         run: python3 -B scripts/railway/deploy.py --env staging --sha "$SHA" --url https://sea-battle-staging.up.railway.app
+      # AC-231: cómo arrancó, sin el proveedor (solo la URL pública). Falla si commit no es EXPECTED_COMMIT (el SHA
+      # desplegado), si migrationsApplied no es EXPECTED_MIGRATIONS ([] salvo que el PR de la versión declare una migración:
+      # entonces su lista, p. ej. '[2]') o si schemaVersion no es la mayor de MIGRATIONS en ese commit
+      # (scripts/ci/check_healthz.py). Para la corrida forzada en rojo de AC-231, un commit temporal del PR cambia
+      # EXPECTED_COMMIT por un SHA falso (TECH-ARCHITECTURE §2.1); en prod es siempre github.sha
+      - name: Cómo arrancó, por /healthz (AC-231)
+        env:
+          URL: https://sea-battle-staging.up.railway.app
+          SHA: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_COMMIT: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_MIGRATIONS: '[]'
+        run: |
+          git fetch --no-tags --depth=1 origin "$SHA"
+          git show "$SHA:server/db/migrate.ts" > "$RUNNER_TEMP/migrate.ts"
+          curl --fail --silent --show-error --retry 5 --retry-delay 5 --retry-all-errors --max-time 10 -H 'Cache-Control: no-store' "$URL/healthz" > "$RUNNER_TEMP/healthz.json"
+          python3 -B scripts/ci/check_healthz.py --commit "$EXPECTED_COMMIT" --migrations "$EXPECTED_MIGRATIONS" --migrate-ts "$RUNNER_TEMP/migrate.ts" < "$RUNNER_TEMP/healthz.json"
       - name: Configuración de despliegue (check_deploy)
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
@@ -252,6 +268,18 @@ jobs:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           SHA: ${{ github.sha }}
         run: python3 -B scripts/railway/deploy.py --env production --sha "$SHA" --url https://seabattle.jonattan.dev
+      # AC-231: lo mismo que en staging. Va antes del tag: un despliegue que no arrancó como se esperaba no se etiqueta
+      - name: Cómo arrancó, por /healthz (AC-231)
+        env:
+          URL: https://seabattle.jonattan.dev
+          SHA: ${{ github.sha }}
+          EXPECTED_COMMIT: ${{ github.sha }}
+          EXPECTED_MIGRATIONS: '[]'
+        run: |
+          git fetch --no-tags --depth=1 origin "$SHA"
+          git show "$SHA:server/db/migrate.ts" > "$RUNNER_TEMP/migrate.ts"
+          curl --fail --silent --show-error --retry 5 --retry-delay 5 --retry-all-errors --max-time 10 -H 'Cache-Control: no-store' "$URL/healthz" > "$RUNNER_TEMP/healthz.json"
+          python3 -B scripts/ci/check_healthz.py --commit "$EXPECTED_COMMIT" --migrations "$EXPECTED_MIGRATIONS" --migrate-ts "$RUNNER_TEMP/migrate.ts" < "$RUNNER_TEMP/healthz.json"
       - name: Configuración de despliegue (check_deploy)
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}

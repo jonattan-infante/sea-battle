@@ -6,10 +6,8 @@ import { loadEnvConfig } from '@next/env';
 import next from 'next';
 import { Server } from 'socket.io';
 import { authConfigError, isAuthBypassAllowed } from '../src/lib/auth-bypass';
-import { databaseConfigError, startGame } from './bootstrap';
-import type { Pool } from 'pg';
-import type { GameServer } from './game-server';
-import { healthPayload } from './health';
+import { databaseConfigError, GameStack, healthOf, startGame } from './bootstrap';
+import type { Health } from './health';
 import { canonicalRedirect, publicOrigins, socketServerOptions } from './origins';
 import { requestHandler } from './request-handler';
 import { installShutdown } from './shutdown';
@@ -41,11 +39,11 @@ const handle = app.getRequestHandler();
 
 app.prepare().then(async () => {
   const startedAt = Date.now();
-  let onlinePlayers = () => 0;
+  let health: (() => Health) | null = null; // lo pone el arranque; el puerto se abre después, así que nadie lo pide antes
 
   const httpServer = createServer(
     requestHandler({
-      health: () => healthPayload(onlinePlayers(), startedAt, Date.now()),
+      health: () => health!(),
       redirect,
       next: (req, res) => handle(req, res, parse(req.url || '/', true))
     })
@@ -56,15 +54,15 @@ app.prepare().then(async () => {
   // BD y migraciones antes de abrir el puerto: si fallan, el healthcheck no pasa y Railway mantiene el despliegue anterior
   // (Healthcheck Path `/healthz` en los ajustes del servicio de cada entorno; TECH-ARCHITECTURE §2.1)
   const log = (msg: string) => console.log(msg);
-  let game: GameServer;
-  let pool: Pool | null;
+  let stack: GameStack;
   try {
-    ({ game, pool } = await startGame(io, process.env, log));
+    stack = await startGame(io, process.env, log);
   } catch (err) {
     console.error(`❌ No se pudo preparar la base de datos: ${(err as Error).message}`);
     process.exit(1);
   }
-  onlinePlayers = game.onlinePlayers;
+  health = healthOf(stack, startedAt); // AC-231: cómo arrancó (commit, migraciones aplicadas y versión del esquema)
+  const { game, pool } = stack;
   installShutdown({ game, io, httpServer, pool, log }); // SIGTERM de Railway: escribir el progreso y después cerrar (AC-129)
 
   httpServer.listen(port, () => {
