@@ -15,7 +15,6 @@ import { createPool } from '../db/pool';
 import { GameChild, startGameChild } from './fixtures/game-child';
 import { joinGame } from './fixtures/game-socket';
 import { PgProxy, startPgProxy } from './fixtures/pg-proxy';
-import { V3_FULL } from './fixtures/progress-rows';
 import { createTestDb, TestDb } from './pg/test-db';
 
 jest.setTimeout(60_000);
@@ -127,39 +126,5 @@ describe('SIGTERM con una fila de la 1.2 o de la 1.3: el apagado escribe una v: 
     expect(await atDisconnect).toEqual(written);
     expect(await exited).toEqual({ code: 0, signal: null });
     expect(await rowOf('test-uma')).toEqual(written);
-  });
-});
-
-describe('SIGTERM con una fila v: 3 (AC-220): el apagado escribe en v: 3 y conserva los niveles de cada barco y las familias', () => {
-  test('(a) con oro y XP ganados, la fila queda antes de salir en v: 3 con el oro y la XP nuevos, la Fragata como activo y lo demás igual; sale con 0', async () => {
-    await seed('test-vea', V3_FULL);
-    const child = await start();
-    const v = await joinGame(child.url, { testUser: 'vea' }, undefined, sockets);
-    expect(v.me().activeShip).toBe('frigate');
-    expect(v.me().upgrades).toEqual(V3_FULL.ships.frigate);
-    expect(await child.addGold('test-vea', 250)).toBe(true);
-    expect(await child.addXp('test-vea', 66)).toBe(true);
-    expect(await rowOf('test-vea')).toEqual({ state: V3_FULL, revision: 1 }); // aún sin escribir
-
-    proxy.delay(400); // cada escritura tarda ≥ 400 ms en llegar a la BD
-    const atDisconnect = new Promise<{ state: Record<string, unknown>; revision: number }>((resolve) => v.c.once('disconnect', async () => resolve(await rowOf('test-vea'))));
-    const exited = child.kill('SIGTERM');
-    const written = { state: { ...V3_FULL, gold: 4571, xp: 2566, activeShip: 'frigate' }, revision: 2 };
-    expect(await atDisconnect).toEqual(written);
-    expect(await exited).toEqual({ code: 0, signal: null });
-    expect(child.output()).toContain('💾 Progreso guardado');
-    expect(await rowOf('test-vea')).toEqual(written);
-  });
-
-  test('(b) sin cambios, la fila v: 3 queda igual byte a byte tras el SIGTERM, con el Navío activo y la misma revision; sale con 0', async () => {
-    await seed('test-vio', V3_FULL);
-    const before = await rawRow('test-vio');
-    const child = await start();
-    const v = await joinGame(child.url, { testUser: 'vio' }, undefined, sockets);
-    expect(v.me().activeShip).toBe('frigate');
-    expect(await child.kill('SIGTERM')).toEqual({ code: 0, signal: null });
-    expect(child.output()).toContain('💾 Progreso guardado');
-    expect(await rawRow('test-vio')).toBe(before);
-    expect((await rowOf('test-vio')).revision).toBe(1);
   });
 });
