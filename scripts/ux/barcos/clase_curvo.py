@@ -15,6 +15,8 @@
 # con curvo.py. El atlas se pinta a 1024² con la distribución del Navío y se entrega con el lado más pequeño que da
 # ≥ 18 px/m en el casco y en las cubiertas (producto, 2026-10-19): 512² la Balandra, la Goleta y el Bergantín (26,2, 21,0
 # y 19,1) y 1024² la Fragata (a 512², 10,4 en la manga del alcázar). La descarga de las 8 suma ≤ 630 930 B (AC-197 d).
+# D107 (aprobada por Jonattan el 2026-11-16 a las 15:16:17Z, pieza `goleta-relinga`): la Goleta lleva en LOD1 la relinga
+# oscura de relinga_d107.py en la baluma de la cangreja de trinquete, tras el aparejo; LOD0 y las otras 3 clases no cambian.
 import json, math, os, random, sys
 HERE_S = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE_S, '..', 'laminas')); sys.path.insert(0, HERE_S)
@@ -22,6 +24,7 @@ sys.dont_write_bytecode = True
 import rutas as RT
 import curvo as CV
 import navio_curvo as NCV  # el atlas (AT), las paletas de familia (PAL) y compose()
+import relinga_d107 as RL  # D107: la relinga de la Goleta en LOD1
 import numpy as np
 from PIL import Image, ImageDraw
 OUT = os.path.join(RT.OUT, 'cadena'); os.makedirs(OUT, exist_ok=True)
@@ -124,6 +127,7 @@ def build(cls, fam, lod):
         if fam == 'es': emblem(m, c['emblems'])
     ensign(m, H, cls, fam)
     rig(m, lod, cls)
+    if cls == 'schooner' and lod == 1: RL.relinga(m, AT.white)  # D107: después del aparejo, que trae la cangreja
     return m, H
 
 
