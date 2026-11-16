@@ -86,6 +86,38 @@ export async function openUpgrades(page: Page, classId = 'sloop', touch = false)
   await expect(page.getByTestId('upgrades-view')).toHaveAttribute('data-ship', classId);
 }
 
+// Frames frenados (O-157 c): con E2E_MIN_FRAME_MS (ms), cada página del contexto pinta como mucho un frame cada tantos ms, como
+// un runner de la CI con WebGL por CPU (~265 ms por frame en el PR #89). Envuelve requestAnimationFrame antes de cargar el
+// juego: los callbacks se juntan y salen todos en el primer frame nativo que llega ≥ ms después del anterior, con la marca de
+// tiempo de ese frame. setTimeout y setInterval (el sync de 10 Hz del HUD) siguen a su ritmo, como en la CI
+export const MIN_FRAME_MS = Number(process.env.E2E_MIN_FRAME_MS ?? 0);
+export const slowFrames = (target: { addInitScript: Page['addInitScript'] }, ms: number) =>
+  target.addInitScript((minMs: number) => {
+    const native = window.requestAnimationFrame.bind(window);
+    let queue = new Map<number, FrameRequestCallback>();
+    let nextId = 1;
+    let last = -Infinity;
+    let pending = false;
+    const pump = (ts: number) => {
+      if (ts - last < minMs) return void native(pump);
+      last = ts;
+      pending = false;
+      const run = queue;
+      queue = new Map();
+      run.forEach((cb) => cb(ts));
+    };
+    window.requestAnimationFrame = (cb: FrameRequestCallback) => {
+      const id = nextId++;
+      queue.set(id, cb);
+      if (!pending) {
+        pending = true;
+        native(pump);
+      }
+      return id;
+    };
+    window.cancelAnimationFrame = (id: number) => void queue.delete(id);
+  }, ms);
+
 export async function enterGame(page: Page, base = ''): Promise<void> {
   const dialogs: string[] = [];
   page.on('dialog', (d) => {
