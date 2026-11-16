@@ -38,6 +38,7 @@ import { familyArrived, MeHud, noticeArrived, resetSaveWarning, sameShallow, sta
 import { actionOf, isArrowCode, routeKey, ViewAction } from '../client/key-bindings';
 import { closeOnOtherWindows, useOptions } from '../client/options-store';
 import { predictedShip, rememberShip } from '../client/own-ship-memory';
+import { glbKey } from '../client/models/ship-glb';
 import { attachOverlays, createRuntime, disposeRuntime, GameRuntime } from '../client/runtime';
 import GameCanvas from './game/GameCanvas';
 import Hud, { HudActions } from './hud/Hud';
@@ -171,7 +172,8 @@ export default function GameApp({ guest }: { guest: boolean }) {
     // Opción A de AC-193 c: el GLB propio se pide antes de la bienvenida, con la última clase de este jugador en el
     // navegador o, si es nuevo, la de salida (own-ship-memory.ts)
     const playerKey = testUser ? `test:${testUser}` : guest ? `guest:${id}` : `user:${user?.id ?? ''}`;
-    const rt = createRuntime(client, predictedShip(playerKey));
+    const own = predictedShip(playerKey);
+    const rt = createRuntime(client, own && glbKey(own.classId, own.family));
     // Opciones de cámara y teclas (E18, AC-207): del navegador, antes de la primera entrada del jugador
     useOptions.getState().hydrate(browserStorage());
     rt.freeView.setCentered(useOptions.getState().camera === 'centered', performance.now());
@@ -322,7 +324,7 @@ export default function GameApp({ guest }: { guest: boolean }) {
         if (connection === 'connected') useHud.setState({ reconnectAttempt: 0 });
         if (connection === 'full') router.replace('/?full=1');
       }),
-      client.onPlayer((p) => rememberShip(playerKey, p.activeShip)),
+      client.onPlayer((p) => rememberShip(playerKey, p.activeShip, p.family)),
       client.onPlayer((player) => {
         // AC-151: la subida de nivel sale en el mismo commit que el panel con el nivel nuevo, al llegar el frame que la
         // trae. Un solo aviso con el nivel final aunque el hundimiento dé varios niveles

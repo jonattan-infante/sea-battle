@@ -4,7 +4,8 @@
 // Con el respaldo de su textura (D90), el GLB se dibuja sin esperar al transcodificador y cambia a la KTX2 al llegar.
 // El GLB cumple el mismo contrato que el procedural (§0–§4): raíz con extras, mallas <id>_lod0 y <id>_lod1 y sockets con
 // nombre. Del material del GLB solo se usa la textura: el color, el destello, el daño y el borde de protección son los del
-// material del barco, clonado por instancia (§6). La geometría y la textura se comparten entre los barcos de la clase
+// material del barco, clonado por instancia (§6). La geometría y la textura se comparten entre los barcos del modelo.
+// Desde la 1.3 (AC-227) cada clase del jugador tiene un GLB por familia: la clave del modelo es glbKey(clase, familia)
 import * as THREE from 'three';
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { PLAYER_SHIP_ORDER } from '../../game/constants';
@@ -12,11 +13,24 @@ import type { Welcome } from '../../game/types';
 import { creaseNormals } from './geometry-utils';
 import { getShipModel, LOD_PX, ShipExtras, ShipModel, ShipSockets } from './ship-geometry';
 
-// Clase → URL del GLB (/models/<id>.<hash de su contenido>.glb, servido con caché de un año: next.config.ts). Sin entrada,
-// la clase usa el procedural y no se descarga nada. Cada GLB entra aprobado y con el paso 4c (scripts/glb/stage-model.ts)
+// Modelo (glbKey) → URL del GLB (/models/<id>.<hash de su contenido>.glb, servido con caché de un año: next.config.ts). Sin
+// entrada, el modelo usa el procedural de su clase y no se descarga nada: así se ven las 5 clases sin familia (AC-227 e).
+// Cada GLB entra aprobado y con el paso 4c (scripts/glb/stage-model.ts)
 export const SHIP_GLB: Partial<Record<string, string>> = {
   gunboat: '/models/npc_pirate_gunboat.c0e38d17.glb', // la Cañonera de D91, v6 (D97; ASSET-SPEC §13; sha256 6785c435…4ab8)
-  captain: '/models/npc_pirate_captain.73eb940c.glb' // el Capitán de D91 (ASSET-SPEC §13; sha256 7a9b694c…ef92)
+  captain: '/models/npc_pirate_captain.73eb940c.glb', // el Capitán de D91 (ASSET-SPEC §13; sha256 7a9b694c…ef92)
+  // Las 10 combinaciones de la 1.3 (AC-227 a), con sockets, la bandera de D104 y, en la Fragata, la KTX2 _a512 de D105
+  // (entregar.py familias; ASSET-SPEC §13, sus sha256). Las 10 suman 1 015 687 B en archivo, frente a la cota de 1 020 000
+  'sloop:gb': '/models/ship_sloop_gb.9688272b.glb', // D95, la Balandra (sha256 c7610837…)
+  'sloop:es': '/models/ship_sloop_es.41de8816.glb', // (sha256 c7fccc47…)
+  'brig:gb': '/models/ship_brigantine_gb.72a27415.glb', // D95, el Bergantín (sha256 efb220d6…)
+  'brig:es': '/models/ship_brigantine_es.6802a789.glb', // (sha256 14624626…)
+  'schooner:gb': '/models/ship_schooner_gb.656567d0.glb', // D95, la Goleta (sha256 e5485e84…)
+  'schooner:es': '/models/ship_schooner_es.afd29e1f.glb', // (sha256 bed4dae6…)
+  'frigate:gb': '/models/ship_frigate_gb.6dbdc710.glb', // D95, la Fragata v4, con la KTX2 _a512 de D105 (sha256 6f1e012a…)
+  'frigate:es': '/models/ship_frigate_es.d99d484b.glb', // (sha256 1eab9777…)
+  'line:gb': '/models/ship_line_gb.18b4e561.glb', // D91, el Navío (sha256 ca853812…)
+  'line:es': '/models/ship_line_es.21c08823.glb' // (sha256 649e5c48…)
 };
 // Transcodificador de KTX2 (basis_transcoder.js y .wasm, copiados de three/examples/jsm/libs/basis), en una carpeta con el
 // hash de los dos: se sirve con caché de un año, y al subir three cambia de URL (lo comprueba ship-glb.test.ts)
@@ -32,6 +46,11 @@ export const SHIP_MAP_ANISOTROPY = 16;
 export const mapAnisotropyFor = (max: number) => Math.max(1, Math.min(SHIP_MAP_ANISOTROPY, max));
 
 export class ShipGlbError extends Error {}
+
+// La clave del modelo de un barco (AC-227 a): «clase:familia» si el barco tiene familia, y la clase si no la tiene («none»)
+// o no puede tenerla (los NPC). La clase va antes de los dos puntos
+export const glbKey = (classId: string, family?: string | null) => (family && family !== 'none' ? `${classId}:${family}` : classId);
+export const classOfKey = (key: string) => key.split(':')[0];
 
 // Las clases que pueden salir en la partida, para prefetchAll (BACKLOG :423-:427): las del jugador y las de NPC que da la
 // bienvenida. Sin bienvenida (una escena sintética), solo las del jugador. La regla de la Goleta y el Navío (AC-201) va aquí
@@ -244,7 +263,8 @@ export class ShipGlbStore {
   private readonly failed = new Set<string>();
   private readonly queue: string[] = [];
   private readonly early = new Map<string, Promise<ArrayBuffer>>(); // descargas del propio que el pump aún no tomó
-  private predicted: { classId: string; abort: AbortController | null } | null = null; // opción A: la clase propia predicha
+  private predicted: { classId: string; abort: AbortController | null } | null = null; // opción A: el modelo propio predicho
+  private guess: string | null = null; // el modelo predicho, que decide waiting(null) hasta conocer el real
   private ownKnown = false; // ya llegó la clase real del barco propio
   private requeue: string | null = null; // la clase predicha cuya descarga, ya en el pump, abortó la clase real
   private loading: string | null = null;
@@ -260,33 +280,43 @@ export class ShipGlbStore {
     this.manifest = { ...manifest };
   }
 
-  model(classId: string): ShipModel {
-    return this.ready.get(classId) ?? getShipModel(classId);
+  // Las claves (glbKey) de los modelos: con familia, «clase:familia»; sin ella, la clase. Sin GLB, el procedural de la clase
+  model(key: string): ShipModel {
+    return this.ready.get(key) ?? getShipModel(classOfKey(key));
   }
 
-  loaded(classId: string): boolean {
-    return this.ready.has(classId);
+  loaded(key: string): boolean {
+    return this.ready.has(key);
   }
 
-  // Si hay GLB de alguna clase del jugador, que es la del barco propio. Sin él (sin manifiesto, o solo con barcos NPC), ni la
-  // entrada espera ni el cargador se crea antes de hacer falta: se entra como hoy
+  // Si hay GLB de algún modelo del jugador, que puede ser el del barco propio. Sin él (sin manifiesto, o solo con barcos NPC),
+  // ni la entrada espera ni el cargador se crea antes de hacer falta: se entra como hoy
   private ownGlb(): boolean {
-    return PLAYER_SHIP_ORDER.some((classId) => !!this.manifest[classId]);
+    return Object.keys(this.manifest).some((key) => !!this.manifest[key] && (PLAYER_SHIP_ORDER as readonly string[]).includes(classOfKey(key)));
+  }
+
+  private pending(key: string): boolean {
+    return !!this.manifest[key] && !this.ready.has(key) && !this.failed.has(key);
   }
 
   // Si la entrada tiene que esperar al GLB del barco propio (AC-193 c, opción B): con GLB de una clase del jugador, mientras
   // no se conozca su clase (null) o su GLB no haya llegado ni fallado. Sin él, nunca: se entra como hoy
-  waiting(classId: string | null): boolean {
+  // Sin conocer aún el barco (null), decide la predicción (AC-197 d: sin familia no se espera a ningún modelo propio): el
+  // modelo predicho, si tiene GLB; sin predicción, la bienvenida, si hay GLB de algún modelo del jugador
+  waiting(key: string | null): boolean {
     if (!this.ownGlb()) return false;
-    if (classId === null) return true;
-    return !!this.manifest[classId] && !this.ready.has(classId) && !this.failed.has(classId);
+    if (key !== null) return this.pending(key);
+    return this.guess === null ? true : this.pending(this.guess);
   }
 
-  // Con GLB de una clase del jugador, crea ya el cargador: sus módulos empiezan a bajar (lo llama el runtime al crearse, antes
-  // de conectar). Con solo GLB de NPC, lo crea el pump con el primero. El transcodificador de KTX2 no: lo pide la primera
-  // KTX2 (createGlbLoader)
+  // Con GLB de algún modelo del jugador, crea ya el cargador: sus módulos empiezan a bajar (lo llama el runtime al crearse,
+  // antes de conectar). Con solo GLB de NPC, lo crea el pump con el primero. Con la predicción de un modelo sin GLB (un barco
+  // sin familia, AC-197 d), tampoco: la entrada no espera a nada y el cargador baja con la precarga, ya dentro. El
+  // transcodificador de KTX2 no: lo pide la primera KTX2 (createGlbLoader)
   warm(): void {
-    if (!this.disposed && !this.loader && this.ownGlb()) this.loader = this.makeLoader();
+    if (this.disposed || this.loader || !this.ownGlb()) return;
+    if (this.guess !== null && !this.ownKnown && !this.manifest[this.guess]) return;
+    this.loader = this.makeLoader();
   }
 
   // El cargador de los barcos, para las islas (island-glb.ts): un solo KTX2Loader, con su transcodificador y sus workers.
@@ -301,6 +331,7 @@ export class ShipGlbStore {
   // al tenerla (setUrl), mientras no llegue la clase real. Si la real es otra, request() la aborta
   predictOwn(classId: string): void {
     if (this.disposed || this.ownKnown) return;
+    this.guess = classId;
     this.predicted = { classId, abort: null };
     this.startPredicted();
     this.warm();
@@ -352,7 +383,7 @@ export class ShipGlbStore {
   // va el primero y los demás se descargan en segundo plano, sin esperar a que un barco de su clase entre en el área de
   // interés (AC-193 c). Los de barcos que no pueden salir no se bajan (BACKLOG :423)
   prefetchAll(classes: readonly string[]): void {
-    for (const classId of Object.keys(this.manifest)) if (classes.includes(classId)) this.request(classId);
+    for (const key of Object.keys(this.manifest)) if (classes.includes(classOfKey(key))) this.request(key);
   }
 
   // Cambia el GLB de una clase (vista previa de ux y e2e): vuelve a cargarse la próxima vez que se pida
@@ -396,7 +427,7 @@ export class ShipGlbStore {
       .then(({ scene, upgrades }) => {
         let model: ShipModel;
         try {
-          model = shipModelFromGlb(scene, classId);
+          model = shipModelFromGlb(scene, classOfKey(classId));
         } catch (e) {
           disposeScene(scene);
           this.upgrade(classId, url, null, upgrades);

@@ -34,3 +34,30 @@ test('el nivel del jugador llega a RenderShip.level, los NPC dan null y un delta
     now.mockRestore();
   }
 });
+
+// AC-227: la familia de cada jugador llega en el `fa` de su barco (GDD §13), solo al entrar y al cambiar, y elige su modelo.
+// Los deltas sin `fa` la conservan; los NPC no la llevan (null)
+test('la familia del jugador llega a RenderShip.family, se conserva en los deltas sin `fa` y cambia con el que la trae', () => {
+  let clock = 1000;
+  const now = jest.spyOn(performance, 'now').mockImplementation(() => clock);
+  const client = new GameClient({ url: 'http://localhost:1', auth: async () => ({}) });
+  try {
+    const deliver = (f: ServerFrame) => client.socket.listeners(S2C.frame).forEach((l) => l(f));
+    deliver({ t: 1, full: true, s: [{ ...player, fa: 'gb' }, pirate] });
+    client.update(clock);
+    expect([client.getShip('p')!.family, client.getShip('n')!.family]).toEqual(['gb', null]);
+    clock = 1100;
+    deliver({ t: 1.1, s: [{ id: 'p', hp: 700 }] });
+    clock = 1250;
+    client.update(clock);
+    expect(client.getShip('p')!.family).toBe('gb');
+    clock = 1300;
+    deliver({ t: 1.3, s: [{ id: 'p', fa: 'none' }] });
+    clock = 1450;
+    client.update(clock);
+    expect(client.getShip('p')!.family).toBe('none');
+  } finally {
+    client.dispose();
+    now.mockRestore();
+  }
+});

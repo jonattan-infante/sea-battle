@@ -400,6 +400,49 @@ test.describe('Capturas @capture', () => {
     });
   }
 
+  // AC-227 (a, e): las 5 clases del jugador sin familia y en las 2 familias, como las pinta el juego (LOD y DPR del juego, las
+  // KTX2 ya transcodificadas), de una en una en el foco de la galería, de costado (rumbo E) y a 3/4 (rumbo SE), para cotejarlas
+  // con D91 y D95 (las familias), D102 (sin familia) y D104 (como en el juego). Archivos: <vp>-familia-<clase>-<familia>-<rumbo>.png
+  for (const vp of VIEWPORTS) {
+    test(`familias en ${vp.name} (AC-227; D91, D95, D102, D104)`, async ({ browser }) => {
+      test.setTimeout(240_000);
+      const page = await newPage(browser, vp);
+      try {
+        await enterGame(page);
+        await page.mouse.move(5, 450);
+        await page.evaluate(() => {
+          const rt = window.__SEA_BATTLE__!.runtime();
+          rt.setCameraPreset('game');
+          rt.setZoomLevel(1);
+          const scene = rt.startScene('gallery', { families: true });
+          scene.setPose('g-sloop', scene.focus.x + 10_000, scene.focus.z, Math.PI / 2);
+          (window as unknown as { __capScene: typeof scene }).__capScene = scene;
+        });
+        await expect
+          .poll(() => page.evaluate(() => {
+            const glb = (window.__SEA_BATTLE__!.runtime() as unknown as { shipGlb: { loaded(k: string): boolean; model(k: string): { map?: { isCompressedTexture?: boolean } | null } } }).shipGlb;
+            return ['sloop', 'brig', 'schooner', 'frigate', 'line'].flatMap((c) => [`${c}:gb`, `${c}:es`]).every((k) => glb.loaded(k) && glb.model(k).map?.isCompressedTexture === true);
+          }), { timeout: 120_000 })
+          .toBe(true);
+        for (const classId of ['sloop', 'brig', 'schooner', 'frigate', 'line']) {
+          for (const family of ['none', 'gb', 'es']) {
+            for (const [rumbo, heading] of [['E', Math.PI / 2], ['SE', (3 * Math.PI) / 4]] as const) {
+              await page.evaluate(([id, heading]) => {
+                const scene = (window as unknown as { __capScene: { focus: { x: number; z: number }; setPose(id: string, x: number, z: number, h: number): void; spec: { ships: { id: string }[] } } }).__capScene;
+                scene.spec.ships.forEach((s, i) => s.id !== id && scene.setPose(s.id, scene.focus.x + 10_000 + 2000 * i, scene.focus.z, Math.PI / 2));
+                scene.setPose(id, scene.focus.x, scene.focus.z, heading);
+              }, [`g-${classId}-${family}`, heading] as const);
+              await page.waitForTimeout(600);
+              await shot(page, vp, `familia-${classId}-${family}-${rumbo}`);
+            }
+          }
+        }
+      } finally {
+        await page.context().close();
+      }
+    });
+  }
+
   // AD-32 (D39): el pirata de la escena "gallery" bajo el minimapa, con la placa a 4 px del borde inferior del panel
   // (oculta: está a menos de 8 px) y a 24 px del último bloque del HUD bajo el minimapa (visible). En escritorio ese
   // bloque es el propio minimapa; en 390×844, «Zona segura», que ocupa todo el ancho 8 px más abajo y es bloque desde D41

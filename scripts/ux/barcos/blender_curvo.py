@@ -6,8 +6,8 @@
 #   blender -b --factory-startup -t 1 --python scripts/ux/barcos/blender_curvo.py -- <id> export
 #     (la textura sale en PNG, sin pérdida, y la KTX2 se hace desde él: ver la cabecera de comprimir_cadena.sh)
 #     →  $UX_OUT/cadena/<id>.glb con el atlas final (atlas_<fam>.png), LOD0 y LOD1, COLOR_0 y _RIM_MASK (ASSET-SPEC §1–§7);
-#        los Navíos, la Cañonera rehecha y el Capitán, con los sockets y los extras de $UX_OUT/cadena/<id>-sockets.json
-#        (sockets_curvo.py; sockets_canonera2.py; sockets_capitan.py)
+#        los Navíos, la Cañonera rehecha, el Capitán y las 4 clases del jugador, con los sockets y los extras de
+#        $UX_OUT/cadena/<id>-sockets.json (sockets_curvo.py; sockets_canonera2.py; sockets_capitan.py; sockets_clase.py)
 # <id>: navio_gb, navio_es, canonera (la de D91), canonera2 (la rehecha, canonera2_curvo.py), capitan (capitan_curvo.py),
 # galeon (galeon_curvo.py, D88 v2) o <clase>_<familia> de clase_curvo.py (sloop, schooner, brig o frigate; gb o es). El
 # horneado es una corrida pesada que pide turno de máquina (un núcleo con -t 1); el export es ligero (≈ 1 s). Blender 5.2.2.
@@ -78,8 +78,9 @@ else:
     for lod in (0, 1):
         ob, tris[lod] = mesh(lod, f'{sid}_lod{lod}'); ob.data.materials.append(mat); ob.parent = root
     root['sb_id'] = sid
-    if ID in ('navio_gb', 'navio_es', 'canonera2', 'capitan'):  # sockets (ASSET-SPEC §3) y extras (§4) de sockets_curvo.py, sockets_canonera2.py o sockets_capitan.py
-        sk = json.load(open(RT.need(os.path.join(OUT, f'{ID}-sockets.json'), f'{ID}-sockets.json (sockets_curvo.py, sockets_canonera2.py o sockets_capitan.py)')))
+    clase = ID.rsplit('_', 1)[0] in ('sloop', 'schooner', 'brig', 'frigate')
+    if ID in ('navio_gb', 'navio_es', 'canonera2', 'capitan') or clase:  # sockets (ASSET-SPEC §3) y extras (§4) de sockets_curvo.py, sockets_canonera2.py, sockets_capitan.py o sockets_clase.py
+        sk = json.load(open(RT.need(os.path.join(OUT, f'{ID}-sockets.json'), f'{ID}-sockets.json (sockets_curvo.py, sockets_canonera2.py, sockets_capitan.py o sockets_clase.py)')))
         for k, v in sk['extras'].items(): root[k] = v
         for name, p, rz in sk['sockets']:  # los de cañón miran hacia fuera: giro en Z de Blender, que el exportador pasa a +Y
             e = bpy.data.objects.new(name, None); e.location = G2B(p); e.rotation_euler = (0, 0, rz); e.parent = root

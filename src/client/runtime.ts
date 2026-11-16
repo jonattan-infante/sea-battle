@@ -21,7 +21,7 @@ import { IslandGlbStore, PORT_GLB, PORT_ROOTS, sameCircles, serverShapes, shapeO
 import { isMap10, islandsKey, islandsOf, ISLANDS_1_0_KEY } from './map-islands';
 import { measureSailVisibility, measureShipValues, SailVisibility, ShipValues } from './models/sail-visibility';
 import { createShipMaterial, LOD_PX, ShipMaterial, ShipModel } from './models/ship-geometry';
-import { EntryGate, mapAnisotropyFor, prefetchClasses, setShipMap, ShipGlbStore } from './models/ship-glb';
+import { EntryGate, glbKey, mapAnisotropyFor, prefetchClasses, setShipMap, ShipGlbStore } from './models/ship-glb';
 import { ShipShadows } from './models/ship-shadow';
 import { FloatingTextLayer, LabelLayer, LabelTarget, OverlayHost, ReloadState, ScreenPoint } from './overlays';
 import { DAMAGE_FX, Effects, RENDER_ORDER, rgba } from './vfx/effects';
@@ -783,8 +783,8 @@ export class GameRuntime implements OverlayHost, ChipHost {
   private readonly hullIdx: number[] = [0, 1, 2, 3, 4, 5, 6, 7];
   private readonly hullOut: number[] = [];
 
-  // ownClass: la clase propia predicha antes de la bienvenida (opción A de AC-193 c; own-ship-memory.ts)
-  constructor(client: GameClient, ownClass?: string | null) {
+  // ownModel: el modelo propio predicho antes de la bienvenida, su clave glbKey (opción A de AC-193 c; own-ship-memory.ts)
+  constructor(client: GameClient, ownModel?: string | null) {
     this.client = client;
     this.src = client;
     // Los viewAt solo salen con el cliente real (no con las escenas sintéticas de QA); el botón Centrar lee el modo del store
@@ -836,7 +836,7 @@ export class GameRuntime implements OverlayHost, ChipHost {
     this.stopWelcome = client.onWelcome((w) => {
       if (this.src === this.client) this.applyIslands(islandsOf(w));
     });
-    if (ownClass) this.shipGlb.predictOwn(ownClass); // su GLB, antes que el cargador
+    if (ownModel) this.shipGlb.predictOwn(ownModel); // su GLB, antes que el cargador
     this.shipGlb.warm(); // con manifiesto, el cargador baja mientras se conecta (el transcodificador, después del GLB propio)
   }
 
@@ -1263,15 +1263,16 @@ export class GameRuntime implements OverlayHost, ChipHost {
   // cannonLevel: nivel de cañón con el que se encuadra (VFX-09b se mide con N1 y con N3, D29); por defecto, N1.
   // La escena estándar se compone en metros con la densidad de N3 en 1440×900 (5,04 px/m) y se renderiza con
   // cualquier nivel: rellenar la pantalla con el ppm de N1 juntaría los barcos un 19 % (Q23, D31).
-  // i2: la escena estándar con la población del I2 (AC-89, la variante de producto)
-  startScene(name: SceneName, options: { myShipId?: string; cannonLevel?: number; i2?: boolean } = {}): SyntheticSource {
+  // i2: la escena estándar con la población del I2 (AC-89, la variante de producto). families: en la estándar, el peor caso
+  // de AC-197, con los 20 jugadores en Navío y la mitad de cada familia (AC-227 b); en la galería, las 15 combinaciones
+  startScene(name: SceneName, options: { myShipId?: string; cannonLevel?: number; i2?: boolean; families?: boolean } = {}): SyntheticSource {
     this.sceneCannonLevel = options.cannonLevel ?? 1;
     const view = name === 'standard'
       ? { w: 1440, h: 900, ppm: computePpm0(1440, 900, MAX_CANNON_RANGE), sinT: this.sinT }
       : { w: this.viewW, h: this.viewH, ppm: this.targetPpm(), sinT: this.sinT };
     // AC-210: las islas que pinta y usa la escena (islandsForScene): las de la bienvenida en las de prueba; las de la 1.0 en la portada
     const islands = islandsForScene(name, this.client.welcome);
-    const spec = name === 'hero' ? heroScene(view) : name === 'showcase' ? showcaseScene() : name === 'damage' ? damageScene() : name === 'gallery' ? galleryScene() : standardScene(view, { i2: options.i2, islands });
+    const spec = name === 'hero' ? heroScene(view) : name === 'showcase' ? showcaseScene() : name === 'damage' ? damageScene() : name === 'gallery' ? galleryScene({ families: options.families }) : standardScene(view, { i2: options.i2, islands, families: options.families });
     const source = new SyntheticSource(options.myShipId ? { ...spec, myShipId: options.myShipId } : spec, islands);
     this.setSource(source);
     return source;
@@ -1426,8 +1427,8 @@ export class GameRuntime implements OverlayHost, ChipHost {
   private updateEntry(now: number): void {
     if (this.entry.shownAt) return;
     const mine = this.src.myShipId ? this.views.get(this.src.myShipId) : undefined;
-    const classId = mine ? mine.ship.classId : null;
-    const opened = this.entry.update(now, this.shipGlb.waiting(classId), classId !== null && this.shipGlb.loaded(classId), this.portGlb.waiting);
+    const key = mine ? modelKey(mine.ship) : null;
+    const opened = this.entry.update(now, this.shipGlb.waiting(key), key !== null && this.shipGlb.loaded(key), this.portGlb.waiting);
     if (opened && this.entryCover) this.entryCover.hidden = true;
   }
 
@@ -1550,9 +1551,10 @@ export class GameRuntime implements OverlayHost, ChipHost {
   }
 
   private createView(ship: RenderShip): ShipView {
-    const model = this.shipGlb.model(ship.classId);
+    const key = modelKey(ship);
+    const model = this.shipGlb.model(key);
     // AC-193 c: el GLB del barco propio, el primero; al entrar, los demás que pueden salir, en segundo plano (BACKLOG :423)
-    this.shipGlb.request(ship.classId, ship.id === this.src.myShipId);
+    this.shipGlb.request(key, ship.id === this.src.myShipId);
     if (ship.id === this.src.myShipId) this.shipGlb.prefetchAll(prefetchClasses(this.src.welcome));
     const material = this.materialPool.pop() ?? createShipMaterial();
     setShipMap(material, model.map ?? null);
@@ -1578,15 +1580,17 @@ export class GameRuntime implements OverlayHost, ChipHost {
     this.shipShadows.begin();
     for (const view of this.views.values()) {
       const s = view.ship;
-      // Cambio de clase o llegada del GLB de la clase: misma vista y mismo LOD, con la geometría y la textura nuevas
-      const model = this.shipGlb.model(s.classId);
+      // Cambio de clase o de familia, o llegada del GLB del modelo: misma vista y mismo LOD, con la geometría y la textura
+      // nuevas (AC-227)
+      const key = modelKey(s);
+      const model = this.shipGlb.model(key);
       if (model !== view.model) {
         view.model = model;
         view.length = model.recipe.L;
         view.beam = model.recipe.B;
         view.mesh.geometry = model.lods[view.lod];
         setShipMap(view.mesh.material, model.map ?? null);
-        this.shipGlb.request(s.classId, view.id === this.src.myShipId);
+        this.shipGlb.request(key, view.id === this.src.myShipId);
       }
       const r = view.model.recipe;
       // LOD por eslora proyectada con histéresis (ASSET-SPEC §7)
@@ -1908,12 +1912,16 @@ export class GameRuntime implements OverlayHost, ChipHost {
     this.scene.clear();
   }
 
-  // Vista previa de un GLB (ux) y e2e: la clase usa ese GLB en cuanto carga, con el procedural mientras tanto
-  useShipGlb(classId: string, url: string): void {
-    this.shipGlb.setUrl(classId, url);
-    for (const view of this.views.values()) if (view.ship.classId === classId) this.shipGlb.request(classId, view.id === this.src.myShipId);
+  // Vista previa de un GLB (ux) y e2e: el modelo (la clase, o «clase:familia», glbKey) usa ese GLB en cuanto carga, con el
+  // procedural mientras tanto
+  useShipGlb(key: string, url: string): void {
+    this.shipGlb.setUrl(key, url);
+    for (const view of this.views.values()) if (modelKey(view.ship) === key) this.shipGlb.request(key, view.id === this.src.myShipId);
   }
 }
+
+// El modelo de un barco: su clase y, si es de jugador, su familia (AC-227)
+const modelKey = (ship: Pick<RenderShip, 'classId' | 'family'>) => glbKey(ship.classId, ship.family);
 
 const ringColors = new Map<string, Float32Array>();
 function ringRgb(hex: string): Float32Array {
@@ -1925,8 +1933,8 @@ function ringRgb(hex: string): Float32Array {
   return c;
 }
 
-export function createRuntime(client: GameClient, ownClass?: string | null): GameRuntime {
-  return new GameRuntime(client, ownClass);
+export function createRuntime(client: GameClient, ownModel?: string | null): GameRuntime {
+  return new GameRuntime(client, ownModel);
 }
 
 export function disposeRuntime(rt: GameRuntime): void {

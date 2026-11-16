@@ -1,11 +1,15 @@
 # Uso (desde la raíz del repo), tras sockets_curvo.py, blender_curvo.py <id> export y comprimir_cadena.sh (la misma UX_OUT):
-#   python3 -I scripts/ux/barcos/entregar.py [navios | canonera2 | capitan]   →  $UX_OUT/entrega/dentro/<sb_id>.glb (la entrega a dev-render: la KTX2 y el respaldo
+#   python3 -I scripts/ux/barcos/entregar.py [navios | canonera2 | capitan | familias]   →  $UX_OUT/entrega/dentro/<sb_id>.glb (la entrega a dev-render: la KTX2 y el respaldo
 #   en el BIN; el paso 4c lo hace su externalizeKtx2), y de contraste <sb_id>.<hash>.glb y <sb_id>_atlas.<hash>.ktx2 con el 4c
 #   de aquí; entrega.json (o entrega-<conjunto>.json) con las medidas, también la eslora del casco en la caja y en la flotación
 #   (AS-V03). Con `canonera2`, la Cañonera de la receta (D91, 2.ª vuelta; tras sockets_canonera2.py), con el respaldo de 128²,
 #   que pasa la regla de 4b (lamina_canonera2.py, turno C2: ΔE76 1,651 frente a 1,779). Con `capitan`, el Capitán de la receta
 #   (D91; tras sockets_capitan.py), con el respaldo PNG de 128², el lado más pequeño que pasa (lamina_capitan.py, turno CP1:
-#   ΔE76 1,140 frente a 1,280; el JPEG de 128² no pasa)
+#   ΔE76 1,140 frente a 1,280; el JPEG de 128² no pasa). Con `familias` (la 1.3, AC-227), las 10 combinaciones: las 4 clases
+#   del jugador de clase_curvo.py (D95; tras sockets_clase.py y blender_curvo.py <clase>_<fam> export) con el atlas
+#   atlas_<clase>_<fam> y el respaldo PNG de 128², el lado más pequeño que pasa la regla de 4b en las 8 (lamina_clase.py,
+#   <clase>-medidas.json), y los 2 Navíos como `navios`; todas con la bandera de geometría de D104 en sus npz
+#   (lamina_como_juego.con_bandera_geo, variante «fiel»)
 # Los 2 Navíos de la receta de D91 (aprobados por Jonattan el 2026-10-18) como los espera el juego (ASSET-SPEC §13, pasos
 # 4, 4b y 4c): la geometría con meshopt (`gltf-transform meshopt`); el respaldo PNG de 256² en el BIN, en `texture.source`
 # (D90; 128² no pasa la regla de 4b en ninguno de los dos: respaldo-d90.json de respaldo_curvo.py); y la KTX2 de
@@ -23,6 +27,7 @@ import respaldo as RS
 import navio_curvo as NCV
 import canonera2_curvo as C2
 import capitan_curvo as CPT
+import clase_curvo as CC
 import numpy as np
 
 CAD = os.path.join(RT.OUT, 'cadena'); DST = os.path.join(RT.OUT, 'entrega'); TMP = os.path.join(DST, 'tmp'); DST_D = os.path.join(DST, 'dentro')
@@ -30,7 +35,20 @@ CAD = os.path.join(RT.OUT, 'cadena'); DST = os.path.join(RT.OUT, 'entrega'); TMP
 SETS = {'navios': (('navio_gb', 'gb', 'ship_line_gb', 256, NCV.AT.R), ('navio_es', 'es', 'ship_line_es', 256, NCV.AT.R)),
         'canonera2': (('canonera2', 'canonera2', 'npc_pirate_gunboat', 128, C2.AT.R),),
         'capitan': (('capitan', 'capitan', 'npc_pirate_captain', 128, CPT.AT.R),)}
+SETS['familias'] = tuple((f'{c}_{f}', f'{c}_{f}', f'{CC.CLASES[c]["sid"]}_{f}', 128, CC.AT.R) for c in ('sloop', 'schooner', 'brig', 'frigate') for f in ('gb', 'es')) + SETS['navios']
+
+
+def ref_png_bytes(ref, id_, side):
+    """Los bytes medidos del respaldo de ese lado: los Navíos, en respaldo-d90.json (respaldo_curvo.py); las 4 clases, en
+    <clase>-medidas.json (lamina_clase.py)."""
+    if id_ in ref: return ref[id_].get(f'png{side}', {}).get('bytes')
+    cls, fam = id_.rsplit('_', 1); med = os.path.join(CAD, f'{cls}-medidas.json')
+    if cls in CC.CLASES and os.path.exists(med): return json.load(open(med))[fam]['respaldo'].get(f'png{side}', {}).get('bytes')
+    return None
 BASISU = 'KHR_texture_basisu'
+# D105 (ux, 2026-11-16): la Fragata va con la KTX2 `_a512` de comprimir_cadena.sh en las 2 familias, la salida (a) de BACKLOG
+# :361, para que las 10 combinaciones quepan en 1 020 000 B. El respaldo sale del mismo atlas PNG, así que no cambia
+KTX2_VARIANT = {'frigate_gb': 'frigate_gb_a512', 'frigate_es': 'frigate_es_a512'}
 
 
 def read_glb(data):
@@ -86,7 +104,8 @@ def deliver(id_, fam, sid, SIDE, regions, ref_png_bytes):
     assert len(js['textures']) == 1 and len(js['images']) == 1 and js['images'][0]['mimeType'] == 'image/png'
     k = js['images'][0]['bufferView']; geo = drop_view(js, bin_, k)
     # 4c: la KTX2 y su hash
-    ktx = open(RT.need(os.path.join(CAD, 'comp', f'atlas_{fam}.ktx2'), f'atlas_{fam}.ktx2 (comprimir_cadena.sh)'), 'rb').read()
+    kfam = KTX2_VARIANT.get(fam, fam)
+    ktx = open(RT.need(os.path.join(CAD, 'comp', f'atlas_{kfam}.ktx2'), f'atlas_{kfam}.ktx2 (comprimir_cadena.sh)'), 'rb').read()
     kh = ktx2_header(ktx); kname = f'{sid}_atlas.{h8(ktx)}.ktx2'
     # 4b: el respaldo, por regiones (respaldo.fallback con las del atlas de navio_curvo)
     png = RS.encode(RS.fallback(os.path.join(CAD, f'atlas_{fam}.png'), SIDE, regions=regions, size=1024), 'png')
@@ -159,7 +178,7 @@ if __name__ == '__main__':
     ref = os.path.join(CAD, 'respaldo-d90.json'); ref = json.load(open(ref)) if os.path.exists(ref) else {}
     which = sys.argv[1] if len(sys.argv) > 1 else 'navios'; out = {}
     for id_, fam, sid, side, regions in SETS[which]:
-        out[sid] = deliver(id_, fam, sid, side, regions, ref.get(id_, {}).get(f'png{side}', {}).get('bytes'))
+        out[sid] = deliver(id_, fam, sid, side, regions, ref_png_bytes(ref, id_, side))
         print(sid, json.dumps(out[sid], ensure_ascii=False), flush=True)
     json.dump(out, open(os.path.join(DST, 'entrega.json' if which == 'navios' else f'entrega-{which}.json'), 'w'), indent=1, ensure_ascii=False)
     bad = [s for s, v in out.items() if not (v['comprobaciones']['validate']['sin_errores'] and v['comprobaciones']['validate_dentro']['sin_errores'] and v['comprobaciones']['AS-V02']
