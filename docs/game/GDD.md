@@ -800,7 +800,7 @@ La protección al reaparecer (§12) no cambia y va aparte: mientras dura, nadie 
 1. **Que está bajo fuego y cuántos segundos faltan,** en cualquier punto del mapa, para decidir si le compensa huir al puerto.
 2. **Al entrar en la zona bajo fuego, que la zona aún no le protege,** en el momento en que cruza los 110 m y con los segundos que faltan. Es el caso que más sorprende: cree que ya está a salvo.
 3. **Dentro, si la zona le protege o no:** el aviso «Zona segura» (§14) tiene 2 estados que se distinguen de un vistazo, también en escala de grises.
-4. **Cuándo vuelve a estar protegido:** el aviso pasa al estado normal en el snapshot en que caduca la marca.
+4. **Cuándo vuelve a estar protegido:** el aviso pasa al estado normal ~~en el snapshot en que caduca la marca~~ en ≤ 200 ms desde que caduca la marca. *Corregido el 2026-11-16 (O-150):* cuando caduca no llega ningún snapshot, así que el cliente cambia el aviso con su reloj.
 5. **Por qué no abre el puerto:** el botón Puerto, desactivado, dice que es por estar bajo fuego (no por estar fuera de la zona) y cuántos segundos faltan.
 6. **Si otro jugador dentro de la zona es atacable:** su panel de objetivo dice «En alcance» o «Fuera de alcance» si está bajo fuego, y «✕ No atacable» si no (§14).
 
