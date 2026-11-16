@@ -1,6 +1,6 @@
 // Escenarios deterministas para capturas de QA y UX (ART-DIRECTION §18). Solo se aplican con el modo
 // invitado permitido (nunca en Railway); en producción el mundo es siempre el del GDD.
-import { CAPTAIN_CLASS, CAPTAIN_KILLS_TO_SPAWN, GUNBOAT_CLASS, LEVEL_XP, SHIP_CLASSES, STARTING_SHIP, WRECK_LIFETIME, navClearance, upgradePrice } from '../src/game/constants';
+import { CAPTAIN_CLASS, CAPTAIN_KILLS_TO_SPAWN, GUNBOAT_CLASS, LEVEL_XP, SHIP_CLASSES, STARTING_GOLD, STARTING_SHIP, WRECK_LIFETIME, navClearance, upgradePrice } from '../src/game/constants';
 import { Ship, World } from '../src/game/types';
 import { headingTo } from '../src/game/vec';
 import { navigatorOf, spawnCaptain, spawnGunboat, spawnMerchant, spawnPirate } from '../src/game/world';
@@ -40,6 +40,17 @@ export const ENDURANCE_MERCHANTS = 5;
 export const ENDURANCE_MERCHANT_RADIUS = 28; // dentro de la órbita del pirata (45 m) y a tiro de cualquier cañón
 export const ENDURANCE_PIRATE_OFFSET = 60; // a < 70 m (radio de agresión): ataca en cuanto el jugador pierde la protección
 export const ENDURANCE_PIRATE_ACCURACY = 0.15; // ~2,9 de vida/s: reparar bajo fuego (1,5 %/s = 12/s) gana terreno de sobra
+// Los barcos con familia del soak (AC-197 c: «cada modelo y cada textura se cargan una vez» con las familias en pantalla; O-2
+// de QA-78): 3 jugadores-bot (e2e/family-visitors.ts), uno por clase. Cada uno cambia de familia en su punto del puerto (en la
+// zona segura, fuera de pantalla), navega a su puesto a la vista del jugador del soak, espera y vuelve; una vuelta de cada dos,
+// a su punto lejano (aún en la zona segura, pero fuera del área de interés del jugador), para que su barco salga y vuelva a
+// entrar. Los puestos quedan fuera del radio de agresión del pirata, lejos del corro y del camino del jugador desde el puerto
+export const ENDURANCE_VISITORS = [
+  { classId: 'sloop', start: 'gb', post: { x: -75, z: -185 }, port: { x: -40, z: -95 }, far: { x: -20, z: 104 } },
+  { classId: 'brig', start: 'es', post: { x: 75, z: -185 }, port: { x: 40, z: -95 }, far: { x: 0, z: 107 } },
+  { classId: 'frigate', start: 'none', post: { x: -60, z: -145 }, port: { x: -15, z: -100 }, far: { x: 20, z: 104 } }
+] as const;
+export const ENDURANCE_FAMILY_CYCLE = ['gb', 'es', 'none'] as const; // el orden en que cada bot cambia de familia
 
 // Legibilidad (AC-72, D57): un pirata quieto, un mercante sin IA y los puestos de los dos jugadores alrededor del punto de
 // captura. Los jugadores quedan a más de 70 m del pirata (fuera de su radio de agresión), así que nadie se mueve, y los
@@ -51,6 +62,21 @@ export const LEGIBILITY = {
   pirate: { x: 45, z: 262 },
   merchant: { x: -40, z: 160 }
 } as const;
+// AC-165 (relación) con las familias (ART-DIRECTION §21, D106): la pose de AC-72 con 3 otros jugadores de la clase de la
+// corrida, uno por aspecto, en vez de 1 (escenario "legibility-165"; los pone e2e/family-visitors.ts). Cada uno elige barco y
+// familia en `harbor` (zona segura) y llega a su puesto por `via`, que fija el rumbo con el que se para. ux (D106) pide 0 celdas
+// de la rejilla compartidas entre roles distintos (entre los 3 «otro jugador», sí), y en 390×844 los 3 Navíos de norte a sur no
+// caben sin compartir: la rejilla tiene 6 columnas de 65 px, la placa mide ~95 px y la zona de cualquiera tocaba la del propio o
+// la del mercante. Por eso: sin familia, de norte a sur en las columnas 1-2, bajo el mercante; la británica, de costado (hacia
+// el este) encima del propio; la española, de norte a sur a la derecha, encima del pirata. Todos, a más de 75 m del pirata en su
+// camino y en su puesto, y a ≥ 16 px CSS de los demás barcos en los 2 tamaños (D57 b; capture.spec lo comprueba y rejilla.py
+// lista las celdas compartidas)
+export const LEGIBILITY_165_HARBOR = { x: 0, z: 60 };
+export const LEGIBILITY_165_POSTS = [
+  { family: 'none', via: { x: -42, z: 200 }, post: { x: -42, z: 236 } },
+  { family: 'gb', via: { x: -25, z: 136 }, post: { x: 7, z: 136 } },
+  { family: 'es', via: { x: 51, z: 140 }, post: { x: 51, z: 175 } }
+] as const;
 
 // Legibilidad del I2 (AC-115, ART-DIRECTION §18.2): los 4 NPC de la prueba de los evaluadores-agente (pirata, cañonera,
 // Capitán y mercante), quietos alrededor del punto de captura con los 4 rumbos de AD-28 repartidos, y los puestos de los
@@ -190,7 +216,7 @@ export const NAVIO_13 = {
   progress: { gold: 0, ships: { line: { cannons: 1, hull: 1, sails: 1 } }, activeShip: 'line', families: ['es'], family: 'es' }
 } as const;
 
-export const SCENARIOS = ['showcase', 'shipyard', 'shop-13', 'family-13', 'navio-13', 'targets', 'endurance', 'repair', 'legibility', 'captain', 'captain-down', 'legibility-i2', 'legibility-i2-90', 'danger', 'xp', 'xp-13', 'xp-12', 'view-return', 'edge-attack', 'volley-miss', 'combat-i2', 'under-fire'] as const;
+export const SCENARIOS = ['showcase', 'shipyard', 'shop-13', 'family-13', 'navio-13', 'targets', 'endurance', 'repair', 'legibility', 'legibility-165', 'captain', 'captain-down', 'legibility-i2', 'legibility-i2-90', 'danger', 'xp', 'xp-13', 'xp-12', 'view-return', 'edge-attack', 'volley-miss', 'combat-i2', 'under-fire'] as const;
 export type ScenarioName = (typeof SCENARIOS)[number];
 // Escenarios con NPC del I2: con el I2 apagado no existen (AC-187), así que no arrancan con SEA_BATTLE_I2=0
 export const I2_SCENARIOS: readonly ScenarioName[] = ['captain', 'captain-down', 'legibility-i2', 'legibility-i2-90', 'danger', 'combat-i2'];
@@ -285,7 +311,10 @@ function placeScenario(world: World, name: ScenarioName): void {
     return;
   }
   if (name === 'endurance') {
-    world.startingGold = SLOOP_CANNONS_2_3; // Cañones N2 y N3 de la Balandra, con la que se entra (1.3: precio por barco)
+    // Cañones N2 y N3 de la Balandra, con la que se entra sin familia (1.3: precio por barco). El Bergantín, la Fragata y las 2
+    // familias son para los barcos con familia (ENDURANCE_VISITORS); el jugador del soak no los usa
+    const base = { cannons: 1, hull: 1, sails: 1 };
+    world.startingProgress = { gold: SLOOP_CANNONS_2_3, ships: { sloop: { ...base }, brig: { ...base }, frigate: { ...base } }, activeShip: 'sloop', families: ['gb', 'es'], family: 'none' };
     for (let i = 0; i < ENDURANCE_MERCHANTS; i++) {
       const a = (2 * Math.PI * i) / ENDURANCE_MERCHANTS;
       const m = spawnMerchant(world);
@@ -331,7 +360,14 @@ function placeScenario(world: World, name: ScenarioName): void {
     }
     return;
   }
-  if (name === 'legibility') {
+  if (name === 'legibility' || name === 'legibility-165') {
+    // legibility-165 (AC-165 relación, ART-DIRECTION §18.2, con las familias de AC-194 b): el mismo mundo, y el progreso de
+    // salida trae la Goleta, el Navío y las 2 familias, que el otro jugador elige en el puerto (e2e/capture.spec.ts). El
+    // jugador propio sigue con la Balandra sin familia, el oro de salida y 0 de XP, como en AC-72
+    if (name === 'legibility-165') {
+      const base = { cannons: 1, hull: 1, sails: 1 };
+      world.startingProgress = { gold: STARTING_GOLD, ships: { sloop: { ...base }, schooner: { ...base }, line: { ...base } }, activeShip: 'sloop', families: ['gb', 'es'], family: 'none' };
+    }
     const pirate = spawnPirate(world, 3);
     pirate.pos = { ...LEGIBILITY.pirate };
     pirate.heading = -Math.PI / 2;
