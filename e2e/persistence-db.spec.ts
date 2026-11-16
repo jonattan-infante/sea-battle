@@ -13,7 +13,7 @@ import { createPool } from '../server/db/pool';
 import { LegacyProgress, migrated, rowV1, rowV3 } from '../server/__tests__/fixtures/progress-rows';
 import { upgradePrice } from '../src/game/constants';
 import { SavedProgress } from '../server/progress';
-import { openUpgrades, trackSocket, waitFor } from './helpers';
+import { envNoise, openUpgrades, trackSocket, waitFor } from './helpers';
 import { OwnServer, startOwnServer } from './own-server';
 
 const SHOTS = path.join(__dirname, '..', 'qa-artifacts', 'persistence');
@@ -189,7 +189,7 @@ test('AC-219 y AC-226 (a): una fila v: 2 (XP, Goleta y Navío como activo) entra
   const v2 = { v: 2, gold: 4321, upgrades: { cannons: 3, hull: 2, sails: 1 }, ownedShips: ['sloop', 'brig', 'schooner', 'frigate', 'line'], activeShip: 'line', xp: 1234 };
   await seed('test-navio', v2);
   const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('pageerror', (e) => !envNoise(e.message) && errors.push(e.message)); // sin el ruido de Clerk (H-2, QA-78)
   await page.goto(`${server.url}/game?testUser=navio`);
   await page.waitForFunction(() => window.__SEA_BATTLE__?.ready() === true, null, { timeout: 30_000 });
   await expect(page.getByTestId('connection-overlay')).toHaveCount(0);
