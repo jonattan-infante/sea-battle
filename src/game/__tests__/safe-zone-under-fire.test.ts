@@ -20,6 +20,7 @@ import {
   planSelectShip,
   PORT_UNDER_FIRE_TEXT,
   respawn,
+  selectFamily,
   selectShip,
   setRepair,
   shipOfPlayer,
@@ -633,5 +634,28 @@ describe('H-2004 — El puerto cierra bajo fuego (AC-252)', () => {
     expect(selectShip(w.world, 'a', 'frigate')).toEqual({ ok: true });
     expect(w.player.ships.sloop?.cannons).toBe(2);
     expect(w.ship.classId).toBe('frigate');
+  });
+
+  // Precisado por producto el 2026-11-16 (BACKLOG AC-252, con familias, PR #88): cambiar de familia también cierra bajo fuego
+  test('selectFamily a una familia que tiene y no usa: bajo fuego se rechaza sin cambiar nada; al caducar la marca, se acepta', () => {
+    const w = inPort();
+    w.player.families = ['gb', 'es'];
+    w.player.family = 'none';
+    const target = dummy(w.world, 30, 80);
+    attack(w.world, 'a', target.id);
+    untilVolley(w.world, w.ship, target);
+    cancelAttack(w.world, 'a');
+    expect(isInSafeZone(w.ship.pos) && isUnderFire(w.world, w.ship)).toBe(true);
+    const before = snapshot(w);
+    expect(planSelectFamily(w.world, 'a', 'gb')).toEqual({ ok: false, reason: PORT_UNDER_FIRE_TEXT });
+    expect(selectFamily(w.world, 'a', 'gb')).toEqual({ ok: false, reason: PORT_UNDER_FIRE_TEXT });
+    expect(snapshot(w)).toBe(before);
+
+    run(w.world, UNDER_FIRE_WINDOW + DT, () => (w.ship.pos = { x: 0, z: 80 }));
+    expect(isUnderFire(w.world, w.ship)).toBe(false);
+    expect(planSelectFamily(w.world, 'a', 'gb')).toEqual({ ok: true });
+    expect(selectFamily(w.world, 'a', 'gb')).toEqual({ ok: true });
+    expect(w.player.family).toBe('gb');
+    expect(w.player.families).toEqual(['gb', 'es']);
   });
 });
