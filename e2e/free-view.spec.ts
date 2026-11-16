@@ -7,11 +7,17 @@ import { MAP_HALF_SIZE } from '../src/game/constants';
 import { C2S, S2C } from '../src/game/protocol';
 import type { ServerFrame, ShipSnapshot } from '../src/game/types';
 import { EDGE_ATTACK, VIEW_RETURN } from '../server/scenarios';
-import { enterGame, hud, me, presetOptions, trackSocket, waitFor } from './helpers';
+import { PORTS } from '../playwright.config';
+import { enterGame, hud, me, presetOptions, ships, trackSocket, waitFor } from './helpers';
 import { intents } from './net';
 import { startOwnServer } from './own-server';
 
 type Point = { x: number; z: number };
+
+// Servidor sin NPC (SEA_BATTLE_NPCS=0; el escenario shipyard solo da el oro del Bergantín, server/scenarios.ts): AC-116 mide
+// el umbral de 12 px entre arrastrar y hacer clic, y un barco bajo el punto del clic lo convertiría en una selección (O-155)
+const EMPTY = `http://localhost:${PORTS.empty}`;
+const POLL = { timeout: 10_000 }; // el tope de las esperas a un frame (QA-75 O-9, QA-76 O-156)
 
 const camera = (page: Page) =>
   page.evaluate(() => {
@@ -19,6 +25,36 @@ const camera = (page: Page) =>
     return { mode: rt.freeView.mode, x: rt.focusX, z: rt.focusZ, ppm: rt.ppm, sinT: rt.sinT, w: rt.viewW, h: rt.viewH };
   });
 const sentOf = (net: ReturnType<typeof trackSocket>, name: string) => intents(net).filter((i) => i.name === name);
+
+// O-155. El barco propio es el único del servidor: el de un test anterior sigue 10 s en su amarre tras desconectarse
+// (DISCONNECT_GRACE) y podría quedar bajo el punto del clic. Se espera a que salga (≤ 15 s) antes de medir nada
+async function othersAround(page: Page): Promise<string[]> {
+  const mine = await me(page);
+  return (await ships(page)).filter((s) => s.id !== mine?.id).map((s) => `${s.kind} ${s.id}`);
+}
+const aloneInPort = (page: Page) =>
+  expect.poll(() => othersAround(page), { message: 'O-155: en el servidor sin NPC, ningún barco más que el propio', timeout: 15_000 }).toEqual([]);
+// El barco que seleccionaría un clic (touch = false) o un toque (true) en ese punto: null es agua (runtime.ts, pick)
+const pickAt = (page: Page, x: number, y: number, touch: boolean) =>
+  page.evaluate(([px, py, t]) => window.__SEA_BATTLE__!.runtime().pick(px, py, t), [x, y, touch] as const);
+
+// El foco de la cámara solo cambia en un frame (runtime.ts, updateCamera): la distancia del foco a un punto, para sondearla
+const focusDistance = async (page: Page, p: Point) => {
+  const c = await camera(page);
+  return Math.hypot(c.x - p.x, c.z - p.z);
+};
+
+// AC-123: no queda ningún centro de la vista por enviar (FreeView.dirty) y el último viewAt que salió es el centro de la vista
+// (redondeado a 0,01 m, game-client.ts). El pendiente sale en un frame (FreeView.update), y el del clic en el minimapa, en el
+// manejador, que espera a que termine el frame en curso
+async function viewAtSettled(page: Page, net: ReturnType<typeof trackSocket>): Promise<boolean> {
+  const fv = await page.evaluate(() => {
+    const v = window.__SEA_BATTLE__!.runtime().freeView as unknown as { dirty: boolean; center: { x: number; z: number } };
+    return { dirty: v.dirty, center: { ...v.center } };
+  });
+  const last = sentOf(net, C2S.viewAt).at(-1)?.data as Point | null | undefined;
+  return !fv.dirty && !!last && Math.abs(last.x - fv.center.x) <= 0.006 && Math.abs(last.z - fv.center.z) <= 0.006;
+}
 
 // Un punto de agua lejos del barco y del HUD: a la derecha y un poco abajo del centro (la mitad derecha no tiene paneles
 // entre y = 280 y la barra de acciones)
@@ -64,23 +100,30 @@ test.describe('Vista libre (E13)', () => {
 
   test('AC-116: arrastrar más de 12 px desplaza la vista con el puntero y no envía ningún moveTo; soltar antes navega con 1', async ({ page }) => {
     const net = trackSocket(page); // antes de entrar: el WebSocket se abre al conectar y no se ve el que ya existe
-    await enterGame(page);
+    await enterGame(page, EMPTY);
+    await aloneInPort(page);
     const start = await camera(page);
     const p = await waterPoint(page);
     await page.mouse.move(p.x, p.y);
     await page.mouse.down();
     await page.mouse.move(p.x - 124, p.y - 62, { steps: 12 });
     await page.mouse.up();
-    await page.waitForTimeout(300);
-    const dragged = await camera(page);
     const want = { x: start.x + 124 / start.ppm, z: start.z + 62 / (start.ppm * start.sinT) };
+    // O-156: el foco sigue al arrastre en el siguiente frame; se sondea con las mismas cotas que se afirman después
+    await expect
+      .poll(async () => { const c = await camera(page); return c.mode === 'free' && Math.abs(c.x - want.x) <= 1 && Math.abs(c.z - want.z) <= 1; }, { message: 'AC-116: el foco a ±1 m del arrastre', ...POLL })
+      .toBe(true);
+    const dragged = await camera(page);
     console.log(`AC-116 ratón: foco ${start.x.toFixed(1)}, ${start.z.toFixed(1)} → ${dragged.x.toFixed(1)}, ${dragged.z.toFixed(1)} (esperado ${want.x.toFixed(1)}, ${want.z.toFixed(1)}) · modo ${dragged.mode}`);
     expect(dragged.mode).toBe('free');
     expect(Math.abs(dragged.x - want.x)).toBeLessThanOrEqual(1);
     expect(Math.abs(dragged.z - want.z)).toBeLessThanOrEqual(1);
     expect(sentOf(net, C2S.moveTo)).toHaveLength(0);
 
-    // Un clic con 8 px de temblor sigue siendo un clic: exactamente 1 moveTo
+    // Un clic con 8 px de temblor sigue siendo un clic: exactamente 1 moveTo. Antes, ningún barco bajo el punto del clic, ni
+    // al bajar ni al soltar (O-155)
+    expect(await pickAt(page, p.x, p.y, false), 'O-155: un barco bajo el punto del clic').toBeNull();
+    expect(await pickAt(page, p.x + 8, p.y, false), 'O-155: un barco bajo el punto donde se suelta').toBeNull();
     await page.mouse.move(p.x, p.y);
     await page.mouse.down();
     await page.mouse.move(p.x + 8, p.y, { steps: 2 });
@@ -124,8 +167,12 @@ test.describe('Vista libre (E13)', () => {
 
   test('AC-119 (C): con C la cámara vuelve al barco en ≤ 300 ms y el barco queda en el 10 % central', async ({ page }) => {
     await enterGame(page);
+    const ship = (await me(page))!;
     await minimapCenter(page, { x: -300, z: 300 });
-    await page.waitForTimeout(200);
+    // O-156: el foco salta al punto del minimapa en el siguiente frame; sin esperarlo, la C podría salir con la vista aún
+    // sobre el barco y la vuelta no mediría nada
+    await expect.poll(() => focusDistance(page, { x: -300, z: 300 }), { message: 'AC-119 (C): el foco en el punto del minimapa (±5 m)', ...POLL }).toBeLessThanOrEqual(5);
+    expect(Math.hypot(-300 - ship.x, 300 - ship.z)).toBeGreaterThan(300);
     expect((await camera(page)).mode).toBe('free');
     const frames = await pressAndWatchCentred(page, 'KeyC', 800);
     console.log(`AC-119 (C): ${describeFrames(frames)}`);
@@ -141,7 +188,8 @@ test.describe('Vista libre (E13)', () => {
     const ship = (await me(page))!;
     const far = { x: Math.max(-450, Math.min(450, ship.x + 400)), z: ship.z };
     await minimapCenter(page, far);
-    await page.waitForTimeout(300);
+    // O-156 (QA-76 §13.2): la vista solo se mueve en un frame, y en la CI hubo huecos de 508 y 766 ms entre frames
+    await expect.poll(() => focusDistance(page, ship), { message: 'AC-120: el foco a ≥ 350 m del barco', ...POLL }).toBeGreaterThanOrEqual(350);
     const c = await camera(page);
     const p = { x: c.w / 2 + 40, y: c.h / 2 + 40 };
     const target = await page.evaluate(([sx, sy]) => window.__SEA_BATTLE__!.runtime().screenToWorld(sx, sy)!, [p.x, p.y]);
@@ -158,7 +206,9 @@ test.describe('Vista libre (E13)', () => {
     // Arrastrar más allá del borde: el centro se queda en ±MAP_HALF_SIZE
     await minimapCenter(page, { x: 480, z: 0 });
     await page.keyboard.down('ArrowRight');
-    await page.waitForTimeout(1200);
+    await page.waitForTimeout(1200); // como mínimo, 1,2 s empujando hacia el borde
+    // O-156: el foco avanza en cada frame; se sigue pulsando hasta ver el centro en el borde (≤ 10 s), y después se afirma
+    await expect.poll(async () => (await camera(page)).x, { message: 'AC-120: el centro llega al borde con la flecha pulsada', ...POLL }).toBeGreaterThan(MAP_HALF_SIZE - 1);
     await page.keyboard.up('ArrowRight');
     const edge = await camera(page);
     console.log(`AC-120: con la flecha hacia el borde, el centro queda en ${edge.x.toFixed(1)}, ${edge.z.toFixed(1)}`);
@@ -171,7 +221,8 @@ test.describe('Vista libre (E13)', () => {
     const net = trackSocket(page); // antes de entrar: el WebSocket se abre al conectar y no se ve el que ya existe
     await enterGame(page);
     await minimapCenter(page, { x: 200, z: 200 });
-    await page.waitForTimeout(800); // sale el viewAt del clic
+    // Sale el viewAt del clic (O-156: el manejador espera a que termine el frame en curso, que en la CI llegó a 766 ms)
+    await expect.poll(() => viewAtSettled(page, net), { message: 'AC-123: el viewAt del clic en el minimapa', ...POLL }).toBe(true);
     net.reset();
     await page.waitForTimeout(10_000);
     const still = intents(net);
@@ -185,10 +236,14 @@ test.describe('Vista libre (E13)', () => {
     }
     await page.mouse.up();
     const dragMs = Date.now() - t0;
-    await page.waitForTimeout(700); // el último centro pendiente
+    // El último centro pendiente sale en un frame (O-156): se espera a verlo en la red en lugar de 700 ms fijos
+    await expect.poll(() => viewAtSettled(page, net), { message: 'AC-123: el último centro pendiente del arrastre', ...POLL }).toBe(true);
     const dragging = sentOf(net, C2S.viewAt);
     net.reset();
     await page.keyboard.press('KeyC');
+    // El viewAt(null) sale en el manejador de la C, tras el frame en curso (O-156); después, la misma ventana de 600 ms en la
+    // que no puede salir ningún otro mensaje
+    await expect.poll(() => intents(net).length, { message: 'AC-123: el viewAt(null) al volver', ...POLL }).toBeGreaterThanOrEqual(1);
     await page.waitForTimeout(600);
     const back = intents(net);
     console.log(`AC-123: quieta ${still.length} mensajes en 10 s · arrastrando ${dragging.length} viewAt en ${dragMs} ms · al volver ${JSON.stringify(back)}`);
@@ -412,7 +467,8 @@ test.describe('Vista libre (E13)', () => {
 
   test('AC-116 @mobile: un dedo que se mueve más de 12 px desplaza la vista sin moveTo; un toque navega; dos dedos solo hacen zoom', async ({ page }) => {
     const net = trackSocket(page); // antes de entrar: el WebSocket se abre al conectar y no se ve el que ya existe
-    await enterGame(page);
+    await enterGame(page, EMPTY); // O-155, como en el ratón: ningún NPC bajo el toque
+    await aloneInPort(page);
     const cdp = await page.context().newCDPSession(page);
     const touch = (type: 'touchStart' | 'touchMove' | 'touchEnd', points: [number, number][]) =>
       cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points.map(([x, y], id) => ({ x, y, id })) });
@@ -422,9 +478,12 @@ test.describe('Vista libre (E13)', () => {
     await touch('touchStart', [[x, y]]);
     for (let i = 1; i <= 10; i++) await touch('touchMove', [[x - i * 6, y - i * 4]]);
     await touch('touchEnd', []);
-    await page.waitForTimeout(200);
-    const dragged = await camera(page);
     const want = { x: start.x + 60 / start.ppm, z: start.z + 40 / (start.ppm * start.sinT) };
+    // O-156: el foco sigue al dedo en el siguiente frame; se sondea con las mismas cotas que se afirman después
+    await expect
+      .poll(async () => { const c = await camera(page); return c.mode === 'free' && Math.abs(c.x - want.x) <= 1 && Math.abs(c.z - want.z) <= 1; }, { message: 'AC-116 móvil: el foco a ±1 m del arrastre', ...POLL })
+      .toBe(true);
+    const dragged = await camera(page);
     console.log(`AC-116 móvil: foco ${start.x.toFixed(1)}, ${start.z.toFixed(1)} → ${dragged.x.toFixed(1)}, ${dragged.z.toFixed(1)} (esperado ${want.x.toFixed(1)}, ${want.z.toFixed(1)})`);
     expect(dragged.mode).toBe('free');
     expect(Math.abs(dragged.x - want.x)).toBeLessThanOrEqual(1);
@@ -436,14 +495,16 @@ test.describe('Vista libre (E13)', () => {
     await touch('touchStart', [[x - 40, y], [x + 40, y]]);
     for (let i = 1; i <= 12; i++) await touch('touchMove', [[x - 40 - i * 8, y], [x + 40 + i * 8, y]]);
     await touch('touchEnd', []);
-    await page.waitForTimeout(400);
+    // O-156: el zoom (ppm) se aplica en un frame; se sondea hasta que cambie (|Δ| ≥ 0,005, lo que no es toBeCloseTo(…, 2))
+    await expect.poll(async () => Math.abs((await camera(page)).ppm - zoom0), { message: 'AC-116 móvil: el pellizco cambia el zoom', ...POLL }).toBeGreaterThanOrEqual(0.005);
     const pinched = await camera(page);
     console.log(`AC-116 móvil: pellizco ppm ${zoom0.toFixed(2)} → ${pinched.ppm.toFixed(2)} · foco ${pinched.x.toFixed(1)}, ${pinched.z.toFixed(1)}`);
     expect(pinched.ppm).not.toBeCloseTo(zoom0, 2);
     expect(Math.hypot(pinched.x - dragged.x, pinched.z - dragged.z)).toBeLessThanOrEqual(0.5);
     expect(sentOf(net, C2S.moveTo)).toHaveLength(0);
 
-    // Un toque: exactamente 1 moveTo
+    // Un toque: exactamente 1 moveTo. Antes, ningún barco bajo el toque (O-155)
+    expect(await pickAt(page, x, y, true), 'O-155: un barco bajo el punto del toque').toBeNull();
     await touch('touchStart', [[x, y]]);
     await touch('touchEnd', []);
     await waitFor(async () => sentOf(net, C2S.moveTo).length, (n) => n >= 1, 3000, 50);
