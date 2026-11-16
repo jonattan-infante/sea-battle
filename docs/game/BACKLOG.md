@@ -2323,6 +2323,14 @@ Lo que se le acierta a un pirata que se aleja tras soltar al objetivo es lo mism
 
 **Tras la integración con familias:** el PR #88 se rebasó encima y quedó como `d35ac0c`, con el mismo árbol que `0fd3376`. Su CI (run 43891330502, sobre `0fd3376`) da 194 en verde, 3 saltados y 0 reintentos, con los 6 tests de `e2e/under-fire.spec.ts` en verde. `planSelectFamily` usa `canUsePort` y `portClosedReason`, como `planBuy` y `planSelectShip` (`src/game/world.ts:666`, `:741` y `:773` en `d35ac0c`).
 
+*2026-11-16:* reabierta por O-157 (su fila, en la tabla de hallazgos); vuelve a estar hecha con las condiciones de su bloque.
+
+**Segundo cierre de E20 (lead, 2026-11-16): las 4 condiciones del bloque «O-157 reabre E20» se cumplen.**
+1. **QA:** QA-79 §2 y §3 dan APROBADOS O-157 (a) y (c) y O-158 (a) y (b) sobre `eb21163`. A 60 fps, 40 de 40 corridas de AC-254 y AC-255 y de AC-253, con las 100 cotas en ms asertadas; la más alta, 100 ms. Con un frame cada 700 ms, en verde, con los ms en NO VERIFICADA. Un cierre de la tienda 300 ms tarde lo tumba la regla (b). El PR no toca `src` ni `server` fuera de `__tests__` (`git diff --stat be5ca14...eb21163` con 3 puntos sale vacío).
+2. **CI del #90:** el run 43954088128, sobre `eb21163`, da `verify` en verde y, en el e2e, 194 en verde, 3 saltados, 0 failed, 0 flaky y 0 reintentos. En ese run, la tienda se cerró 2 frames después de la marca (650 ms en móvil y 967 ms en escritorio), con 2 frames permitidos: sin el margen de O-158 habría caído. El #90 entró por rebase como `3a970b6`, y `git range-diff` da sus 10 commits idénticos a los probados.
+3. **CI de este PR (#89):** rebasado sobre `3a970b6`, se fusiona solo si su CI sale en verde a la primera. El run queda en el PR.
+4. **Con esto,** y con el test de `selectFamily` de AC-252 ya dentro (#90; QA-79, APROBADO), E20 vuelve a estar hecha al fusionarse este PR.
+
 *Descartado: pedir 3 CI seguidas sin flaky,* como propone QA. Las 2 causas están comprobadas en la traza, y los 2 arreglos las quitan en lugar de hacerlas menos probables: sin NPC no pasa ningún mercante, y una espera por condición no depende del ritmo de frames. Es la misma vara que H-1 y O-1 de QA-75 (N de N en local y la CI del PR en verde al primer intento, `:1978-1979`). Si uno de estos flaky vuelve en una CI posterior, es un hallazgo nuevo, se trata con la regla de AC-204 y vuelve a producto con el run.
 
 **`selectFamily` bajo fuego (producto, 2026-11-16):** entra en AC-252. La decisión, el motivo y el test de Jest+socket que falta están en la precisión de AC-252 (`:2248`).
