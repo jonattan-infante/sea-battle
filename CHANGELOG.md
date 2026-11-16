@@ -6,6 +6,13 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-11-16
+
+### Cambiado
+
+- **Nada cambia para quien juega.** El juego se ve y se juega igual que en la 1.2.0.
+- **Preparada para la 1.3.** La 1.3 guardará las mejoras de cada barco por separado y las familias de barcos que compres. Si después de publicarla hubiera que volver atrás, la 1.2.0 no podría leer esas partidas y quien hubiera jugado a la 1.3 vería «No podemos cargar tu progreso ahora mismo». La 1.2.1 sí las lee: juegas con tu oro, tu experiencia y tus barcos de siempre, con las mejoras del barco que navegas, y lo demás (las familias, la Goleta, el Navío y las mejoras de los barcos que no navegues) se queda guardado tal como estaba, aunque esta versión no lo muestre. Si compras algo, también se guarda, y al volver a la 1.3 lo tienes. Ninguna mejora baja nunca de nivel.
+
 ## [1.2.0] - 2026-11-12
 
 ### Añadido
