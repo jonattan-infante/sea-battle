@@ -4,7 +4,7 @@
 // justo de los Cañones N2. En los 3 tamaños de §12
 import { BrowserContextOptions, expect, Page, test } from '@playwright/test';
 import { DANGER } from '../server/scenarios';
-import { DebugShip, enterGame, me, ships, waitFor } from './helpers';
+import { DebugShip, enterGame, me, openUpgrades, ships, waitFor } from './helpers';
 import { sailTo } from './net';
 import { startOwnServer } from './own-server';
 
@@ -122,6 +122,7 @@ test.describe('Marca de peligro en el objetivo (AC-189)', () => {
         if (touch) await page.getByTestId('m-port').tap();
         else await page.getByTestId('btn-port').click();
         await expect(page.getByTestId('shop')).toBeVisible();
+        await openUpgrades(page, 'sloop', touch); // 1.3 (D103): las mejoras de la Balandra, desde su tarjeta
         if (touch) await page.getByTestId('buy-cannons-2').tap();
         else await page.getByTestId('buy-cannons-2').click();
         await expect(page.getByTestId('shop-cannons')).toContainText('Nivel 2/3');

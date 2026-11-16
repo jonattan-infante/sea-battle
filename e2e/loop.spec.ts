@@ -6,7 +6,7 @@ import { PORTS } from '../playwright.config';
 import { TARGET_FAN, TARGETS_POINT } from '../server/scenarios';
 import { TOAST_MS } from '../src/client/hud-store';
 import { CANNON_LEVELS, SHIP_CLASSES } from '../src/game/constants';
-import { commits, DebugShip, enterGame, hud, installCommitCounter, me, ships, trackSocket, waitFor } from './helpers';
+import { commits, DebugShip, enterGame, hud, installCommitCounter, me, openUpgrades, ships, trackSocket, waitFor } from './helpers';
 import { events, intentNames, intents, sailTo, shipName, volleysBy } from './net';
 import { OwnServer, startOwnServer } from './own-server';
 
@@ -353,6 +353,7 @@ test.describe('Puerto', () => {
       // Compra con clic real en el botón Puerto y en Mejorar
       await a.getByTestId('btn-port').click();
       await expect(a.getByTestId('shop')).toBeVisible();
+      await openUpgrades(a, 'sloop'); // 1.3 (D103): las mejoras de la Balandra, desde su tarjeta (no envía nada)
       const buy = a.getByTestId('buy-cannons-2');
       await expect(buy).toBeEnabled();
       netA.reset();
@@ -373,6 +374,7 @@ test.describe('Puerto', () => {
       // B se queda con 350 (Casco N2 + N3, Velas N2 + N3 y Cañones N2 de la Balandra = 200 + 600 + 150 + 450 + 250 = 1 650):
       // Cañones N3 cuesta 750
       await b.getByTestId('btn-port').click();
+      await openUpgrades(b, 'sloop');
       for (const [id, left] of [['buy-hull-2', 1800], ['buy-hull-3', 1200], ['buy-sails-2', 1050], ['buy-sails-3', 600], ['buy-cannons-2', 350]] as const) {
         await b.getByTestId(id).click();
         await waitFor(() => goldOf(b, 'shop-gold'), (g) => g === left, 3000, 50);

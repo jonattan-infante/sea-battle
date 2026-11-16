@@ -13,7 +13,7 @@ import { createPool } from '../server/db/pool';
 import { LegacyProgress, migrated, rowV1, rowV3 } from '../server/__tests__/fixtures/progress-rows';
 import { upgradePrice } from '../src/game/constants';
 import { SavedProgress } from '../server/progress';
-import { trackSocket, waitFor } from './helpers';
+import { openUpgrades, trackSocket, waitFor } from './helpers';
 import { OwnServer, startOwnServer } from './own-server';
 
 const SHOTS = path.join(__dirname, '..', 'qa-artifacts', 'persistence');
@@ -145,13 +145,17 @@ test('AC-132: con la BD caída en partida, el aviso es el primero de la columna,
   // Con la tienda abierta llega el corte: la compra no se confirma, la tienda no se cierra pero deja de vender
   await page.keyboard.press('KeyP');
   await expect(page.getByTestId('shop')).toBeVisible();
+  await openUpgrades(page, 'sloop'); // 1.3 (D103): las mejoras de la Balandra, desde su tarjeta
   proxy.cut();
   await page.getByTestId('buy-cannons-2').click();
   const banner = page.getByTestId('save-warning');
   await expect(banner).toBeVisible({ timeout: 10_000 });
   await expect(banner).toHaveText('Progreso sin guardar, reintentando…');
-  await expect(page.getByTestId('toasts')).toContainText('La tienda no está disponible: no podemos guardar');
+  // Con la tienda abierta, el rechazo del servidor no va a la columna del HUD (O-48), y la franja manda: su mismo texto no
+  // sale además dentro del Astillero (ART-DIRECTION §14, «Avisos con el Astillero abierto»)
   await expect(page.getByTestId('shop-unsaved')).toBeVisible();
+  await expect(page.getByTestId('toasts')).not.toContainText('La tienda no está disponible: no podemos guardar');
+  await expect(page.getByTestId('shop-notice')).not.toHaveText('La tienda no está disponible: no podemos guardar');
   await expect(page.getByTestId('buy-hull-2')).toBeDisabled();
   expect((await progress(page))?.ships.sloop?.cannons).toBe(1);
   expect(await page.evaluate(() => document.querySelector('[data-testid="toasts"]')?.firstElementChild?.getAttribute('data-testid'))).toBe('save-warning');
@@ -200,7 +204,7 @@ test('AC-219 y AC-226 (a): una fila v: 2 (XP, Goleta y Navío como activo) entra
   await expect(shop.getByTestId('ship-line')).toContainText('En uso');
   await page.screenshot({ path: path.join(SHOTS, 'ac226-v2-shop.png') });
 
-  await page.getByRole('tab', { name: 'Mejoras' }).click();
+  await openUpgrades(page, 'line'); // 1.3 (D103): las mejoras del Navío, desde su tarjeta
   await page.getByTestId('buy-hull-3').click();
   const hull3 = upgradePrice('line', 'hull', 3);
   await expect.poll(async () => (await sql('SELECT state FROM player_progress WHERE user_id = $1', ['test-navio']))[0].state, { timeout: 10_000 })

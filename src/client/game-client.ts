@@ -2,7 +2,7 @@
 // Los frames traen solo deltas (GDD §13); aquí se fusionan en muestras completas por entidad y se interpola
 // con un retraso fijo. Si no llega nada, todo se queda quieto en su última muestra (sin extrapolar).
 import { io, Socket } from 'socket.io-client';
-import { INTERPOLATION_DELAY_MS, PlayerShipClass } from '../game/constants';
+import { FamilyChoice, INTERPOLATION_DELAY_MS, PlayerShipClass } from '../game/constants';
 import { C2S, S2C } from '../game/protocol';
 import { GameEvent, Notice, PlayerView, ServerFrame, ShipSnapshot, ShipState, Welcome, WreckView } from '../game/types';
 import { lerp, lerpAngle } from '../game/vec';
@@ -261,6 +261,10 @@ export class GameClient {
   }
   selectShip(classId: PlayerShipClass): void {
     this.socket.emit(C2S.selectShip, { classId });
+  }
+  // Cambiar de aspecto (1.3; AC-223): una familia que se tiene o «sin familia». Comprarla es buy('family:<id>')
+  selectFamily(family: FamilyChoice): void {
+    this.socket.emit(C2S.selectFamily, { family });
   }
   respawn(): void {
     this.socket.emit(C2S.respawn);

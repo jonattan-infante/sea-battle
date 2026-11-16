@@ -32,6 +32,11 @@ export function rankLabel(rank: Rank): string {
   return RANKS[rank - 1].label;
 }
 
+// El texto de un barco que pide nivel (AC-162): el rechazo del servidor y la línea de la tienda son el mismo
+export function levelRequirement(minLevel: number): string {
+  return `Requiere nivel ${minLevel} (${rankLabel(rankOf(minLevel))})`;
+}
+
 export function npcXp(classId: string): number {
   return NPC_XP[classId] ?? 0;
 }

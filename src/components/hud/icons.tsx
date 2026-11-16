@@ -3,7 +3,8 @@
 // lucide-static 0.469.0): progreso sin guardar (D50). Bomb copia el de Lucide (ISC, lucide-static 0.469.0): la Cañonera.
 // Settings, Move y ArrowUp copian «settings», «move» y «arrow-up» de Lucide (ISC, lucide-static 0.469.0): las opciones de
 // cámara y teclas (E18, D98; ART-DIRECTION §20). Flame copia «flame» de Lucide (ISC, lucide-static 0.469.0) y ShieldOff es
-// el Shield de hoy con una barra (dibujo propio, como «shield-off» de Lucide): la zona segura bajo fuego (E20, D121-D124)
+// el Shield de hoy con una barra (dibujo propio, como «shield-off» de Lucide): la zona segura bajo fuego (E20, D121-D124).
+// ChevronLeft copia «chevron-left» de Lucide (ISC): «‹ Barcos» en la vista de mejoras de la tienda (D103)
 import React from 'react';
 
 type IconProps = { size?: number; className?: string; title?: string };
@@ -86,6 +87,12 @@ export const Crosshair = (p: IconProps) => (
 export const Wrench = (p: IconProps) => (
   <Svg {...p}>
     <path d="M14.5 6.5a4 4 0 0 0 5 5L21 13l-1.5 1.5a6 6 0 0 1-6.6 1.3L7 21.6a2 2 0 0 1-2.8-2.8L10 13a6 6 0 0 1 1.3-6.6L12.8 5l1.7 1.5Z" />
+  </Svg>
+);
+
+export const ChevronLeft = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="m15 18-6-6 6-6" />
   </Svg>
 );
 

@@ -159,7 +159,31 @@ export const COMBAT_I2 = {
   accuracy: 0.08
 } as const;
 
-export const SCENARIOS = ['showcase', 'shipyard', 'targets', 'endurance', 'repair', 'legibility', 'captain', 'captain-down', 'legibility-i2', 'legibility-i2-90', 'danger', 'xp', 'xp-13', 'xp-12', 'view-return', 'edge-attack', 'volley-miss', 'combat-i2', 'under-fire'] as const;
+// La tienda de la 1.3 (D103; AC-216 y AC-217), el caso de su lámina: nivel 4, 2 000 de oro y la familia británica; navega el
+// Bergantín sin mejorar, y tiene la Balandra (Cañones 3, Casco 1, Velas 2) y la Fragata (Cañones 2, Casco 3, Velas 1)
+export const SHOP_13 = {
+  xp: LEVEL_XP[3],
+  progress: {
+    gold: 2000,
+    ships: { sloop: { cannons: 3, hull: 1, sails: 2 }, brig: { cannons: 1, hull: 1, sails: 1 }, frigate: { cannons: 2, hull: 3, sails: 1 } },
+    activeShip: 'brig',
+    families: ['gb'],
+    family: 'gb'
+  }
+} as const;
+// La pestaña Familia de la 1.3 (D101; AC-225), el caso de su lámina: navega la Fragata, sin familia y con 5 500 de oro; tiene
+// también la Balandra, las 2 a nivel 1 (AC-214: los precios de cada barco en su vista)
+export const FAMILY_13 = {
+  progress: {
+    gold: 5500,
+    ships: { sloop: { cannons: 1, hull: 1, sails: 1 }, frigate: { cannons: 1, hull: 1, sails: 1 } },
+    activeShip: 'frigate',
+    families: [],
+    family: 'none'
+  }
+} as const;
+
+export const SCENARIOS = ['showcase', 'shipyard', 'shop-13', 'family-13', 'targets', 'endurance', 'repair', 'legibility', 'captain', 'captain-down', 'legibility-i2', 'legibility-i2-90', 'danger', 'xp', 'xp-13', 'xp-12', 'view-return', 'edge-attack', 'volley-miss', 'combat-i2', 'under-fire'] as const;
 export type ScenarioName = (typeof SCENARIOS)[number];
 // Escenarios con NPC del I2: con el I2 apagado no existen (AC-187), así que no arrancan con SEA_BATTLE_I2=0
 export const I2_SCENARIOS: readonly ScenarioName[] = ['captain', 'captain-down', 'legibility-i2', 'legibility-i2-90', 'danger', 'combat-i2'];
@@ -239,6 +263,13 @@ function placeScenario(world: World, name: ScenarioName): void {
     m.path = [];
     m.hp = m.maxHp = UNDER_FIRE.hp;
     m.respawnPos = { ...m.pos };
+    return;
+  }
+  if (name === 'shop-13' || name === 'family-13') {
+    const s = name === 'shop-13' ? SHOP_13 : FAMILY_13;
+    const p = s.progress;
+    world.startingProgress = { gold: p.gold, ships: JSON.parse(JSON.stringify(p.ships)), activeShip: p.activeShip, families: [...p.families], family: p.family };
+    if ('xp' in s) world.startingXp = s.xp;
     return;
   }
   if (name === 'shipyard') {
