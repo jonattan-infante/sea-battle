@@ -6,6 +6,7 @@ import { spawnSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { PORTS } from '../playwright.config';
+import { RANKS } from '../src/game/constants';
 import { DANGER, LEGIBILITY, LEGIBILITY_165, LEGIBILITY_165_390, LEGIBILITY_165_HARBOR, LEGIBILITY_I2, LEGIBILITY_I2_90 } from '../server/scenarios';
 import { postFamilyPlayers } from './family-visitors';
 import { enterGame, me, ships, waitFor } from './helpers';
@@ -533,16 +534,17 @@ test.describe('Capturas @capture', () => {
   }
 
   // Pone barcos de la galería («g-<clase>-<familia>», «g-pirate», «g-merchant») en puestos (m desde el foco) con su rumbo en grados
-  // y, si lo lleva, el nombre de su placa; los demás, lejos
-  const placeGallery = (page: Page, ships: { id: string; dx: number; dz: number; headingDeg: number; name?: string }[]) =>
+  // y, si lo llevan, el nombre de su placa y su nivel (la insignia de rango de un jugador, AD-40); los demás, lejos
+  const placeGallery = (page: Page, ships: { id: string; dx: number; dz: number; headingDeg: number; name?: string; level?: number }[]) =>
     page.evaluate((ships) => {
-      type Scene = { focus: { x: number; z: number }; setPose(id: string, x: number, z: number, h: number): void; getShip(id: string): { name: string } | undefined; spec: { ships: { id: string }[] } };
+      type Scene = { focus: { x: number; z: number }; setPose(id: string, x: number, z: number, h: number): void; getShip(id: string): { name: string; level: number | null } | undefined; spec: { ships: { id: string }[] } };
       const scene = (window as unknown as { __capScene: Scene }).__capScene;
       scene.spec.ships.forEach((s, i) => scene.setPose(s.id, scene.focus.x + 10_000 + 2000 * i, scene.focus.z, Math.PI / 2));
       for (const s of ships) {
         scene.setPose(s.id, scene.focus.x + s.dx, scene.focus.z + s.dz, (s.headingDeg * Math.PI) / 180);
-        const ship = s.name ? scene.getShip(s.id) : undefined;
+        const ship = scene.getShip(s.id);
         if (ship && s.name) ship.name = s.name;
+        if (ship && s.level !== undefined) ship.level = s.level;
       }
     }, ships);
 
@@ -627,6 +629,11 @@ test.describe('Capturas @capture', () => {
   const MIX_QUESTIONS: [string, string][] = [['self', 'el barco que controlas'], ['player', 'otro jugador'], ['pirate', 'un pirata'], ['merchant', 'un mercante']];
   const MIX_SCENE: LegibilityScene = { name: 'mezcla', ac: 'AC-194 d', roles: ROLES, selected: [], selectedLabel: 'sin objetivo seleccionado (§21)', byClass: false, questions: MIX_QUESTIONS };
   const MIX_MERCHANT_DEG = 90 + (0.25 * 180) / Math.PI; // el de la galería (π/2 + 0,25)
+  // H-D106-4 (BACKLOG, «2. H-D106-4»; AC-194 d, precisión del 2026-10-19): los 3 otros jugadores llevan la insignia de Almirante,
+  // la más parecida a un icono (NCC 0,40 con la bomba; AC-191 b), y no la de Grumete. El propio, como cualquiera que entra, Grumete
+  const MIX_ADMIRALS = ['g-line-gb', 'g-frigate-es', 'g-schooner-none'];
+  const ADMIRAL = RANKS.length; // rango 5
+  const ADMIRAL_LEVEL = RANKS[ADMIRAL - 1].fromLevel; // 17
   // [id, dx, dz (m desde el foco), rumbo (°), nombre de la placa]. Los rumbos y los nombres, los de la sonda de QA. Los puestos (D107,
   // «Lejos de las líneas»), en la rejilla del origen fijo (GRID_ORIGIN): salen de un buscador sobre las cajas medidas (barco y placa),
   // con centros a ≥ 0,4 de celda en 1440×900 y ≥ 0,33 en 390×844, las zonas infladas 10 y 8 px sin celdas compartidas entre roles,
@@ -658,8 +665,17 @@ test.describe('Capturas @capture', () => {
       const page = await newPage(browser, vp);
       try {
         await galleryCapture(page, server.url, { hud: true, myShipId: 'g-brig-none' });
-        await placeGallery(page, MIX_LAYOUT[vp.name as 'desktop' | 'mobile'].map(([id, dx, dz, headingDeg, name]) => ({ id, dx, dz, headingDeg, name })));
+        await placeGallery(page, MIX_LAYOUT[vp.name as 'desktop' | 'mobile'].map(([id, dx, dz, headingDeg, name]) => ({ id, dx, dz, headingDeg, name, ...(MIX_ADMIRALS.includes(id) ? { level: ADMIRAL_LEVEL } : {}) })));
         await page.waitForTimeout(1500);
+        // La insignia de la placa de los 6 de la escena (data-rank de su insignia; los demás barcos de la galería esperan lejos):
+        // Almirante en los 3 otros jugadores, Grumete en el propio, y ninguna en los NPC
+        const ranks = await page.evaluate((ids) =>
+          Object.fromEntries(ids.map((id) => [id, document.querySelector<HTMLElement>(`[data-plate][data-ship-id="${id}"] [data-rank]`)?.dataset.rank ?? null])),
+        MIX_LAYOUT[vp.name as 'desktop' | 'mobile'].map(([id]) => id));
+        expect(RANKS[ADMIRAL - 1].label).toBe('Almirante');
+        expect(ranks, 'H-D106-4: la insignia de cada placa de la mezcla').toEqual({
+          'g-brig-none': '1', 'g-line-gb': String(ADMIRAL), 'g-frigate-es': String(ADMIRAL), 'g-schooner-none': String(ADMIRAL), 'g-merchant': '0', 'g-pirate': '0'
+        });
         await legibilityShot(page, vp, MIX_SCENE);
         gridCheck(vp, 'mezcla');
       } finally {
