@@ -23,7 +23,7 @@ import {
   TAB_TARGET_RADIUS,
   TICK_RATE
 } from '../../src/game/constants';
-import { addPlayer, attack, buy, cancelAttack, createWorld, drainEvents, isUnderFire, navigatorOf, setRepair, shipOfPlayer, step } from '../../src/game/world';
+import { addPlayer, attack, buy, cancelAttack, createWorld, drainEvents, isUnderFire, navigatorOf, selectFamily, selectShip, setRepair, shipOfPlayer, step } from '../../src/game/world';
 import { levelOf, rankOf } from '../../src/game/xp';
 import {
   AMBUSH_POINT,
@@ -39,8 +39,11 @@ import {
   ENDURANCE_MERCHANTS,
   ENDURANCE_PIRATE_OFFSET,
   ENDURANCE_POINT,
+  ENDURANCE_VISITORS,
   I2_SCENARIOS,
   LEGIBILITY,
+  LEGIBILITY_165_HARBOR,
+  LEGIBILITY_165_POSTS,
   LEGIBILITY_I2,
   LEGIBILITY_I2_90,
   parseScenario,
@@ -136,6 +139,49 @@ describe('piratas fijos de los escenarios (DT-04)', () => {
 // AC-72 (D57): la captura de legibilidad necesita los 4 barcos quietos. El pirata solo se mueve si un jugador sin
 // protección entra en su radio de agresión, así que los puestos de los jugadores, y el camino recto desde el puerto
 // hasta ellos, quedan fuera de ese radio
+// AC-165 (relación; ART-DIRECTION §18.2) con las familias (AC-194 b): la pose de AC-72 con el otro jugador en una Goleta o en
+// un Navío, sin familia y en las 2 familias. El mismo mundo que "legibility"; el progreso de salida trae además esos barcos y
+// las 2 familias, que el otro jugador elige en el puerto (e2e/capture.spec.ts). El oro y la XP, los de AC-72
+describe('escenario "legibility-165" (AC-165 relación, con las familias)', () => {
+  test('el mismo mundo que "legibility", y cada jugador entra con la Balandra sin familia, el oro y la XP de siempre', () => {
+    const [a, b] = (['legibility', 'legibility-165'] as const).map((name) => {
+      const w = createWorld({ seed: 1, spawnNpcs: false });
+      applyScenario(w, name);
+      return { w, npcs: [...w.ships.values()].map((s) => [s.kind, s.pos, s.heading, s.holdPosition ?? false, s.ai === null]) };
+    });
+    expect(b.npcs).toEqual(a.npcs);
+    const [pa, pb] = [addPlayer(a.w, 'u1', 'Ana'), addPlayer(b.w, 'u1', 'Ana')];
+    expect([pb.gold, pb.xp, pb.activeShip, pb.family]).toEqual([pa.gold, pa.xp, pa.activeShip, pa.family]);
+  });
+
+  test('los 3 otros jugadores (D106): uno por aspecto; su puerto, en la zona segura; su camino y su puesto, a más de 75 m del pirata; navegables en el mapa del juego', () => {
+    expect(LEGIBILITY_165_POSTS.map((p) => p.family)).toEqual(['none', 'gb', 'es']);
+    expect(Math.hypot(LEGIBILITY_165_HARBOR.x, LEGIBILITY_165_HARBOR.z)).toBeLessThanOrEqual(SAFE_ZONE_RADIUS - 20);
+    const toSegment = (p: { x: number; z: number }, a: { x: number; z: number }, b: { x: number; z: number }) => {
+      const [dx, dz] = [b.x - a.x, b.z - a.z];
+      const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.z - a.z) * dz) / (dx * dx + dz * dz)));
+      return Math.hypot(p.x - (a.x + t * dx), p.z - (a.z + t * dz));
+    };
+    const w = createWorld({ seed: 1, spawnNpcs: false, map: GAME_MAP });
+    applyScenario(w, 'legibility-165', { requireNavigable: true });
+    const nav = navigatorOf(w);
+    for (const { via, post } of LEGIBILITY_165_POSTS) {
+      expect(toSegment(LEGIBILITY.pirate, LEGIBILITY_165_HARBOR, via)).toBeGreaterThan(PIRATE_AGGRO_RADIUS + 5);
+      expect(toSegment(LEGIBILITY.pirate, via, post)).toBeGreaterThan(PIRATE_AGGRO_RADIUS + 5);
+      for (const p of [LEGIBILITY_165_HARBOR, via, post]) expect([p, nav.navigable(p, navClearance('line'))]).toEqual([p, true]);
+    }
+  });
+
+  test.each(['schooner', 'line'] as const)('el otro jugador cambia en el puerto a %s y a cada familia', (classId) => {
+    const w = createWorld({ seed: 2, spawnNpcs: false });
+    applyScenario(w, 'legibility-165');
+    addPlayer(w, 'u2', 'Bea');
+    shipOfPlayer(w, 'u2')!.pos = { x: 0, z: -60 };
+    expect(selectShip(w, 'u2', classId)).toEqual({ ok: true });
+    for (const f of ['gb', 'es', 'none'] as const) expect(selectFamily(w, 'u2', f)).toEqual({ ok: true });
+  });
+});
+
 describe('escenario "legibility" (AC-72)', () => {
   const world = createWorld({ seed: 1, spawnNpcs: false });
   applyScenario(world, 'legibility');
@@ -631,6 +677,62 @@ describe('escenario "endurance" (AC-91)', () => {
     expect(load.damageTaken).toBeGreaterThan(0);
     expect(load.repairs).toBeGreaterThanOrEqual(3);
     expect(load.deaths).toBe(0);
+  });
+});
+
+// Los barcos con familia del soak (AC-197 c; O-2 de QA-78): 3 jugadores-bot (e2e/family-visitors.ts) que cambian de familia
+// en la zona segura, navegan a su puesto a la vista del jugador del soak y vuelven; una vuelta de cada dos, a su punto lejano,
+// fuera del área de interés del jugador, para que su barco salga y vuelva a entrar. Sus puestos no deben tocar la carga de
+// AC-91: fuera del radio de agresión del pirata, lejos del corro de mercantes y del camino del jugador desde el puerto
+describe('escenario "endurance": los barcos con familia del soak (AC-197 c)', () => {
+  const world = createWorld({ seed: 1, spawnNpcs: false, map: GAME_MAP });
+  applyScenario(world, 'endurance', { requireNavigable: true });
+  const pirate = [...world.ships.values()].find((s) => s.kind === 'pirate')!;
+  const merchants = [...world.ships.values()].filter((s) => s.kind === 'merchant');
+  const dist = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.hypot(a.x - b.x, a.z - b.z);
+  // La cámara del soak (1440×900, N3, zoom 1,0×) centrada en el punto: el marco útil, sin los 12 px de los lados ni las
+  // reservas del HUD, con el barco entero dentro
+  const s = Math.sin(CAMERA.elevation);
+  const { top, bottom } = HUD_RESERVE.desktop;
+  const inUseful = (p: { x: number; z: number }, r: number) => {
+    const ppm = computePpm0(1440, 900, MAX_CANNON_RANGE);
+    const [sx, sy] = [720 + (p.x - ENDURANCE_POINT.x) * ppm, 450 + (p.z - ENDURANCE_POINT.z) * ppm * s];
+    return sx - r * ppm >= ZOOM.sideMarginPx && sx + r * ppm <= 1440 - ZOOM.sideMarginPx && sy - r * ppm * s >= top && sy + r * ppm * s <= 900 - bottom;
+  };
+
+  test('3 barcos de clases distintas, que empiezan con la británica, la española y sin familia', () => {
+    expect(ENDURANCE_VISITORS.map((v) => v.classId)).toEqual(['sloop', 'brig', 'frigate']);
+    expect(ENDURANCE_VISITORS.map((v) => v.start)).toEqual(['gb', 'es', 'none']);
+  });
+
+  test.each(ENDURANCE_VISITORS.map((v) => [v.classId, v] as const))('%s: su puesto, a la vista y fuera del alcance del pirata y del corro; su punto del puerto, en la zona segura; el lejano, además fuera del área de interés; los 3, navegables', (classId, v) => {
+    const nav = navigatorOf(world);
+    const r = SHIP_CLASSES[classId].length / 2;
+    expect(inUseful(v.post, r)).toBe(true);
+    expect(dist(v.post, pirate.pos)).toBeGreaterThan(PIRATE_AGGRO_RADIUS + 15);
+    for (const m of merchants) expect(dist(v.post, m.pos)).toBeGreaterThan(30);
+    expect(Math.abs(v.post.x - ENDURANCE_POINT.x)).toBeGreaterThan(40); // fuera del camino del jugador desde el puerto (x = 0)
+    expect(Math.hypot(v.port.x, v.port.z)).toBeLessThanOrEqual(SAFE_ZONE_RADIUS - 5);
+    expect(inUseful(v.port, 0)).toBe(false); // fuera de pantalla: el cambio de familia llega al cliente sin verse
+    expect(dist(v.port, ENDURANCE_POINT)).toBeLessThanOrEqual(INTEREST_RADIUS - 20);
+    expect(Math.hypot(v.far.x, v.far.z)).toBeLessThanOrEqual(SAFE_ZONE_RADIUS - 2);
+    expect(dist(v.far, ENDURANCE_POINT)).toBeGreaterThan(INTEREST_RADIUS + 4);
+    for (const p of [v.post, v.port, v.far]) expect([p, nav.navigable(p, navClearance(classId))]).toEqual([p, true]);
+  });
+
+  test('cada bot entra con el oro del jugador del soak, cambia a su barco y a su familia en el puerto, y el jugador del soak sigue con la Balandra sin familia', () => {
+    const w = createWorld({ seed: 3, spawnNpcs: false, map: GAME_MAP });
+    applyScenario(w, 'endurance', { requireNavigable: true });
+    const main = addPlayer(w, 'u0', 'Ana');
+    expect([main.gold, main.activeShip, main.family]).toEqual([upgradePrice('sloop', 'cannons', 2) + upgradePrice('sloop', 'cannons', 3), 'sloop', 'none']);
+    ENDURANCE_VISITORS.forEach((v, i) => {
+      addPlayer(w, `v${i}`, `Visita ${i + 1}`);
+      const ship = shipOfPlayer(w, `v${i}`)!;
+      ship.pos = { ...v.port };
+      expect(selectShip(w, `v${i}`, v.classId)).toEqual({ ok: true });
+      for (const f of ['gb', 'es', 'none'] as const) expect(selectFamily(w, `v${i}`, f)).toEqual({ ok: true });
+      expect(shipOfPlayer(w, `v${i}`)!.classId).toBe(v.classId);
+    });
   });
 });
 

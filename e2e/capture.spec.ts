@@ -5,7 +5,8 @@ import { Browser, expect, Page, test } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 import { PORTS } from '../playwright.config';
-import { DANGER, LEGIBILITY, LEGIBILITY_I2, LEGIBILITY_I2_90 } from '../server/scenarios';
+import { DANGER, LEGIBILITY, LEGIBILITY_165_HARBOR, LEGIBILITY_165_POSTS, LEGIBILITY_I2, LEGIBILITY_I2_90 } from '../server/scenarios';
+import { postFamilyPlayers } from './family-visitors';
 import { enterGame, me, ships, waitFor } from './helpers';
 import { startOwnServer } from './own-server';
 
@@ -172,6 +173,19 @@ const classIds = (page: Page) =>
 const separation = (a: Box, b: Box) => Math.max(b[0] - (a[0] + a[2]), a[0] - (b[0] + b[2]), b[1] - (a[1] + a[3]), a[1] - (b[1] + b[3]));
 const inside = (b: Box, vp: { width: number; height: number }) => b[0] >= 0 && b[1] >= 0 && b[0] + b[2] <= vp.width && b[1] + b[3] <= vp.height;
 
+// Cómo encaja la caja del JSON (vértices de la malla) con los píxeles del barco en la captura: `outside`, lo que los píxeles se
+// salen de la caja (lo que delata un DOM encima o un frame distinto del de la captura); `slack`, lo que la caja sobra. La caja
+// puede sobrar algo en las puntas de los palos y del bauprés, que miden 1-2 px y quedan bajo el umbral de la diferencia
+// (medido en la 1.3: de 2,5 a 6,6 px en los Navíos y las Goletas del GLB; el máximo, el gallardete azul marino del Navío
+// británico sobre el agua). Lo que delata un DOM encima o un frame distinto es `outside` (≤ 0,9 px en las mismas capturas)
+const BOX_OUTSIDE_PX = 2;
+const BOX_SLACK_PX = 8;
+const fit = (b: Box, p: Box | null) => {
+  if (!p) return { outside: Infinity, slack: Infinity };
+  const [bx1, by1, px1, py1] = [b[0] + b[2], b[1] + b[3], p[0] + p[2], p[1] + p[3]];
+  return { outside: Math.max(b[0] - p[0], b[1] - p[1], px1 - bx1, py1 - by1, 0), slack: Math.max(p[0] - b[0], p[1] - b[1], bx1 - px1, by1 - py1, 0) };
+};
+
 // Caja de los píxeles de cada barco en la captura: la diferencia con una segunda captura del mismo frame congelado sin
 // las mallas de los barcos (el HUD y las placas, que son DOM, salen iguales en las dos)
 async function shipPixels(page: Page, png: Buffer, ships: Box[]): Promise<(Box | null)[]> {
@@ -233,10 +247,9 @@ async function legibilityShot(page: Page, vp: Vp, scene: LegibilityScene = AC72)
   const px = (b: Box | null) => b && (b.map((v) => Math.round(v * dpr)) as Box);
   const json = { ...frame, ...(scene.questions ? { roles: scene.questions } : {}), elements: frame.elements.map((e) => ({ ...e, imagePx: { ship: px(e.ship), plate: px(e.plate), ring: px(e.ring) } })) };
   fs.writeFileSync(path.join(OUT, `${vp.name}-${scene.name}.json`), JSON.stringify(json, null, 1).replace(/\[\s+([\d.,\s-]+?)\s+\]/g, (_, v: string) => `[${v.replace(/\s+/g, ' ')}]`));
-  const edges = (b: Box) => [b[0], b[1], b[0] + b[2], b[1] + b[3]];
-  const misfit = frame.elements.map((e, i) => (fromPixels[i] ? Math.max(...edges(e.ship).map((v, j) => Math.abs(v - edges(fromPixels[i]!)[j]))) : Infinity));
+  const fits = frame.elements.map((e, i) => fit(e.ship, fromPixels[i]));
   for (const [i, e] of frame.elements.entries())
-    console.log(`${scene.ac} ${vp.name}: ${e.role}${e.selected ? ' (objetivo)' : ''} ${e.id} · barco [${e.ship.join(', ')}] · en la captura [${fromPixels[i]?.map((v) => v.toFixed(1)).join(', ') ?? '—'}] (borde peor ${misfit[i].toFixed(1)} px) · placa ${e.plate ? `[${e.plate.join(', ')}]` : '—'}${e.ring ? ` · anillo [${e.ring.join(', ')}]` : ''}`);
+    console.log(`${scene.ac} ${vp.name}: ${e.role}${e.selected ? ' (objetivo)' : ''} ${e.id} · barco [${e.ship.join(', ')}] · en la captura [${fromPixels[i]?.map((v) => v.toFixed(1)).join(', ') ?? '—'}] (fuera ${fits[i].outside.toFixed(1)} px, sobra ${fits[i].slack.toFixed(1)} px) · placa ${e.plate ? `[${e.plate.join(', ')}]` : '—'}${e.ring ? ` · anillo [${e.ring.join(', ')}]` : ''}`);
 
   expect(after, 'las cajas son las del frame de la captura (el frame congelado no cambió)').toEqual(frame);
   expect(frame.elements.map((e) => e.role), `los ${scene.roles.length} tipos de ${scene.ac}`).toEqual(expect.arrayContaining(scene.roles));
@@ -249,7 +262,10 @@ async function legibilityShot(page: Page, vp: Vp, scene: LegibilityScene = AC72)
   frame.elements.forEach((a, i) =>
     frame.elements.slice(i + 1).forEach((b) => expect.soft(separation(a.ship, b.ship), `D57 b: ${a.role} ${a.id} y ${b.role} ${b.id} a ≥ ${LEG_GAP} px CSS`).toBeGreaterThanOrEqual(LEG_GAP))
   );
-  for (const [i, e] of frame.elements.entries()) expect.soft(misfit[i], `${e.role} ${e.id}: la caja coincide con los píxeles del barco en la captura, sin nada del DOM encima (borde peor, px CSS)`).toBeLessThanOrEqual(2);
+  for (const [i, e] of frame.elements.entries()) {
+    expect.soft(fits[i].outside, `${e.role} ${e.id}: los píxeles del barco caben en su caja, sin nada del DOM encima (px CSS fuera)`).toBeLessThanOrEqual(BOX_OUTSIDE_PX);
+    expect.soft(fits[i].slack, `${e.role} ${e.id}: la caja no sobra más que las puntas finas (px CSS)`).toBeLessThanOrEqual(BOX_SLACK_PX);
+  }
 }
 
 test.describe('Capturas @capture', () => {
@@ -354,6 +370,274 @@ test.describe('Capturas @capture', () => {
       }
     });
   }
+
+  // AC-165 (relación) con las familias (ART-DIRECTION §21, D106): la pose de AC-72 (el pirata seleccionado) con 3 otros jugadores
+  // de la clase de la corrida, uno por aspecto (sin familia, británica y española), en el escenario "legibility-165". Los 3 son
+  // jugadores-bot por Socket.IO (e2e/family-visitors.ts) en LEGIBILITY_165_POSTS; la página propia es la única con navegador.
+  // La captura espera a que los 4 estén quietos y sin protección, y a que el cliente propio pinte a cada uno con su modelo final
+  // (el GLB con su KTX2, o el procedural sin familia). El mismo JSON y las mismas comprobaciones que AC-72; la instrucción es la
+  // de AC-72, sin cambios. Archivos: <vp>-legibility-165-<clase>.{png,json}
+  for (const vp of VIEWPORTS) {
+    test(`legibilidad con 3 Goletas y 3 Navíos en ${vp.name} (AC-165 relación, con las familias; D106)`, async ({ browser }) => {
+      test.setTimeout(600_000);
+      for (const classId of ['schooner', 'line'] as const) {
+        const server = await startOwnServer({ SEA_BATTLE_NPCS: '0', SEA_BATTLE_SCENARIO: 'legibility-165' });
+        const page = await newPage(browser, vp);
+        let others: ReturnType<typeof postFamilyPlayers> | null = null;
+        try {
+          await page.addInitScript(() => localStorage.setItem('sea-battle-hints', '3')); // pistas vistas
+          await enterGame(page, server.url);
+          const bots = postFamilyPlayers(server.url, LEGIBILITY_165_POSTS.map((p) => ({ classId, family: p.family, harbor: LEGIBILITY_165_HARBOR, via: p.via, post: p.post })));
+          others = bots;
+          await moveTo(page, LEGIBILITY.self.x, LEGIBILITY.self.z);
+          await bots.ready;
+          // Los 4 jugadores, quietos en su puesto y sin protección
+          await waitFor(
+            () => page.evaluate(() => ({ list: window.__SEA_BATTLE__!.ships() as { kind: string; x: number; z: number; protectedUntil: number }[], t: window.__SEA_BATTLE__!.serverTime() })),
+            ({ list, t }) => list.filter((s) => s.kind === 'player' && s.protectedUntil <= t).length === 4,
+            60_000,
+            250
+          );
+          await waitFor(() => me(page), (s) => !!s && Math.hypot(s.x - LEGIBILITY.self.x, s.z - LEGIBILITY.self.z) < 2, 60_000, 250);
+          const want = LEGIBILITY_165_POSTS.map((p) => ({ sbId: `ship_${classId}${p.family === 'none' ? '' : `_${p.family}`}`, current: true, ktx2: p.family === 'none' ? null : true })).sort((a, b) => a.sbId.localeCompare(b.sbId));
+          await expect
+            .poll(
+              () =>
+                page.evaluate((ids) => {
+                  type View = { ship: { classId: string; family: string | null }; model: { extras: { sb_id: string }; map?: { isCompressedTexture?: boolean } | null } };
+                  const rt = window.__SEA_BATTLE__!.runtime() as unknown as { views: Map<string, View>; shipGlb: { model(k: string): unknown } };
+                  return ids
+                    .map((id) => rt.views.get(id))
+                    .map((v) => {
+                      if (!v) return null;
+                      const key = v.ship.family && v.ship.family !== 'none' ? `${v.ship.classId}:${v.ship.family}` : v.ship.classId;
+                      return { sbId: v.model.extras.sb_id, current: v.model === rt.shipGlb.model(key), ktx2: v.model.map ? v.model.map.isCompressedTexture === true : null };
+                    })
+                    .sort((a, b) => (a?.sbId ?? '').localeCompare(b?.sbId ?? ''));
+                }, bots.shipIds()),
+              { timeout: 60_000 }
+            )
+            .toEqual(want);
+          await page.waitForTimeout(700); // los barcos terminan de frenar
+          await selectNear(page, vp, 'pirate', LEGIBILITY.pirate.x, LEGIBILITY.pirate.z);
+          await legibilityShot(page, vp, { ...AC72, name: `legibility-165-${classId}`, ac: `AC-165 ${classId}` });
+        } finally {
+          others?.stop();
+          await page.context().close();
+          await server.kill();
+        }
+      }
+    });
+  }
+
+  // AC-165 (clases; AD-37 c, ART-DIRECTION §18.2), sin familia y en las 2 familias (AC-194 b): la escena «fleet-1-1» con la
+  // galería de familias. Por familia: (1) la tira de referencia en color, con las 5 clases a 225° en el orden de la tienda y
+  // su nombre escrito debajo, sin rejilla; (2) la imagen de la prueba, las mismas 5 a 45° en un orden barajado en el que
+  // ninguna queda en el puesto que tiene en la referencia, con su JSON de cajas (rejilla.py la pasa a grises, que es la que se
+  // usa). Sin placas: no dicen la clase y ocupan sitio. Una fila en 1440×900 y 2 en 390×844. Como en las demás escenas de
+  // §18.2, sin pistas ni protección de salida: el barco propio (fuera de la escena) espera en mar abierto, fuera de la zona
+  // segura, en un servidor propio sin NPC. Archivos: <vp>-fleet-1-1-<familia>-referencia.png, <vp>-fleet-1-1-<familia>.{png,json}
+  const FLEET_ORDER = ['sloop', 'brig', 'schooner', 'frigate', 'line'] as const; // el de la tienda (PLAYER_SHIP_ORDER)
+  const FLEET_WAIT = { x: 0, z: -140 }; // el barco propio, fuera de la zona segura (r 110) mientras se ve la escena
+  const FLEET_SHUFFLE = { desktop: ['frigate', 'sloop', 'line', 'schooner', 'brig'], mobile: ['schooner', 'line', 'sloop', 'brig', 'frigate'] } as const;
+  // Puestos (m desde el foco). Los de la prueba de 1440×900 dejan cada barco del orden barajado en sus propias columnas de la
+  // rejilla (de 120 px), sin celdas compartidas: con los de la referencia, la Goleta y el Navío compartían 2 celdas, y un
+  // cambio entre los 2 no se habría detectado
+  const FLEET_SLOTS = { desktop: [[-80, 0], [-40, 0], [0, 0], [40, 0], [80, 0]], mobile: [[-40, -30], [0, -30], [40, -30], [-22, 30], [22, 30]] } as const;
+  const FLEET_TEST_SLOTS = { desktop: [[-78, 0], [-49, 0], [-11, 0], [37, 0], [77, 0]], mobile: FLEET_SLOTS.mobile } as const;
+  const FLEET_ROLE: Record<string, string> = { sloop: 'sloop', brig: 'brigantine', schooner: 'schooner', frigate: 'frigate', line: 'line' }; // roles de §18.2
+  const FLEET_NAME: Record<string, string> = { sloop: 'Balandra', brig: 'Bergantín', schooner: 'Goleta', frigate: 'Fragata', line: 'Navío de línea' };
+  // La lista de roles para rejilla.py, con las palabras de la instrucción de §18.2
+  const FLEET_QUESTIONS: [string, string][] = [['sloop', 'la Balandra'], ['brigantine', 'el Bergantín'], ['schooner', 'la Goleta'], ['frigate', 'la Fragata'], ['line', 'el Navío de línea']];
+
+  // La galería de familias para las escenas de §18.2 y §21: en un servidor propio sin NPC, sin pistas ni protección de salida (el
+  // barco propio espera en mar abierto, fuera de la escena y de la zona segura), sin placas (no dicen la clase ni la familia y
+  // ocupan sitio), sin HUD (ux, D106: su panel decía «Balandra», el barco propio, que es uno de los nombres que pregunta la
+  // flota; la pose de AC-72 sí lo lleva) y con las 10 combinaciones cargadas con su KTX2, como en el juego
+  async function galleryCapture(page: Page, url: string) {
+    await page.addInitScript(() => localStorage.setItem('sea-battle-hints', '3')); // pistas vistas
+    await enterGame(page, url);
+    await moveTo(page, FLEET_WAIT.x, FLEET_WAIT.z);
+    await waitFor(
+      () => page.evaluate(() => ({ s: window.__SEA_BATTLE__!.me() as { x: number; z: number; protectedUntil: number } | null, t: window.__SEA_BATTLE__!.serverTime() })),
+      ({ s, t }) => !!s && Math.hypot(s.x - FLEET_WAIT.x, s.z - FLEET_WAIT.z) < 3 && s.protectedUntil <= t,
+      60_000,
+      250
+    );
+    await page.mouse.move(5, 450);
+    await page.addStyleTag({ content: '.wo-plate, [data-testid="hud"] { visibility: hidden !important; }' });
+    await page.evaluate(() => {
+      const rt = window.__SEA_BATTLE__!.runtime();
+      rt.setCameraPreset('game');
+      rt.setZoomLevel(1);
+      (window as unknown as { __capScene: unknown }).__capScene = rt.startScene('gallery', { families: true });
+    });
+    await expect
+      .poll(() => page.evaluate(() => {
+        const glb = (window.__SEA_BATTLE__!.runtime() as unknown as { shipGlb: { loaded(k: string): boolean; model(k: string): { map?: { isCompressedTexture?: boolean } | null } } }).shipGlb;
+        return ['sloop', 'brig', 'schooner', 'frigate', 'line'].flatMap((c) => [`${c}:gb`, `${c}:es`]).every((k) => glb.loaded(k) && glb.model(k).map?.isCompressedTexture === true);
+      }), { timeout: 120_000 })
+      .toBe(true);
+  }
+
+  // Pone barcos de la galería («g-<clase>-<familia>») en puestos (m desde el foco) con su rumbo en grados; los demás, lejos
+  const placeGallery = (page: Page, ships: { id: string; dx: number; dz: number; headingDeg: number }[]) =>
+    page.evaluate((ships) => {
+      const scene = (window as unknown as { __capScene: { focus: { x: number; z: number }; setPose(id: string, x: number, z: number, h: number): void; spec: { ships: { id: string }[] } } }).__capScene;
+      scene.spec.ships.forEach((s, i) => scene.setPose(s.id, scene.focus.x + 10_000 + 2000 * i, scene.focus.z, Math.PI / 2));
+      for (const s of ships) scene.setPose(s.id, scene.focus.x + s.dx, scene.focus.z + s.dz, (s.headingDeg * Math.PI) / 180);
+    }, ships);
+
+  // Nombres escritos debajo de cada barco, para las tiras de referencia (texto blanco con sombra, sin rejilla)
+  const writeNames = (page: Page, labels: { text: string; x: number; y: number }[]) =>
+    page.evaluate((labels) => {
+      for (const l of labels) {
+        const d = document.createElement('div');
+        d.className = 'cap-fleet-name';
+        d.textContent = l.text;
+        d.style.cssText = `position:fixed;left:${l.x}px;top:${l.y}px;transform:translateX(-50%);font:700 15px Arial,sans-serif;color:#fff;text-shadow:0 0 3px #000,0 0 2px #000,0 1px 2px #000;white-space:nowrap;z-index:99;pointer-events:none`;
+        document.body.appendChild(d);
+      }
+    }, labels);
+  const clearNames = (page: Page) => page.evaluate(() => document.querySelectorAll('.cap-fleet-name').forEach((d) => d.remove()));
+
+  for (const vp of VIEWPORTS) {
+    test(`flota de las 5 clases en ${vp.name} (AC-165 clases, AD-37 c; con las familias)`, async ({ browser }) => {
+      test.setTimeout(300_000);
+      const server = await startOwnServer({ SEA_BATTLE_NPCS: '0' });
+      const page = await newPage(browser, vp);
+      try {
+        await galleryCapture(page, server.url);
+        const vpName = vp.name as 'desktop' | 'mobile';
+        // Pone las 5 clases de una familia en los puestos (las demás, lejos) con un rumbo
+        const place = (family: string, order: readonly string[], headingDeg: number, slots: readonly (readonly number[])[]) =>
+          placeGallery(page, order.map((c, i) => ({ id: `g-${c}-${family}`, dx: slots[i][0], dz: slots[i][1], headingDeg })));
+        const classOf = (id: string) => id.split('-')[1];
+        for (const family of ['none', 'gb', 'es'] as const) {
+          // (1) Tira de referencia: 225°, en color, con el nombre debajo de cada barco
+          await place(family, FLEET_ORDER, 225, FLEET_SLOTS[vpName]);
+          await page.waitForTimeout(800);
+          await freeze(page);
+          const ref = await legibleFrame(page);
+          expect(ref.elements.map((e) => classOf(e.id)).sort(), `referencia ${family}: las 5 clases en pantalla`).toEqual([...FLEET_ORDER].sort());
+          await writeNames(page, ref.elements.map((e) => ({ text: FLEET_NAME[classOf(e.id)], x: e.ship[0] + e.ship[2] / 2, y: e.ship[1] + e.ship[3] + 6 })));
+          await shot(page, vp, `fleet-1-1-${family}-referencia`);
+          await clearNames(page);
+          await thaw(page);
+
+          // (2) La prueba: 45°, orden barajado; rejilla.py la pasa a grises
+          const order = FLEET_SHUFFLE[vpName];
+          order.forEach((c, i) => expect(c, `orden barajado: ${c} no queda en su puesto de la referencia`).not.toBe(FLEET_ORDER[i]));
+          await place(family, order, 45, FLEET_TEST_SLOTS[vpName]);
+          await page.waitForTimeout(800);
+          await freeze(page);
+          const frame = await legibleFrame(page);
+          const png = await shot(page, vp, `fleet-1-1-${family}`);
+          const fromPixels = await shipPixels(page, png, frame.elements.map((e) => e.ship));
+          await thaw(page);
+          const dpr = frame.viewport.dpr;
+          const px = (b: Box | null) => b && (b.map((v) => Math.round(v * dpr)) as Box);
+          const elements = frame.elements.map((e) => ({ ...e, role: FLEET_ROLE[classOf(e.id)], selected: false, plate: null, ring: null }));
+          const json = { viewport: frame.viewport, roles: FLEET_QUESTIONS, elements: elements.map((e) => ({ ...e, imagePx: { ship: px(e.ship), plate: null, ring: null } })) };
+          fs.writeFileSync(path.join(OUT, `${vp.name}-fleet-1-1-${family}.json`), JSON.stringify(json, null, 1).replace(/\[\s+([\d.,\s-]+?)\s+\]/g, (_, v: string) => `[${v.replace(/\s+/g, ' ')}]`));
+          for (const [i, e] of elements.entries())
+            console.log(`AC-165 clases ${vp.name} ${family}: ${e.role} ${e.id} · barco [${e.ship.join(', ')}] · en la captura [${fromPixels[i]?.map((v) => v.toFixed(1)).join(', ') ?? '—'}]`);
+          expect(elements.map((e) => e.role).sort(), `${family}: las 5 clases`).toEqual(FLEET_QUESTIONS.map(([r]) => r).sort());
+          for (const e of elements) expect.soft(inside(e.ship, frame.viewport), `${family} ${e.id}: dentro del viewport`).toBe(true);
+          elements.forEach((a, i) => elements.slice(i + 1).forEach((b) => expect.soft(separation(a.ship, b.ship), `D57 b: ${a.id} y ${b.id} a ≥ ${LEG_GAP} px CSS`).toBeGreaterThanOrEqual(LEG_GAP)));
+          for (const [i, e] of elements.entries()) {
+            const f = fit(e.ship, fromPixels[i]);
+            expect.soft(f.outside, `${family} ${e.id}: los píxeles del barco caben en su caja (px CSS fuera)`).toBeLessThanOrEqual(BOX_OUTSIDE_PX);
+            expect.soft(f.slack, `${family} ${e.id}: la caja no sobra más que las puntas finas (px CSS)`).toBeLessThanOrEqual(BOX_SLACK_PX);
+          }
+        }
+      } finally {
+        await page.context().close();
+        await server.kill();
+      }
+    });
+  }
+
+  // AC-194 (c) (ART-DIRECTION §21, D106): la familia se lee sin leer texto, a 1,0× en 1440×900 con DPR 2 y solo en color. (1) La
+  // tira de referencia: la Fragata en los 3 aspectos a 225°, con su nombre debajo y sin rejilla. (2) Por disposición, 6 barcos de
+  // jugador de otras clases (británica: Balandra y Navío; española: Bergantín y Navío; sin familia: Goleta y Bergantín), con los
+  // rumbos de AD-28 repartidos y el orden barajado, con la semilla 1 en la 1.ª disposición y la 2 en la 2.ª; sin placas, y con su
+  // JSON de cajas, en el que el rol de cada barco es su aspecto (gb, es o none). En 2 filas de 3, con cada barco en sus propias
+  // celdas de la rejilla. Archivos: desktop-family-read-referencia.png, desktop-family-read-<1|2>.{png,json}
+  const READ_SHIPS = [['sloop', 'gb'], ['line', 'gb'], ['brig', 'es'], ['line', 'es'], ['schooner', 'none'], ['brig', 'none']] as const;
+  const READ_HEADINGS = [45, 135, 225, 315, 45, 135]; // AD-28, repartidos entre los 6
+  const READ_SLOTS = [[-55, -40], [0, -40], [55, -40], [-55, 40], [0, 40], [55, 40]] as const; // m desde el foco
+  const READ_NAMES: Record<string, string> = { gb: 'familia británica', es: 'familia española', none: 'sin familia' };
+  const READ_QUESTIONS: [string, string][] = [['gb', 'familia británica'], ['es', 'familia española'], ['none', 'sin familia']];
+  // Barajado reproducible (mulberry32 + Fisher-Yates)
+  const shuffled = <T,>(xs: readonly T[], seed: number): T[] => {
+    let a = seed >>> 0;
+    const rnd = () => {
+      a = (a + 0x6d2b79f5) >>> 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const out = [...xs];
+    for (let i = out.length - 1; i > 0; i--) {
+      const j = Math.floor(rnd() * (i + 1));
+      [out[i], out[j]] = [out[j], out[i]];
+    }
+    return out;
+  };
+
+  test('la familia de cada barco en desktop con DPR 2 (AC-194 c; D106)', async ({ browser }) => {
+    test.setTimeout(300_000);
+    const vp = VIEWPORTS[0];
+    const server = await startOwnServer({ SEA_BATTLE_NPCS: '0' });
+    const ctx = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, deviceScaleFactor: 2 });
+    const page = await ctx.newPage();
+    try {
+      await galleryCapture(page, server.url);
+      // (1) Referencia: la Fragata británica, española y sin familia, a 225°, con su nombre debajo
+      await placeGallery(page, (['gb', 'es', 'none'] as const).map((f, i) => ({ id: `g-frigate-${f}`, dx: -60 + 60 * i, dz: 0, headingDeg: 225 })));
+      await page.waitForTimeout(800);
+      await freeze(page);
+      const ref = await legibleFrame(page);
+      expect(ref.elements.map((e) => e.id).sort(), 'referencia: las 3 Fragatas').toEqual(['g-frigate-es', 'g-frigate-gb', 'g-frigate-none']);
+      await writeNames(page, ref.elements.map((e) => ({ text: READ_NAMES[e.id.split('-')[2]], x: e.ship[0] + e.ship[2] / 2, y: e.ship[1] + e.ship[3] + 6 })));
+      await shot(page, vp, 'family-read-referencia');
+      await clearNames(page);
+      await thaw(page);
+
+      // (2) Las 2 disposiciones
+      for (const seed of [1, 2]) {
+        const order = shuffled(READ_SHIPS, seed);
+        const headings = shuffled(READ_HEADINGS, seed + 100);
+        await placeGallery(page, order.map(([c, f], i) => ({ id: `g-${c}-${f}`, dx: READ_SLOTS[i][0], dz: READ_SLOTS[i][1], headingDeg: headings[i] })));
+        await page.waitForTimeout(800);
+        await freeze(page);
+        const frame = await legibleFrame(page);
+        const png = await shot(page, vp, `family-read-${seed}`);
+        const fromPixels = await shipPixels(page, png, frame.elements.map((e) => e.ship));
+        await thaw(page);
+        const dpr = frame.viewport.dpr;
+        const px = (b: Box | null) => b && (b.map((v) => Math.round(v * dpr)) as Box);
+        const elements = frame.elements.map((e) => ({ ...e, role: e.id.split('-')[2], selected: false, plate: null, ring: null }));
+        const json = { viewport: frame.viewport, roles: READ_QUESTIONS, elements: elements.map((e) => ({ ...e, imagePx: { ship: px(e.ship), plate: null, ring: null } })) };
+        fs.writeFileSync(path.join(OUT, `${vp.name}-family-read-${seed}.json`), JSON.stringify(json, null, 1).replace(/\[\s+([\d.,\s-]+?)\s+\]/g, (_, v: string) => `[${v.replace(/\s+/g, ' ')}]`));
+        for (const [i, e] of elements.entries())
+          console.log(`AC-194 c disposición ${seed}: ${e.role} ${e.id} a ${headings[order.findIndex(([c, f]) => `g-${c}-${f}` === e.id)]}° · barco [${e.ship.join(', ')}] · en la captura [${fromPixels[i]?.map((v) => v.toFixed(1)).join(', ') ?? '—'}]`);
+        expect(dpr, 'DPR 2 (D106)').toBe(2);
+        expect(elements.map((e) => e.id).sort(), `disposición ${seed}: los 6 barcos`).toEqual(READ_SHIPS.map(([c, f]) => `g-${c}-${f}`).sort());
+        for (const e of elements) expect.soft(inside(e.ship, frame.viewport), `${seed} ${e.id}: dentro del viewport`).toBe(true);
+        elements.forEach((a, i) => elements.slice(i + 1).forEach((b) => expect.soft(separation(a.ship, b.ship), `D57 b: ${a.id} y ${b.id} a ≥ ${LEG_GAP} px CSS`).toBeGreaterThanOrEqual(LEG_GAP)));
+        for (const [i, e] of elements.entries()) {
+          const f = fit(e.ship, fromPixels[i]);
+          expect.soft(f.outside, `${seed} ${e.id}: los píxeles del barco caben en su caja (px CSS fuera)`).toBeLessThanOrEqual(BOX_OUTSIDE_PX);
+          expect.soft(f.slack, `${seed} ${e.id}: la caja no sobra más que las puntas finas (px CSS)`).toBeLessThanOrEqual(BOX_SLACK_PX);
+        }
+      }
+    } finally {
+      await ctx.close();
+      await server.kill();
+    }
+  });
 
   // AC-115 (ART-DIRECTION §18.2): la escena del I2 para los evaluadores-agente, en un servidor propio con el I2 encendido y
   // sin más NPC: pirata, cañonera, Capitán y mercante quietos con los rumbos de AD-28, y los dos jugadores. Sin objetivo

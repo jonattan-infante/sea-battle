@@ -4,9 +4,14 @@
 // Va fuera de verify y de test:e2e porque dura ~13 min: `npm run test:soak` (lo ejecuta game-qa). AC91_MINUTES=2 la
 // acorta para validar el harness: mantiene las 10 muestras (cada 12 s) y escala los ciclos exigidos, pero el veredicto
 // de AC-91 solo vale con la corrida de 10 min.
+// Con las familias (AC-197 c, AC-228; O-2 de QA-78): 3 jugadores-bot (e2e/family-visitors.ts, sin navegador) con la Balandra,
+// el Bergantín y la Fragata cambian de familia en el puerto y vienen a la vista del jugador; una vuelta de cada dos salen del
+// área de interés. La carga exige ver en pantalla la británica, la española y «sin familia», cambios de familia y salidas del
+// área en la ventana medida; la deriva añade que cada GLB y cada KTX2 se piden una sola vez.
 import { CDPSession, expect, Page, test } from '@playwright/test';
 import { ENDURANCE_MERCHANTS, ENDURANCE_POINT } from '../server/scenarios';
 import type { GameEvent, ServerFrame } from '../src/game/types';
+import { startFamilyVisitors } from './family-visitors';
 import { commits, enterGame, hud, installCommitCounter, me, openUpgrades, ships, waitFor } from './helpers';
 import { sailTo } from './net';
 import { startOwnServer } from './own-server';
@@ -19,6 +24,8 @@ const REPAIR_BELOW = 0.45; // misma política que la simulación de server/__tes
 const RESUME_ABOVE = 0.55;
 const MB = 1024 * 1024;
 const WARMUP_TIMEOUT_MS = 300_000;
+const FAMILY_CHANGES_REQUIRED = Math.max(3, Math.floor((6 * MINUTES) / 10)); // los vistos por el cliente en la ventana medida
+const FAMILY_SCAN_MS = 5000;
 
 interface Sample {
   minute: number; // minutos reales desde el inicio de la carga
@@ -47,7 +54,35 @@ function trackLoad(page: Page) {
     cycles: 0,
     cyclesOffScreen: 0,
     volleys: 0,
-    damageTaken: 0
+    damageTaken: 0,
+    // Los barcos de los otros jugadores (los de familia): su `fa` según los frames, los que salieron del área de interés, los
+    // cambios de familia que llegan (un delta con otro `fa`, o la vuelta al área con otro) y las salidas y vueltas
+    others: new Map<string, string>(),
+    gone: new Set<string>(),
+    familyChanges: 0,
+    exits: 0,
+    reentries: 0
+  };
+  const onShips = (f: ServerFrame) => {
+    if (!load.myId) return;
+    for (const s of f.s ?? []) {
+      if (s.k === 'player' && s.id !== load.myId) {
+        // Entrada completa (k solo viaja en ellas): al aparecer o al volver al área de interés
+        const prev = load.others.get(s.id);
+        if (load.gone.delete(s.id)) {
+          load.reentries++;
+          if (prev !== s.fa) load.familyChanges++;
+        }
+        load.others.set(s.id, s.fa ?? 'none');
+      } else if (s.fa !== undefined && load.others.has(s.id) && load.others.get(s.id) !== s.fa) {
+        load.familyChanges++;
+        load.others.set(s.id, s.fa);
+      }
+    }
+    for (const id of f.r ?? []) if (load.others.has(id) && !load.gone.has(id)) {
+      load.exits++;
+      load.gone.add(id);
+    }
   };
   const onEvent = (e: GameEvent) => {
     if (e.type === 'volley' && e.shipId === load.myId) load.volleys++;
@@ -63,8 +98,10 @@ function trackLoad(page: Page) {
   page.on('websocket', (ws) => {
     ws.on('framereceived', (f) => {
       const p = String(f.payload);
-      if (!p.startsWith('42["frame"') || !p.includes('"e":')) return;
-      for (const e of (JSON.parse(p.slice(2))[1] as ServerFrame).e ?? []) onEvent(e);
+      if (!p.startsWith('42["frame"') || !(p.includes('"e":') || p.includes('"k":"player"') || p.includes('"fa":') || p.includes('"r":'))) return;
+      const frame = JSON.parse(p.slice(2))[1] as ServerFrame;
+      for (const e of frame.e ?? []) onEvent(e);
+      onShips(frame);
     });
   });
   return load;
@@ -106,6 +143,21 @@ function slope(points: { x: number; y: number }[]): number {
   return num / den;
 }
 
+// Los barcos de los otros jugadores que se ven en pantalla, con su familia y el modelo que pintan (sb_id de sus extras:
+// «ship_sloop_gb» del GLB, «ship_sloop» del procedural)
+const familiesOnScreen = (page: Page) =>
+  page.evaluate(() => {
+    type View = { ship: { kind: string; family: string | null; state: string; x: number; z: number }; model: { extras: { sb_id: string } } };
+    const rt = window.__SEA_BATTLE__!.runtime() as unknown as { views: Map<string, View>; src: { myShipId: string }; project(x: number, z: number): { sx: number; sy: number } | null };
+    const out: { family: string; sbId: string }[] = [];
+    for (const [id, v] of rt.views) {
+      if (id === rt.src.myShipId || v.ship.kind !== 'player' || v.ship.state !== 'alive') continue;
+      const sp = rt.project(v.ship.x, v.ship.z);
+      if (sp && sp.sx >= 0 && sp.sx <= innerWidth && sp.sy >= 0 && sp.sy <= innerHeight) out.push({ family: v.ship.family ?? 'none', sbId: v.model.extras.sb_id });
+    }
+    return out;
+  });
+
 const near = async (page: Page, tolerance: number) => {
   const s = await me(page);
   return !!s && Math.hypot(s.x - ENDURANCE_POINT.x, s.z - ENDURANCE_POINT.z) < tolerance;
@@ -115,9 +167,16 @@ test.describe('Corrida larga @soak', () => {
   test(`AC-91: ${MINUTES} min de combate con hundimientos y reapariciones en pantalla, sin deriva de memoria, DOM, escuchas, recursos de GPU ni commits`, async ({ page }) => {
     test.setTimeout(MINUTES * 60_000 + WARMUP_TIMEOUT_MS + 180_000);
     const server = await startOwnServer({ SEA_BATTLE_NPCS: '0', SEA_BATTLE_SCENARIO: 'endurance' });
+    let visitors: ReturnType<typeof startFamilyVisitors> | null = null;
     try {
       await installCommitCounter(page);
       const load = trackLoad(page);
+      // AC-197 (c): cada modelo y cada textura se piden una vez (lo pide la página, aunque lo sirva la caché del navegador)
+      const modelRequests = new Map<string, number>();
+      page.on('request', (r) => {
+        const p = new URL(r.url()).pathname;
+        if (p.startsWith('/models/')) modelRequests.set(p, (modelRequests.get(p) ?? 0) + 1);
+      });
       await enterGame(page, server.url);
       load.myId = (await me(page))!.id;
 
@@ -137,6 +196,13 @@ test.describe('Corrida larga @soak', () => {
       const vw = page.viewportSize()!;
       for (const s of await ships(page)) if (s.kind === 'merchant') load.merchants.add(s.id);
       expect(load.merchants.size, 'los mercantes del corro están a la vista').toBe(ENDURANCE_MERCHANTS);
+      // Los barcos con familia entran ya con el jugador en su punto: no se cruzan con su camino desde el puerto ni con el
+      // recuento de mercantes, y el calentamiento les da tiempo de hacer su primer ciclo antes de la línea base
+      visitors = startFamilyVisitors(server.url);
+      const seenOnScreen = new Set<string>(); // familias de otros jugadores vistas en pantalla en la ventana medida
+      const modelsOnScreen = new Set<string>();
+      let measuring = false;
+      let nextScan = 0;
 
       let repairs = 0;
       let repairsDone = 0;
@@ -195,6 +261,13 @@ test.describe('Corrida larga @soak', () => {
             }
           }
         }
+        if (measuring && Date.now() >= nextScan) {
+          nextScan = Date.now() + FAMILY_SCAN_MS;
+          for (const v of await familiesOnScreen(page)) {
+            seenOnScreen.add(v.family);
+            modelsOnScreen.add(v.sbId);
+          }
+        }
         await page.waitForTimeout(250);
       };
 
@@ -205,7 +278,8 @@ test.describe('Corrida larga @soak', () => {
         await drive();
       }
       console.log(`AC-91: calentamiento de ${((Date.now() - warmStart) / 1000).toFixed(0)} s (${load.cycles} ciclos, ${repairs} reparación)`);
-      const warm = { cycles: load.cycles, cyclesOffScreen: load.cyclesOffScreen, volleys: load.volleys, damageTaken: load.damageTaken, repairs, deaths };
+      const warm = { cycles: load.cycles, cyclesOffScreen: load.cyclesOffScreen, volleys: load.volleys, damageTaken: load.damageTaken, repairs, deaths, familyChanges: load.familyChanges, exits: load.exits, reentries: load.reentries };
+      measuring = true;
 
       const cdp = await page.context().newCDPSession(page);
       await cdp.send('Performance.enable');
@@ -230,8 +304,12 @@ test.describe('Corrida larga @soak', () => {
         volleys: load.volleys - warm.volleys,
         damageTaken: load.damageTaken - warm.damageTaken,
         repairs: repairs - warm.repairs,
-        deaths: deaths - warm.deaths
+        deaths: deaths - warm.deaths,
+        familyChanges: load.familyChanges - warm.familyChanges,
+        exits: load.exits - warm.exits,
+        reentries: load.reentries - warm.reentries
       };
+      const repeated = [...modelRequests].filter(([, n]) => n > 1);
 
       // Veredicto por métrica (AC-91); se registran todas antes de fallar
       const base = samples[0];
@@ -261,6 +339,16 @@ test.describe('Corrida larga @soak', () => {
         geometries: { max1to5: maxOf(early, 'geometries'), max5to10: maxOf(late, 'geometries') },
         textures: { max1to5: maxOf(early, 'textures'), max5to10: maxOf(late, 'textures') },
         commitsPerSecond: { intervals1and2: firstPair, intervals9and10: lastPair, max: Math.max(...rates) },
+        families: {
+          onScreen: [...seenOnScreen].sort(),
+          modelsOnScreen: [...modelsOnScreen].sort(),
+          clientChanges: measured.familyChanges,
+          changesRequired: FAMILY_CHANGES_REQUIRED,
+          exits: measured.exits,
+          reentries: measured.reentries,
+          visitors: visitors.stats.map((v) => ({ name: v.name, classId: v.classId, changes: v.changes.length, dwells: v.dwells, farTrips: v.farTrips, errors: v.errors })),
+          modelRequests: { paths: modelRequests.size, repeated }
+        },
         samples
       };
       console.log(`AC-91 resumen: ${JSON.stringify({ ...report, samples: undefined })}`);
@@ -279,6 +367,7 @@ test.describe('Corrida larga @soak', () => {
       if (INTERVAL_MS >= 60_000) expect.soft(lastPair, 'commits/s: media de los intervalos 9 y 10 ≤ media de los intervalos 1 y 2 × 1,2').toBeLessThanOrEqual(firstPair * 1.2);
       else console.log(`AC-91 (informativo con ventanas de ${INTERVAL_MS / 1000} s): commits/s de los intervalos 9 y 10 ${lastPair.toFixed(2)} frente a ${(firstPair * 1.2).toFixed(2)} (intervalos 1 y 2 × 1,2)`);
       expect.soft(Math.max(...rates), 'commits/s: siempre ≤ 10').toBeLessThanOrEqual(10);
+      expect.soft(repeated, 'AC-197 (c): cada GLB y cada KTX2 se piden una vez').toEqual([]);
 
       // Veredicto según la carga (AC-91): la carga es el "dado" del AC y la deriva se evalúa siempre. Con la carga incompleta
       // nunca hay verde: si alguna deriva falla es RECHAZADO (menos carga solo puede ocultar una fuga, no fabricarla) y la
@@ -287,13 +376,18 @@ test.describe('Corrida larga @soak', () => {
         measured.cycles < CYCLES_REQUIRED && `${measured.cycles} ciclos < ${CYCLES_REQUIRED}`,
         measured.volleys === 0 && '0 andanadas propias',
         measured.damageTaken === 0 && '0 de daño recibido',
-        measured.repairs === 0 && '0 reparaciones'
+        measured.repairs === 0 && '0 reparaciones',
+        // Las familias (AC-197 c): sin ellas en pantalla, cambiando y saliendo del área, la corrida no mide lo que pide el AC
+        ...['gb', 'es', 'none'].filter((f) => !seenOnScreen.has(f)).map((f) => `ningún barco «${f}» en pantalla`),
+        measured.familyChanges < FAMILY_CHANGES_REQUIRED && `${measured.familyChanges} cambios de familia < ${FAMILY_CHANGES_REQUIRED}`,
+        measured.exits === 0 && '0 salidas del área de interés de los barcos con familia'
       ].filter(Boolean);
       if (shortfall.length > 0) {
         if (test.info().errors.length > errorsBeforeDrift) console.log(`AC-91: la deriva falla (RECHAZADO) y además falta carga: ${shortfall.join('; ')}`);
         else throw new Error(`AC-91 NO VERIFICADO (carga insuficiente: ${shortfall.join('; ')})`);
       }
     } finally {
+      await visitors?.stop();
       await server.kill();
     }
   });
