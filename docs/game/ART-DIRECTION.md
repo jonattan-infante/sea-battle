@@ -1898,6 +1898,7 @@ Jonattan delegó en producto y UX lo que antes era su juicio («No necesitas de 
 | # | Para | Pregunta | Supuesto en este documento |
 |---|---|---|---|
 | U6 | `game-developer` | Preset de cámara de `qa:capture` para generar las imágenes de la landing | §16.1 |
+| U7 | `game-ux` y `game-developer` | AS-V14 en los 10 GLB de familia (O-4 de QA-78, P3): el GLB no marca la vela, así que `measureSails` no puede medirlos. Camino propuesto: un atributo por vértice `_SAIL_MASK` (como `_RIM_MASK`, ASSET-SPEC §6) que escribe la cadena de ux y lee `measureSails` en lugar de `model.sails`. No frena la 1.3: su lectura la cubren las láminas aprobadas y los evaluadores de §21 | ASSET-SPEC AS-V14 |
 
 ---
 
