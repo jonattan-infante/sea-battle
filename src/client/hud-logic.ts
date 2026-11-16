@@ -11,7 +11,8 @@ import {
   SAFE_ZONE_RADIUS,
   SHIP_CLASSES,
   ShipKind,
-  TAB_TARGET_RADIUS
+  TAB_TARGET_RADIUS,
+  UNDER_FIRE_WINDOW
 } from '../game/constants';
 import { tooStrong } from '../game/stats';
 import { PlayerView, ShipState } from '../game/types';
@@ -222,17 +223,58 @@ export function isLowHp(me: Pick<MeHud, 'state' | 'hp' | 'maxHp'>): boolean {
   return me.state === 'alive' && me.hp / me.maxHp < LOW_HP_WARNING;
 }
 
-// Por qué Puerto no abre (§12.4). Con la BD caída manda el corte, también fuera de la zona (AC-132, D50: «mientras dure
-// el corte, pulsar Puerto o P no abre la tienda»); si no, la zona segura (AC-66). null: abre
+// ---------- Zona segura bajo fuego (E20; ART-DIRECTION «Zona segura bajo fuego (1.3)», D120 a D128) ----------
+
+type ZoneMe = Pick<MeHud, 'state' | 'inSafeZone'> & Partial<Pick<MeHud, 'underFireMark'>>;
+
+// El hueco de aviso (D120): una sola fila a la vez. La píldora fuera de la zona bajo fuego, «no te protege» dentro bajo
+// fuego y «Zona segura» dentro sin marca; nada con el barco hundido o fuera sin marca
+export type ZoneSlot = 'none' | 'pill' | 'protected' | 'under-fire';
+export function zoneSlotOf(me: ZoneMe | null): ZoneSlot {
+  if (!me || me.state !== 'alive') return 'none';
+  if (me.inSafeZone) return me.underFireMark ? 'under-fire' : 'protected';
+  return me.underFireMark ? 'pill' : 'none';
+}
+
+// La cuenta (D128): ceil(uf − serverTime), de 10 a 1. Nunca 0 (entre la caducidad y el commit que cambia el estado, ≤ 100
+// ms) ni 11 (reloj del cliente un poco por detrás del servidor)
+export function underFireSeconds(until: number, serverTime: number): number {
+  return Math.max(1, Math.min(UNDER_FIRE_WINDOW, Math.ceil(until - serverTime)));
+}
+
+// El motivo del puerto cerrado bajo fuego (D125): el aviso al pulsar Puerto, con la N del momento, y el rechazo del
+// servidor a buy y selectShip, con N = 10 (PORT_UNDER_FIRE_TEXT en world.ts, que el cliente no importa por el grafo de
+// rutas). Uno nuevo sustituye al visible con la misma clave en lugar de apilarse
+export const portUnderFireText = (seconds: number) => `Bajo fuego: el puerto abre tras ${seconds} s sin disparos`;
+export const PORT_FIRE_TOAST_KEY = 'port-under-fire';
+export const isPortUnderFireText = (text: string) => /^Bajo fuego: el puerto abre tras \d+ s sin disparos$/.test(text);
+
+// Por qué Puerto no abre (§12.4), por prioridad (D124): con la BD caída manda el corte, también fuera de la zona (AC-132,
+// D50: «mientras dure el corte, pulsar Puerto o P no abre la tienda»); si no, la zona segura (AC-66), también bajo fuego
+// («fuera de la zona, los motivos de hoy no cambian», GDD §11); y dentro, bajo fuego (AC-253). null: abre
 export const SHOP_UNAVAILABLE = 'La tienda no está disponible: no podemos guardar';
+export type PortBlockReason = 'unsaved' | 'zone' | 'under-fire';
 export interface PortBlock {
   title: string;
-  toast: { kind: 'warn' | 'danger'; text: string };
+  toast: { kind: 'warn' | 'danger'; text: string; fire?: true };
 }
-export function portBlock(me: Pick<MeHud, 'state' | 'inSafeZone'> | null, saveWarning: boolean): PortBlock | null {
-  if (saveWarning) return { title: SHOP_UNAVAILABLE, toast: { kind: 'danger', text: SHOP_UNAVAILABLE } };
-  if (me?.state === 'alive' && me.inSafeZone) return null;
-  return { title: 'Solo en la zona segura', toast: { kind: 'warn', text: 'El puerto solo abre en la zona segura' } };
+export function portBlockReason(me: ZoneMe | null, saveWarning: boolean): PortBlockReason | null {
+  if (saveWarning) return 'unsaved';
+  if (me?.state !== 'alive' || !me.inSafeZone) return 'zone';
+  return me.underFireMark ? 'under-fire' : null;
+}
+// seconds: la N del aviso bajo fuego, la del momento de pulsar; el title queda fijo en 10 (no cambia cada segundo)
+export function portBlock(me: ZoneMe | null, saveWarning: boolean, seconds = UNDER_FIRE_WINDOW): PortBlock | null {
+  switch (portBlockReason(me, saveWarning)) {
+    case 'unsaved':
+      return { title: SHOP_UNAVAILABLE, toast: { kind: 'danger', text: SHOP_UNAVAILABLE } };
+    case 'zone':
+      return { title: 'Solo en la zona segura', toast: { kind: 'warn', text: 'El puerto solo abre en la zona segura' } };
+    case 'under-fire':
+      return { title: portUnderFireText(UNDER_FIRE_WINDOW), toast: { kind: 'danger', text: portUnderFireText(seconds), fire: true } };
+    default:
+      return null;
+  }
 }
 
 // Protegido por la zona segura (§11, 1.3): dentro y sin la marca de bajo fuego (`uf`), como isZoneProtected en world.ts

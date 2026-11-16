@@ -2,7 +2,8 @@
 // Lucide (ISC) y Coins y Wrench siguen su construcción; el resto son dibujos propios. CloudOff copia el de Lucide (ISC,
 // lucide-static 0.469.0): progreso sin guardar (D50). Bomb copia el de Lucide (ISC, lucide-static 0.469.0): la Cañonera.
 // Settings, Move y ArrowUp copian «settings», «move» y «arrow-up» de Lucide (ISC, lucide-static 0.469.0): las opciones de
-// cámara y teclas (E18, D98; ART-DIRECTION §20)
+// cámara y teclas (E18, D98; ART-DIRECTION §20). Flame copia «flame» de Lucide (ISC, lucide-static 0.469.0) y ShieldOff es
+// el Shield de hoy con una barra (dibujo propio, como «shield-off» de Lucide): la zona segura bajo fuego (E20, D121-D124)
 import React from 'react';
 
 type IconProps = { size?: number; className?: string; title?: string };
@@ -91,6 +92,20 @@ export const Wrench = (p: IconProps) => (
 export const Shield = (p: IconProps) => (
   <Svg {...p}>
     <path d="M12 3 5 6v5c0 4.6 3 8.4 7 10 4-1.6 7-5.4 7-10V6Z" />
+  </Svg>
+);
+
+export const ShieldOff = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M9.01 4.28 12 3l7 3v5C19 11.98 18.86 12.93 18.61 13.82" />
+    <path d="M14.53 19.6C13.75 20.17 12.9 20.64 12 21 8 19.4 5 15.6 5 11V8.84" />
+    <path d="m3 3 18 18" />
+  </Svg>
+);
+
+export const Flame = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z" />
   </Svg>
 );
 

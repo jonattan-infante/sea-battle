@@ -18,8 +18,10 @@ import {
   hudSignals,
   inCannonRange,
   inSafeZone,
+  isPortUnderFireText,
   levelUpOf,
   levelUpText,
+  PORT_FIRE_TOAST_KEY,
   portBlock,
   pushGoldReward,
   pushKillReward,
@@ -29,7 +31,8 @@ import {
   rewardLines,
   rewardText,
   targetDanger,
-  targetDistance
+  targetDistance,
+  underFireSeconds
 } from '../client/hud-logic';
 import { MeHud, resetSaveWarning, sameShallow, syncUnsaved, TargetHud, useHud } from '../client/hud-store';
 import { actionOf, isArrowCode, routeKey, ViewAction } from '../client/key-bindings';
@@ -269,7 +272,12 @@ export default function GameApp({ guest }: { guest: boolean }) {
           inSafeZone: inSafeZone(mine.x, mine.z),
           protectedUntil: mine.protectedUntil,
           action: repairing ? 'repairing' : targetId ? (inRange ? 'firing' : 'armed') : 'idle',
-          underFire: performance.now() - hudSignals.lastHitAt < UNDER_FIRE_MS
+          underFire: performance.now() - hudSignals.lastHitAt < UNDER_FIRE_MS,
+          // La marca de la zona (E20), con el reloj del cliente: al caducar no llega ningún snapshot (O-150). La apaga antes
+          // el ticker del hueco de aviso (Hud.tsx, ZoneSlot) en el primer frame tras uf; aquí, como mucho 100 ms después,
+          // da lo mismo y no hay commit (AC-254 pide ≤ 200 ms)
+          underFireUntil: mine.underFireUntil,
+          underFireMark: mine.underFireUntil > client.serverTime()
         };
       } else if (st.me && player?.death) {
         // El barco hundido del todo ya no viene en los frames: el HUD sigue en estado "Hundido"
@@ -325,7 +333,13 @@ export default function GameApp({ guest }: { guest: boolean }) {
         // invitado nunca le marca unsaved, porque no escribe en la BD; si lo hiciera por error, el e2e lo vería
         syncUnsaved(player.unsaved === true);
       }),
-      client.onNotice((n) => hud.pushToast(n.kind === 'error' ? 'danger' : 'ok', n.text)),
+      // El rechazo del servidor a buy o selectShip bajo fuego es el mismo aviso del puerto, con la llama, y sustituye al de
+      // la pulsación en lugar de apilarse (D125)
+      client.onNotice((n) =>
+        isPortUnderFireText(n.text)
+          ? hud.pushToast('danger', n.text, undefined, { key: PORT_FIRE_TOAST_KEY, fire: true })
+          : hud.pushToast(n.kind === 'error' ? 'danger' : 'ok', n.text)
+      ),
       client.onEvent(onEvent),
       client.onWelcome((w) => setWelcome(w))
     ];
@@ -427,9 +441,11 @@ export default function GameApp({ guest }: { guest: boolean }) {
       togglePort: () => {
         const st = useHud.getState();
         if (st.shopOpen) return st.setShopOpen(false);
-        // Fuera de la zona (AC-66) o con la BD caída (AC-132) no abre: el toast explica por qué (en móvil no hay title)
-        const block = portBlock(st.me, st.saveWarning);
-        if (block) st.pushToast(block.toast.kind, block.toast.text);
+        // Fuera de la zona (AC-66), con la BD caída (AC-132) o bajo fuego (AC-253) no abre: el toast explica por qué (en
+        // móvil no hay title). Bajo fuego, con los segundos del momento, y sustituye al anterior de su tipo (D125)
+        const seconds = st.me ? underFireSeconds(st.me.underFireUntil, client.serverTime()) : undefined;
+        const block = portBlock(st.me, st.saveWarning, seconds);
+        if (block) st.pushToast(block.toast.kind, block.toast.text, undefined, block.toast.fire ? { key: PORT_FIRE_TOAST_KEY, fire: true } : undefined);
         else st.setShopOpen(true);
       },
       deselect: () => useHud.getState().select(null),
@@ -587,6 +603,7 @@ export default function GameApp({ guest }: { guest: boolean }) {
         targetId: s.targetId,
         repairing: s.repairing,
         protectedUntil: s.protectedUntil,
+        underFireUntil: s.underFireUntil, // marca de bajo fuego (E20): el reloj de los e2e de AC-253 a AC-255
         screen: runtime.project(s.x, s.z)
       };
     window.__SEA_BATTLE__ = {
