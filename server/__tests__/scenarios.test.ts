@@ -42,8 +42,9 @@ import {
   ENDURANCE_VISITORS,
   I2_SCENARIOS,
   LEGIBILITY,
+  LEGIBILITY_165,
+  LEGIBILITY_165_390,
   LEGIBILITY_165_HARBOR,
-  LEGIBILITY_165_POSTS,
   LEGIBILITY_I2,
   LEGIBILITY_I2_90,
   parseScenario,
@@ -139,42 +140,43 @@ describe('piratas fijos de los escenarios (DT-04)', () => {
 // AC-72 (D57): la captura de legibilidad necesita los 4 barcos quietos. El pirata solo se mueve si un jugador sin
 // protección entra en su radio de agresión, así que los puestos de los jugadores, y el camino recto desde el puerto
 // hasta ellos, quedan fuera de ese radio
-// AC-165 (relación; ART-DIRECTION §18.2) con las familias (AC-194 b): la pose de AC-72 con el otro jugador en una Goleta o en
-// un Navío, sin familia y en las 2 familias. El mismo mundo que "legibility"; el progreso de salida trae además esos barcos y
-// las 2 familias, que el otro jugador elige en el puerto (e2e/capture.spec.ts). El oro y la XP, los de AC-72
-describe('escenario "legibility-165" (AC-165 relación, con las familias)', () => {
-  test('el mismo mundo que "legibility", y cada jugador entra con la Balandra sin familia, el oro y la XP de siempre', () => {
-    const [a, b] = (['legibility', 'legibility-165'] as const).map((name) => {
+// AC-165 (relación; ART-DIRECTION §18.2 y §21) con las familias (AC-194 b): la pose de AC-72 con 3 otros jugadores, uno por aspecto,
+// en una Goleta o en un Navío. D107 («Lejos de las líneas», §18.1): cada tamaño tiene su escenario y sus puestos ("legibility-165"
+// en 1440×900 y "legibility-165-390" en 390×844), elegidos sobre la rejilla del origen fijo de e2e/capture.spec.ts, que comprueba
+// rejilla.py en la captura. Aquí, lo del mundo: los mismos 2 NPC con los rumbos de AC-72, el pirata sin IA, el progreso de salida,
+// los jugadores fuera de la zona segura y todo navegable para el Navío
+describe.each([
+  ['legibility-165', LEGIBILITY_165],
+  ['legibility-165-390', LEGIBILITY_165_390]
+] as const)('escenario "%s" (AC-165 relación, con las familias)', (name, spec) => {
+  test('el pirata (sin IA, quieto) y el mercante (sin IA) en sus puestos, con los rumbos de "legibility"; cada jugador entra con la Balandra sin familia, el oro y la XP de siempre', () => {
+    const [a, b] = (['legibility', name] as const).map((n) => {
       const w = createWorld({ seed: 1, spawnNpcs: false });
-      applyScenario(w, name);
-      return { w, npcs: [...w.ships.values()].map((s) => [s.kind, s.pos, s.heading, s.holdPosition ?? false, s.ai === null]) };
+      applyScenario(w, n);
+      return { w, npcs: [...w.ships.values()].map((s) => ({ kind: s.kind, pos: s.pos, heading: s.heading, hold: s.holdPosition ?? false, noAi: s.ai === null })) };
     });
-    expect(b.npcs).toEqual(a.npcs);
+    expect(b.npcs.map((n) => [n.kind, n.heading, n.hold])).toEqual(a.npcs.map((n) => [n.kind, n.heading, n.hold]));
+    expect(b.npcs.map((n) => [n.kind, n.pos, n.noAi])).toEqual([['pirate', spec.pirate, true], ['merchant', spec.merchant, true]]);
     const [pa, pb] = [addPlayer(a.w, 'u1', 'Ana'), addPlayer(b.w, 'u1', 'Ana')];
     expect([pb.gold, pb.xp, pb.activeShip, pb.family]).toEqual([pa.gold, pa.xp, pa.activeShip, pa.family]);
   });
 
-  test('los 3 otros jugadores (D106): uno por aspecto; su puerto, en la zona segura; su camino y su puesto, a más de 75 m del pirata; navegables en el mapa del juego', () => {
-    expect(LEGIBILITY_165_POSTS.map((p) => p.family)).toEqual(['none', 'gb', 'es']);
+  test('los 3 otros jugadores (D106): uno por aspecto; su puerto, en la zona segura; su puesto, fuera de ella con holgura (pierden la protección); el último tramo fija el rumbo (de norte a sur, o hacia el este la británica); navegables para el Navío en el mapa del juego', () => {
+    expect(spec.posts.map((p) => p.family)).toEqual(['none', 'gb', 'es']);
     expect(Math.hypot(LEGIBILITY_165_HARBOR.x, LEGIBILITY_165_HARBOR.z)).toBeLessThanOrEqual(SAFE_ZONE_RADIUS - 20);
-    const toSegment = (p: { x: number; z: number }, a: { x: number; z: number }, b: { x: number; z: number }) => {
-      const [dx, dz] = [b.x - a.x, b.z - a.z];
-      const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.z - a.z) * dz) / (dx * dx + dz * dz)));
-      return Math.hypot(p.x - (a.x + t * dx), p.z - (a.z + t * dz));
-    };
     const w = createWorld({ seed: 1, spawnNpcs: false, map: GAME_MAP });
-    applyScenario(w, 'legibility-165', { requireNavigable: true });
+    applyScenario(w, name, { requireNavigable: true });
     const nav = navigatorOf(w);
-    for (const { via, post } of LEGIBILITY_165_POSTS) {
-      expect(toSegment(LEGIBILITY.pirate, LEGIBILITY_165_HARBOR, via)).toBeGreaterThan(PIRATE_AGGRO_RADIUS + 5);
-      expect(toSegment(LEGIBILITY.pirate, via, post)).toBeGreaterThan(PIRATE_AGGRO_RADIUS + 5);
-      for (const p of [LEGIBILITY_165_HARBOR, via, post]) expect([p, nav.navigable(p, navClearance('line'))]).toEqual([p, true]);
+    for (const { family, via, post } of spec.posts) {
+      expect(Math.hypot(post.x, post.z)).toBeGreaterThanOrEqual(SAFE_ZONE_RADIUS + 15);
+      expect([post.x - via.x, post.z - via.z]).toEqual(family === 'gb' ? [32, 0] : [0, 36]);
+      for (const p of [LEGIBILITY_165_HARBOR, via, post, spec.pirate, spec.merchant]) expect([p, nav.navigable(p, navClearance('line'))]).toEqual([p, true]);
     }
   });
 
   test.each(['schooner', 'line'] as const)('el otro jugador cambia en el puerto a %s y a cada familia', (classId) => {
     const w = createWorld({ seed: 2, spawnNpcs: false });
-    applyScenario(w, 'legibility-165');
+    applyScenario(w, name);
     addPlayer(w, 'u2', 'Bea');
     shipOfPlayer(w, 'u2')!.pos = { x: 0, z: -60 };
     expect(selectShip(w, 'u2', classId)).toEqual({ ok: true });
