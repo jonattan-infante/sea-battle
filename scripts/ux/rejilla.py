@@ -9,10 +9,11 @@
 # valen los 5 de AC-72. Un elemento con "kind": "place" (el astillero, una roca) es un lugar: entra en las celdas y
 # en la clave, pero no en la regla de los 16 px entre barcos.
 # D107 (H-D106-2; ART-DIRECTION §18.1, «Lejos de las líneas»): mide la distancia del centro de la caja de cada elemento
-# preguntado a la línea interior más cercana, en x y en y, en fracción de celda. Por debajo de ⅛ de celda en algún eje la
+# preguntado a la línea interior más cercana, en x y en y, en fracción de celda. Por debajo de ¼ de celda en algún eje la
 # imagen no vale: el evaluador duda entre 2 o 4 celdas válidas y responde «no sé» (QA-78, adenda A.4: los 14 elementos
-# sin celda de las 13 respuestas con «no sé» estaban a ≤ 0,073 de celda, y ningún barco a ≥ 0,112 tuvo un «no sé»). ¼ de celda es el objetivo para las escenas nuevas
-# (la tabla lo marca), no la puerta: con 5 o 6 barcos por imagen, ningún origen lo da en las capturas de QA-78.
+# sin celda de las 13 respuestas con «no sé» estaban a ≤ 0,073 de celda, y ningún barco a ≥ 0,112 tuvo un «no sé»). La puerta
+# es ¼, la de producto (BACKLOG, «Adenda de QA-78 (D106)», b), con margen sobre lo medido; corregido el 2026-11-16, antes ⅛.
+# Además, 2 elementos de roles distintos no pueden compartir celda: un rol cambiado por el otro contaría como acierto.
 # --estricto sale con código 2 si la imagen no vale (por esta regla o por la de los 16 px de D57). --origen desplaza la
 # rejilla sobre la misma captura, sin mover barcos ni repetirla: la primera línea vertical pasa a x y la primera
 # horizontal a y (px CSS, 0 ≤ x < ancho de celda); las celdas de los bordes quedan parciales y, si medirían menos de ¼
@@ -28,8 +29,8 @@ from PIL import Image, ImageDraw, ImageFont
 GRIDS = {(1440, 900): (12, 8), (390, 844): (6, 12)}
 ROLES = [('self', 'el barco que controlas'), ('player', 'otro jugador'), ('pirate', 'un pirata'),
          ('merchant', 'un mercante'), ('target', 'el barco seleccionado como objetivo')]
-NEAR = 0.125  # D107: por debajo de esta fracción de celda, el centro de un elemento preguntado está «sobre una línea»
-GOAL = 0.25   # D107: el objetivo para las escenas nuevas (solo se marca en la tabla)
+NEAR = 0.25   # D107: por debajo de esta fracción de celda, el centro de un elemento preguntado está «sobre una línea» (puerta)
+GOAL = 0.25   # D107: igual a la puerta desde el 2026-11-16 (antes, objetivo por encima de una puerta de ⅛)
 EDGE = 0.25   # D107: una celda de borde más estrecha que esto se funde con su vecina
 
 def to_gray(rgb8):
@@ -215,7 +216,7 @@ def main(png, js, outdir, origin=None, strict=False):
                 what = f'se superponen ({-gap:.0f} px CSS de solape)' if gap < 0 else f'quedan a {gap:.0f} px CSS'
                 warnings.append(f'Imagen no válida: los barcos {els[a].get("id", a)} y {els[b].get("id", b)} {what}; hacen falta ≥ {GAP} px CSS. Hay que repetir la pose')
                 invalid = True
-    # D107: lejos de las líneas. El centro de la caja de barco de cada elemento preguntado, a ≥ ⅛ de celda de toda línea
+    # D107: lejos de las líneas. El centro de la caja de barco de cada elemento preguntado, a ≥ ¼ de celda de toda línea
     # interior en x y en y; si no, el evaluador puede dudar entre 2 o 4 celdas válidas y responder «no sé»
     dist = near_lines(centers, xb, yb, cw, rh)
     for d_ in dist:
@@ -230,6 +231,11 @@ def main(png, js, outdir, origin=None, strict=False):
             common = cells[a] & cells[b]
             if common:
                 shared.append({'a': els[a].get('id', str(a)), 'b': els[b].get('id', str(b)), 'celdas': sorted(name(c) for c in common)})
+                # D107: con roles distintos, una celda compartida deja pasar como acierto justo la confusión que se mide
+                if 'place' not in (els[a].get('kind'), els[b].get('kind')) and els[a].get('role') != els[b].get('role'):
+                    warnings.append(f'Imagen no válida (D107): {els[a].get("id", a)} ({els[a].get("role")}) y {els[b].get("id", b)} ({els[b].get("role")}) '
+                                    f'comparten {", ".join(sorted(name(c) for c in common))}. Hay que mover la escena o el origen')
+                    invalid = True
             if cells[a] and cells[a] == cells[b]:
                 warnings.append(f'{els[a].get("id", a)} y {els[b].get("id", b)} tienen las mismas celdas: un cambio entre ellos no se detecta')
     H, W = img.shape[:2]
