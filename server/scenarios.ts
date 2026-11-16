@@ -132,6 +132,11 @@ export const VIEW_RETURN = { pirate: { x: 0, z: 150 }, hull: 0.3 } as const;
 // `volley-miss` (AC-119, una andanada contra ti devuelve la cámara aunque falle): el mismo pirata, con puntería 0
 export const EDGE_ATTACK = { pirate: { x: 0, z: 215 }, standoff: 52, accuracy: 0.25 } as const;
 
+// Zona segura bajo fuego (E20, H-2005; e2e/under-fire.spec.ts): un mercante quieto, sin IA y que no se hunde, al norte del
+// puerto y dentro de la zona segura, a tiro del cañón inicial (60 m) desde un puesto dentro de la zona y desde otro fuera.
+// Dentro, disparar es lo único que pone bajo fuego a quien está en paz (GDD §11): así se llega a los 3 estados del aviso
+export const UNDER_FIRE = { merchant: { x: 0, z: 100 }, inside: { x: 0, z: 70 }, outside: { x: 0, z: 135 }, hp: 100_000 } as const;
+
 // Combate del I2 (AC-90, bloque B-I2 de QA; producto, BACKLOG :1943; E-2): el Capitán y una cañonera con su IA de combate,
 // anclados en su puesto (anchored: disparan desde allí, sin acercarse ni orbitar) y con puntería baja, y 5 mercantes quietos
 // y sin IA en corro alrededor del puesto del jugador, que reaparecen en su sitio (como en endurance), de blanco para sus
@@ -151,7 +156,7 @@ export const COMBAT_I2 = {
   accuracy: 0.08
 } as const;
 
-export const SCENARIOS = ['showcase', 'shipyard', 'targets', 'endurance', 'repair', 'legibility', 'captain', 'captain-down', 'legibility-i2', 'legibility-i2-90', 'danger', 'xp', 'xp-13', 'xp-12', 'view-return', 'edge-attack', 'volley-miss', 'combat-i2'] as const;
+export const SCENARIOS = ['showcase', 'shipyard', 'targets', 'endurance', 'repair', 'legibility', 'captain', 'captain-down', 'legibility-i2', 'legibility-i2-90', 'danger', 'xp', 'xp-13', 'xp-12', 'view-return', 'edge-attack', 'volley-miss', 'combat-i2', 'under-fire'] as const;
 export type ScenarioName = (typeof SCENARIOS)[number];
 // Escenarios con NPC del I2: con el I2 apagado no existen (AC-187), así que no arrancan con SEA_BATTLE_I2=0
 export const I2_SCENARIOS: readonly ScenarioName[] = ['captain', 'captain-down', 'legibility-i2', 'legibility-i2-90', 'danger', 'combat-i2'];
@@ -220,6 +225,17 @@ function placeScenario(world: World, name: ScenarioName): void {
     pirate.destination = null;
     pirate.path = [];
     pirate.accuracyOverride = name === 'volley-miss' ? 0 : EDGE_ATTACK.accuracy;
+    return;
+  }
+  if (name === 'under-fire') {
+    const m = spawnMerchant(world);
+    m.pos = { ...UNDER_FIRE.merchant };
+    m.heading = Math.PI / 2;
+    m.ai = null;
+    m.destination = null;
+    m.path = [];
+    m.hp = m.maxHp = UNDER_FIRE.hp;
+    m.respawnPos = { ...m.pos };
     return;
   }
   if (name === 'shipyard') {

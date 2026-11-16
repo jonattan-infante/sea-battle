@@ -18,6 +18,7 @@ export interface DebugShip {
   targetId: string | null;
   repairing: boolean;
   protectedUntil: number;
+  underFireUntil: number; // marca de bajo fuego (E20), tiempo de servidor; 0 sin marca
   screen: { sx: number; sy: number } | null;
 }
 
