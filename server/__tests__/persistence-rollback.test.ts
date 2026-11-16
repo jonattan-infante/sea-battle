@@ -4,7 +4,9 @@
 // familias. Reiniciar es un servidor nuevo, con el mundo vacío, sobre la misma BD.
 // *Cambiado a propósito con la 1.3 (AC-226 a):* hasta la 1.2, la Goleta y el Navío de la fila no entraban en el mundo y se
 // jugaba con el mejor barco de la 1.0; ahora se juegan. La vuelta atrás a la 1.0.3 (AC-157) deja de aplicar: la 1.3 escribe
-// v: 3, que solo lee la 1.2.x puente (AC-220; progress.test.ts prueba que la 1.2.0, la 1.0.3 y la 1.0.2 la rechazan)
+// v: 3, que solo lee la 1.2.1, el puente de AC-220 que está en prod (progress.test.ts prueba que la 1.2.0, la 1.0.3 y la
+// 1.0.2 la rechazan). Al final, la ida y vuelta con la 1.2.1, con su lector y su escritor congelados
+// (fixtures/progress-1.2.1.ts) y la misma guarda de revision: la base del ensayo de AC-229
 import { createServer, Server as HttpServer } from 'http';
 import { AddressInfo } from 'net';
 import { Pool } from 'pg';
@@ -14,13 +16,14 @@ import { DISCONNECT_GRACE, TICK_RATE } from '../../src/game/constants';
 import { C2S, S2C } from '../../src/game/protocol';
 import { Notice, PlayerView, ShipSnapshot, Welcome } from '../../src/game/types';
 import { shipOfPlayer } from '../../src/game/world';
-import { upgradePrice } from '../../src/game/constants';
+import { FAMILY_PRICE, upgradePrice } from '../../src/game/constants';
 import { migrate } from '../db/migrate';
 import { createPool } from '../db/pool';
 import { createGameServer, GameServer, GameServerOptions } from '../game-server';
 import { createPgStore } from '../persistence';
 import { SavedProgress } from '../progress';
 import { connectGame, joinGame, Joined, sleep, waitFor } from './fixtures/game-socket';
+import { carryAfterWrite, parseProgress as parse121, progressKey as key121, RowCarry, SavedProgress as Saved121, serializeProgress as serialize121 } from './fixtures/progress-1.2.1';
 import { LegacyProgress, migrated, rowV1, rowV3 } from './fixtures/progress-rows';
 import { createTestDb, TestDb } from './pg/test-db';
 
@@ -333,5 +336,91 @@ describe('revisión (AC-130): la guarda sigue igual con las filas de la 1.3', ()
     await game!.flushProgress();
     expect(await rowOf('u-max')).toEqual({ state: newer, revision: 2 });
     expect((await kicked).text).toBe('Has abierto el juego en otra pestaña');
+  });
+});
+
+// ---- La vuelta atrás a la 1.2.1 (GDD §13 y Q36; AC-220, y la base de AC-229 y AC-230) ----
+
+const lv = (cannons: number, hull: number, sails: number) => ({ cannons, hull, sails });
+
+// La 1.2.1 sobre la BD, como su persistencia (6b9d8f8): lee la fila, guarda su `carry` y escribe con la guarda de revision;
+// tras cada escritura, el `carry` pasa a ser el de la fila escrita
+async function as121(userId: string) {
+  const { state, revision } = await rowOf(userId);
+  const read = parse121(state);
+  if (!read) throw new Error(`la 1.2.1 rechaza ${JSON.stringify(state)}`);
+  const live: Saved121 = read.progress;
+  let carry: RowCarry = read.carry;
+  let rev = revision;
+  let savedKey = key121(live);
+  const write = async () => {
+    if (key121(live) === savedKey) return;
+    const { rowCount } = await db.admin.query('UPDATE player_progress SET state = $2, revision = revision + 1 WHERE user_id = $1 AND revision = $3', [userId, serialize121(live, carry), rev]);
+    expect(rowCount).toBe(1);
+    carry = carryAfterWrite(live, carry);
+    savedKey = key121(live);
+    rev++;
+  };
+  return { live, write };
+}
+
+describe('AC-220 y AC-229: una partida de la 1.3 va a la 1.2.1 y vuelve sin perder familias, compras ni niveles por barco', () => {
+  test('la 1.3 compra la española y una mejora para un barco que no navega; la 1.2.1 compra Cañones N3 y cambia a la Balandra; la 1.3 vuelve con todo', async () => {
+    const start: SavedProgress = { gold: 9000, xp: 1500, ships: { sloop: N1, frigate: lv(2, 2, 2), line: lv(2, 1, 1) }, activeShip: 'line', families: [], family: 'none' };
+    await seed('u-ida', rowV3(start));
+
+    // La 1.3: la española (la pone en uso) y Cañones N2 para la Balandra, sin navegarla (AC-213 b)
+    await startServer();
+    const a = await join('u-ida');
+    a.c.emit(C2S.buy, { itemId: 'family:es' });
+    await waitFor(() => a.me().family === 'es', 3000, 'la compra de la española');
+    a.c.emit(C2S.buy, { itemId: 'cannons:2', ship: 'sloop' });
+    await waitFor(() => a.me().ships.sloop?.cannons === 2, 3000, 'Cañones N2 de la Balandra');
+    await stopServer();
+    const gold13 = 9000 - FAMILY_PRICE - upgradePrice('sloop', 'cannons', 2);
+    const by13: SavedProgress = { ...start, gold: gold13, ships: { ...start.ships, sloop: lv(2, 1, 1) }, families: ['es'], family: 'es' };
+    expect(await rowOf('u-ida')).toEqual({ state: rowV3(by13), revision: 3 });
+
+    // La 1.2.1: juega con la Fragata (el Navío no lo juega), compra Cañones N3 (1 500, global) y cambia a la Balandra
+    const old = await as121('u-ida');
+    expect(old.live).toEqual({ gold: gold13, upgrades: lv(2, 2, 2), ownedShips: ['sloop', 'frigate'], activeShip: 'frigate', xp: 1500 });
+    old.live.gold -= 1500;
+    old.live.upgrades.cannons = 3;
+    await old.write();
+    old.live.activeShip = 'sloop';
+    await old.write();
+    expect((await rowOf('u-ida')).revision).toBe(5);
+
+    // Vuelve la 1.3: la española comprada y en uso, la Fragata con su compra, la Balandra con el mayor de cada eje (el coste
+    // aceptado de GDD §13) y el Navío como lo dejó
+    await startServer();
+    const back = await join('u-ida');
+    const expected: SavedProgress = { ...by13, gold: gold13 - 1500, ships: { sloop: lv(3, 2, 2), frigate: lv(3, 2, 2), line: lv(2, 1, 1) }, activeShip: 'sloop' };
+    expect(fields(back.me())).toEqual(expected);
+    expect(ownSnapshot(back)?.fa).toBe('es');
+    world().players.get('u-ida')!.gold += 1;
+    await game!.flushProgress();
+    expect(await rowOf('u-ida')).toEqual({ state: rowV3({ ...expected, gold: expected.gold + 1 }), revision: 6 });
+  });
+
+  test('una fila v: 3 escrita por la 1.2.1 (con un Bergantín comprado allí) la lee la 1.3 con todo, y en reposo no la reescribe', async () => {
+    const start: SavedProgress = { gold: 4321, xp: 2500, ships: { sloop: lv(3, 1, 2), schooner: lv(1, 2, 3), frigate: lv(2, 2, 1), line: lv(3, 3, 2) }, activeShip: 'line', families: ['gb', 'es'], family: 'gb' };
+    await seed('u-vuelta', rowV3(start));
+    const old = await as121('u-vuelta');
+    old.live.gold -= 2000;
+    old.live.ownedShips = ['sloop', 'brig', 'frigate'];
+    old.live.activeShip = 'brig';
+    await old.write();
+    const before = await rawRow('u-vuelta');
+
+    await startServer();
+    const v = await join('u-vuelta');
+    expect(fields(v.me())).toEqual({ ...start, gold: 2321, ships: { ...start.ships, brig: lv(2, 2, 1) }, activeShip: 'brig' });
+    expect(ownSnapshot(v)?.fa).toBe('gb');
+    await sleep(300);
+    v.c.disconnect();
+    await sleep(100);
+    await game!.flushProgress();
+    expect(await rawRow('u-vuelta')).toBe(before);
   });
 });

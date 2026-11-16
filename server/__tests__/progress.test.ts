@@ -2,8 +2,9 @@
 // como protocol.ts. Un registro que no pasa no se usa ni se sobrescribe (AC-131).
 // Formato de la fila (GDD §13, «Formato de la fila (1.3)»): la 1.3 lee v: 1 (con 0 de XP), v: 2 y v: 3, y siempre escribe
 // v: 3 (AC-218). Una v: 1 o v: 2 entra con los niveles de su `upgrades` en cada barco y sin familia (AC-219). Los rechazos
-// nuevos son los de GDD §13, «Se rechazan». La vuelta atrás va a la 1.2.x puente (AC-220): la 1.2.0, la 1.0.3 y la 1.0.2,
-// con sus lectores congelados, rechazan lo que escribe la 1.3.
+// nuevos son los de GDD §13, «Se rechazan». La vuelta atrás va a la 1.2.1, el puente de AC-220 que está en prod: lee lo que
+// escribe la 1.3 y rechaza lo mismo que ella (fixtures/progress-1.2.1.ts; la ida y vuelta, en progress-compat-1.2.1.test.ts).
+// La 1.2.0, la 1.0.3 y la 1.0.2, con sus lectores congelados, rechazan lo que escribe la 1.3.
 // *Cambiado a propósito con la 1.3 (AC-226 a):* con las 5 clases jugables, una fila con la Goleta o el Navío entra con
 // ellos y con su barco activo, sin pasar por el mejor de la 1.0 ni dejarlos aparte (antes, «carry»)
 import { GOLD_CAP, XP_CAP } from '../../src/game/constants';
@@ -12,6 +13,7 @@ import { parseProgress, progressKey, SavedProgress, serializeProgress } from '..
 import { parseProgress as parseProgress102 } from './fixtures/progress-1.0.2';
 import { parseProgress as parseProgress103 } from './fixtures/progress-1.0.3';
 import { parseProgress as parseProgress120 } from './fixtures/progress-1.2.0';
+import { parseProgress as parseProgress121 } from './fixtures/progress-1.2.1';
 import { LegacyProgress, migrated, rowV1, rowV2, v1Shapes } from './fixtures/progress-rows';
 
 const N1 = { cannons: 1, hull: 1, sails: 1 };
@@ -165,15 +167,16 @@ describe('AC-218: el formato v: 3', () => {
   });
 });
 
-describe('vuelta atrás (GDD §13 y Q36): las versiones de prod rechazan lo que escribe la 1.3; se vuelve a la 1.2.x puente', () => {
+describe('vuelta atrás (GDD §13 y Q36): la 1.2.1 lee lo que escribe la 1.3; la 1.2.0, la 1.0.3 y la 1.0.2 lo rechazan, así que se vuelve a la 1.2.1', () => {
   test.each([
     ['la fila de AC-218', v3],
     ['un jugador nuevo', { v: 3, gold: 100, xp: 0, ships: { sloop: N1 }, activeShip: 'sloop', families: [], family: 'none' }],
     ['una fila de la 1.0 tras su primera escritura en la 1.3', roundTrip(serializeProgress(parseProgress(valid)!))],
     ['una fila v: 2 con la Goleta y el Navío tras su primera escritura en la 1.3', roundTrip(serializeProgress(parseProgress(v2)!))]
-  ])('%s: la 1.2.0, la 1.0.3 y la 1.0.2 la rechazan', (_label, row) => {
+  ])('%s: la 1.2.1 la lee; la 1.2.0, la 1.0.3 y la 1.0.2 la rechazan', (_label, row) => {
     expect(row.v).toBe(3);
     expect(parseProgress(row)).not.toBeNull();
+    expect(parseProgress121(row)).not.toBeNull();
     expect(parseProgress120(row)).toBeNull();
     expect(parseProgress103(row)).toBeNull();
     expect(parseProgress102(row)).toBeNull();
@@ -304,6 +307,7 @@ test.each([
   ['family vacía', { ...v3, family: '' }],
   ['family nula', { ...v3, family: null }],
   ['family como lista', { ...v3, family: ['es'] }]
-])('se rechaza un registro v: 3 con %s', (_label, raw) => {
+])('se rechaza un registro v: 3 con %s, también en la 1.2.1 (AC-220 a)', (_label, raw) => {
   expect(parseProgress(raw)).toBeNull();
+  expect(parseProgress121(raw)).toBeNull();
 });
