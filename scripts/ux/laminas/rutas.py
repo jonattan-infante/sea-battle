@@ -1,7 +1,8 @@
 # Rutas compartidas de las láminas de ux (scripts/ux/laminas) y de la cadena del barco piloto (scripts/ux/barcos).
 # Las láminas son la fuente de las imágenes de docs/game/art/ y se lanzan a mano desde la raíz del repo; ninguna corre en
 # la CI. Sus dependencias de fuera del repo se cambian con variables de entorno:
-#   UX_RENDERER  renderizador por software de D40 (qa-artifacts/render/d40-modelo/model.py del árbol principal, sin versionar)
+#   UX_RENDERER  renderizador por software de D40; por defecto, la reconstrucción versionada en laminas/d40/model.py
+#                (2026-11-15: el original, en qa-artifacts/ sin versionar, se perdió con la máquina de ux)
 #   UX_FONTS     carpeta con las fuentes del juego tal como las sirve Next (.next/static/media de un build); los nombres
 #                con hash de FF son los del build de dev-render del 2026-10-18 y cambian si cambia next/font
 #   UX_CAPTURAS  carpeta con las capturas de qa:capture que hacen de fondo (desktop-open-sea.png, mobile-open-sea.png)
@@ -12,7 +13,7 @@ import os, tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, '..', '..', '..'))
 _SIB = os.path.dirname(REPO)
-RENDERER = os.environ.get('UX_RENDERER', os.path.join(_SIB, 'sea-battle', 'qa-artifacts', 'render', 'd40-modelo', 'model.py'))
+RENDERER = os.environ.get('UX_RENDERER', os.path.join(HERE, 'd40', 'model.py'))
 FONTS = os.path.join(os.environ.get('UX_FONTS', os.path.join(_SIB, 'sea-battle-dev-render', '.next', 'static', 'media')), '')
 CAPTURAS = os.environ.get('UX_CAPTURAS', os.path.join(_SIB, 'sea-battle-dev-render', 'qa-artifacts'))
 OUT = os.environ.get('UX_OUT', os.path.join(tempfile.gettempdir(), 'sea-battle-laminas'))
