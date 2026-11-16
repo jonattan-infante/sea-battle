@@ -55,11 +55,12 @@ async function openFamilyTab(page: Page) {
   await page.getByTestId('tab-family').click();
 }
 
-// Los errores de la página, sin el ruido del entorno (envNoise: Clerk JS contra su dominio .invalid de pruebas)
+// Los errores de la página, sin el ruido del entorno (envNoise: Clerk JS contra su dominio .invalid de pruebas), en la consola
+// y en las excepciones: si la carga de Clerk vence durante el test, sale como pageerror (H-2, QA-78)
 const errorsOf = (page: Page) => {
   const errors: string[] = [];
   page.on('console', (m) => m.type() === 'error' && !envNoise(m.text()) && errors.push(m.text()));
-  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('pageerror', (e) => !envNoise(e.message) && errors.push(e.message));
   return () => errors;
 };
 
