@@ -28,8 +28,10 @@ const GPU_ARGS =
   process.platform === 'darwin'
     ? ['--use-angle=metal', '--enable-gpu-rasterization', '--ignore-gpu-blocklist']
     : ['--use-gl=angle', '--use-angle=gl-egl', '--ignore-gpu-blocklist'];
+// PW_CHANNEL elige el navegador: por defecto, el Chrome del sistema (el Mac y la CI). En una máquina sin él (un Linux sin
+// Chrome), PW_CHANNEL=chromium usa el Chromium de Playwright (`npx playwright install chromium`), con los mismos argumentos
 export const chrome = {
-  channel: 'chrome',
+  channel: process.env.PW_CHANNEL || 'chrome',
   launchOptions: { args: GPU_ARGS }
 };
 
