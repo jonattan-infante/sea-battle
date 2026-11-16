@@ -322,6 +322,62 @@ describe('E20 con el servidor real: el puerto cierra bajo fuego (AC-252)', () =>
     expect(player.ships.sloop?.cannons).toBe(2);
     expect(ship.classId).toBe('frigate');
   });
+
+  // Precisado por producto el 2026-11-16 (BACKLOG AC-252, con familias, PR #88): cambiar de familia es del Astillero, que
+  // bajo fuego cierra. La intención va a una familia que el jugador tiene y no usa
+  test.each([
+    ['sin progreso guardado (selectFamily en el acto)', false],
+    ['con progreso guardado (planSelectFamily y la BD)', true]
+  ])('%s: selectFamily bajo fuego se rechaza con su motivo y sin escribir; fuera, con el de fuera; al caducar la marca, se acepta', async (_label, persisted) => {
+    game.stop();
+    await new Promise<void>((resolve) => io.close(() => resolve()));
+    const mem = memoryStore();
+    await start(persisted ? { store: mem.store } : {});
+    const { p, ship, player } = await underFireInPort();
+    player.families = ['gb', 'es'];
+    player.family = 'none';
+    const look = () => JSON.stringify({ fs: player.families, f: player.family });
+    const before = look();
+    const savesBefore = mem.saves.length;
+    const familyDeltas = () => deltasOf(p.frames, ship.id).filter((d) => d.fa !== undefined).map((d) => d.fa);
+
+    // (a) Dentro y bajo fuego
+    expect(isUnderFire(game.world, ship)).toBe(true);
+    await p.emit(C2S.selectFamily, { family: 'gb' });
+    await advance(0.2);
+    expect(errorsOf(p.frames)).toEqual([PORT_UNDER_FIRE_TEXT]);
+    expect(look()).toBe(before);
+    expect(familyDeltas()).toEqual([]);
+    expect(mem.saves.length).toBe(savesBefore);
+
+    // (b) Fuera de la zona, con la marca y sin ella
+    const markedUntil = ship.underFireUntil; // la marca de la andanada real, para dejarla caducar en (c)
+    for (const marked of [true, false]) {
+      p.frames.length = 0;
+      place(p, 300, 300);
+      if (!marked) ship.underFireUntil = -Infinity;
+      await p.emit(C2S.selectFamily, { family: 'gb' });
+      await advance(0.1);
+      expect(errorsOf(p.frames)).toEqual(['Solo puedes cambiar de familia en el puerto']);
+      expect(look()).toBe(before);
+      expect(mem.saves.length).toBe(savesBefore);
+    }
+
+    // (c) Dentro, al caducar la marca: la misma intención se acepta, se escribe una vez si hay BD y el cambio viaja
+    place(p, 0, 80);
+    ship.underFireUntil = markedUntil;
+    expect(isUnderFire(game.world, ship)).toBe(true);
+    await advance(markedUntil - game.world.time + 0.2, () => (ship.pos = { x: 0, z: 80 }));
+    expect(isUnderFire(game.world, ship)).toBe(false);
+    p.frames.length = 0;
+    await p.emit(C2S.selectFamily, { family: 'gb' });
+    await advance(0.2);
+    expect(errorsOf(p.frames)).toEqual([]);
+    expect(player.family).toBe('gb');
+    expect(player.families).toEqual(['gb', 'es']);
+    expect(familyDeltas()).toEqual(['gb']);
+    expect(mem.saves.length).toBe(savesBefore + (persisted ? 1 : 0));
+  });
 });
 
 describe('E20 con el servidor real: red (AC-257 a y b)', () => {
