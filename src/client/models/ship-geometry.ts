@@ -169,6 +169,11 @@ export interface ShipRecipe {
   barrels: Vec3[];
   cannonZ: number[];
   cannonY: number;
+  // Franjas de portas propias (D102: el Navío, con 2, S6): cada una con su línea de cañones `y` y sus `z`, que suman cannonZ.
+  // Sin ellas, 1 franja de BAND m en cannonY (D36). bandH: el alto de cada franja; portH: el de la porta (0,8 m sin ellas)
+  bands?: { y: number; z: number[] }[];
+  bandH?: number;
+  portH?: number;
   cannon: [number, number, number]; // radio superior (boca), inferior, largo
   sailStyle: 'plain' | 'notched' | 'striped' | 'banded'; // banded: 4 filas con la inferior de franja (Capitán, I2)
   sailStripe?: string; // franja propia de la receta (D46) cuando su facción no la tiene
@@ -248,6 +253,67 @@ const FRIGATE: ShipRecipe = {
   cannonZ: [-11.5, -8.5, -5.5, -2.5, 0.5, 3.5, 6.5, 9.5], cannonY: 1.68, cannon: [0.26, 0.32, 1.6], // D23: radios ≈ ×1,7
   sailStyle: 'plain', flagStyle: 'pennant', trimRail: true, cannonScale: 1.2,
   radius: 18, mastHeight: 27, pick: [7.0, 27.0, 17.0]
+};
+
+// D102 (ART-DIRECTION; BACKLOG AC-227 e): la Goleta y el Navío «sin familia», con las recetas de ASSET-SPEC §8.4 de D64, las
+// de la lámina (`scripts/ux/laminas/code/export-sin-familia.ts`). Los puños de los foques salen del tope del bauprés: S es
+// su pie y tAt(…, f) el punto a la fracción f de su largo (bauprés + 1), con 20° de arrufo (0,342 / 0,94)
+const jibFoot = (F: number, L: number): Vec3 => [0, 1.25 * F, L / 2 - 1];
+const jibTip = (F: number, L: number, bowsprit: number, f: number): Vec3 => {
+  const s = jibFoot(F, L);
+  const k = (bowsprit + 1) * f;
+  return [0, +(s[1] + 0.342 * k).toFixed(3), +(s[2] + 0.94 * k).toFixed(3)];
+};
+const jibClew = (H: Vec3, T: Vec3, y: number): Vec3 => [0, y, +(H[2] + 0.45 * (T[2] - H[2])).toFixed(3)];
+
+const goletaT = [jibTip(1.6, 22, 7, 0.5), jibTip(1.6, 22, 7, 1)];
+const SCHOONER: ShipRecipe = {
+  ...SLOOP, assetId: 'ship_schooner', L: 22, B: 5.6, F: 1.6, D: 0.9, bowsprit: 7.0, railH: 0.56, profile: 'standard', rake: 0,
+  masts: [
+    { z: 4.0, h: 18.0, gaff: { A: [3.6, 3.0], B: [3.6, 13.8], C: [-1.8, 15.0], D: [-2.4, 3.4] }, squares: [{ w: 5.4, h: 2.4, yb: 14.6 }] },
+    { z: -3.3, h: 19.5, gaff: { A: [-3.7, 3.2], B: [-3.7, 15.2], C: [-10.4, 16.4], D: [-11.0, 3.6] } }
+  ],
+  flagMast: 1,
+  jibs: [
+    { H: [0, 14.0, 4.4], T: goletaT[0], C: jibClew([0, 14.0, 4.4], goletaT[0], 2.9) },
+    { H: [0, 16.6, 4.4], T: goletaT[1], C: jibClew([0, 16.6, 4.4], goletaT[1], 3.2) }
+  ],
+  boxes: [], barrels: [], fire: undefined,
+  cannonZ: [-6, -2, 2, 6], cannonY: 1.0, cannon: [0.23, 0.29, 1.3],
+  sailStyle: 'plain', flagStyle: 'pennant', trimRail: false, cannonScale: 0.9,
+  radius: 12, mastHeight: 19.5, pick: [2.8, 19.5, 11.0]
+};
+
+// El Navío de línea, con sus 2 franjas de portas (S6): 5 cañones por banda en cada una
+const LINE_HULL = { ...SLOOP, assetId: 'ship_line', L: 42, B: 11.2, F: 3.6, D: 1.9, bowsprit: 10.0, railH: 1.2, profile: 'standard', rake: 0 } as const satisfies ShipRecipe;
+const lineDeck = (z: number) => deckY(LINE_HULL, z / 42);
+const lineT = [0.5, 0.75, 1.0].map((f) => jibTip(3.6, 42, 10, f));
+const lineH: Vec3[] = [[0, 22, 12.5], [0, 25, 12.5], [0, 28, 12.5]];
+const LINE: ShipRecipe = {
+  ...LINE_HULL,
+  masts: [
+    { z: 12.5, h: 30, squares: [{ w: 14.6, h: 5.4, yb: 6.8 }, { w: 12.0, h: 4.8, yb: 12.8 }, { w: 9.2, h: 3.8, yb: 18.2 }], topY: 12.8 },
+    { z: 1.0, h: 34, squares: [{ w: 16.0, h: 6.0, yb: 6.8 }, { w: 13.2, h: 5.2, yb: 13.4 }, { w: 10.0, h: 4.0, yb: 19.2 }], topY: 13.4 },
+    { z: -11.5, h: 26, lateen: { A: [-8.6, 6.6], B: [-19.4, 7.0], C: [-20.6, 18.0] }, squares: [{ w: 9.0, h: 3.6, yb: 18.8 }], topY: 11.0 }
+  ],
+  flagMast: 1,
+  jibs: lineH.map((H, i) => ({ H, T: lineT[i], C: jibClew(H, lineT[i], 5.6) })),
+  boxes: [
+    { size: [9.6, 1.6, 11.0], pos: [0, lineDeck(-15) + 0.8, -15.0], kind: 'castle' },
+    { size: [8.6, 1.4, 6.0], pos: [0, lineDeck(-17.5) + 2.3, -17.5], kind: 'castle' },
+    { size: [7.6, 1.2, 7.0], pos: [0, lineDeck(15.5) + 0.6, 15.5], kind: 'castle' },
+    ...[-2.6, 0, 2.6].map((x): BoxDef => ({ size: [0.4, 0.6, 0.4], pos: [x, lineDeck(-17.5) + 3.3, -20.3], kind: 'lantern' })),
+    ...[lineDeck(-21) - 0.45, lineDeck(-21) + 0.8].flatMap((y) => [-2.4, 0, 2.4].map((x): BoxDef => ({ size: [1.0, 0.6, 0.06], pos: [x, y, -21.05], kind: 'lantern' })))
+  ],
+  barrels: [],
+  // PROVISIONAL (dev, a falta de ux): D64 no fija excepciones de fuego y la fórmula no pasa AS-V17 (D22): _01 pisa el
+  // castillo de proa (z ≥ 12; 14,6 % de solape) y _03 cae en el alcázar. Lo mínimo, como la Fragata: _01 a z 9,6 (≤ 1 %) y
+  // _03 a z −12,0, en la tapa del 1.er piso y fuera del 2.º
+  fire: [{ z: 9.6 }, undefined, { z: -12.0, y: lineDeck(-15) + 1.6 + 0.3 }],
+  cannonZ: [-17.5, -14, -10.5, -7, -3.5, 0, 3.5, 7, 10.5, 14], cannonY: 2.05, cannon: [0.26, 0.32, 1.6],
+  bands: [{ y: 1.35, z: [-14, -7, 0, 7, 14] }, { y: 2.75, z: [-17.5, -10.5, -3.5, 3.5, 10.5] }], bandH: 0.9, portH: 0.55,
+  sailStyle: 'plain', flagStyle: 'pennant', trimRail: true, cannonScale: 1.2,
+  radius: 22, mastHeight: 34, pick: [8.0, 34.0, 21.0]
 };
 
 const PIRATE: ShipRecipe = {
@@ -336,7 +402,9 @@ const GUNBOAT: ShipRecipe = {
 export const SHIP_RECIPES: Record<string, ShipRecipe> = {
   sloop: SLOOP,
   brig: BRIGANTINE,
+  schooner: SCHOONER,
   frigate: FRIGATE,
+  line: LINE,
   pirate: PIRATE,
   merchant: MERCHANT,
   captain: CAPTAIN,
@@ -404,7 +472,17 @@ function section(r: ShipRecipe, u: number, side: 1 | -1): Vec3[] {
   const z = u * r.L;
   const xAt = (y: number) => hb * (b + ((a - b) * y) / yd);
   // Franja de portas (D36): con portas en el costado, BAND m centrada en la línea de cañones en la maestra (s = 1) y
-  // siguiendo el arrufo; sin portas, entre 0,30·F y 0,55·F bajo el canto
+  // siguiendo el arrufo; sin portas, entre 0,30·F y 0,55·F bajo el canto. Con franjas propias (D102), una por franja, de
+  // arriba abajo: la sección pasa de 6 a 4 + 2·n puntos
+  if (r.bands) {
+    const bh = r.bandH ?? BAND;
+    const pts: Vec3[] = [[side * a * hb, yd + r.railH, z], [side * a * hb, yd, z]];
+    for (const band of [...r.bands].sort((p, q) => q.y - p.y)) {
+      for (const yy of [yd - (r.F - band.y - bh / 2), yd - (r.F - band.y + bh / 2)]) pts.push([side * xAt(yy), yy, z]);
+    }
+    pts.push([side * b * hb, 0, z], [0, -k * r.D, z]);
+    return pts;
+  }
   const ports = r.cannonZ.length > 0 && r.battery !== 'deck';
   const y1 = ports ? yd - (r.F - r.cannonY - BAND / 2) : yd - 0.3 * r.F;
   const y2 = ports ? yd - (r.F - r.cannonY + BAND / 2) : yd - 0.55 * r.F;
@@ -421,10 +499,12 @@ function section(r: ShipRecipe, u: number, side: 1 | -1): Vec3[] {
 function loftHull(g: GeoBuilder, r: ShipRecipe, look: ShipLook, stations: readonly number[], planks: boolean): [number, number][] {
   const cHull = lin(look.hull);
   const cRail = lin(r.trimRail ? look.trim : look.rail);
-  // [de, a, color arriba, color abajo]: la cara V2–V3 lleva la oclusión en su borde inferior (la flotación, D23)
-  const strips: [number, number, THREE.Color, THREE.Color][] = [
-    [1, 0, cRail, cRail], [1, 2, cHull, cHull], [2, 3, lin(look.band), lin(look.band)], [3, 4, cHull, ao(cHull)], [4, 5, lin(look.bottom), lin(look.bottom)]
-  ];
+  // [de, a, color arriba, color abajo]: la cara de la última franja a la flotación lleva la oclusión en su borde inferior
+  // (D23). Con 1 franja: regala, casco, franja, casco y fondo; con n (D102), casco y franja n veces
+  const nb = r.bands ? r.bands.length : 1;
+  const strips: [number, number, THREE.Color, THREE.Color][] = [[1, 0, cRail, cRail]];
+  for (let i = 0; i < nb; i++) strips.push([1 + 2 * i, 2 + 2 * i, cHull, cHull], [2 + 2 * i, 3 + 2 * i, lin(look.band), lin(look.band)]);
+  strips.push([1 + 2 * nb, 2 + 2 * nb, cHull, ao(cHull)], [2 + 2 * nb, 3 + 2 * nb, lin(look.bottom), lin(look.bottom)]);
   // Cubierta (D23, D62): en LOD0, n = 2·ceil(B/2 / 0,5) tablas longitudinales de ≈ 0,5 m en los tonos de §8.2.2, con las
   // tiras junto a la borda (el trancanil) oscurecidas; en LOD1, una sola cara en `deckLod1`, la media de las tablas (D40)
   const n = planks ? 2 * Math.ceil(r.B / 2 / 0.5) : 1;
@@ -458,7 +538,7 @@ function loftHull(g: GeoBuilder, r: ShipRecipe, look: ShipLook, stations: readon
 }
 
 function cap(g: GeoBuilder, sec: { port: Vec3[]; stbd: Vec3[] }, color: THREE.Color): void {
-  const ring = [...sec.port, ...sec.stbd.slice(0, 5).reverse()];
+  const ring = [...sec.port, ...sec.stbd.slice(0, -1).reverse()]; // la quilla, una vez
   const faces = THREE.ShapeUtils.triangulateShape(ring.map((p) => new THREE.Vector2(p[0], p[1])), []);
   for (const [i, j, k] of faces) g.tri(ring[i], ring[j], ring[k], color);
 }
@@ -736,7 +816,9 @@ function buildLod(r: ShipRecipe, lod: 0 | 1): { geometry: THREE.BufferGeometry; 
   if (lod === 0) {
     for (const p of r.barrels) g.add(new THREE.CylinderGeometry(0.45, 0.45, 1.0, 6), trs(...p), lin(look.barrel));
     const [rTop, rBot, len] = r.cannon;
-    for (const z of r.cannonZ) {
+    // Cada cañón con la altura de su franja (D102) o, sin franjas propias, la de la receta
+    const guns: [number, number][] = r.bands ? r.bands.flatMap((band) => band.z.map((z): [number, number] => [z, band.y])) : r.cannonZ.map((z): [number, number] => [z, r.cannonY]);
+    for (const [z, cy] of guns) {
       const a = sample(PROFILES[r.profile], z / r.L).a;
       if (r.battery === 'deck') {
         // Batería sobre cubierta (Cañonera, §8.4): eje del cañón a yd + 0,45 con el centro a 1,0 m de la borda hacia
@@ -753,11 +835,12 @@ function buildLod(r: ShipRecipe, lod: 0 | 1): { geometry: THREE.BufferGeometry; 
         const x = side * (a * r.B / 2 + 0.3);
         // La boca (radio superior) mira hacia afuera de la banda. Sin la tapa interior, que queda dentro del casco (D36):
         // CylinderGeometry no indexada, torso (12 triángulos), boca (6) y tapa interior (6)
-        g.add(new THREE.CylinderGeometry(rTop, rBot, len, 6), trs(x - side * (len / 2), r.cannonY, z, 0, 0, -side * Math.PI / 2), lin(look.cannon), (t) => t >= 18);
-        // Porta (D36): un quad de 0,8 × 0,8 m (antes una caja de 12 triángulos de la que solo se veía la cara exterior),
-        // hacia afuera en a(u)·B/2 + 0,05, dentro de la franja de portas y bajo el canto de cubierta (AS-V20)
+        g.add(new THREE.CylinderGeometry(rTop, rBot, len, 6), trs(x - side * (len / 2), cy, z, 0, 0, -side * Math.PI / 2), lin(look.cannon), (t) => t >= 18);
+        // Porta (D36): un quad de 0,8 m de ancho y portH de alto (0,8 m; antes una caja de 12 triángulos de la que solo se
+        // veía la cara exterior), hacia afuera en a(u)·B/2 + 0,05, dentro de la franja de portas y bajo el canto (AS-V20)
         const px = side * (a * r.B / 2 + 0.05);
-        const [y0, y1, z0, z1] = [r.cannonY - 0.4, r.cannonY + 0.4, z - 0.4, z + 0.4];
+        const ph = (r.portH ?? 0.8) / 2;
+        const [y0, y1, z0, z1] = [cy - ph, cy + ph, z - 0.4, z + 0.4];
         const [za, zb] = side > 0 ? [z1, z0] : [z0, z1];
         g.quad([px, y0, za], [px, y0, zb], [px, y1, zb], [px, y1, za], lin(look.gunport));
       }

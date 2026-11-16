@@ -18,7 +18,8 @@ const GUARDS: Guard[] = ['sin protección', 'protegido'];
 function render(s: ShipSnapshot): RenderShip {
   return {
     id: s.id, kind: s.k, classId: s.c, name: s.n, ownerId: s.o, x: s.x, z: s.z, heading: s.h, speed: s.s, hp: s.hp, maxHp: s.mhp,
-    state: s.st, targetId: s.t, repairing: s.r, protectedUntil: s.pu, underFireUntil: s.uf ?? 0, sinkingSince: 0, level: s.lv ?? null
+    state: s.st, targetId: s.t, repairing: s.r, protectedUntil: s.pu, underFireUntil: s.uf ?? 0, sinkingSince: 0, level: s.lv ?? null,
+    family: s.fa ?? null
   };
 }
 

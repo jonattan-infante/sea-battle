@@ -456,6 +456,16 @@ describe('escenarios de la tienda de la 1.3 (D103 y D101; e2e/shop-13.spec.ts)',
     expect(shipOfPlayer(world, 'u1')!.classId).toBe('frigate');
   });
 
+  // AC-227 (c): la medida de la entrada con el barco propio con familia y el GLB más pesado de las 10 combinaciones (el Navío
+  // español, e2e/entry-download.spec.ts)
+  test('"navio-13": nivel 9, navega el Navío de la familia española, sin mejorar', () => {
+    const world = createWorld({ seed: 1, spawnNpcs: false });
+    applyScenario(world, 'navio-13', { requireNavigable: true });
+    const p = addPlayer(world, 'u1', 'Ana');
+    expect([levelOf(p.xp), p.activeShip, p.families, p.family, p.ships]).toEqual([9, 'line', ['es'], 'es', { line: { cannons: 1, hull: 1, sails: 1 } }]);
+    expect(shipOfPlayer(world, 'u1')!.classId).toBe('line');
+  });
+
   test('el progreso guardado gana al del escenario', () => {
     const world = createWorld({ seed: 1, spawnNpcs: false });
     applyScenario(world, 'shop-13');

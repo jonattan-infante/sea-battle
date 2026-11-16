@@ -35,15 +35,16 @@ async function samples(page: Page, n: number): Promise<Sample[]> {
 }
 const maxOf = (list: Sample[], k: keyof Sample) => Math.max(...list.map((s) => s[k]));
 
-// La escena estándar (con la población del I2 si i2) con N3 y 1,0×, y que los 41 barcos y la isla quepan en pantalla
-async function startStandard(page: Page, i2 = false) {
-  const setup = await page.evaluate((i2) => {
+// La escena estándar (con la población del I2 si i2; con el peor caso de AC-197 si families) con N3 y 1,0×, y que los 41
+// barcos y la isla quepan en pantalla
+async function startStandard(page: Page, i2 = false, families = false) {
+  const setup = await page.evaluate(([i2, families]) => {
     const rt = window.__SEA_BATTLE__!.runtime();
     rt.setCameraPreset('game');
     rt.setZoomLevel(1); // 1,0× (por defecto)
-    const scene = rt.startScene('standard', { cannonLevel: 3, i2 }); // con N3 cabe entera (D31)
-    return { ships: scene.spec.ships.length, duels: scene.spec.duels.length, ids: scene.spec.ships.map((s) => s.id), classes: scene.spec.ships.map((s) => s.classId) };
-  }, i2);
+    const scene = rt.startScene('standard', { cannonLevel: 3, i2, families }); // con N3 cabe entera (D31)
+    return { ships: scene.spec.ships.length, duels: scene.spec.duels.length, ids: scene.spec.ships.map((s) => s.id), classes: scene.spec.ships.map((s) => s.classId), families: scene.spec.ships.map((s) => s.family ?? null) };
+  }, [i2, families] as const);
   expect(setup.ships).toBe(41);
   await page.waitForTimeout(3000); // transición de zoom, primeras andanadas y pools en régimen
   const onScreen = await page.evaluate((ids) => {
@@ -129,6 +130,38 @@ test.describe('Escena estándar @perf', () => {
     expect(max('calls')).toBeLessThanOrEqual(100);
     expect(max('triangles')).toBeLessThanOrEqual(250_000);
     expect(max('vfxCalls')).toBeLessThanOrEqual(11);
+    expect(memory1.geometries).toBe(memory0.geometries);
+    expect(memory1.textures).toBe(memory0.textures);
+    await page.evaluate(() => window.__SEA_BATTLE__!.runtime().stopScene());
+  });
+
+  // AC-197 (a) y (c) con las 10 combinaciones reales (AC-227 b): el peor caso, con los 20 jugadores en Navío (la mitad de
+  // cada familia, con sus GLB y sus sombras), los 20 NPC y la isla en pantalla. La memoria no crece con los modelos: cada
+  // modelo y cada textura se cargan una vez. AC-90 (el tiempo de frame en el M4 Pro) lo mide QA a mano
+  test('AC-197 (a, c), AC-227 (b): 20 Navíos con familia (10 británicos y 10 españoles) y los 20 NPC, ≤ 100 draw calls y ≤ 250 000 triángulos, sin crecer la memoria', async ({ page }) => {
+    test.setTimeout(150_000);
+    await enterGame(page);
+    const { onScreen, classes, families } = await startStandard(page, false, true);
+    expect([classes.filter((c) => c === 'line').length, families.filter((f) => f === 'gb').length, families.filter((f) => f === 'es').length]).toEqual([20, 10, 10]);
+    await expect
+      .poll(() => page.evaluate(() => {
+        const glb = (window.__SEA_BATTLE__!.runtime() as unknown as { shipGlb: { loaded(k: string): boolean; model(k: string): { map?: { isCompressedTexture?: boolean } | null } } }).shipGlb;
+        return ['line:gb', 'line:es'].every((k) => glb.loaded(k) && glb.model(k).map?.isCompressedTexture === true);
+      }), { timeout: 90_000 })
+      .toBe(true);
+    await page.waitForTimeout(1000);
+    const memory0 = await page.evaluate(() => window.__SEA_BATTLE__!.runtime().memoryInfo());
+    const list = await samples(page, 20);
+    const memory1 = await page.evaluate(() => window.__SEA_BATTLE__!.runtime().memoryInfo());
+    const shadows = await page.evaluate(() => {
+      const group = (window.__SEA_BATTLE__!.runtime() as unknown as { shipShadows: { group: { children: { visible: boolean; count: number }[] } } }).shipShadows.group;
+      return group.children.filter((m) => m.visible).map((m) => m.count).sort((a, b) => a - b);
+    });
+    const max = (k: keyof Sample) => maxOf(list, k);
+    console.log(`AC-197 (familias): ${onScreen.ships} barcos en pantalla · máx. ${max('calls')} draw calls · máx. ${max('triangles')} triángulos · VFX-01 máx. ${max('vfxCalls')} · sin VFX, máx. ${max('callsNoVfx')} y ${max('trianglesNoVfx')} · sombras ${JSON.stringify(shadows)} · memoria ${JSON.stringify(memory0)} → ${JSON.stringify(memory1)}`);
+    expect(shadows).toEqual([10, 10]); // los 2 modelos del Navío, 10 barcos cada uno
+    expect(max('calls')).toBeLessThanOrEqual(100);
+    expect(max('triangles')).toBeLessThanOrEqual(250_000);
     expect(memory1.geometries).toBe(memory0.geometries);
     expect(memory1.textures).toBe(memory0.textures);
     await page.evaluate(() => window.__SEA_BATTLE__!.runtime().stopScene());

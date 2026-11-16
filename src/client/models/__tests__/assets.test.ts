@@ -6,9 +6,10 @@ import { buildBuoyGeometry, buildIslands, buildLootGeometry, buildPalmGeometry, 
 import { SHIP_LOOKS, TOP_FACE } from '../../art';
 import { buildShipAsset, clothTones, deckHalfBeam, deckTones, deckY, getShipModel, SHIP_RECIPES, ShipExtras, shipLook } from '../ship-geometry';
 
-const CLASSES = ['sloop', 'brig', 'frigate', 'pirate', 'merchant', 'captain', 'gunboat'] as const;
+const CLASSES = ['sloop', 'brig', 'schooner', 'frigate', 'line', 'pirate', 'merchant', 'captain', 'gunboat'] as const;
 const BUDGET = { ship: [2500, 800], npc: [2000, 700] } as const;
-const BUDGET_BY_ID: Record<string, readonly [number, number]> = { npc_pirate_captain: [2500, 800] }; // §5: el Capitán pirata, NPC con presupuesto propio
+// §5: el Capitán pirata, NPC con presupuesto propio; el Navío de línea, la fila de L > 34 m (AS-V08, D64)
+const BUDGET_BY_ID: Record<string, readonly [number, number]> = { npc_pirate_captain: [2500, 800], ship_line: [3200, 1000] };
 const EXTRAS_KEYS: (keyof ShipExtras)[] = [
   'sb_version', 'sb_kind', 'sb_id', 'sb_length', 'sb_beam', 'sb_freeboard', 'sb_draft', 'sb_mast_height',
   'sb_radius', 'sb_pick', 'sb_cannons_per_side', 'sb_lod_px'
@@ -201,10 +202,12 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
     const a = deckHalfBeam(r, 0) * 2 / r.B;
     expect(at(a * r.B / 2, yd, 0)).toBeGreaterThan(1);
     // V1: x(y₁) sobre la recta entre la flotación V3 (el vértice de babor con y = 0 en z = 0) y el canto; y₁ = yd − 0,3·F,
-    // o el borde superior de la franja de portas de 1,0 m en las clases con portas (D36)
+    // o el borde superior de la franja de portas de 1,0 m en las clases con portas (D36); con franjas propias (D102), el de la
+    // más alta
     let b = 0;
     for (let v = 0; v < pos.count; v++) if (Math.abs(pos.getY(v)) < 1e-6 && Math.abs(pos.getZ(v)) < 1e-6 && pos.getX(v) > b) b = pos.getX(v);
-    const y1 = sidePorts(r) ? yd - (r.F - r.cannonY - 0.5) : yd - 0.3 * r.F;
+    const top = r.bands ? Math.max(...r.bands.map((band) => band.y)) + r.bandH! / 2 : r.cannonY + 0.5;
+    const y1 = sidePorts(r) ? yd - (r.F - top) : yd - 0.3 * r.F;
     const x1 = b + ((a * r.B / 2 - b) * y1) / yd;
     expect(at(x1, y1, 0)).toBe(1);
   });
@@ -230,7 +233,11 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
     const ys: number[] = [];
     for (let v = 0; v < pos.count; v++) if (Math.abs(pos.getZ(v)) < 1e-6 && pos.getX(v) > 0 && sameColor(color, v, look.band)) ys.push(pos.getY(v));
     const [lo, hi] = [Math.min(...ys), Math.max(...ys)];
-    if (sidePorts(r)) {
+    if (r.bands) {
+      // D102: el Navío, con sus 2 franjas de portas (S6), de bandH cada una y centradas en su línea de cañones
+      const h = r.bandH! / 2;
+      expect([...new Set(ys.map((y) => y.toFixed(6)))].sort()).toEqual(r.bands.flatMap((b) => [b.y - h, b.y + h]).map((y) => y.toFixed(6)).sort());
+    } else if (sidePorts(r)) {
       expect(lo).toBeCloseTo(r.cannonY - 0.5, 6);
       expect(hi).toBeCloseTo(r.cannonY + 0.5, 6);
     } else {
@@ -254,6 +261,10 @@ describe.each(CLASSES)('Barco procedural %s', (classId) => {
         for (let t = 0; t < pos.count / 3; t++) {
           const vs = [3 * t, 3 * t + 1, 3 * t + 2];
           if (!vs.every((v) => Math.abs(pos.getY(v) - top) < 1e-6 && Math.abs(pos.getX(v) - box.pos[0]) <= w / 2 + 1e-6 && Math.abs(pos.getZ(v) - box.pos[2]) <= d / 2 + 1e-6)) continue;
+          // Solo las caras hacia arriba: las de abajo de lo que se apoya en la tapa (los faroles del espejo del Navío, D102)
+          // quedan en su plano, pero miran al suelo
+          const [p0, p1, p2] = vs.map((v) => new THREE.Vector3().fromBufferAttribute(pos, v));
+          if (new THREE.Vector3().subVectors(p1, p0).cross(new THREE.Vector3().subVectors(p2, p0)).y <= 0) continue;
           count++;
           const mid = lod === 0 && look.deckMid && sameColor(color, vs[0], look.deckMid);
           colors.add(sameColor(color, vs[0], look.deck) ? 'deck' : sameColor(color, vs[0], look.deckAlt) ? 'deckAlt' : mid ? 'deckMid' : sameColor(color, vs[0], look.deckLod1) ? 'deckLod1' : 'otro');
@@ -775,5 +786,44 @@ describe('Versión sencilla de las islas del mapa de la 1.1 (AC-200 e)', () => {
   test('sin la opción, las islas de la 1.0 conservan sus props (palmeras y pueblo)', () => {
     expect(buildIslands(ISLANDS).palms.length).toBeGreaterThan(0);
     expect(buildIslands(ISLANDS).triangles.PORT).toBeGreaterThan(buildIslands(ISLANDS, { simple: true }).triangles.PORT);
+  });
+});
+
+// D102 (ART-DIRECTION; BACKLOG AC-227 e): sin familia, la Goleta y el Navío se ven con las recetas de ASSET-SPEC §8.4 (D64), las
+// de `scripts/ux/laminas/code/export-sin-familia.ts`, y no con la Balandra. Los triángulos son los medidos en la lámina
+describe('D102: la Goleta y el Navío sin familia', () => {
+  test.each([
+    ['schooner', 'ship_schooner', [1179, 214]],
+    ['line', 'ship_line', [3152, 474]]
+  ] as const)('%s: su receta (%s) con los triángulos de la lámina', (classId, assetId, triangles) => {
+    const model = getShipModel(classId);
+    expect([model.recipe.assetId, model.triangles]).toEqual([assetId, triangles]);
+  });
+
+  test('el Navío lleva 2 franjas de portas (S6): 5 portas por banda en cada una, a su altura; la Goleta, 1', () => {
+    const portRows = (classId: string) => {
+      const model = getShipModel(classId);
+      const look = shipLook(model.recipe);
+      const pos = model.lods[0].getAttribute('position');
+      const color = model.lods[0].getAttribute('color');
+      const c = new THREE.Color(look.gunport);
+      const rows = new Map<string, number>();
+      for (let t = 0; t < pos.count / 3; t++) {
+        const v = 3 * t;
+        if (Math.abs(c.r - color.getX(v)) + Math.abs(c.g - color.getY(v)) + Math.abs(c.b - color.getZ(v)) >= 1e-4 || pos.getX(v) <= 0) continue;
+        const ys = [pos.getY(v), pos.getY(v + 1), pos.getY(v + 2)];
+        const y = ((Math.min(...ys) + Math.max(...ys)) / 2).toFixed(2); // el centro de la porta: cada triángulo del quad va de abajo arriba
+        rows.set(y, (rows.get(y) ?? 0) + 1);
+      }
+      return rows;
+    };
+    const line = portRows('line');
+    expect(line.size).toBe(2); // 2 triángulos por porta: 10 por fila y banda
+    expect([...line.values()]).toEqual([10, 10]);
+    expect(portRows('schooner').size).toBe(1);
+  });
+
+  test('una clase sin receta sigue con la de la Balandra', () => {
+    expect(getShipModel('desconocida').recipe.assetId).toBe('ship_sloop');
   });
 });

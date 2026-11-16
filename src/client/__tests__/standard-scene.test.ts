@@ -43,6 +43,20 @@ describe('La escena estándar de AC-89', () => {
     expect([i2.focus, i2.seed]).toEqual([base.focus, base.seed]);
   });
 
+  // AC-197 y AC-227 (b): el peor caso de las familias, con los 20 jugadores en Navío, la mitad de cada familia, y sin que
+  // ninguna órbita pise el margen de un Navío (su navClearance es 4 m mayor que el de la Fragata, así que la rejilla se aparta
+  // más de las islas y las poses no son las de la base); la base no cambia
+  test('el peor caso de AC-197: los 20 jugadores en Navío, 10 británicos y 10 españoles, fuera del margen de las islas; la base, igual', () => {
+    const base = standardScene(VIEW);
+    const worst = standardScene(VIEW, { families: true });
+    expect(census(worst.ships)).toEqual({ 'player:line': 20, 'player:frigate': 1, 'pirate:pirate': 12, 'merchant:merchant': 8 });
+    expect(worst.ships.slice(0, 20).map((s) => s.family)).toEqual(Array.from({ length: 20 }, (_, i) => (i % 2 ? 'es' : 'gb')));
+    expect(worst.ships.slice(20).every((s) => s.family === undefined)).toBe(true);
+    expect([worst.ships.length, worst.duels.length, worst.focus]).toEqual([41, base.duels.length, base.focus]);
+    expect(worstGap(worst, MAP_1_1.islands).gap).toBeGreaterThanOrEqual(0);
+    expect(worstGap(standardScene(VIEW, { families: true, islands: MAP_1_0.islands }), MAP_1_0.islands).gap).toBeGreaterThanOrEqual(0);
+  });
+
   // AC-210: la escena va con las islas del mapa del juego. Antes se colocaba con las de la 1.0 (ISLANDS) y, con las de la 1.1,
   // 9 barcos quedaban dentro de su margen de los lóbulos de I1 y de los escollos de E1 (el peor, a −24,6 m)
   test('AC-210: sin islas, las del juego (la 1.1), y ningún punto de la órbita de ningún barco a menos de su margen de un círculo', () => {

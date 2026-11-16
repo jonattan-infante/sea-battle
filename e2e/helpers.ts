@@ -134,6 +134,11 @@ export const entryOf = (page: Page) =>
     return { firstFrameAt: e.firstFrameAt, lastWaitAt: e.lastWaitAt, shownAt: e.shownAt, withGlb: e.withGlb, capped: e.capped, coverHidden: !!cover && cover.hidden };
   });
 
+// Ruido del entorno en la consola: sin la clave de Clerk de e2e (la CI sin el secreto, o en local), la página pide Clerk JS a su
+// dominio de pruebas (`clerk.gha-e2e.sea-battle.invalid`), que no resuelve. Son el «Failed to load resource» de esa petición
+// (el único nombre de fuera que pide la página: el juego se sirve en local) y el aviso de Clerk que cita la URL .invalid
+export const envNoise = (text: string) => text === 'Failed to load resource: net::ERR_NAME_NOT_RESOLVED' || /https:\/\/[^\s/]+\.invalid\//.test(text);
+
 export const dialogsOf = (page: Page): string[] => (page as unknown as { __dialogs?: string[] }).__dialogs ?? [];
 
 export const me = (page: Page) => page.evaluate(() => window.__SEA_BATTLE__!.me() as DebugShip | null);

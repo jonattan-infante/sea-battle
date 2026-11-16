@@ -29,6 +29,7 @@ export interface RenderShip {
   underFireUntil: number; // fin de la marca de bajo fuego (§11, 1.3), tiempo de servidor; bajo fuego si > client.serverTime()
   sinkingSince: number; // performance.now() en que empezó a hundirse (0 si no)
   level: number | null; // nivel del jugador (1.1, `lv`): la insignia de la placa y del objetivo; null en los NPC
+  family: FamilyChoice | null; // familia del jugador (1.3, `fa`): elige el modelo (AC-227); null en los NPC
 }
 
 interface Sample {
@@ -461,7 +462,8 @@ function toRender(s: ShipSnapshot): RenderShip {
     protectedUntil: s.pu,
     underFireUntil: s.uf ?? 0,
     sinkingSince: 0,
-    level: s.lv ?? null
+    level: s.lv ?? null,
+    family: s.fa ?? null
   };
 }
 
@@ -493,6 +495,7 @@ function interpolate(entity: Entity, renderTime: number, nowMs: number): void {
   render.protectedUntil = s.pu;
   render.underFireUntil = s.uf ?? 0;
   render.level = s.lv ?? null;
+  render.family = s.fa ?? null;
   if (s.st === 'sinking' && render.state !== 'sinking') render.sinkingSince = nowMs;
   if (s.st === 'alive') render.sinkingSince = 0;
   render.state = s.st;

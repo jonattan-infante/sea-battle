@@ -13,7 +13,9 @@ import {
   BASIS_PATH,
   createGlbLoader,
   EntryGate,
+  classOfKey,
   GlbLoader,
+  glbKey,
   mapAnisotropyFor,
   OWN_GLB_WAIT_MS,
   prefetchClasses,
@@ -529,6 +531,130 @@ describe('AC-193 c, opción A: el GLB de la clase propia predicha, antes de la b
   });
 });
 
+// 1.3 (AC-227 a, e): un GLB por clase y familia. La clave del modelo es «clase:familia» con familia y la clase sin ella (o en
+// los NPC), que con las 5 clases del jugador no tiene GLB: sin familia se ve el procedural
+describe('AC-227: los modelos por clase y familia', () => {
+  const manifest = { 'sloop:gb': '/models/ship_sloop_gb.glb', 'frigate:gb': '/models/ship_frigate_gb.glb', 'frigate:es': '/models/ship_frigate_es.glb', gunboat: '/models/npc_pirate_gunboat.glb' };
+
+  test('glbKey: la familia va en la clave; sin familia («none» o ninguna, como los NPC), solo la clase', () => {
+    expect([glbKey('sloop', 'gb'), glbKey('line', 'es'), glbKey('sloop', 'none'), glbKey('pirate', null), glbKey('gunboat')]).toEqual(['sloop:gb', 'line:es', 'sloop', 'pirate', 'gunboat']);
+  });
+
+  test('la clase sin familia da el procedural y no pide nada; la familia, su GLB, comprobado con la receta de su clase', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const f = fakeLoader();
+    const store = new ShipGlbStore(manifest, f.make, f.fetchGlb);
+    store.request('frigate', true);
+    expect(store.model('frigate')).toBe(getShipModel('frigate'));
+    expect([f.calls.length, store.waiting('frigate')]).toEqual([0, false]);
+    store.request('frigate:gb', true);
+    expect(store.model('frigate:gb')).toBe(getShipModel('frigate'));
+    expect(store.waiting('frigate:gb')).toBe(true);
+    store.pump(gl);
+    f.calls[0].resolve(await glb('frigate'));
+    await settle();
+    expect([store.loaded('frigate:gb'), store.loaded('frigate'), store.model('frigate:gb').triangles]).toEqual([true, false, getShipModel('frigate').triangles]);
+    expect(store.model('frigate')).toBe(getShipModel('frigate')); // la otra «familia» de la clase sigue igual
+    store.request('sloop:gb');
+    store.pump(gl);
+    f.calls[1].resolve(await glb('frigate')); // un GLB de otra clase: la eslora no es la de la Balandra
+    await settle();
+    expect(store.loaded('sloop:gb')).toBe(false);
+    expect(store.model('sloop:gb')).toBe(getShipModel('sloop'));
+    expect(warn.mock.calls[0][0]).toContain('sloop:gb');
+    warn.mockRestore();
+  });
+
+  test('al entrar se precargan las combinaciones de las clases que pueden salir, una vez cada una y detrás del propio', async () => {
+    const f = fakeLoader();
+    const store = new ShipGlbStore(manifest, f.make, f.fetchGlb);
+    store.request('frigate:es', true);
+    store.prefetchAll(prefetchClasses(null)); // sin bienvenida: solo las del jugador, no la Cañonera
+    store.prefetchAll(prefetchClasses(null)); // repetido: no duplica
+    for (let i = 0; i < 3; i++) {
+      store.pump(gl);
+      expect(f.calls).toHaveLength(i + 1);
+      f.calls[i].resolve(await glb(i === 1 ? 'sloop' : 'frigate'));
+      await settle();
+    }
+    store.pump(gl);
+    expect(f.calls.map((c) => c.url)).toEqual(['/models/ship_frigate_es.glb', '/models/ship_sloop_gb.glb', '/models/ship_frigate_gb.glb']);
+    expect(['frigate:es', 'sloop:gb', 'frigate:gb', 'gunboat'].map((k) => store.loaded(k))).toEqual([true, true, true, false]);
+  });
+
+  // AC-197 (d) y AC-224 (d): un jugador sin familia no espera a ningún modelo propio. Antes de la bienvenida decide la
+  // predicción: sin familia, nada que esperar; con familia, su GLB; sin predicción, la bienvenida, como hasta ahora
+  test('waiting(null): con la predicción sin familia no espera; con familia, hasta su GLB; sin predicción, como hoy', async () => {
+    const f = fakeLoader();
+    const plain = new ShipGlbStore(manifest, f.make, f.fetchGlb);
+    plain.predictOwn('sloop');
+    expect([plain.waiting(null), f.calls.length]).toEqual([false, 0]);
+    expect(new ShipGlbStore(manifest, f.make, f.fetchGlb).waiting(null)).toBe(true);
+    const family = new ShipGlbStore(manifest, f.make, f.fetchGlb);
+    family.predictOwn('sloop:gb');
+    expect([family.waiting(null), f.calls.map((c) => c.url)]).toEqual([true, ['/models/ship_sloop_gb.glb']]);
+    family.request('sloop:gb', true);
+    family.pump(gl);
+    f.calls[0].resolve(await glb('sloop'));
+    await settle();
+    expect([family.waiting(null), family.waiting('sloop:gb')]).toEqual([false, false]);
+  });
+
+  // AC-197 (d): sin familia, la primera visita no adelanta el cargador (sus módulos y el transcodificador) antes de entrar; lo
+  // crea el pump con la precarga de las combinaciones, tras la entrada. Con familia, o sin predicción, se adelanta como hoy
+  test('warm(): con la predicción sin familia no crea el cargador; con familia, sí; sin predicción, como hoy', () => {
+    const f = fakeLoader();
+    const plain = new ShipGlbStore(manifest, f.make, f.fetchGlb);
+    plain.predictOwn('sloop');
+    plain.warm();
+    plain.request('frigate', true); // el barco real, sin familia
+    expect(f.make).toHaveBeenCalledTimes(0);
+    plain.prefetchAll(prefetchClasses(null));
+    plain.pump(gl);
+    expect(f.make).toHaveBeenCalledTimes(1); // la precarga, ya dentro
+    const family = new ShipGlbStore(manifest, f.make, f.fetchGlb);
+    family.predictOwn('sloop:gb');
+    expect(f.make).toHaveBeenCalledTimes(2);
+    const unknown = new ShipGlbStore(manifest, f.make, f.fetchGlb);
+    unknown.warm();
+    expect(f.make).toHaveBeenCalledTimes(3);
+  });
+
+  test('la predicción de la misma clase con otra familia se aborta al llegar la real, como la de otra clase', () => {
+    const f = fakeLoader();
+    const store = new ShipGlbStore(manifest, f.make, f.fetchGlb);
+    store.predictOwn('frigate:gb');
+    store.request('frigate:es', true);
+    expect(f.calls.map((c) => [c.url, c.signal?.aborted])).toEqual([
+      ['/models/ship_frigate_gb.glb', true],
+      ['/models/ship_frigate_es.glb', undefined]
+    ]);
+  });
+
+  // La sonda QA-31 (BACKLOG :1821) con las claves de la 1.3, para la puerta de AC-227 (d): un barco de la combinación predicha
+  // entra antes que el propio, el pump toma su descarga, y el aborto la vuelve a encolar sin dejarla fallida ni avisar
+  test('si el pump ya tomó la descarga de la combinación predicha, el aborto la vuelve a encolar al final, sin marcarla fallida ni avisar', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const f = fakeLoader();
+    const store = new ShipGlbStore(manifest, f.make, f.fetchGlb);
+    store.predictOwn('frigate:gb');
+    store.request('frigate:gb'); // otro jugador con la Fragata británica, antes que el propio
+    store.pump(gl);
+    store.request('sloop:gb', true); // el barco real
+    await settle();
+    expect([f.calls[0].signal?.aborted, store.waiting('frigate:gb'), warn.mock.calls]).toEqual([true, true, []]);
+    f.calls[1].resolve(await glb('sloop'));
+    store.pump(gl);
+    await settle();
+    store.pump(gl);
+    expect(f.calls.map((c) => c.url)).toEqual(['/models/ship_frigate_gb.glb', '/models/ship_sloop_gb.glb', '/models/ship_frigate_gb.glb']);
+    f.calls[2].resolve(await glb('frigate'));
+    await settle();
+    expect([store.loaded('sloop:gb'), store.loaded('frigate:gb'), store.waiting('frigate:gb'), warn.mock.calls]).toEqual([true, true, false, []]);
+    warn.mockRestore();
+  });
+});
+
 // Hoy el juego se muestra en el primer frame. Con el GLB propio pendiente, en el primer frame en que llega o falla, o en el
 // primero que pasa del tope; update() devuelve true solo en el frame en que se abre
 describe('AC-193 c, opción B: la entrada espera al GLB propio con un tope de 0,5 s sobre la de hoy', () => {
@@ -778,7 +904,7 @@ describe('Los GLB de la Cañonera y el Capitán de D91 (ASSET-SPEC §13)', () =>
         .setKTX2Loader(ktx2)
         .parse(file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) as ArrayBuffer, THREE.LoaderUtils.extractUrlBase(url), (g) => resolve(g.scene), reject)
     );
-    return { m: shipModelFromGlb(scene, classId), asked, texture };
+    return { m: shipModelFromGlb(scene, classOfKey(classId)), asked, texture };
   };
   const at = (v: THREE.Vector3 | undefined) => v?.toArray().map((x) => Math.round(x * 1000) / 1000);
 
@@ -795,6 +921,31 @@ describe('Los GLB de la Cañonera y el Capitán de D91 (ASSET-SPEC §13)', () =>
     expect([m.extras.sb_id, m.triangles, m.extras.sb_mast_height, m.extras.sb_radius, m.extras.sb_pick]).toEqual(['npc_pirate_captain', [2383, 511], 24, 16, [6, 24, 15]]);
     expect([at(m.sockets.smoke), m.sockets.smoke2, m.sockets.fire.map(at)]).toEqual([[0, 3.316, -4.5], undefined, [[1.6, 3.205, 7.4], [-1.6, 3.1, 0], [1.4, 4.796, -9]]]);
     expect([m.sockets.cannonsPort.length, m.recipe, asked]).toEqual([6, getShipModel('captain').recipe, ['/models/npc_pirate_captain_atlas.5455a0a6.ktx2']]);
+  });
+
+  // AC-227 (a): las 10 combinaciones de la 1.3, con el contrato del cargador (la eslora de su clase, los sockets y los extras),
+  // los triángulos de la entrega (entregar.py familias), la receta de su clase y su KTX2 al lado (paso 4c)
+  test.each([
+    ['sloop:gb', 'ship_sloop_gb', [1234, 351], 4],
+    ['sloop:es', 'ship_sloop_es', [1386, 311], 4],
+    ['brig:gb', 'ship_brigantine_gb', [2202, 453], 6],
+    ['brig:es', 'ship_brigantine_es', [2546, 413], 6],
+    ['schooner:gb', 'ship_schooner_gb', [1438, 368], 4],
+    ['schooner:es', 'ship_schooner_es', [1590, 328], 4],
+    ['frigate:gb', 'ship_frigate_gb', [3682, 666], 8],
+    ['frigate:es', 'ship_frigate_es', [4026, 626], 8],
+    ['line:gb', 'ship_line_gb', [4821, 860], 10],
+    ['line:es', 'ship_line_es', [5287, 858], 10]
+  ] as const)('%s: %s, con %j triángulos y %i cañones por banda', async (key, sbId, triangles, cannons) => {
+    const { m, asked, texture } = await read(key);
+    const classId = classOfKey(key);
+    expect([m.extras.sb_id, m.triangles, m.extras.sb_cannons_per_side, m.sockets.cannonsPort.length, m.sockets.cannonsStbd.length]).toEqual([sbId, triangles, cannons, cannons, cannons]);
+    expect(m.recipe).toBe(getShipModel(classId).recipe);
+    expect(m.triangles[0]).toBeLessThanOrEqual(classId === 'line' ? 5500 : 5000); // los topes de ASSET-SPEC §13
+    expect(m.triangles[1]).toBeLessThanOrEqual(1200);
+    expect(m.map).toBe(texture);
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toMatch(new RegExp(`^/models/${sbId}_atlas\\.[0-9a-f]{8}\\.ktx2$`));
   });
 });
 
@@ -985,7 +1136,9 @@ describe('AS-V10 (D90): cada textura KTX2 de un GLB lleva su respaldo', () => {
       ['npc_pirate_gunboat', 128, 'image/png'], // la medida de ux, en ASSET-SPEC §13 (la Cañonera y el Capitán de la receta)
       ['npc_pirate_captain', 128, 'image/png'],
       ['islands', 128, 'image/png'], // la medida de ux en ASSET-SPEC §9.7 (las 15 islas, una fila por archivo) y §9.8 (el puerto)
-      ['island_port', 256, 'image/jpeg']
+      ['island_port', 256, 'image/jpeg'],
+      // Las 4 clases de D95 en las 2 familias (1.3, AC-227): PNG de 128², el más pequeño que pasa (<clase>-medidas.json de ux)
+      ...['sloop', 'brigantine', 'schooner', 'frigate'].flatMap((c) => ['gb', 'es'].map((f) => [`ship_${c}_${f}`, 128, 'image/png']))
     ]);
     const line = (fallback: Uint8Array, sbId: string | null = 'ship_line_es', mimeType = 'image/png') => {
       const ext = externalizeKtx2(addFallback(fixture(), fallback), 'ship_line_es');

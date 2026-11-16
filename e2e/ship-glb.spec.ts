@@ -9,7 +9,7 @@ import { expect, Page, test } from '@playwright/test';
 import { contentHash, E2E_PREFIX } from '../scripts/glb/content-hash';
 import { externalKtx2Fixture } from '../scripts/glb/e2e-models';
 import { addFallback, solidPng } from '../scripts/glb/glb-fallback';
-import { enterGame, entryOf, glbBeforeEntry } from './helpers';
+import { enterGame, entryOf, envNoise, glbBeforeEntry } from './helpers';
 import { OwnServer, startOwnServer } from './own-server';
 
 const URL_OK = '/models/test/ship_sloop.glb';
@@ -109,7 +109,7 @@ test.describe('Barcos en GLB (ASSET-SPEC §13)', () => {
     const basis: string[] = []; // el transcodificador de ETC1S se pide a public/basis y llega entero
     page.on('response', (r) => r.url().includes('/basis/') && basis.push(`${r.status()} ${r.url().split('/').pop()}`));
     const errors: string[] = [];
-    page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+    page.on('console', (m) => m.type() === 'error' && !envNoise(m.text()) && errors.push(m.text()));
     await page.route(`**${URL_OK}`, (route) => {
       requests.push(route.request().url());
       return route.fulfill({ body: bytes, contentType: 'model/gltf-binary' });
@@ -154,7 +154,7 @@ test.describe('Barcos en GLB (ASSET-SPEC §13)', () => {
   test('AC-193 c: si el GLB no llega, se queda el procedural, con un aviso y sin errores', async ({ page }) => {
     const warnings: string[] = [];
     const errors: string[] = [];
-    page.on('console', (m) => (m.type() === 'warning' ? warnings : m.type() === 'error' ? errors : []).push(m.text()));
+    page.on('console', (m) => (m.type() === 'warning' ? warnings : m.type() === 'error' && !envNoise(m.text()) ? errors : []).push(m.text()));
     await page.route(`**${URL_404}`, (route) => route.fulfill({ status: 404, body: 'no' }));
     await enterGame(page);
     const before = await ownView(page);
@@ -263,7 +263,7 @@ test.describe('Barcos en GLB (ASSET-SPEC §13)', () => {
     try {
       const warnings: string[] = [];
       const errors: string[] = [];
-      page.on('console', (m) => (m.type() === 'warning' ? warnings : m.type() === 'error' ? errors : []).push(m.text()));
+      page.on('console', (m) => (m.type() === 'warning' ? warnings : m.type() === 'error' && !envNoise(m.text()) ? errors : []).push(m.text()));
       await page.route(`**${URL_OK}`, (route) => route.abort());
       await glbBeforeEntry(page, URL_OK);
       await enterGame(page, server.url);
@@ -312,7 +312,7 @@ test.describe('Barcos en GLB (ASSET-SPEC §13)', () => {
     try {
       const bytes = withFallback();
       const errors: string[] = [];
-      page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+      page.on('console', (m) => m.type() === 'error' && !envNoise(m.text()) && errors.push(m.text()));
       let glbDone = 0;
       const basisAt: number[] = [];
       page.on('requestfinished', (r) => r.url().endsWith(URL_FALLBACK) && (glbDone ||= Date.now()));
@@ -368,7 +368,7 @@ test.describe('Barcos en GLB (ASSET-SPEC §13)', () => {
       const ext = externalKtx2Fixture(new Uint8Array(fs.readFileSync(FIXTURE)));
       const ktx2Url = `/models/test/${ext.ktx2File}`;
       const errors: string[] = [];
-      page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+      page.on('console', (m) => m.type() === 'error' && !envNoise(m.text()) && errors.push(m.text()));
       const ktx2At: number[] = [];
       const basisAt: number[] = [];
       let release!: () => void;
@@ -419,13 +419,14 @@ test.describe('Barcos en GLB (ASSET-SPEC §13)', () => {
     const bytes = withFallback();
     const warnings: string[] = [];
     const errors: string[] = [];
-    page.on('console', (m) => (m.type() === 'warning' ? warnings : m.type() === 'error' ? errors : []).push(m.text()));
+    page.on('console', (m) => (m.type() === 'warning' ? warnings : m.type() === 'error' && !envNoise(m.text()) ? errors : []).push(m.text()));
     await page.route(`**${URL_FALLBACK}`, (route) => route.fulfill({ body: bytes, contentType: 'model/gltf-binary' }));
     await page.route('**/basis/**', (route) => route.fulfill({ status: 404, body: 'no' }));
     await glbBeforeEntry(page, URL_FALLBACK, 60_000);
     await enterGame(page);
     const entry = await entryOf(page);
-    await expect.poll(() => warnings.filter((w) => w.startsWith('[ship-glb] sloop')), { timeout: 30_000 }).toEqual([
+    // La Balandra sin familia, la del invitado; las combinaciones con familia de la precarga (1.3) avisan con su clave
+    await expect.poll(() => warnings.filter((w) => w.startsWith('[ship-glb] sloop (')), { timeout: 30_000 }).toEqual([
       `[ship-glb] sloop (${URL_FALLBACK}): la KTX2 no llegó; se queda el respaldo`
     ]);
     const view = { ...(await ownMap(page)), ...(await ownPixels(page)) };
@@ -446,7 +447,7 @@ test.describe('Barcos en GLB (ASSET-SPEC §13)', () => {
   test('AC-193 c, opción A: un jugador nuevo en el hotspot malo pide el GLB de la Balandra antes de la bienvenida, una sola vez', async ({ page }) => {
     test.setTimeout(120_000);
     const errors: string[] = [];
-    page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+    page.on('console', (m) => m.type() === 'error' && !envNoise(m.text()) && errors.push(m.text()));
     const cdp = await page.context().newCDPSession(page);
     await cdp.send('Network.enable');
     await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: 300, downloadThroughput: 3e6 / 8, uploadThroughput: 1e6 / 8 });
@@ -487,7 +488,7 @@ test.describe('Barcos en GLB (ASSET-SPEC §13)', () => {
     }, guestId);
     const bytes = fs.readFileSync(FIXTURE);
     const errors: string[] = [];
-    page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+    page.on('console', (m) => m.type() === 'error' && !envNoise(m.text()) && errors.push(m.text()));
     const sloop: string[] = [];
     const frigate: string[] = [];
     page.on('requestfailed', (r) => r.url().endsWith(URL_FRIGATE) && frigate.push(`fallida: ${r.failure()?.errorText}`));
@@ -530,18 +531,20 @@ test.describe('Barcos en GLB (ASSET-SPEC §13)', () => {
     expect(entry).toMatchObject({ withGlb: true, capped: false, coverHidden: true });
     expect(view).toMatchObject({ modelMap: 16, materialMap: true, oneDrawCall: true });
     expect(sloop).toHaveLength(1);
-    expect(await page.evaluate((id) => localStorage.getItem(`sea-battle-last-ship:guest:${id}`), guestId)).toBe('sloop'); // la real, para la próxima
+    expect(await page.evaluate((id) => localStorage.getItem(`sea-battle-last-ship:guest:${id}`), guestId)).toBe('sloop:none'); // la real, con su familia (1.3), para la próxima
     release();
     // La petición abortada la puede contar el navegador como error de red; el juego no añade ninguno
     expect(errors.filter((e) => !e.includes('ERR_ABORTED'))).toEqual([]);
   });
 
-  // Punto 3 de dev-render (BACKLOG :1821): solo se predicen las clases que existen siempre (la Balandra, el Bergantín y la
-  // Fragata), porque la predicción va antes de la bienvenida y no conoce los interruptores. Con una Goleta guardada no se
-  // predice nada: antes de la bienvenida no se baja ni su GLB ni el de la Balandra, y el propio se pide al llegar. En el
-  // candidato no hay Goleta: AC-201 está apagado por construcción, y su GLB lo pone la trampa. Se guarda 'schooner', su id
-  // de GDD §13. Las descargas las apunta un fetch envuelto en la página, y la bienvenida, onWelcome del cliente
-  test('AC-193 c, opción A: con una Goleta guardada no se predice nada: ningún modelo se descarga antes de la bienvenida', async ({ page }) => {
+  // AC-226 (d), que cambia a propósito el punto 3 de dev-render (BACKLOG :1821): en la 1.3 no hay interruptor de la Goleta
+  // y el Navío, así que se predicen las 5 clases. Con una Goleta guardada ('schooner', el valor de la 1.2: sin familia) se
+  // predice la Goleta: su modelo baja antes de la bienvenida, y el de la clase real (un invitado sale con la Balandra) se pide
+  // al llegar ella. Aquí la trampa responde al instante, así que la predicha termina antes y no hay aborto que ver: el aborto
+  // lo prueba «con otra clase guardada», que retiene la respuesta. La Goleta sin familia no tiene GLB en el juego (AC-227 e): lo pone la trampa. Las
+  // descargas las apunta un fetch envuelto en la página, y la bienvenida, onWelcome del cliente. Antes de la 1.3 se asertaba
+  // que con la Goleta guardada no bajaba nada antes de la bienvenida
+  test('AC-193 c, opción A, AC-226 (d): con una Goleta guardada se predice la Goleta: su modelo baja antes de la bienvenida, y el de la Balandra real, después', async ({ page }) => {
     test.setTimeout(120_000);
     const guestId = `e2eg${Date.now().toString(36).slice(-6)}`;
     await page.addInitScript((id) => {
@@ -551,7 +554,7 @@ test.describe('Barcos en GLB (ASSET-SPEC §13)', () => {
     const bytes = fs.readFileSync(FIXTURE);
     for (const url of [URL_OK, URL_SCHOONER]) await page.route(`**${url}`, (route) => route.fulfill({ body: bytes, contentType: 'model/gltf-binary' }));
     const errors: string[] = [];
-    page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+    page.on('console', (m) => m.type() === 'error' && !envNoise(m.text()) && errors.push(m.text()));
     await page.addInitScript(
       ([ok, schooner]) => {
         const w = window as unknown as { __FETCHES__: [string, number][]; __WELCOME_AT__: number; __WELCOME_BEFORE_TRAP__: boolean };
@@ -593,11 +596,11 @@ test.describe('Barcos en GLB (ASSET-SPEC §13)', () => {
     });
     console.log(`AC-193 c opción A, con una Goleta guardada: ${JSON.stringify(got)}`);
     expect([got.welcomeBeforeTrap, got.welcomeAt > 0]).toEqual([false, true]); // la trampa llegó antes que la bienvenida
-    // Antes de la bienvenida, ningún modelo; después, el propio una vez y nunca la Goleta. Con el mapa y el I2 por defecto
-    // (AC-210), después de la bienvenida bajan también el puerto, las islas y los NPC del I2, que no son predicción: antes se
-    // asertaba que URL_OK era la única petición a /models/, porque con el 1.0 y el I2 apagado no había otras
-    expect(got.models.filter(([, when]) => when === 'antes')).toEqual([]);
-    expect(got.models.filter(([p]) => p === URL_OK || p === URL_SCHOONER).map(([p, when]) => [p, when])).toEqual([[URL_OK, 'después']]);
-    expect(errors).toEqual([]);
+    // Antes de la bienvenida, solo la Goleta predicha; después, el propio (la Balandra) una vez. Con el mapa y el I2 por
+    // defecto (AC-210), después bajan también el puerto, las islas, los NPC del I2 y las combinaciones con familia, que no son
+    // predicción
+    expect(got.models.filter(([, when]) => when === 'antes').map(([p]) => p)).toEqual([URL_SCHOONER]);
+    expect(got.models.filter(([p]) => p === URL_OK).map(([p, when]) => [p, when])).toEqual([[URL_OK, 'después']]);
+    expect(errors.filter((e) => !e.includes('ERR_ABORTED'))).toEqual([]);
   });
 });
