@@ -1979,3 +1979,147 @@ Todos ≥ 20, y además cada estado lleva su aviso escrito.
 - 0 triángulos y 0 llamadas de dibujo: son elementos de la página;
 - 0 mensajes al servidor, salvo el `viewAt(null)` de AC-207;
 - los 3 iconos nuevos: 1072 B de SVG sin comprimir. Es el contenido de los 6 `svg` de la lámina (engranaje, «Libre» y las 4 flechas) sin la etiqueta `<svg>` (`:466`).
+
+## Zona segura bajo fuego (1.3)
+
+> `game-ux`, 2026-11-15. Pedido de Jonattan (cita del GDD): «la zona segura solo sea valida si los jugadores no estan bajo fuego». La regla es de producto (GDD §11, «Zona segura bajo fuego (1.3)»; BACKLOG E20). Esta sección define solo cómo se comunica, contra los 6 puntos de «Qué necesita saber el jugador». Desbloquea H-2005 y la parte visual de AC-253. Decisiones **D120 a D128** (D129 queda libre); hallazgos **O-150 y O-151**. Las citas de código son de `5dd3191`; las medidas, en px CSS a 1440×900 y 390×844.
+
+**En una línea:** «bajo fuego» tiene una firma que se lee sin color (franja rayada, llama y «N s») y vive en el hueco del aviso «Zona segura», que pasa a tener 3 estados. El botón Puerto repite la cuenta sobre su icono.
+
+### Láminas
+| Archivo | Qué muestra |
+|---|---|
+| `docs/game/art/zona-bajo-fuego-1440x900.png` (1440 × 900, sha256 `4c1a98f91b251d62e58f8f68386c8fe081a17d80887cbb0ce15b20706c2c2da6`) | Escritorio, dentro de la zona y bajo fuego, justo después de pulsar `P`: el aviso «Bajo fuego: la zona aún no te protege · 7 s», debajo el aviso de rechazo del puerto y la ranura Puerto desactivada con «7» y la llama |
+| `docs/game/art/zona-bajo-fuego-390x844.png` (780 × 1688: 390×844 a DPR 2, sha256 `a92bc2e519544cd6ba3b6e684dbd47ac7f97c79ea38943f9301dd33d16d3b2b2`) | Lo mismo en móvil vertical |
+| `docs/game/art/zona-bajo-fuego-estados.png` (1950 × 3472, DPR 2, sha256 `55b8ef56e915423837eb780209c087d68c3fc57006bca918403fc918430b542a`) | Hoja de estados: (1) los 4 casos del hueco de aviso, en color y en grises, con sus atributos; (2) la regla medible de AC-255, con la franja ×4, el perfil de L* y la tabla de medidas; (3) el botón Puerto en sus 3 estados, en escritorio y en táctil, en color y en grises, y los 2 avisos de rechazo; (4) el panel de objetivo de otro jugador dentro de la zona; (5) la cronología de «entrar perseguido» (t = 0, 3, 5, 14 y 15 s) |
+
+**Fuente:** `scripts/ux/zona-bajo-fuego/lamina.py` (el uso está en su cabecera; necesita Firefox, Pillow y la Barlow del juego). Compone el HUD con `src/app/globals.css` tal cual más el CSS de esta sección, renderizado por Firefox 159 headless, sobre las capturas de D77 (`D77-marca-peligro-1440x900.png` y `-390x844.png`). De ellas borra el aviso «Zona segura» y el botón Puerto viejos: bajo el aviso reconstruye la escena deshaciendo el panel al 85 %, así que el aviso nuevo se compone con su propio fondo, como en el juego. Escribe `scripts/ux/zona-bajo-fuego/medidas.json`, de donde salen las cifras de la regla. **La escena es la de D77**, del escenario de capturas: en el juego, la Cañonera seleccionada no llega a menos de 200 m del puerto (GDD §11, «Los NPC»). Solo vale el HUD.
+
+### Decisiones
+| ID | Decisión | Por qué |
+|---|---|---|
+| D120 | «Bajo fuego» vive en el **hueco del aviso «Zona segura»** de la columna de avisos (540, 96 en escritorio; 16, 156 en 390×844). El hueco pasa a tener 3 estados y enseña **una sola fila a la vez**: la píldora fuera de la zona, «no te protege» dentro y «Zona segura» cuando caduca la marca | Un solo sitio responde a «¿me protege la zona?» y «¿cuánto falta?». Al cruzar los 110 m, la misma fila crece con el mensaje, y al caducar pasa a «Zona segura». Está a 8 px del panel del objetivo, adonde va la vista en combate. **Descartado el panel del jugador:** su línea de estado ya dice Atacando o Reparando, y en 390×844 no la tiene; el único hueco, entre el nombre y el oro, mide unos 133 px con un nombre de 16 caracteres corrientes y 5 cifras de oro (menos con 6), lo justo para un chip a 12 px (110 px), y dentro de la zona daría 2 sitios con la misma cuenta. **Descartadas 2 filas** (indicador más aviso): repetirían la cuenta, una encima de otra |
+| D121 | **Firma de «bajo fuego»**, la misma en la píldora y en el aviso: una franja izquierda de 8 px con rayas a 45° coral `#FF7A7A` y tinta `#07121B` (4 + 4 px), en lugar del borde liso de 4 px; un icono coral de 16 px, y la cuenta «N s» a la derecha | Se lee en grises por el patrón, no por el tono: la franja alterna L\* 67 y 5 (contraste 7,5:1, y de 6,0 a 8,5 con daltonismo), mientras que el borde de «Zona segura» es un solo tono (L\* 75). Es el patrón universal de peligro y ningún otro elemento del HUD lo usa |
+| D122 | **Píldora fuera de la zona**: 156 × 36, centrada en la columna, con la llama (Lucide `flame`), «Bajo fuego» 14/600 y «N s» | Más ligera que una fila, porque sale en casi todos los combates contra NPC (cada andanada renueva la marca) y no debe alarmar. Al entrar en la zona se convierte en la fila completa, que sí alarma |
+| D123 | **El aviso de la zona tiene 2 estados**: «Zona segura», como hoy, y «**Bajo fuego:** la zona aún no te protege · N s», a todo el ancho, con la franja y un escudo tachado (ShieldOff, un dibujo propio sobre el Shield de hoy). La regla medible y los atributos del DOM van abajo | «Aún» dice que es temporal, y la cuenta dice cuánto falta. El escudo tachado es el mismo de «Zona segura» con una barra, así que el cambio de estado se ve en el propio icono |
+| D124 | **Puerto bajo fuego**: desactivado como hoy (icono y palabra al 40 %; en táctil, al 45 %), más la cuenta «N» (18/700, sin «s») centrada sobre el icono y una llama coral de 12 px arriba a la derecha, las dos al 100 %. `data-port-block` dice el motivo | El GDD pide que el botón diga que es por el fuego y cuántos segundos faltan, y en móvil no hay `title`. Es la convención de recarga de las barras de acción: el número sobre el icono apagado |
+| D125 | **Texto del motivo: «Bajo fuego: el puerto abre tras N s sin disparos».** El aviso al pulsar Puerto (clic, toque o `P`) lleva los segundos que faltan; el rechazo del servidor a `buy` y `selectShip` usa N = 10, que es el provisional de producto. Es un aviso de peligro con la llama. **Uno nuevo sustituye al anterior** de su tipo en lugar de apilarse. Sale también cuando la tienda abierta se cierra por caer bajo fuego | Una sola plantilla para los 2 usos: dice la causa, qué hace falta (no disparar ni recibir disparos) y cuánto. Cabe en una línea en 1440×900 (286,8 px de 308 con N = 10) y en 390×844 (de 306). Si no se sustituyera, cada pulsación con otra N sería un texto distinto y se apilarían, porque la deduplicación de AC-127 es por texto (`src/client/hud-store.ts:115-121`) |
+| D126 | **Panel de objetivo: sin cambio visual.** Solo cambia cuándo sale cada texto: «✓ En alcance» o «✕ Fuera de alcance» si el otro jugador está bajo fuego, y «✕ No atacable» si no (`rangeText`, `src/client/hud-logic.ts:206-209`, con el `attackable` que da `canAttackClient` con `uf`) | El panel ya responde a la única pregunta que importa: si se le puede atacar. Una llama en su panel diría el porqué, y no hace falta para decidir |
+| D127 | **Sin efecto nuevo** en el barco, en las placas, en el borde de la zona ni en el minimapa | El estado es del jugador propio y el HUD lo dice entero. Un anillo o un tinte en el mundo competiría con el anillo del objetivo, el fuego de vida baja y el escudo de protección, y costaría una instancia o un uniform por barco. El de los demás jugadores ya se ve en su panel y en el cursor |
+| D128 | **La cuenta atrás**: N = `ceil(uf − serverTime)` en segundos, de 10 a 1. Se escribe por ref (el texto y `data-under-fire-seconds`) desde el ticker del HUD, solo cuando cambia el entero, como «Protegido N s» (`src/components/hud/Hud.tsx:104-118`). El número lleva `aria-hidden` | 0 commits de React por segundo (AC-257 c pide ≤ 1). Cambia como mucho una vez por segundo, más el salto a 10 de cada renovación. Sin `aria-hidden`, el `aria-live` de la columna leería un número cada segundo |
+
+### El hueco de aviso: 3 estados (D120 a D123)
+| Estado | Cuándo | Caja en 1440×900 | Caja en 390×844 | Dibujo | DOM |
+|---|---|---|---|---|---|
+| Nada | Vivo, fuera de la zona y sin marca | — | — | — | — |
+| **Píldora** | Vivo, fuera de la zona y bajo fuego | 642, 96, 156 × 36 | 117, 156, 156 × 36 | Franja; `flame` de 16 en coral; «Bajo fuego» 14/600 `--ui-text`; «N s» 14/600 tabular, a la derecha | `data-testid="under-fire"`, `data-under-fire-seconds="N"` |
+| **«Zona segura»** | Vivo, dentro de la zona y sin marca | 540, 96, 360 × 36 | 16, 156, 358 × 36 | Como hoy: borde liso de 4 px `--ui-info`, Shield de 16 y texto 14/500 `--ui-info` | `data-testid="safe-zone"`, `data-zone-state="protected"` |
+| **«No te protege»** | Vivo, dentro de la zona y bajo fuego | 540, 96, 360 × 36 | 16, 156, 358 × 36 | Franja; ShieldOff de 16 en coral; «**Bajo fuego:**» 14/600 y « la zona aún no te protege» 14/500, en `--ui-text`; «N s» a la derecha | `data-testid="safe-zone"`, `data-zone-state="under-fire"`, `data-under-fire-seconds="N"` |
+
+- **Sitio en la columna:** el de «Zona segura» hoy (§12.5). Va detrás de «Progreso sin guardar» si está (y entonces baja 44 px) y delante de los avisos pasajeros. Como hoy, no caduca, no cuenta en el cupo de 3, es un bloque del HUD (`data-hud-block`, D41) y cuenta para la regla de la pista (§12.1). Solo con el barco a flote; al hundirse desaparece, y al zarpar no hay marca.
+- **Para el e2e:** bajo fuego hay **exactamente un** `[data-under-fire-seconds]`, en cualquier punto del mapa (AC-254); sin marca, ninguno. El estado de la zona lo dice `data-zone-state` en `[data-testid="safe-zone"]` (AC-255), que sigue existiendo solo dentro de los 110 m (AC-65).
+- **Cuándo cambia:** (a) aparece en el snapshot que trae `uf` posterior a ahora; (b) al cruzar los 110 m hacia dentro bajo fuego, en ese mismo snapshot pasa a «No te protege» (AC-255); (c) al caducar, con el reloj del cliente (O-150): dentro pasa a «Zona segura», y fuera desaparece; (d) una renovación devuelve N a 10 sin cambiar de estado. Al aparecer, el fundido de 200 ms de cualquier aviso; el paso de un estado a otro es inmediato.
+- **844×390** (columna de 300): la píldora cabe (344, 12). «No te protege» y el aviso del puerto ocupan 2 líneas: la caja crece a 54 px y no recorta (§12.5).
+- **Anchos**, medidos con la Barlow (Pillow con raqm): «Bajo fuego: la zona aún no te protege», 225,4 px, en un hueco de 275 (1440×900) y 273 (390×844), una vez quitados la franja, los rellenos, el icono y la cuenta; la píldora, 150,9 de 156.
+
+### Regla medible de los 2 estados (AC-255)
+Sobre la captura pasada a L\* (CIELAB, D65), en la columna **x = borde izquierdo del aviso + 2 px**, de **arriba + 2 a abajo − 3** (px CSS; × DPR en la captura):
+- **«Zona segura»**: el rango de L\* es ≤ 8 (un solo tono: el borde liso, L\* 75).
+- **«No te protege»**: el rango es ≥ 40 y hay ≥ 4 cruces de la media (la franja: L\* 67 / 5 cada 11,3 px en vertical).
+
+Vale igual en color y en grises, a DPR 1 y 2 y sobre océano, arena o espuma, porque la franja y el borde son opacos. **Medido** (`medidas.json`, de las láminas y de una tira con los 2 estados sobre `#1A5F86`, `#E6CF9A` y `#EAF6FA`): «Zona segura», rango 0 y 0 cruces en los 6 casos; «No te protege», rango 62 y 5 cruces en los 6 casos y en las 2 láminas; la regla da el mismo estado en color y en grises en los 14. La píldora pasa la misma regla que «No te protege», y por eso se distingue sin depender del color (AC-254).
+
+### Botón Puerto (D124, D125)
+| Prioridad | Caso | `data-port-block` | Cómo se ve | `title` (escritorio) | Al pulsar (clic, toque o `P`) |
+|---|---|---|---|---|---|
+| 1 | BD caída (AC-132, D55) | `unsaved` | Desactivado, como hoy | «La tienda no está disponible: no podemos guardar» | Ese aviso de peligro, como hoy |
+| 2 | Hundido o fuera de la zona (AC-66), **también bajo fuego** | `zone` | Desactivado, como hoy: sin cuenta ni llama | «Solo en la zona segura» | «El puerto solo abre en la zona segura», como hoy |
+| 3 | Dentro de la zona y bajo fuego (AC-253) | `under-fire` | Desactivado, con «N» y la llama | «Bajo fuego: el puerto abre tras 10 s sin disparos» (fijo: no cambia cada segundo) | Aviso de peligro con la llama: «Bajo fuego: el puerto abre tras N s sin disparos», con la N del momento de pulsar |
+| — | Dentro y sin marca | Sin atributo | Activo | «Puerto (P)» | Abre la tienda |
+
+- Fuera de la zona manda «Solo en la zona segura», aunque esté bajo fuego, porque «fuera de la zona, los motivos de hoy no cambian» (GDD §11). Al entrar en la zona bajo fuego, el botón gana la cuenta y la llama.
+- **Geometría.** Escritorio, ranura de 56 × 56 (821, 818): la caja de la cuenta empieza en y = 14 con una línea de 22, así que queda centrada en y = 25, el centro del icono; la llama, a 3 px de la derecha y de arriba. Táctil, 52 × 52 (16, 776): la cuenta en y = 6 (el icono está centrado en y ≈ 17) y la llama a 4 px. En táctil, el 45 % pasa del botón entero (hoy) al icono y a la palabra; el fondo, el borde, la cuenta y la llama van al 100 %.
+- **El aviso:** dura 3,5 s, como todos. Uno nuevo sustituye al visible del mismo tipo, con el texto nuevo, y su vida vuelve a empezar (sugerencia: una clave `port-under-fire` en el aviso, en lugar de deduplicar por texto). La N queda fija en el aviso; la que corre es la del botón y la del hueco de aviso.
+- **La tienda abierta**: si se cae bajo fuego con ella abierta (solo pasa al disparar desde dentro, p. ej., con un ataque en curso), se cierra en ese snapshot (AC-253) y sale el mismo aviso, con N = 10.
+
+### Marcado, iconos y CSS
+```tsx
+// Hueco de aviso, en lugar de src/components/hud/Hud.tsx:288. {n} lo escribe el ticker por ref (D128), no las props
+// Fuera de la zona y bajo fuego
+<div className="toast toast--fire" data-testid="under-fire" data-under-fire-seconds={n} data-hud-block="">
+  <Flame size={16} /><span className="toast__text"><b>Bajo fuego</b></span><span className="toast__count" aria-hidden="true">{n} s</span>
+</div>
+// Dentro y bajo fuego
+<div className="toast toast--zone is-under-fire" data-testid="safe-zone" data-zone-state="under-fire" data-under-fire-seconds={n} data-hud-block="">
+  <ShieldOff size={16} /><span className="toast__text"><b>Bajo fuego:</b> la zona aún no te protege</span><span className="toast__count" aria-hidden="true">{n} s</span>
+</div>
+// Dentro y sin marca: el de hoy, con el atributo
+<div className="toast toast--zone" data-testid="safe-zone" data-zone-state="protected" data-hud-block=""><Shield size={16} /> Zona segura</div>
+
+// Puerto (escritorio). En táctil, <Store size={22} /><span className="hud-mobile-btn__label">Puerto</span> y los 2 mismos spans
+<button className={`slot ${fire ? 'is-under-fire' : ''}`} aria-disabled={!m.portEnabled} data-port-block={m.portBlock} …>
+  <span className="slot__key">P</span><span className="slot__icon"><Store size={28} /></span><span className="slot__label">Puerto</span>
+  {fire && <><span className="slot__fire"><Flame size={12} /></span><span className="slot__count" aria-hidden="true">{n}</span></>}
+</button>
+// El aviso del puerto bajo fuego: toast de peligro con <Flame size={16} /> delante del texto (clase is-fire)
+```
+
+**Iconos nuevos** para `icons.tsx` (24 × 24, trazo 2, `currentColor`, §13):
+- `Flame`, copia de Lucide «flame» (ISC, lucide-static 0.469.0): `<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>`.
+- `ShieldOff`, dibujo propio: el `Shield` de hoy con la barra de (3, 3) a (21, 21) y el contorno cortado 3,6 unidades a cada lado del cruce, como «shield-off» de Lucide y sin máscaras: `<path d="M9.01 4.28 12 3l7 3v5C19 11.98 18.86 12.93 18.61 13.82"/><path d="M14.53 19.6C13.75 20.17 12.9 20.64 12 21 8 19.4 5 15.6 5 11V8.84"/><path d="m3 3 18 18"/>`.
+
+**CSS** (va tras las reglas de `.toast` y `.slot` en `globals.css`; es exactamente el que renderizan las láminas):
+```css
+/* E20 (D121-D124): bajo fuego. Franja rayada de 8 px en lugar del borde de 4 px */
+.toast--fire, .toast--zone.is-under-fire { position: relative; border-left: 0; padding-left: 18px; color: var(--ui-text); }
+.toast--fire::before, .toast--zone.is-under-fire::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 8px; border-radius: 6px 0 0 6px;
+  background: repeating-linear-gradient(-45deg, #ff7a7a 0 4px, #07121b 4px 8px);
+}
+.toast--fire { align-self: center; width: 156px; }
+.toast--fire svg, .toast--zone.is-under-fire svg, .toast--danger.is-fire svg { flex: none; color: var(--ui-danger); }
+.toast__text { min-width: 0; }
+.toast__text b { font-weight: 600; }
+.toast__count { flex: none; margin-left: auto; min-width: 23px; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+/* Puerto bajo fuego (D124): cuenta sobre el icono y llama de 12 px arriba a la derecha */
+.slot__fire { position: absolute; right: 3px; top: 3px; line-height: 0; color: var(--ui-danger); }
+.slot__count {
+  position: absolute; left: 0; right: 0; top: 14px; font-size: 18px; font-weight: 700; line-height: 22px; text-align: center;
+  font-variant-numeric: tabular-nums; color: var(--ui-text); text-shadow: 0 0 2px #07121b, 0 0 2px #07121b, 0 1px 1px #07121b; pointer-events: none;
+}
+.hud-mobile-btn--port.is-under-fire[aria-disabled="true"] { opacity: 1; }
+.hud-mobile-btn--port.is-under-fire > svg, .hud-mobile-btn--port.is-under-fire .hud-mobile-btn__label { opacity: 0.45; }
+.hud-mobile-btn .slot__count { top: 6px; }
+.hud-mobile-btn .slot__fire { right: 4px; top: 4px; }
+```
+
+### Medidas (Python propio: WCAG 2.x, Machado 2009 con severidad 1,0 y ΔE76, las fórmulas de §4.5)
+| Medida | Valor | Umbral |
+|---|---|---|
+| Franja: contraste coral–tinta (normal / protan / deutan / tritan) | 7,5 / 6,0 / 8,5 / 6,7 | ≥ 3 (gráfico) ✓ |
+| L\* del coral y de la tinta; del borde de «Zona segura» | 67,0 y 5,0; 75,3 | — |
+| Icono coral sobre `--ui-panel` (océano / arena / espuma) | 6,3 / 5,0 / 4,6 | ≥ 3 (gráfico) ✓ |
+| `--ui-text` sobre `--ui-panel` (océano / arena / espuma) | 14,1 / 11,1 / 10,2 | ≥ 4,5 ✓ |
+| ΔE76 coral–azul de «Zona segura» (normal / protan / deutan / tritan) | 85 / 47 / 66 / 106 | ≥ 20 ✓ |
+| Cuenta del Puerto sobre el fondo de la ranura; sobre el icono al 40 %, sin su contorno | 15,4; 4,4 (el contorno `#07121B` de 2 px la separa del icono) | ≥ 3 (18/700) ✓ |
+| Llama de 12 px sobre el fondo de la ranura | 6,9 | ≥ 3 (gráfico) ✓ |
+
+### Reglas verificables (QA)
+1. **ZB-1.** Bajo fuego y fuera de la zona: un solo `[data-under-fire-seconds]`, la píldora `[data-testid="under-fire"]`, en 642, 96, 156 × 36 (1440×900) o 117, 156 (390×844), con ±1 px; 44 px más abajo con «Progreso sin guardar».
+2. **ZB-2.** Dentro de la zona: `[data-testid="safe-zone"]` en 540, 96, 360 × 36 o 16, 156, 358 × 36, con `data-zone-state="under-fire"` y `data-under-fire-seconds` bajo fuego, y `data-zone-state="protected"` sin marca. Nunca están la píldora y el aviso a la vez.
+3. **ZB-3.** La regla de la franja (arriba) da el estado de `data-zone-state` en la captura en grises, en 1440×900 y 390×844. La píldora la pasa como «No te protege».
+4. **ZB-4.** El texto del elemento con `data-under-fire-seconds` contiene «Bajo fuego» y «N s», con N igual al atributo, entero de 1 a 10 y `ceil(uf − serverTime)` ± 1 s. Cambia como mucho una vez por segundo, más las renovaciones. Fuera de la zona desaparece, y dentro pasa a «Zona segura», ≤ 200 ms después de `uf` con el reloj del servidor.
+5. **ZB-5.** Puerto dentro de la zona y bajo fuego: `aria-disabled="true"`, `data-port-block="under-fire"`, la cuenta visible igual a N y la llama. Fuera de la zona, con o sin marca: `data-port-block="zone"`, sin cuenta ni llama; con la BD caída, `unsaved`. Pulsarlo bajo fuego da un aviso «Bajo fuego: el puerto abre tras N s sin disparos»; pulsarlo otra vez no añade un 2.º.
+6. **ZB-6.** Ningún texto nuevo se recorta. En 1440×900 y 390×844 van en una línea; en 844×390, «No te protege» y el aviso del puerto pueden ir en 2 y la caja crece.
+7. **ZB-7.** El panel de objetivo de otro jugador dentro de la zona es el de hoy: solo cambia el texto de la distancia según AC-256.
+8. **ZB-8.** Sin cambios en el mundo (D127): con y sin marca, las mismas llamadas de dibujo y los mismos triángulos en `npm run test:perf`.
+9. **ZB-9.** Capturas frente a las láminas: el caso de las 2 láminas de pantalla (dentro, bajo fuego, tras pulsar `P`) en 1440×900 y 390×844, los 4 casos del hueco y los 3 del Puerto de la hoja.
+
+### Hallazgos
+- **O-150** (para dev y QA; producto puede reescribir el AC si quiere). AC-254 y AC-255 dicen «en el snapshot en que caduca la marca», pero al caducar no llega ninguno: `uf` no cambia y, con el jugador quieto, el servidor no envía nada (AC-87). El HUD cambia con su propio reloj (`client.serverTime`, como «Protegido N s»), dentro de los 200 ms de AC-254. QA mide con el reloj del servidor, como pide AC-254. El criterio no cambia.
+- **O-151** (para dev). «Bajo fuego» ya nombra en el código la ventana de 3 s de la reparación: `MeHud.underFire` (`src/client/hud-store.ts:24`), y la fila «Reparando» de §12.4 dice «bajo fuego: +1,5 %/s». El jugador nunca lee «bajo fuego» en la reparación (ve «Reparando +1,5 %/s» en oro), así que en pantalla no chocan. El estado nuevo no reutiliza ese campo (GDD §11). No toco §12.4, que edita la otra sesión.
+
+### Lo que cuesta
+- 0 triángulos, 0 llamadas de dibujo y 0 mensajes: el `uf` ya viaja en el barco (GDD §11, «Red»).
+- 0 commits de React por segundo de cuenta. Hay commits solo al aparecer la marca, al cruzar los 110 m, en cada renovación (≤ 1 por andanada) y al caducar.
+- 2 iconos nuevos, `Flame` y `ShieldOff`, de menos de 1 KB entre los dos.
