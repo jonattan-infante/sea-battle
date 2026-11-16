@@ -1,0 +1,147 @@
+{
+ "fuentes": {
+  "c_desk": {
+   "ruta": "xp-media-desktop.png",
+   "sha256": "e8695d5fe384d7447de00b520972a071d273c79a34553bbd005e3cd297822146"
+  },
+  "c_mob": {
+   "ruta": "xp-media-mobile.png",
+   "sha256": "ee5cc15e556a185db02699572ff099e133c37c11dedbd106646c1be59350b457"
+  },
+  "c_lan": {
+   "ruta": "xp-media-landscape.png",
+   "sha256": "a800e06a8bcb8937ebc90e210fe308601a8e63415dbb3879d9c67276b35b8455"
+  },
+  "l_desk": {
+   "ruta": "f1-E.png",
+   "sha256": "335081ca2539063d081d3285e4d645fde969d2f99b9c7340c6e54f6ccafcd468"
+  },
+  "l_mob": {
+   "ruta": "f1-M.png",
+   "sha256": "294b0355b7197039f7e20b31441122b06d756c1311c4f082185b2327e389844d"
+  },
+  "l_lan": {
+   "ruta": "f1-A.png",
+   "sha256": "21283e5936b484175bf8e4f8413eccb887f739d52ed7e51f2cc4468c2f4c9bb0"
+  },
+  "a_desk": {
+   "ruta": "f2-E.png",
+   "sha256": "8ef01c315dac38e8a520eeca84e7c9c31490659e3936ed1cf8e1997d0cb96c0d"
+  }
+ },
+ "boton": {
+  "desk": [
+   1192,
+   16,
+   40,
+   40
+  ],
+  "mob": [
+   16,
+   704,
+   52,
+   52
+  ],
+  "lan": [
+   12,
+   266,
+   52,
+   52
+  ]
+ },
+ "iconos_B": 1072,
+ "panel": {
+  "desk": {
+   "box": [
+    808,
+    64,
+    1232,
+    664
+   ],
+   "H": 600
+  },
+  "mob": {
+   "box": [
+    0,
+    559.0,
+    390,
+    844
+   ],
+   "H": 285.0
+  },
+  "lan": {
+   "box": [
+    72,
+    88.0,
+    336,
+    378
+   ],
+   "H": 290.0
+  }
+ },
+ "centro": {
+  "desk": {
+   "caja": [
+    648.0,
+    405.0,
+    792.0,
+    495.0
+   ],
+   "separacion": 16.0
+  },
+  "mob": {
+   "caja": [
+    175.5,
+    379.8,
+    214.5,
+    464.2
+   ],
+   "separacion": 94.8
+  },
+  "lan": {
+   "caja": [
+    379.8,
+    175.5,
+    464.2,
+    214.5
+   ],
+   "separacion": 43.8
+  }
+ },
+ "fragata": {
+  "defecto": {
+   "ppm": 3.44,
+   "rumbo": 0,
+   "tapa_pct": 0.0,
+   "px": 0.0
+  },
+  "cercano": {
+   "ppm": 4.914,
+   "rumbo": 270,
+   "tapa_pct": 5.7,
+   "px": 34.8
+  }
+ },
+ "anchos": {
+  "Pulsa una tecla…": 96.5,
+  "S era de Detener: Detener pasa a la flecha abajo.": 253.3,
+  "Esa tecla es de Reparar.": 125.6,
+  "Esa tecla no vale: usa una letra, un número o una flecha.": 292.2,
+  "Solo con la cámara Libre": 127.8,
+  "Haz clic en una tecla para cambiarla.": 189.0,
+  "Opciones": 40.6,
+  "Vista izquierda": 90.4,
+  "Restablecer": 74.3,
+  "Opciones · Cámara": 145.5
+ },
+ "aviso": [
+  540,
+  900
+ ],
+ "ancho_aviso": 360,
+ "tapa_aviso": 92,
+ "objetivo": {
+  "48": 24.0,
+  "70": 46.0
+ }
+}
