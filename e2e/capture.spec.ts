@@ -2,10 +2,11 @@
 // (server/scenarios.ts): pirata a 45 m, mercante a 40 m, pirata junto a la isla I5 y restos. Las de legibilidad (AC-72 y,
 // con el I2, AC-115) van en su propio servidor con los escenarios "legibility" y "legibility-i2".
 import { Browser, expect, Page, test } from '@playwright/test';
+import { spawnSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { PORTS } from '../playwright.config';
-import { DANGER, LEGIBILITY, LEGIBILITY_165_HARBOR, LEGIBILITY_165_POSTS, LEGIBILITY_I2, LEGIBILITY_I2_90 } from '../server/scenarios';
+import { DANGER, LEGIBILITY, LEGIBILITY_165, LEGIBILITY_165_390, LEGIBILITY_165_HARBOR, LEGIBILITY_I2, LEGIBILITY_I2_90 } from '../server/scenarios';
 import { postFamilyPlayers } from './family-visitors';
 import { enterGame, me, ships, waitFor } from './helpers';
 import { startOwnServer } from './own-server';
@@ -88,9 +89,15 @@ interface Legible {
   ship: Box; // casco, velas y palos: los vértices de la malla, proyectados
   plate: Box | null; // nombre y barra; null si está oculta
   ring: Box | null; // anillo de selección, solo en el objetivo
+  // D107 (recolocar las escenas, «Lejos de las líneas» de §18.1): dónde está el barco, para calcular sus puestos. `pos`, x y z
+  // en el mundo (m); `anchor`, ese punto sobre el agua en pantalla (px CSS); `headingDeg`, su rumbo (mesh.rotation.y)
+  pos: [number, number];
+  anchor: [number, number];
+  headingDeg: number;
 }
 interface Frame {
   viewport: { width: number; height: number; dpr: number };
+  hud: Box[]; // los bloques visibles del HUD ([data-hud-block]), para que los barcos queden fuera
   elements: Legible[];
 }
 
@@ -121,7 +128,7 @@ const legibleFrame = (page: Page) =>
       id: string;
       ship: { kind: string; state: string };
       model: { extras: { sb_radius: number } };
-      mesh: { visible: boolean; position: { x: number; z: number }; matrixWorld: { elements: number[] }; geometry: { attributes: { position: { count: number; getX(i: number): number; getY(i: number): number; getZ(i: number): number } } } };
+      mesh: { visible: boolean; position: { x: number; z: number }; rotation: { y: number }; matrixWorld: { elements: number[] }; geometry: { attributes: { position: { count: number; getX(i: number): number; getY(i: number): number; getZ(i: number): number } } } };
     };
     const rt = window.__SEA_BATTLE__!.runtime() as unknown as {
       views: Map<string, View>;
@@ -157,9 +164,18 @@ const legibleFrame = (page: Page) =>
         rt.projectInto(x + R, 0, z + R, pt);
         ring = box(ax - 2.5, ay - 2.5, pt.sx + 2.5, pt.sy + 2.5);
       }
-      elements.push({ id: v.id, role: v.id === rt.myShipId() ? 'self' : v.ship.kind, selected: v.id === selected, ship: box(x0, y0, x1, y1), plate: p ? box(p.x, p.y, p.x + p.w, p.y + p.h) : null, ring });
+      rt.projectInto(v.mesh.position.x, 0, v.mesh.position.z, pt);
+      const world: [number, number] = [r1(v.mesh.position.x), r1(v.mesh.position.z)];
+      const anchor: [number, number] = [r1(pt.sx), r1(pt.sy)];
+      const headingDeg = Math.round(((((v.mesh.rotation.y * 180) / Math.PI) % 360) + 360) % 360);
+      elements.push({ id: v.id, role: v.id === rt.myShipId() ? 'self' : v.ship.kind, selected: v.id === selected, ship: box(x0, y0, x1, y1), plate: p ? box(p.x, p.y, p.x + p.w, p.y + p.h) : null, ring, pos: world, anchor, headingDeg });
     }
-    return { viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio }, elements };
+    const hud = [...document.querySelectorAll<HTMLElement>('[data-hud-block]')]
+      .filter((el) => getComputedStyle(el).visibility !== 'hidden' && el.getClientRects().length > 0)
+      .map((el) => el.getBoundingClientRect())
+      .filter((r) => r.width > 0 && r.height > 0)
+      .map((r) => box(r.left, r.top, r.right, r.bottom));
+    return { viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio }, hud, elements };
   });
 
 // Clase de cada barco del runtime (RenderShip.classId), por id
@@ -268,6 +284,32 @@ async function legibilityShot(page: Page, vp: Vp, scene: LegibilityScene = AC72)
   }
 }
 
+// D107 («Lejos de las líneas», ART-DIRECTION §18.1; H-D106-2 de QA-78): las escenas de los evaluadores (la relación y las clases de
+// AC-165, la mezcla de AC-194 d y las 2 disposiciones de AC-194 c) se miden con la rejilla de D57 desplazada a un origen fijo por
+// tamaño: la primera línea vertical
+// en x y la primera horizontal en y (px CSS). En la pose de AC-72 la cámara centra el barco propio, y con 12 × 8 y 6 × 12 el centro
+// de la pantalla es un cruce: con el origen de siempre, el propio cae sobre 2 líneas (QA-78: a 0,0–0,8 px). Se desplaza el origen
+// y no la cámara: mover la cámara pide la vista libre, que añade al HUD el botón Centrar y el indicador del propio, y la pose de
+// AC-72 dejaría de ser la de una partida. Con (60, 30) en 1440×900 y (32,5, 26,5) en 390×844, el propio de la relación (la caja de
+// la Balandra, de y = 380 a 535 con su placa en 1440×900) queda en el centro de su celda, a ≥ 0,35 de celda de las líneas y con su
+// zona en 2 filas; las celdas de los bordes miden ≥ 0,27 de celda, así que ninguna se funde (rejilla de 13 × 9 y de 7 × 13). Las
+// demás escenas ponen sus barcos en esa misma rejilla
+const GRID_ORIGIN: Record<string, [number, number]> = { desktop: [60, 30], mobile: [32.5, 26.5] };
+// rejilla.py necesita numpy y PIL, que la CI no tiene: esto corre en qa:capture. REJILLA_PYTHON elige el intérprete
+const REJILLA_PYTHON = process.env.REJILLA_PYTHON ?? 'python3';
+
+// La imagen vale para los evaluadores según D57 y D107: `scripts/ux/rejilla.py --estricto` con el origen fijo de su tamaño (sale con
+// 2 si un centro preguntado queda a < ¼ de celda de una línea, si 2 roles distintos comparten celda o si 2 barcos quedan a < 16 px).
+// Deja en qa-artifacts/rejilla/ las imágenes con la rejilla, la clave y las celdas, que es el material del lote
+function gridCheck(vp: Vp, name: string) {
+  const [x, y] = GRID_ORIGIN[vp.name];
+  const args = ['-I', path.join(__dirname, '..', 'scripts', 'ux', 'rejilla.py'), path.join(OUT, `${vp.name}-${name}.png`), path.join(OUT, `${vp.name}-${name}.json`), path.join(OUT, 'rejilla'), '--origen', `${x},${y}`, '--estricto'];
+  const r = spawnSync(REJILLA_PYTHON, args, { encoding: 'utf8' });
+  const avisos = (r.stdout ?? '').split('\n').filter((l) => l.startsWith('**Aviso:**'));
+  console.log(`rejilla.py ${vp.name}-${name} (origen ${x},${y}): exit ${r.status}${avisos.length ? `\n${avisos.join('\n')}` : ', sin avisos'}`);
+  expect.soft(r.status, `rejilla.py --estricto ${vp.name}-${name}: ${avisos.join(' · ') || r.stderr || r.error} (REJILLA_PYTHON = un python con numpy y PIL)`).toBe(0);
+}
+
 test.describe('Capturas @capture', () => {
   test.beforeAll(() => fs.mkdirSync(OUT, { recursive: true }));
 
@@ -372,22 +414,24 @@ test.describe('Capturas @capture', () => {
   }
 
   // AC-165 (relación) con las familias (ART-DIRECTION §21, D106): la pose de AC-72 (el pirata seleccionado) con 3 otros jugadores
-  // de la clase de la corrida, uno por aspecto (sin familia, británica y española), en el escenario "legibility-165". Los 3 son
-  // jugadores-bot por Socket.IO (e2e/family-visitors.ts) en LEGIBILITY_165_POSTS; la página propia es la única con navegador.
+  // de la clase de la corrida, uno por aspecto (sin familia, británica y española), en el escenario "legibility-165" (1440×900) o
+  // "legibility-165-390" (390×844), cada uno con sus puestos de D107 (LEGIBILITY_165 y LEGIBILITY_165_390). Los 3 son
+  // jugadores-bot por Socket.IO (e2e/family-visitors.ts); la página propia es la única con navegador.
   // La captura espera a que los 4 estén quietos y sin protección, y a que el cliente propio pinte a cada uno con su modelo final
   // (el GLB con su KTX2, o el procedural sin familia). El mismo JSON y las mismas comprobaciones que AC-72; la instrucción es la
   // de AC-72, sin cambios. Archivos: <vp>-legibility-165-<clase>.{png,json}
   for (const vp of VIEWPORTS) {
     test(`legibilidad con 3 Goletas y 3 Navíos en ${vp.name} (AC-165 relación, con las familias; D106)`, async ({ browser }) => {
       test.setTimeout(600_000);
+      const rel = vp.mobile ? { scenario: 'legibility-165-390', spec: LEGIBILITY_165_390 } : { scenario: 'legibility-165', spec: LEGIBILITY_165 };
       for (const classId of ['schooner', 'line'] as const) {
-        const server = await startOwnServer({ SEA_BATTLE_NPCS: '0', SEA_BATTLE_SCENARIO: 'legibility-165' });
+        const server = await startOwnServer({ SEA_BATTLE_NPCS: '0', SEA_BATTLE_SCENARIO: rel.scenario });
         const page = await newPage(browser, vp);
         let others: ReturnType<typeof postFamilyPlayers> | null = null;
         try {
           await page.addInitScript(() => localStorage.setItem('sea-battle-hints', '3')); // pistas vistas
           await enterGame(page, server.url);
-          const bots = postFamilyPlayers(server.url, LEGIBILITY_165_POSTS.map((p) => ({ classId, family: p.family, harbor: LEGIBILITY_165_HARBOR, via: p.via, post: p.post })));
+          const bots = postFamilyPlayers(server.url, rel.spec.posts.map((p) => ({ classId, family: p.family, harbor: LEGIBILITY_165_HARBOR, via: p.via, post: p.post })));
           others = bots;
           await moveTo(page, LEGIBILITY.self.x, LEGIBILITY.self.z);
           await bots.ready;
@@ -399,7 +443,7 @@ test.describe('Capturas @capture', () => {
             250
           );
           await waitFor(() => me(page), (s) => !!s && Math.hypot(s.x - LEGIBILITY.self.x, s.z - LEGIBILITY.self.z) < 2, 60_000, 250);
-          const want = LEGIBILITY_165_POSTS.map((p) => ({ sbId: `ship_${classId}${p.family === 'none' ? '' : `_${p.family}`}`, current: true, ktx2: p.family === 'none' ? null : true })).sort((a, b) => a.sbId.localeCompare(b.sbId));
+          const want = rel.spec.posts.map((p) => ({ sbId: `ship_${classId}${p.family === 'none' ? '' : `_${p.family}`}`, current: true, ktx2: p.family === 'none' ? null : true })).sort((a, b) => a.sbId.localeCompare(b.sbId));
           await expect
             .poll(
               () =>
@@ -419,8 +463,9 @@ test.describe('Capturas @capture', () => {
             )
             .toEqual(want);
           await page.waitForTimeout(700); // los barcos terminan de frenar
-          await selectNear(page, vp, 'pirate', LEGIBILITY.pirate.x, LEGIBILITY.pirate.z);
+          await selectNear(page, vp, 'pirate', rel.spec.pirate.x, rel.spec.pirate.z);
           await legibilityShot(page, vp, { ...AC72, name: `legibility-165-${classId}`, ac: `AC-165 ${classId}` });
+          gridCheck(vp, `legibility-165-${classId}`);
         } finally {
           others?.stop();
           await page.context().close();
@@ -440,11 +485,17 @@ test.describe('Capturas @capture', () => {
   const FLEET_ORDER = ['sloop', 'brig', 'schooner', 'frigate', 'line'] as const; // el de la tienda (PLAYER_SHIP_ORDER)
   const FLEET_WAIT = { x: 0, z: -140 }; // el barco propio, fuera de la zona segura (r 110) mientras se ve la escena
   const FLEET_SHUFFLE = { desktop: ['frigate', 'sloop', 'line', 'schooner', 'brig'], mobile: ['schooner', 'line', 'sloop', 'brig', 'frigate'] } as const;
-  // Puestos (m desde el foco). Los de la prueba de 1440×900 dejan cada barco del orden barajado en sus propias columnas de la
-  // rejilla (de 120 px), sin celdas compartidas: con los de la referencia, la Goleta y el Navío compartían 2 celdas, y un
-  // cambio entre los 2 no se habría detectado
+  // Puestos (m desde el foco). Los de la referencia, en una fila (2 en 390×844). Los de la prueba (D107, «Lejos de las líneas»), en
+  // la rejilla del origen fijo (GRID_ORIGIN): cada clase es un rol, así que ninguna puede compartir celda con otra, y la Fragata y
+  // el Navío ocupan 3 × 3 celdas, así que van en 2 filas: arriba, los 3 primeros del orden barajado y abajo los 2 últimos (en
+  // 390×844, 2 + 1 + 2). Salen de un buscador sobre las cajas medidas de las 3 familias a la vez, porque comparten puesto: centros
+  // a ≥ 0,42 de celda de las líneas y las zonas infladas 12 px sin celdas compartidas. El orden de lectura (por filas, de
+  // izquierda a derecha) es el del barajado, así que ninguna clase queda en el puesto que tiene en la referencia
   const FLEET_SLOTS = { desktop: [[-80, 0], [-40, 0], [0, 0], [40, 0], [80, 0]], mobile: [[-40, -30], [0, -30], [40, -30], [-22, 30], [22, 30]] } as const;
-  const FLEET_TEST_SLOTS = { desktop: [[-78, 0], [-49, 0], [-11, 0], [37, 0], [77, 0]], mobile: FLEET_SLOTS.mobile } as const;
+  const FLEET_TEST_SLOTS = {
+    desktop: [[-59.5, -22.5], [-1, -25], [56, -20.5], [-60, 44], [57.5, 43.5]],
+    mobile: [[-48, -59], [22, -57], [-0.5, -1.5], [-47, 63], [45, 64]]
+  } as const;
   const FLEET_ROLE: Record<string, string> = { sloop: 'sloop', brig: 'brigantine', schooner: 'schooner', frigate: 'frigate', line: 'line' }; // roles de §18.2
   const FLEET_NAME: Record<string, string> = { sloop: 'Balandra', brig: 'Bergantín', schooner: 'Goleta', frigate: 'Fragata', line: 'Navío de línea' };
   // La lista de roles para rejilla.py, con las palabras de la instrucción de §18.2
@@ -453,8 +504,9 @@ test.describe('Capturas @capture', () => {
   // La galería de familias para las escenas de §18.2 y §21: en un servidor propio sin NPC, sin pistas ni protección de salida (el
   // barco propio espera en mar abierto, fuera de la escena y de la zona segura), sin placas (no dicen la clase ni la familia y
   // ocupan sitio), sin HUD (ux, D106: su panel decía «Balandra», el barco propio, que es uno de los nombres que pregunta la
-  // flota; la pose de AC-72 sí lo lleva) y con las 10 combinaciones cargadas con su KTX2, como en el juego
-  async function galleryCapture(page: Page, url: string) {
+  // flota; la pose de AC-72 sí lo lleva) y con las 10 combinaciones cargadas con su KTX2, como en el juego. Con `hud`, las placas y
+  // el HUD se ven, como en la pose de AC-72 (la mezcla); `myShipId`, el barco de la galería que hace de propio
+  async function galleryCapture(page: Page, url: string, opts: { hud?: boolean; myShipId?: string } = {}) {
     await page.addInitScript(() => localStorage.setItem('sea-battle-hints', '3')); // pistas vistas
     await enterGame(page, url);
     await moveTo(page, FLEET_WAIT.x, FLEET_WAIT.z);
@@ -465,13 +517,13 @@ test.describe('Capturas @capture', () => {
       250
     );
     await page.mouse.move(5, 450);
-    await page.addStyleTag({ content: '.wo-plate, [data-testid="hud"] { visibility: hidden !important; }' });
-    await page.evaluate(() => {
+    if (!opts.hud) await page.addStyleTag({ content: '.wo-plate, [data-testid="hud"] { visibility: hidden !important; }' });
+    await page.evaluate((myShipId) => {
       const rt = window.__SEA_BATTLE__!.runtime();
       rt.setCameraPreset('game');
       rt.setZoomLevel(1);
-      (window as unknown as { __capScene: unknown }).__capScene = rt.startScene('gallery', { families: true });
-    });
+      (window as unknown as { __capScene: unknown }).__capScene = rt.startScene('gallery', { families: true, ...(myShipId ? { myShipId } : {}) });
+    }, opts.myShipId ?? null);
     await expect
       .poll(() => page.evaluate(() => {
         const glb = (window.__SEA_BATTLE__!.runtime() as unknown as { shipGlb: { loaded(k: string): boolean; model(k: string): { map?: { isCompressedTexture?: boolean } | null } } }).shipGlb;
@@ -480,12 +532,18 @@ test.describe('Capturas @capture', () => {
       .toBe(true);
   }
 
-  // Pone barcos de la galería («g-<clase>-<familia>») en puestos (m desde el foco) con su rumbo en grados; los demás, lejos
-  const placeGallery = (page: Page, ships: { id: string; dx: number; dz: number; headingDeg: number }[]) =>
+  // Pone barcos de la galería («g-<clase>-<familia>», «g-pirate», «g-merchant») en puestos (m desde el foco) con su rumbo en grados
+  // y, si lo lleva, el nombre de su placa; los demás, lejos
+  const placeGallery = (page: Page, ships: { id: string; dx: number; dz: number; headingDeg: number; name?: string }[]) =>
     page.evaluate((ships) => {
-      const scene = (window as unknown as { __capScene: { focus: { x: number; z: number }; setPose(id: string, x: number, z: number, h: number): void; spec: { ships: { id: string }[] } } }).__capScene;
+      type Scene = { focus: { x: number; z: number }; setPose(id: string, x: number, z: number, h: number): void; getShip(id: string): { name: string } | undefined; spec: { ships: { id: string }[] } };
+      const scene = (window as unknown as { __capScene: Scene }).__capScene;
       scene.spec.ships.forEach((s, i) => scene.setPose(s.id, scene.focus.x + 10_000 + 2000 * i, scene.focus.z, Math.PI / 2));
-      for (const s of ships) scene.setPose(s.id, scene.focus.x + s.dx, scene.focus.z + s.dz, (s.headingDeg * Math.PI) / 180);
+      for (const s of ships) {
+        scene.setPose(s.id, scene.focus.x + s.dx, scene.focus.z + s.dz, (s.headingDeg * Math.PI) / 180);
+        const ship = s.name ? scene.getShip(s.id) : undefined;
+        if (ship && s.name) ship.name = s.name;
+      }
     }, ships);
 
   // Nombres escritos debajo de cada barco, para las tiras de referencia (texto blanco con sombra, sin rejilla)
@@ -550,7 +608,60 @@ test.describe('Capturas @capture', () => {
             expect.soft(f.outside, `${family} ${e.id}: los píxeles del barco caben en su caja (px CSS fuera)`).toBeLessThanOrEqual(BOX_OUTSIDE_PX);
             expect.soft(f.slack, `${family} ${e.id}: la caja no sobra más que las puntas finas (px CSS)`).toBeLessThanOrEqual(BOX_SLACK_PX);
           }
+          gridCheck(vp, `fleet-1-1-${family}`);
         }
+      } finally {
+        await page.context().close();
+        await server.kill();
+      }
+    });
+  }
+
+  // AC-194 (d) y AC-72 con las familias (ART-DIRECTION §21, D106): la escena mezclada de QA-78 §7, que vivía en una sonda del
+  // scratchpad de QA (probe/mixed.js) y se porta aquí para que todas las imágenes del lote salgan del mismo commit (BACKLOG,
+  // «Adenda de QA-78 (D106)», reglas del lote). La galería con familias: el barco propio sin familia (el Bergantín, `myShipId`),
+  // un Navío británico junto al mercante y una Fragata española junto al pirata (los pares de color más cercanos, AC-194 d), y
+  // la Goleta sin familia como otro jugador. Con placas (nombres de jugador, no la clase) y HUD, como la pose de AC-72, y sin
+  // objetivo seleccionado: §21 le da los 4 roles de su instrucción (en QA-78 la selección de la sonda no llegó a aplicarse). Sin
+  // pistas ni protección de salida, como AC-72: el barco propio real espera fuera de la escena. Archivos: <vp>-mezcla.{png,json}
+  const MIX_QUESTIONS: [string, string][] = [['self', 'el barco que controlas'], ['player', 'otro jugador'], ['pirate', 'un pirata'], ['merchant', 'un mercante']];
+  const MIX_SCENE: LegibilityScene = { name: 'mezcla', ac: 'AC-194 d', roles: ROLES, selected: [], selectedLabel: 'sin objetivo seleccionado (§21)', byClass: false, questions: MIX_QUESTIONS };
+  const MIX_MERCHANT_DEG = 90 + (0.25 * 180) / Math.PI; // el de la galería (π/2 + 0,25)
+  // [id, dx, dz (m desde el foco), rumbo (°), nombre de la placa]. Los rumbos y los nombres, los de la sonda de QA. Los puestos (D107,
+  // «Lejos de las líneas»), en la rejilla del origen fijo (GRID_ORIGIN): salen de un buscador sobre las cajas medidas (barco y placa),
+  // con centros a ≥ 0,4 de celda en 1440×900 y ≥ 0,33 en 390×844, las zonas infladas 10 y 8 px sin celdas compartidas entre roles,
+  // fuera del HUD y de las islas, y con cada par de AC-194 (d) en bloques de celdas contiguos: en 1440×900, el pirata sobre la
+  // Fragata española y el mercante bajo el Navío británico, como en la sonda; en 390×844, cada par lado a lado (filas 5-6 y 9-10)
+  const MIX_LAYOUT: Record<'desktop' | 'mobile', [string, number, number, number, string][]> = {
+    desktop: [
+      ['g-brig-none', -62.5, 20.5, 90, 'Invitado'],
+      ['g-line-gb', -4.5, -37, 90, 'Capitana Morgana'],
+      ['g-merchant', -0.5, 21.5, MIX_MERCHANT_DEG, 'Mercante'],
+      ['g-frigate-es', 74, 25, 135, 'Rodrigo'],
+      ['g-pirate', 77.5, -43, 180, 'Pirata'],
+      ['g-schooner-none', -78.5, -41.5, 90, 'Lucía']
+    ],
+    mobile: [
+      ['g-brig-none', 43.5, -28.5, 90, 'Invitado'],
+      ['g-line-gb', -25.5, -51, 90, 'Capitana Morgana'],
+      ['g-merchant', 44.5, -90, MIX_MERCHANT_DEG, 'Mercante'],
+      ['g-frigate-es', -47.5, 63, 135, 'Rodrigo'],
+      ['g-pirate', 46, 64.5, 180, 'Pirata'],
+      ['g-schooner-none', -49.5, 1.5, 90, 'Lucía']
+    ]
+  };
+
+  for (const vp of VIEWPORTS) {
+    test(`la mezcla con las familias en ${vp.name} (AC-194 d y AC-72; QA-78 §7)`, async ({ browser }) => {
+      test.setTimeout(300_000);
+      const server = await startOwnServer({ SEA_BATTLE_NPCS: '0' });
+      const page = await newPage(browser, vp);
+      try {
+        await galleryCapture(page, server.url, { hud: true, myShipId: 'g-brig-none' });
+        await placeGallery(page, MIX_LAYOUT[vp.name as 'desktop' | 'mobile'].map(([id, dx, dz, headingDeg, name]) => ({ id, dx, dz, headingDeg, name })));
+        await page.waitForTimeout(1500);
+        await legibilityShot(page, vp, MIX_SCENE);
+        gridCheck(vp, 'mezcla');
       } finally {
         await page.context().close();
         await server.kill();
@@ -566,7 +677,11 @@ test.describe('Capturas @capture', () => {
   // celdas de la rejilla. Archivos: desktop-family-read-referencia.png, desktop-family-read-<1|2>.{png,json}
   const READ_SHIPS = [['sloop', 'gb'], ['line', 'gb'], ['brig', 'es'], ['line', 'es'], ['schooner', 'none'], ['brig', 'none']] as const;
   const READ_HEADINGS = [45, 135, 225, 315, 45, 135]; // AD-28, repartidos entre los 6
-  const READ_SLOTS = [[-55, -40], [0, -40], [55, -40], [-55, 40], [0, 40], [55, 40]] as const; // m desde el foco
+  // m desde el foco. D107 («Lejos de las líneas», §18.1): en la rejilla del origen fijo (GRID_ORIGIN), con el aspecto como rol (un
+  // británico y un español en la misma celda dejarían pasar la confusión que se mide); los mismos 6 puestos valen para las 2
+  // disposiciones (de un buscador sobre las cajas medidas): centros a ≥ 0,37 de celda y las zonas infladas 8 px sin celdas
+  // compartidas entre aspectos. Antes, (±55, ±40) y (0, ±40), con centros a 0,196–0,216 de celda
+  const READ_SLOTS = [[-58, -45], [-0.5, -44], [55.5, -43], [-56, 43], [0.5, 44], [55.5, 43.5]] as const;
   const READ_NAMES: Record<string, string> = { gb: 'familia británica', es: 'familia española', none: 'sin familia' };
   const READ_QUESTIONS: [string, string][] = [['gb', 'familia británica'], ['es', 'familia española'], ['none', 'sin familia']];
   // Barajado reproducible (mulberry32 + Fisher-Yates)
@@ -632,6 +747,7 @@ test.describe('Capturas @capture', () => {
           expect.soft(f.outside, `${seed} ${e.id}: los píxeles del barco caben en su caja (px CSS fuera)`).toBeLessThanOrEqual(BOX_OUTSIDE_PX);
           expect.soft(f.slack, `${seed} ${e.id}: la caja no sobra más que las puntas finas (px CSS)`).toBeLessThanOrEqual(BOX_SLACK_PX);
         }
+        gridCheck(vp, `family-read-${seed}`);
       }
     } finally {
       await ctx.close();
