@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test';
 import { PORTS } from '../playwright.config';
+import { UNDER_FIRE } from '../server/scenarios';
 import { commits, DebugShip, enterGame, hud, installCommitCounter, me, renderInfo, ships, trackSocket, waitFor } from './helpers';
+import { startOwnServer } from './own-server';
 
 const EMPTY = `http://localhost:${PORTS.empty}`;
 
@@ -118,5 +120,49 @@ test.describe('Rendimiento @perf', () => {
     console.log(`AC-89: ${info.calls} draw calls, ${info.triangles} triángulos`);
     expect(info.calls).toBeLessThanOrEqual(100);
     expect(info.triangles).toBeLessThanOrEqual(250_000);
+  });
+
+  // AC-257 (c) y ZB-8 (E20, D127 y D128): la cuenta atrás de bajo fuego se pinta por ref, sin commits de React, y no cambia
+  // nada del mundo. Servidor propio con el escenario "under-fire": el jugador, quieto dentro de la zona, dispara una vez al
+  // mercante y cancela; la marca corre 10 s sin renovarse
+  test('AC-257 (c) y ZB-8: sin marca, 0 commits en reposo; con la marca, la cuenta añade ≤ 1 commit/s y el mundo dibuja lo mismo', async ({ page }) => {
+    test.setTimeout(150_000);
+    const server = await startOwnServer({ SEA_BATTLE_NPCS: '0', SEA_BATTLE_SCENARIO: 'under-fire' });
+    try {
+      await installCommitCounter(page);
+      await enterGame(page, server.url);
+      const { inside } = UNDER_FIRE;
+      await page.evaluate(([x, z]) => window.__SEA_BATTLE__!.runtime().client.moveTo(x, z), [inside.x, inside.z]);
+      await waitFor(() => me(page), (s) => !!s && Math.hypot(s.x - inside.x, s.z - inside.z) < 3, 45_000, 200);
+      await page.mouse.move(5, 450);
+      await page.waitForTimeout(16_000); // quieto y sin la protección de reaparición (15 s), que también cuenta por ref
+
+      const c0 = await commits(page);
+      await page.waitForTimeout(5000);
+      const idle = (await commits(page)) - c0;
+      const calm = await renderInfo(page);
+
+      const merchant = (await ships(page)).find((s) => s.kind === 'merchant')!;
+      await page.evaluate((id) => window.__SEA_BATTLE__!.runtime().client.attack(id), merchant.id);
+      const uf = (await waitFor(() => me(page), (s) => !!s && s.underFireUntil > 0, 10_000, 50))!.underFireUntil;
+      await page.evaluate(() => window.__SEA_BATTLE__!.runtime().client.cancelAttack());
+      await page.waitForTimeout(3500); // el impacto, el humo y el aviso del ataque se asientan
+      const t0 = await page.evaluate(() => window.__SEA_BATTLE__!.serverTime());
+      const c1 = await commits(page);
+      await page.waitForTimeout(5000);
+      const counting = (await commits(page)) - c1;
+      const t1 = await page.evaluate(() => window.__SEA_BATTLE__!.serverTime());
+      const marked = await renderInfo(page);
+      const seconds = await page.locator('[data-under-fire-seconds]').getAttribute('data-under-fire-seconds');
+      console.log(
+        `AC-257 (c): ${idle} commits en 5 s sin marca · ${counting} commits en ${(t1 - t0).toFixed(1)} s de cuenta (uf ${uf.toFixed(1)}, hasta t ${t1.toFixed(1)}, quedan ${seconds} s) · ZB-8: ${calm.calls}/${marked.calls} draw calls y ${calm.triangles}/${marked.triangles} triángulos sin/con marca`
+      );
+      expect(idle).toBe(0);
+      expect(t1).toBeLessThan(uf); // toda la ventana medida, bajo fuego
+      expect(counting / (t1 - t0)).toBeLessThanOrEqual(1);
+      expect(marked).toEqual(calm);
+    } finally {
+      await server.kill();
+    }
   });
 });

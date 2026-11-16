@@ -21,7 +21,12 @@ export interface MeHud {
   inSafeZone: boolean;
   protectedUntil: number; // tiempo de servidor (s)
   action: ActionState;
-  underFire: boolean; // dañado en los últimos 3 s (reparación al 1,5 %/s)
+  underFire: boolean; // dañado en los últimos 3 s (reparación al 1,5 %/s); no es la marca de la zona (O-151)
+  // Marca de bajo fuego de la zona segura (E20, GDD §11): el instante en que caduca (`uf`, tiempo de servidor; 0 sin marca),
+  // que cambia como mucho una vez por andanada, y si está activa, que cambia al aparecer y al caducar con el reloj del
+  // cliente (O-150). La cuenta que corre no pasa por aquí: se pinta por ref (D128)
+  underFireUntil: number;
+  underFireMark: boolean;
 }
 
 export interface TargetHud {
@@ -41,12 +46,20 @@ export interface TargetHud {
   danger: boolean; // marca de peligro de un NPC a flote (AC-189): cambia con el barco, las mejoras, el objetivo o su hundimiento, nunca con la vida
 }
 
-// achievement: el aviso de subida de nivel (ART-DIRECTION §12.9, «logro»), con la insignia del rango en lugar del icono
+// achievement: el aviso de subida de nivel (ART-DIRECTION §12.9, «logro»), con la insignia del rango en lugar del icono.
+// key: un aviso nuevo con la misma clave sustituye al visible en lugar de apilarse (D125, el del puerto bajo fuego); fire:
+// lleva la llama delante del texto
 export interface Toast {
   id: number;
   kind: 'info' | 'ok' | 'warn' | 'danger' | 'achievement';
   text: string;
   rank?: Rank;
+  key?: string;
+  fire?: true;
+}
+export interface ToastOptions {
+  key?: string;
+  fire?: boolean;
 }
 
 // reward: las partes de una línea de botín (AC-152), para truncar solo el nombre y pintar la XP en su color
@@ -75,7 +88,7 @@ interface HudState {
   select: (id: string | null) => void;
   setShopOpen: (open: boolean) => void;
   setFreeView: (free: boolean) => void;
-  pushToast: (kind: Toast['kind'], text: string, rank?: Rank) => void;
+  pushToast: (kind: Toast['kind'], text: string, rank?: Rank, options?: ToastOptions) => void;
   dismissToast: (id: number) => void;
   pushFeed: (tone: FeedLine['tone'], text: string, reward?: Reward) => void;
 }
@@ -111,16 +124,22 @@ export const useHud = create<HudState>((set) => ({
   select: (id) => set({ selectedId: id }),
   setShopOpen: (open) => set({ shopOpen: open }),
   setFreeView: (free) => set((s) => (s.freeView === free ? s : { freeView: free })),
-  pushToast: (kind, text, rank) => {
-    // AC-127: un aviso con el mismo texto que uno visible no se apila; se queda en su sitio y su vida vuelve a empezar
-    const same = useHud.getState().toasts.find((t) => t.text === text);
+  pushToast: (kind, text, rank, options) => {
+    // AC-127: un aviso con el mismo texto que uno visible no se apila; se queda en su sitio y su vida vuelve a empezar. Con
+    // clave (D125), lo mismo con el visible de su clave, que toma el texto nuevo
+    const key = options?.key;
+    const same = useHud.getState().toasts.find((t) => (key ? t.key === key : t.text === text));
     if (same) {
-      if (same.kind !== kind) set((s) => ({ toasts: s.toasts.map((t) => (t.id === same.id ? { ...t, kind } : t)) }));
+      if (same.kind !== kind || same.text !== text) set((s) => ({ toasts: s.toasts.map((t) => (t.id === same.id ? { ...t, kind, text } : t)) }));
       scheduleDismiss(same.id, kind);
       return;
     }
     const id = nextId++;
-    set((s) => ({ toasts: [...s.toasts, rank ? { id, kind, text, rank } : { id, kind, text }].slice(-MAX_TOASTS) }));
+    const toast: Toast = { id, kind, text };
+    if (rank) toast.rank = rank;
+    if (key) toast.key = key;
+    if (options?.fire) toast.fire = true;
+    set((s) => ({ toasts: [...s.toasts, toast].slice(-MAX_TOASTS) }));
     scheduleDismiss(id, kind);
   },
   dismissToast: (id) => {

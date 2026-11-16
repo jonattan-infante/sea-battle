@@ -13,12 +13,16 @@ import {
   isLowHp,
   levelText,
   portBlock,
+  portBlockReason,
+  PortBlockReason,
   rangeText,
   targetTypeLine,
+  underFireSeconds,
   xpFill,
   XpProgress,
   xpNumbers,
-  xpProgress
+  xpProgress,
+  zoneSlotOf
 } from '../../client/hud-logic';
 import { MeHud, Relation, TargetHud, useHud } from '../../client/hud-store';
 import { isArrowCode } from '../../client/key-bindings';
@@ -26,7 +30,7 @@ import { useOptions } from '../../client/options-store';
 import { HUD_BLOCKS_EVENT } from '../../client/overlays';
 import { RankBadge } from './badges';
 import FeedText from './FeedText';
-import { Alert, Close, CloudOff, Coins, Crosshair, Recenter, Sailboat, Shield, Stop, Store, Swords, Target, Wrench } from './icons';
+import { Alert, Close, CloudOff, Coins, Crosshair, Flame, Recenter, Sailboat, Shield, ShieldOff, Stop, Store, Swords, Target, Wrench } from './icons';
 import Minimap, { ViewRect } from './Minimap';
 import { KeyCap, OptionsButton, OptionsPanel, useKeyText } from './OptionsPanel';
 import { useHudLayout } from './layout';
@@ -270,26 +274,101 @@ function GoldPanel() {
 
 // ---------- Toasts, aviso de zona y feed ----------
 
+// La cuenta de bajo fuego (D128): N = ceil(uf − serverTime), escrita por ref desde el ticker del HUD solo cuando cambia el
+// entero, sin commits de React. React no pinta ni el texto ni el atributo: la primera escritura va en el layout effect, en
+// el mismo commit que muestra el elemento y antes de pintar. holder recibe data-under-fire-seconds (solo el hueco de aviso:
+// bajo fuego hay exactamente uno en la página). element: el estado que pinta el elemento; al cambiar, el elemento es otro
+// (cada estado lleva su key) y la cuenta se escribe de nuevo en él
+function useFireCountdown(
+  client: GameClient,
+  until: number,
+  active: boolean,
+  count: React.RefObject<HTMLElement | null>,
+  format: (n: number) => string,
+  holder?: React.RefObject<HTMLElement | null>,
+  element = ''
+) {
+  useLayoutEffect(() => {
+    if (!active) return;
+    let last = -1;
+    const write = (now: number) => {
+      const n = underFireSeconds(until, client.serverTime(now));
+      if (n === last) return;
+      last = n;
+      if (count.current) count.current.textContent = format(n);
+      if (holder?.current) holder.current.dataset.underFireSeconds = String(n);
+    };
+    write(performance.now());
+    return addTicker(write);
+  }, [client, until, active, count, format, holder, element]);
+}
+
+const secondsText = (n: number) => `${n} s`;
+const plainText = (n: number) => String(n);
+
 // Cada aviso visible es un bloque del HUD para las placas (ART-DIRECTION §11.4, D41). Entran y salen de golpe: en el mismo
 // commit, antes de pintar, la capa de placas relee las cajas y oculta las que quedan debajo. El aviso de guardado
 // (AC-132, D50) va el primero, por encima de «Zona segura», y como ella no caduca ni cuenta en el cupo de toasts
-function Toasts() {
+// El hueco de aviso de la zona (D120 a D123) tiene 3 estados y enseña una sola fila: la píldora «Bajo fuego · N s» fuera de
+// la zona, «Bajo fuego: la zona aún no te protege · N s» dentro y «Zona segura» sin marca. data-zone-state dice el estado de
+// la zona (AC-255) y el número va con aria-hidden: el aria-live de la columna no lee un número por segundo (D128)
+function ZoneSlot({ client }: { client: GameClient }) {
+  const slot = useHud((s) => zoneSlotOf(s.me));
+  const until = useHud((s) => s.me?.underFireUntil ?? 0);
+  const holderRef = useRef<HTMLDivElement>(null);
+  const countRef = useRef<HTMLSpanElement>(null);
+  const marked = slot === 'pill' || slot === 'under-fire';
+  useFireCountdown(client, until, marked, countRef, secondsText, holderRef, slot);
+  // Al caducar no llega ningún snapshot (O-150): el ticker cambia el estado en el primer frame con serverTime ≥ uf, sin
+  // esperar al sync de 10 Hz (AC-254: ≤ 200 ms). Es un solo commit: con la marca apagada, este efecto se desuscribe
+  useEffect(() => {
+    if (!marked) return;
+    return addTicker((now) => {
+      if (client.serverTime(now) < until) return;
+      const s = useHud.getState();
+      if (s.me?.underFireMark && s.me.underFireUntil === until) useHud.setState({ me: { ...s.me, underFireMark: false } });
+    });
+  }, [client, marked, until]);
+  if (slot === 'pill') {
+    return (
+      <div key="pill" ref={holderRef} className="toast toast--fire" data-testid="under-fire" data-hud-block="">
+        <Flame size={16} /><span className="toast__text"><b>Bajo fuego</b></span><span ref={countRef} className="toast__count" aria-hidden="true" />
+      </div>
+    );
+  }
+  if (slot === 'under-fire') {
+    return (
+      <div key="under-fire" ref={holderRef} className="toast toast--zone is-under-fire" data-testid="safe-zone" data-zone-state="under-fire" data-hud-block="">
+        <ShieldOff size={16} /><span className="toast__text"><b>Bajo fuego:</b> la zona aún no te protege</span><span ref={countRef} className="toast__count" aria-hidden="true" />
+      </div>
+    );
+  }
+  if (slot === 'protected') {
+    // Su propia key: nunca reutiliza el nodo de «no te protege», que lleva data-under-fire-seconds escrito por ref
+    return <div key="protected" className="toast toast--zone" data-testid="safe-zone" data-zone-state="protected" data-hud-block=""><Shield size={16} /> Zona segura</div>;
+  }
+  return null;
+}
+
+function Toasts({ client }: { client: GameClient }) {
   const toasts = useHud((s) => s.toasts);
-  const inSafe = useHud((s) => s.me?.inSafeZone && s.me.state === 'alive');
+  const slot = useHud((s) => zoneSlotOf(s.me));
   const unsaved = useHud((s) => s.saveWarning);
   const feed = useHud((s) => s.feed);
-  const blocksKey = `${toasts.map((t) => t.id).join()}|${feed.map((f) => f.id).join()}|${!!inSafe}|${unsaved}`;
+  const blocksKey = `${toasts.map((t) => `${t.id}:${t.text}`).join()}|${feed.map((f) => f.id).join()}|${slot}|${unsaved}`;
   useLayoutEffect(() => {
     window.dispatchEvent(new Event(HUD_BLOCKS_EVENT));
   }, [blocksKey]);
   return (
     <div className="hud-toasts" role="status" aria-live="polite" data-testid="toasts">
       {unsaved && <div className="toast toast--warn toast--unsaved" data-testid="save-warning" data-hud-block=""><CloudOff size={16} /> Progreso sin guardar, reintentando…</div>}
-      {inSafe && <div className="toast toast--zone" data-testid="safe-zone" data-hud-block=""><Shield size={16} /> Zona segura</div>}
-      {/* El aviso de subida de nivel (AC-151) lleva la insignia de 24 px en lugar del icono (§12.9) */}
+      <ZoneSlot client={client} />
+      {/* El aviso de subida de nivel (AC-151) lleva la insignia de 24 px en lugar del icono (§12.9); el del puerto bajo
+          fuego, la llama (D125) */}
       {toasts.map((t) => (
-        <div key={t.id} className={`toast toast--${t.kind}`} data-hud-block="">
+        <div key={t.id} className={`toast toast--${t.kind} ${t.fire ? 'is-fire' : ''}`} data-hud-block="" data-toast-key={t.key}>
           {t.rank && <RankBadge rank={t.rank} size={24} />}
+          {t.fire && <Flame size={16} />}
           {t.text}
         </div>
       ))}
@@ -328,6 +407,8 @@ interface ActionModel {
   alive: boolean;
   portEnabled: boolean;
   portTitle: string;
+  portBlock: PortBlockReason | null; // data-port-block (D124)
+  underFireUntil: number;
 }
 
 function useActionModel(): ActionModel | null {
@@ -339,6 +420,8 @@ function useActionModel(): ActionModel | null {
   const attacking = me.action === 'firing' || me.action === 'armed';
   const port = portBlock(me, unsaved);
   return {
+    portBlock: portBlockReason(me, unsaved),
+    underFireUntil: me.underFireUntil,
     alive,
     attacking,
     armed: me.action === 'armed',
@@ -373,13 +456,27 @@ function useReloadLayer(ref: React.RefObject<HTMLElement | null>, active: boolea
   }, [ref, active]);
 }
 
-function ActionBar({ actions }: { actions: HudActions }) {
+// Puerto bajo fuego (D124): la cuenta «N» sobre el icono y la llama de 12 px, al 100 %; el icono y la palabra, desactivados
+// como hoy. La cuenta va por ref (D128), sin data-under-fire-seconds, que solo lleva el hueco de aviso
+function PortFire({ client, until }: { client: GameClient; until: number }) {
+  const countRef = useRef<HTMLSpanElement>(null);
+  useFireCountdown(client, until, true, countRef, plainText);
+  return (
+    <>
+      <span className="slot__fire"><Flame size={12} /></span>
+      <span ref={countRef} className="slot__count" aria-hidden="true" data-testid="port-fire-count" />
+    </>
+  );
+}
+
+function ActionBar({ client, actions }: { client: GameClient; actions: HudActions }) {
   const m = useActionModel();
   const keys = useOptions((s) => s.keys); // la ranura de Detener enseña su tecla asignada (AC-208)
   const stopKey = useKeyText('stop');
   const reloadRef = useRef<HTMLSpanElement>(null);
   useReloadLayer(reloadRef, !!m?.attacking);
   if (!m) return null;
+  const fire = m.portBlock === 'under-fire';
   return (
     <nav className="panel hud-actions" aria-label="Acciones" data-testid="action-bar" data-hud-block="">
       <button
@@ -417,29 +514,32 @@ function ActionBar({ actions }: { actions: HudActions }) {
         <span className="slot__icon"><Stop size={28} /></span>
         <span className="slot__label">Detener</span>
       </button>
-      {/* DT-02 (AC-66): fuera de la zona, o con la BD caída (AC-132), se ve desactivado con aria-disabled y no con
-          disabled, para que el clic o el toque lleguen a togglePort y muestren el aviso con el motivo */}
+      {/* DT-02 (AC-66): fuera de la zona, con la BD caída (AC-132) o bajo fuego (AC-253), se ve desactivado con
+          aria-disabled y no con disabled, para que el clic o el toque lleguen a togglePort y muestren el aviso con el motivo */}
       <button
         type="button"
-        className="slot"
+        className={`slot ${fire ? 'is-under-fire' : ''}`}
         aria-disabled={!m.portEnabled}
         onClick={actions.togglePort}
         title={m.portTitle}
         data-testid="btn-port"
+        data-port-block={m.portBlock ?? undefined}
       >
         <span className="slot__key">P</span>
         <span className="slot__icon"><Store size={28} /></span>
         <span className="slot__label">Puerto</span>
+        {fire && <PortFire client={client} until={m.underFireUntil} />}
       </button>
     </nav>
   );
 }
 
-function MobileButtons({ actions }: { actions: HudActions }) {
+function MobileButtons({ client, actions }: { client: GameClient; actions: HudActions }) {
   const m = useActionModel();
   const reloadRef = useRef<HTMLSpanElement>(null);
   useReloadLayer(reloadRef, !!m?.attacking);
   if (!m) return null;
+  const fire = m.portBlock === 'under-fire';
   return (
     <>
       <button type="button" className={`hud-mobile-btn hud-mobile-btn--attack ${m.attacking ? 'is-active' : ''}`} disabled={!m.attackEnabled} onClick={actions.toggleAttack} data-testid="m-attack" data-hud-block="" aria-label="Atacar">
@@ -455,9 +555,20 @@ function MobileButtons({ actions }: { actions: HudActions }) {
         <Wrench size={22} />
         Reparar
       </button>
-      <button type="button" className="hud-mobile-btn hud-mobile-btn--port" aria-disabled={!m.portEnabled} onClick={actions.togglePort} data-testid="m-port" data-hud-block="" aria-label="Puerto" title={m.portEnabled ? 'Puerto' : m.portTitle}>
+      <button
+        type="button"
+        className={`hud-mobile-btn hud-mobile-btn--port ${fire ? 'is-under-fire' : ''}`}
+        aria-disabled={!m.portEnabled}
+        onClick={actions.togglePort}
+        data-testid="m-port"
+        data-hud-block=""
+        data-port-block={m.portBlock ?? undefined}
+        aria-label="Puerto"
+        title={m.portEnabled ? 'Puerto' : m.portTitle}
+      >
         <Store size={22} />
-        Puerto
+        <span className="hud-mobile-btn__label">Puerto</span>
+        {fire && <PortFire client={client} until={m.underFireUntil} />}
       </button>
     </>
   );
@@ -518,7 +629,7 @@ function placeHint(el: HTMLElement) {
 function Hint() {
   const hint = useHud((s) => s.hint);
   // Cambia solo cuando entra o sale un toast (o una línea del feed, que en móvil es un toast) o Centrar: pocas veces por minuto
-  const toastKey = useHud((s) => `${s.toasts.map((t) => t.id).join()}|${s.feed.map((f) => f.id).join()}|${s.me?.inSafeZone && s.me.state === 'alive'}|${s.saveWarning}|${s.freeView}`);
+  const toastKey = useHud((s) => `${s.toasts.map((t) => `${t.id}:${t.text}`).join()}|${s.feed.map((f) => f.id).join()}|${zoneSlotOf(s.me)}|${s.saveWarning}|${s.freeView}`);
   const ref = useRef<HTMLDivElement>(null);
   const visible = hint !== null && hint < HINTS.length;
 
@@ -577,10 +688,10 @@ export default function Hud({
         <GoldPanel />
         <OptionsButton />
         <Minimap client={client} islands={islands} viewRect={viewRect} onView={onMinimapView} />
-        <Toasts />
+        <Toasts client={client} />
         <Feed />
-        <ActionBar actions={actions} />
-        <MobileButtons actions={actions} />
+        <ActionBar client={client} actions={actions} />
+        <MobileButtons client={client} actions={actions} />
         <RecenterButton onRecenter={onRecenter} />
         <Hint />
       </div>
