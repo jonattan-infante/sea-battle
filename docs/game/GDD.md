@@ -829,7 +829,7 @@ Con esas tasas salen los tiempos de la tabla de niveles: XP acumulada de 421 a l
 | Otros jugadores te atacan | No | Sí | Sí |
 | Atacas a otro jugador | No | Sí, si él es atacable | Sí, si él es atacable |
 | Atacas a un NPC | Sí, y al disparar quedas bajo fuego | Sí | Sí |
-| Tienda y cambio de barco | Sí | **No** | No |
+| Tienda, cambio de barco y, desde la 1.3, cambio de familia | Sí | **No** | No |
 
 La protección al reaparecer (§12) no cambia y va aparte: mientras dura, nadie te ataca, estés donde estés.
 
@@ -854,7 +854,7 @@ La protección al reaparecer (§12) no cambia y va aparte: mientras dura, nadie 
 - **Regla nueva: un NPC hostil suelta al objetivo que está dentro de la zona y fuera de su alcance,** y pasa a Regreso en ese tick (§9; al llegar recupera la vida). Sin ella, la regla crearía una granja: un jugador bajo fuego a < 75 m del puerto, con más alcance (cañones N2 o N3, 70 u 80 m), dispararía a un pirata clavado en su borde de 130 m sin recibir nada. Con ella, lo que se le acierta mientras se aleja es lo mismo que en la 1.2 al meterse en la zona.
 - Un hostil sí elige como objetivo a quien está dentro bajo fuego y a tiro, y no lo suelta mientras siga así.
 
-**El puerto cierra bajo fuego.** Ni la tienda ni el cambio de barco funcionan bajo fuego, aunque estés dentro de la zona. *Por qué:* comprar un barco te lo da con la vida llena (más arriba), así que sería curarse en mitad de un combate, y comprar Cañones N3 en pleno duelo lo decide un menú. En Seafight se equipa en el refugio, y no se entra en él en pleno combate (S33). Si la tienda está abierta cuando caes bajo fuego, se cierra, como al salir de la zona. Una compra que el servidor ya validó y está escribiendo se entrega igualmente: es la limitación conocida de `applyBuy` (P3, `src/game/world.ts:618-620`), que esta regla no cambia. **Cómo se construye:** la condición va en un helper (`canUsePort(world, ship)`), y en `planBuy` y `planSelectShip` (`world.ts:607` y `:661`) solo cambia la línea de la condición. No se tocan `server/progress.ts`, la forma de `ShopItem` ni `applyPurchase` (BACKLOG AC-252).
+**El puerto cierra bajo fuego.** Ni la tienda ni el cambio de barco funcionan bajo fuego, aunque estés dentro de la zona. *Por qué:* comprar un barco te lo da con la vida llena (más arriba), así que sería curarse en mitad de un combate, y comprar Cañones N3 en pleno duelo lo decide un menú. En Seafight se equipa en el refugio, y no se entra en él en pleno combate (S33). Si la tienda está abierta cuando caes bajo fuego, se cierra, como al salir de la zona. Una compra que el servidor ya validó y está escribiendo se entrega igualmente: es la limitación conocida de `applyBuy` (P3, `src/game/world.ts:618-620`), que esta regla no cambia. **Cómo se construye:** la condición va en un helper (`canUsePort(world, ship)`), y en `planBuy` y `planSelectShip` (`world.ts:607` y `:661`) solo cambia la línea de la condición. No se tocan `server/progress.ts`, la forma de `ShopItem` ni `applyPurchase` (BACKLOG AC-252). **Con las familias (1.3):** cambiar de familia (`selectFamily`, §13) también se cierra bajo fuego, aunque no cambie el juego: su selector está en la tienda, que bajo fuego se cierra, y así el jugador tiene una sola regla (producto, 2026-11-16; BACKLOG AC-252).
 
 **Qué necesita saber el jugador** (lo diseña `game-ux`, con imagen):
 1. **Que está bajo fuego y cuántos segundos faltan,** en cualquier punto del mapa, para decidir si le compensa huir al puerto.
@@ -876,7 +876,7 @@ La palabra para el jugador es **«bajo fuego»**, la de Jonattan. No se pide un 
 | `Ship.underFireUntil` | Reloj del mundo; −∞ al crear el barco y al zarpar | Instante en que caduca la marca. Solo tiene efecto en jugadores |
 | `isUnderFire(world, ship)` | `ship.underFireUntil > world.time` | Está bajo fuego |
 | `isZoneProtected(world, ship)` | `isInSafeZone(ship.pos) && !isUnderFire(world, ship)` | Sustituye a `isInSafeZone` en las 3 comprobaciones de combate: `world.ts:198`, `:207` y `:896` |
-| `canUsePort(world, ship)` | `isZoneProtected(world, ship)` | Condición del astillero y del cambio de barco (`world.ts:607` y `:661`) |
+| `canUsePort(world, ship)` | `isZoneProtected(world, ship)` | Condición del astillero y del cambio de barco (`world.ts:607` y `:661`) y, desde la 1.3, del cambio de familia (`planSelectFamily`, `world.ts:773` en `d35ac0c`) |
 | `uf` | Campo del barco en el snapshot | `underFireUntil` hacia el cliente, solo al cambiar |
 | Motivo del rechazo bajo fuego | «Bajo fuego: el puerto abre tras 10 s sin disparos» (provisional; el texto final es de `game-ux`) | Respuesta a `buy` y `selectShip` bajo fuego. Fuera de la zona, los motivos de hoy no cambian |
 
