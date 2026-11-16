@@ -53,3 +53,6 @@ next-env.d.ts
 
 # sesión del usuario de prueba del arnés remoto (playwright.remote.config.ts)
 /.auth
+
+# Cachés de Python de los scripts de arte (scripts/ux)
+__pycache__/
