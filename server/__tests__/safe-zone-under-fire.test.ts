@@ -248,6 +248,7 @@ describe('E20 con el servidor real: combate', () => {
 });
 
 describe('E20 con el servidor real: el puerto cierra bajo fuego (AC-252)', () => {
+  beforeEach(() => start()); // cada test lo reemplaza por el suyo (con o sin almacén); sin él, el bloque no corre aislado con -t
   // Almacén en memoria: con él, el jugador lleva progreso guardado y la tienda va por planBuy / planSelectShip y la BD
   function memoryStore() {
     const rows = new Map<string, StoredProgress>();
