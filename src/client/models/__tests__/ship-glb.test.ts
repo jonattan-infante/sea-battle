@@ -811,6 +811,22 @@ describe('§13: los GLB de public/models llevan el hash de su contenido', () => 
     );
     expect(bad).toEqual([]);
   });
+
+  // La cota de las 10 combinaciones (BACKLOG :2384 y :361; ASSET-SPEC §13, :910): ≤ 1 020 000 B en archivo, cada GLB con la
+  // KTX2 que nombra su uri (paso 4c), como las cuenta e2e/entry-download.spec.ts. La suma exacta es la de la entrega en curso
+  // (D107: la relinga de las 2 Goletas, +52 y +68 B sobre 1 015 687), para que un GLB cambiado sin querer se vea aquí
+  test('las 10 combinaciones de la 1.3 suman 1 015 807 B en archivo, dentro de la cota de 1 020 000', () => {
+    const family = Object.entries(SHIP_GLB).filter(([k]) => k.includes(':')).map(([, url]) => url!);
+    const sizes = family.map((url) => {
+      const uris = externalUris(new Uint8Array(fs.readFileSync(path.join(ROOT, 'public', url)))).filter((u) => u.endsWith('.ktx2'));
+      expect(uris).toHaveLength(1);
+      return fs.statSync(path.join(ROOT, 'public', url)).size + fs.statSync(path.join(ROOT, 'public', 'models', uris[0])).size;
+    });
+    expect(family).toHaveLength(10);
+    const total = sizes.reduce((a, b) => a + b, 0);
+    expect(total).toBeLessThanOrEqual(1_020_000);
+    expect(total).toBe(1_015_807);
+  });
 });
 
 describe('§1: el GLB comprimido como pide el contrato (meshopt, cuantización y KTX2 ETC1S)', () => {
@@ -930,8 +946,8 @@ describe('Los GLB de la Cañonera y el Capitán de D91 (ASSET-SPEC §13)', () =>
     ['sloop:es', 'ship_sloop_es', [1386, 311], 4],
     ['brig:gb', 'ship_brigantine_gb', [2202, 453], 6],
     ['brig:es', 'ship_brigantine_es', [2546, 413], 6],
-    ['schooner:gb', 'ship_schooner_gb', [1438, 368], 4],
-    ['schooner:es', 'ship_schooner_es', [1590, 328], 4],
+    ['schooner:gb', 'ship_schooner_gb', [1438, 372], 4], // + 4 de LOD1: la relinga de D107
+    ['schooner:es', 'ship_schooner_es', [1590, 332], 4],
     ['frigate:gb', 'ship_frigate_gb', [3682, 666], 8],
     ['frigate:es', 'ship_frigate_es', [4026, 626], 8],
     ['line:gb', 'ship_line_gb', [4821, 860], 10],

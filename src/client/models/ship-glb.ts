@@ -20,13 +20,13 @@ export const SHIP_GLB: Partial<Record<string, string>> = {
   gunboat: '/models/npc_pirate_gunboat.c0e38d17.glb', // la Cañonera de D91, v6 (D97; ASSET-SPEC §13; sha256 6785c435…4ab8)
   captain: '/models/npc_pirate_captain.73eb940c.glb', // el Capitán de D91 (ASSET-SPEC §13; sha256 7a9b694c…ef92)
   // Las 10 combinaciones de la 1.3 (AC-227 a), con sockets, la bandera de D104 y, en la Fragata, la KTX2 _a512 de D105
-  // (entregar.py familias; ASSET-SPEC §13, sus sha256). Las 10 suman 1 015 687 B en archivo, frente a la cota de 1 020 000
+  // (entregar.py familias; ASSET-SPEC §13, sus sha256). Las 10 suman 1 015 807 B en archivo, frente a la cota de 1 020 000
   'sloop:gb': '/models/ship_sloop_gb.9688272b.glb', // D95, la Balandra (sha256 c7610837…)
   'sloop:es': '/models/ship_sloop_es.41de8816.glb', // (sha256 c7fccc47…)
   'brig:gb': '/models/ship_brigantine_gb.72a27415.glb', // D95, el Bergantín (sha256 efb220d6…)
   'brig:es': '/models/ship_brigantine_es.6802a789.glb', // (sha256 14624626…)
-  'schooner:gb': '/models/ship_schooner_gb.656567d0.glb', // D95, la Goleta (sha256 e5485e84…)
-  'schooner:es': '/models/ship_schooner_es.afd29e1f.glb', // (sha256 bed4dae6…)
+  'schooner:gb': '/models/ship_schooner_gb.dd9c3746.glb', // D95, la Goleta, con la relinga de D107 (sha256 bbe74993…)
+  'schooner:es': '/models/ship_schooner_es.787bdaa9.glb', // (sha256 88bad513…)
   'frigate:gb': '/models/ship_frigate_gb.6dbdc710.glb', // D95, la Fragata v4, con la KTX2 _a512 de D105 (sha256 6f1e012a…)
   'frigate:es': '/models/ship_frigate_es.d99d484b.glb', // (sha256 1eab9777…)
   'line:gb': '/models/ship_line_gb.18b4e561.glb', // D91, el Navío (sha256 ca853812…)

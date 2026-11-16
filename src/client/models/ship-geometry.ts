@@ -142,7 +142,8 @@ interface MastDef {
   h: number; // altura de la punta sobre la flotación
   baseY?: number; // base sobre un castillo (mesana del mercante)
   squares?: SquareSail[];
-  gaff?: { A: ZY; B: ZY; C: ZY; D: ZY };
+  // leech: relinga de D107 (m de ancho), una franja del color de los palos en la baluma C→D, solo en LOD1 (leechBand)
+  gaff?: { A: ZY; B: ZY; C: ZY; D: ZY; leech?: number };
   lateen?: { A: ZY; B: ZY; C: ZY };
   topY?: number; // cofa (LOD0)
 }
@@ -270,7 +271,8 @@ const goletaT = [jibTip(1.6, 22, 7, 0.5), jibTip(1.6, 22, 7, 1)];
 const SCHOONER: ShipRecipe = {
   ...SLOOP, assetId: 'ship_schooner', L: 22, B: 5.6, F: 1.6, D: 0.9, bowsprit: 7.0, railH: 0.56, profile: 'standard', rake: 0,
   masts: [
-    { z: 4.0, h: 18.0, gaff: { A: [3.6, 3.0], B: [3.6, 13.8], C: [-1.8, 15.0], D: [-2.4, 3.4] }, squares: [{ w: 5.4, h: 2.4, yb: 14.6 }] },
+    // D107: la relinga en la cangreja de trinquete, que separa las 2 cangrejas con cualquier fase del balanceo (LOD1)
+    { z: 4.0, h: 18.0, gaff: { A: [3.6, 3.0], B: [3.6, 13.8], C: [-1.8, 15.0], D: [-2.4, 3.4], leech: 0.4 }, squares: [{ w: 5.4, h: 2.4, yb: 14.6 }] },
     { z: -3.3, h: 19.5, gaff: { A: [-3.7, 3.2], B: [-3.7, 15.2], C: [-10.4, 16.4], D: [-11.0, 3.6] } }
   ],
   flagMast: 1,
@@ -570,6 +572,29 @@ function fanSail(g: GeoBuilder, group: THREE.Matrix4, pts: Vec3[], bulge: number
 
 const zy = (p: ZY): Vec3 => [0, p[1], p[0]];
 
+// D107 (ART-DIRECTION, fila D107; lámina docs/game/art/D107-goleta-relinga.png): la relinga, una franja de `w` m del color de
+// los palos dentro de la vela, pegada a la baluma C→D de una cangreja de LOD1 y en el plano del triángulo C-D-M del abanico de
+// fanSail (M, su centro con panza), a ±LEECH_OFF de él, una vez por cara: 4 triángulos. El borde de dentro corta C→B y D→A a
+// `w` de la baluma, medido en perpendicular a ella. Es la geometría de band() en scripts/ux/barcos/relinga_d107.py, la misma de
+// las 2 Goletas de familia. Va fuera de mark(): no es lona (AS-V14, AD-10 y AS-V21 no la cuentan)
+const LEECH_OFF = 0.05;
+function leechBand(g: GeoBuilder, group: THREE.Matrix4, pts: [Vec3, Vec3, Vec3, Vec3], bulge: number, w: number, color: THREE.Color): void {
+  const c: Vec3 = [(pts[0][0] + pts[1][0] + pts[2][0] + pts[3][0]) / 4 + bulge, (pts[0][1] + pts[1][1] + pts[2][1] + pts[3][1]) / 4, (pts[0][2] + pts[1][2] + pts[2][2] + pts[3][2]) / 4];
+  const [A, B, C, D, M] = [...pts, c].map((p) => new THREE.Vector3(...p).applyMatrix4(group));
+  const n = D.clone().sub(C).cross(M.clone().sub(C)).normalize();
+  const uC = B.clone().sub(C).normalize();
+  const uD = A.clone().sub(D).normalize();
+  const perp = n.clone().cross(D.clone().sub(C).normalize());
+  if (perp.dot(M.clone().sub(C)) < 0) perp.negate();
+  const qC = C.clone().addScaledVector(uC, w / Math.max(uC.dot(perp), 1e-6));
+  const qD = D.clone().addScaledVector(uD, w / Math.max(uD.dot(perp), 1e-6));
+  for (const o of [LEECH_OFF, -LEECH_OFF]) {
+    const [a, b, cc, d] = [C, D, qD, qC].map((p) => p.clone().addScaledVector(n, o).toArray() as Vec3);
+    g.tri(a, b, cc, color);
+    g.tri(a, cc, d, color);
+  }
+}
+
 // D12 (ASSET-SPEC §8.3): las velas de cuchillo se abren `open` alrededor de su gratil (eje por `p` en la dirección
 // `axis`), con sus palos. El sentido se elige para que el puño libre `free` vaya siempre hacia −X (estribor): toda
 // la flota abre hacia el mismo costado que la prueba medida (cuchillo25)
@@ -767,7 +792,10 @@ function buildLod(r: ShipRecipe, lod: 0 | 1): { geometry: THREE.BufferGeometry; 
       // LOD0 (D36, D40): paños casi verticales de CLOTH.w m × 3 filas; LOD1: abanico liso desde el centro con panza
       const nu = Math.max(2, Math.round(foot / CLOTH[r.look].w));
       if (lod === 0) clothSail(g, m, [zy(A), zy(B), zy(C), zy(D)], 0.08 * foot, nu, 3, false, clothColors(r, look, g.marks.length, nu));
-      else fanSail(g, m, [zy(A), zy(B), zy(C), zy(D)], 0.08 * foot, cSail);
+      else {
+        fanSail(g, m, [zy(A), zy(B), zy(C), zy(D)], 0.08 * foot, cSail);
+        if (mast.gaff.leech) leechBand(g, m, [zy(A), zy(B), zy(C), zy(D)], 0.08 * foot, mast.gaff.leech, cMast);
+      }
       if (lod === 0) {
         spar(g, m, zy(A), zy(D), 0.3 * rm, cMast);
         spar(g, m, zy(B), zy(C), 0.3 * rm, cMast);

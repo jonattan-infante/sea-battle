@@ -1,5 +1,6 @@
 // AS-V15 (ASSET-SPEC §11): las comprobaciones AS-V02…V09 aplicadas al Object3D procedural de las 5 recetas P0,
 // más AS-V16 (radio de las islas en la flotación) y los presupuestos de islas y props de §5. Sin WebGL.
+import { createHash } from 'crypto';
 import * as THREE from 'three';
 import { ISLANDS, MAP_1_1 } from '../../../game/constants';
 import { buildBuoyGeometry, buildIslands, buildLootGeometry, buildPalmGeometry, PORT_PAVED_CIRCLES, PORT_PAVED_COLOR } from '../island-geometry';
@@ -790,10 +791,11 @@ describe('Versión sencilla de las islas del mapa de la 1.1 (AC-200 e)', () => {
 });
 
 // D102 (ART-DIRECTION; BACKLOG AC-227 e): sin familia, la Goleta y el Navío se ven con las recetas de ASSET-SPEC §8.4 (D64), las
-// de `scripts/ux/laminas/code/export-sin-familia.ts`, y no con la Balandra. Los triángulos son los medidos en la lámina
+// de `scripts/ux/laminas/code/export-sin-familia.ts`, y no con la Balandra. Los triángulos son los medidos en la lámina, más los
+// 4 de LOD1 de la relinga de la Goleta (D107: 214 + 4)
 describe('D102: la Goleta y el Navío sin familia', () => {
   test.each([
-    ['schooner', 'ship_schooner', [1179, 214]],
+    ['schooner', 'ship_schooner', [1179, 218]],
     ['line', 'ship_line', [3152, 474]]
   ] as const)('%s: su receta (%s) con los triángulos de la lámina', (classId, assetId, triangles) => {
     const model = getShipModel(classId);
@@ -825,5 +827,99 @@ describe('D102: la Goleta y el Navío sin familia', () => {
 
   test('una clase sin receta sigue con la de la Balandra', () => {
     expect(getShipModel('desconocida').recipe.assetId).toBe('ship_sloop');
+  });
+});
+
+// D107 (ART-DIRECTION, fila D107; H-D106-1 de la adenda de QA-78; lámina docs/game/art/D107-goleta-relinga.png, aprobada por
+// Jonattan el 2026-11-16 a las 15:16:17Z): la relinga de la Goleta sin familia. Con el balanceo, el palo mayor dejaba de asomar
+// entre las 2 cangrejas y se fundían en una sola vela, como la del Bergantín. Es una franja de 0,4 m del color de los palos en
+// la baluma (C→D) de la cangreja de trinquete, por las 2 caras (a ±0,05 m del plano C-D-M), solo en LOD1: 4 triángulos fuera de
+// los rangos de vela (no es lona: AS-V14, AD-10 y AS-V21 no la cuentan). La geometría es la de `band()` en
+// `scripts/ux/barcos/relinga_d107.py`, sobre los 5 vértices del abanico de `fanSail` (A y B en el grátil, C el pico, D el puño
+// de escota, M la panza), elegidos con el mismo filtro que su `fore_gaff()`
+describe('D107: la relinga de la Goleta sin familia, en LOD1', () => {
+  const model = getShipModel('schooner');
+  const lod1 = model.lods[1];
+  const pos = lod1.getAttribute('position');
+  const col = lod1.getAttribute('color');
+  const vtx = (i: number) => new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i));
+  // La cangreja de trinquete: el rango de vela de 4 triángulos con el centro entre el palo mayor (z = −3,3) y el trinquete (z = 4,0)
+  // y por debajo de la gavia (y = 14,6)
+  const fan = model.sails[1].find(([a, b]) => {
+    if (b - a !== 4) return false;
+    const c = new THREE.Vector3();
+    for (let i = 3 * a; i < 3 * b; i++) c.add(vtx(i));
+    c.divideScalar(3 * (b - a));
+    return c.y < 14.4 && c.z > -3.0 && c.z < 3.7;
+  })!;
+  const corners = () => {
+    const uniq: THREE.Vector3[] = [];
+    for (let i = 3 * fan[0]; i < 3 * fan[1]; i++) if (!uniq.some((u) => u.distanceTo(vtx(i)) < 1e-4)) uniq.push(vtx(i));
+    const luff = uniq.filter((u) => Math.abs(u.x) < 1e-3).sort((p, q) => p.y - q.y);
+    const rest = uniq.filter((u) => Math.abs(u.x) >= 1e-3).sort((p, q) => p.z - q.z);
+    const [C, D] = rest.slice(0, 2).sort((p, q) => q.y - p.y);
+    return { count: uniq.length, luffCount: luff.length, A: luff[0], B: luff[1], C, D, M: rest[2] };
+  };
+  // band() de relinga_d107.py: el cuadrilátero de ancho w dentro de la vela, pegado a la baluma C→D, en el plano C-D-M y a ±off de él
+  const band = ({ A, B, C, D, M }: ReturnType<typeof corners>, w = 0.4, off = 0.05) => {
+    const n = D.clone().sub(C).cross(M.clone().sub(C)).normalize();
+    const uC = B.clone().sub(C).normalize();
+    const uD = A.clone().sub(D).normalize();
+    const e = D.clone().sub(C).normalize();
+    const perp = n.clone().cross(e);
+    if (perp.dot(M.clone().sub(C)) < 0) perp.negate();
+    const qC = C.clone().addScaledVector(uC, w / Math.max(uC.dot(perp), 1e-6));
+    const qD = D.clone().addScaledVector(uD, w / Math.max(uD.dot(perp), 1e-6));
+    return [off, -off].flatMap((o) => {
+      const [a, b, c, d] = [C, D, qD, qC].map((p) => p.clone().addScaledVector(n, o));
+      return [a, b, c, a, c, d];
+    });
+  };
+  const fingerprint = (arrays: Float32Array[]) => {
+    const h = createHash('sha256');
+    for (const a of arrays) h.update(Buffer.from(a.buffer, a.byteOffset, a.byteLength));
+    return h.digest('hex');
+  };
+  const withoutTriangles = (g: THREE.BufferGeometry, from: number, to: number) =>
+    (['position', 'color', 'normal'] as const).map((name) => {
+      const a = g.getAttribute(name).array as Float32Array;
+      return Float32Array.from([...a.subarray(0, 9 * from), ...a.subarray(9 * to)]);
+    });
+
+  test('la cangreja de trinquete de LOD1 es el abanico de 5 vértices de relinga_d107.fore_gaff (A y B en el grátil)', () => {
+    expect(fan).toBeDefined();
+    const { count, luffCount } = corners();
+    expect([count, luffCount]).toEqual([5, 2]);
+  });
+
+  test('4 triángulos del color de los palos justo detrás del abanico, con la geometría de relinga_d107.band (2 caras)', () => {
+    const want = band(corners());
+    const mast = new THREE.Color(shipLook(model.recipe).mast);
+    const got = Array.from({ length: 12 }, (_, k) => vtx(3 * fan[1] + k));
+    expect(got.map((p, k) => p.distanceTo(want[k])).every((d) => d < 1e-4)).toBe(true);
+    for (let k = 0; k < 12; k++) {
+      const i = 3 * fan[1] + k;
+      expect([col.getX(i), col.getY(i), col.getZ(i)].map((c, j) => Math.abs(c - [mast.r, mast.g, mast.b][j]) < 1e-4)).toEqual([true, true, true]);
+    }
+    // 0,4 m de ancho, medido como en el script: en perpendicular a la baluma dentro del plano C-D-M (el borde de dentro va hacia
+    // B y A, que quedan fuera de ese plano por la panza, así que la distancia en el espacio sale algo mayor)
+    const { C, D, M } = corners();
+    const n = D.clone().sub(C).cross(M.clone().sub(C)).normalize();
+    const perp = n.clone().cross(D.clone().sub(C).normalize());
+    if (perp.dot(M.clone().sub(C)) < 0) perp.negate();
+    for (const k of [2, 5]) expect(got[k].clone().sub(C).dot(perp)).toBeCloseTo(0.4, 6); // qD y qC de la 1.ª cara
+  });
+
+  test('no es lona: ningún rango de vela de LOD1 contiene esos 4 triángulos', () => {
+    expect(model.sails[1].filter(([a, b]) => a < fan[1] + 4 && b > fan[1])).toEqual([]);
+  });
+
+  test('LOD1 sin esos 4 triángulos es el de antes, y LOD0 no cambia (huella de position, color y normal)', () => {
+    expect(fingerprint(withoutTriangles(lod1, fan[1], fan[1] + 4))).toBe('c96e99dfe04c1966450e629703c474e19d9d2b7560e18ab139cdd5e38669e3a7');
+    expect(fingerprint((['position', 'color', 'normal'] as const).map((n) => model.lods[0].getAttribute(n).array as Float32Array))).toBe('73a2f16e825bbce261172ae968c3ed680440acc2e5c680cd9bafc218de07490c');
+  });
+
+  test('las otras clases no la llevan', () => {
+    expect(Object.entries(SHIP_RECIPES).filter(([, r]) => r.masts.some((m) => m.gaff?.leech !== undefined)).map(([id]) => id)).toEqual(['schooner']);
   });
 });
