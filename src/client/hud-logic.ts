@@ -235,15 +235,21 @@ export function portBlock(me: Pick<MeHud, 'state' | 'inSafeZone'> | null, saveWa
   return { title: 'Solo en la zona segura', toast: { kind: 'warn', text: 'El puerto solo abre en la zona segura' } };
 }
 
-// Misma regla que canAttack en src/game/world.ts, con los datos interpolados del cliente
-export function canAttackClient(client: GameClient, me: RenderShip | undefined, target: RenderShip | undefined): boolean {
+// Protegido por la zona segura (§11, 1.3): dentro y sin la marca de bajo fuego (`uf`), como isZoneProtected en world.ts
+export function zoneProtectedClient(ship: Pick<RenderShip, 'x' | 'z' | 'underFireUntil'>, now: number): boolean {
+  return inSafeZone(ship.x, ship.z) && ship.underFireUntil <= now;
+}
+
+// Misma regla que canAttack en src/game/world.ts, con los datos interpolados del cliente. Solo pide el reloj del servidor:
+// también la usa el cursor del render (runtime.ts), que lee de una fuente sin GameClient
+export function canAttackClient(client: Pick<GameClient, 'serverTime'>, me: RenderShip | undefined, target: RenderShip | undefined): boolean {
   if (!me || !target || me.state !== 'alive' || target.state !== 'alive' || me.id === target.id) return false;
   if (target.kind !== 'player') return true;
   const now = client.serverTime();
   return (
     PVP_ENABLED &&
-    !inSafeZone(target.x, target.z) &&
-    !inSafeZone(me.x, me.z) &&
+    !zoneProtectedClient(target, now) &&
+    !zoneProtectedClient(me, now) &&
     target.protectedUntil <= now &&
     me.protectedUntil <= now
   );

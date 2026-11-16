@@ -137,6 +137,18 @@ test.each<[string, Partial<ServerFrame>, string]>([
   expect(bot.orders.map((o) => [o.kind, o.outcome, o.reason])).toEqual([['attack', 'anulada', reason]]);
 });
 
+// E20 (GDD §11, 1.3): dentro de la zona y bajo fuego (`uf` > t) no hay protección de la zona, así que no anula nada
+test.each<[string, Partial<ServerFrame>]>([
+  ['el objetivo en la zona segura bajo fuego (109 m, uf > t)', { s: [{ id: 'p2', z: 109, uf: 110 }] }],
+  ['el atacante en la zona segura bajo fuego (105 m, uf > t)', { s: [{ id: 'me', z: 105, uf: 110 }] }]
+])('O1 con E20: con %s en el primer frame tras el envío, el attack sin reflejo es perdido, no anulado', (_, first) => {
+  const r = botAttacking();
+  bot = r.bot;
+  r.socket.fire(S2C.frame, { t: 100.1, ...first });
+  expireNow(bot);
+  expect(bot.orders.map((o) => [o.kind, o.outcome])).toEqual([['attack', 'perdida']]);
+});
+
 function botPve(): { bot: Bot; socket: FakeSocket } {
   const socket = new FakeSocket();
   (io as unknown as jest.Mock).mockReturnValue(socket);

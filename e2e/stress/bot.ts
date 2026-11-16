@@ -54,6 +54,8 @@ const REPAIR_BELOW = 0.4;
 const REPAIR_UNTIL = 0.8;
 const BUY_FROM_GOLD = 300;
 const PORT: Vec2 = PORT_POSITION;
+// Protegido por la zona segura: dentro y sin la marca de bajo fuego (`uf`), como isZoneProtected en world.ts (GDD §11, 1.3)
+const zoneProtected = (s: ShipSnapshot, t: number) => distance(s, PORT) <= SAFE_ZONE_RADIUS && (s.uf ?? 0) <= t;
 
 // Avisos de error del servidor (src/game/world.ts, server/game-server.ts) y a qué órdenes medidas responden
 const REJECTIONS: [RegExp, MeasuredKind[]][] = [
@@ -353,9 +355,9 @@ export class Bot {
     if (!target) return 'el objetivo salió del mundo o del área de interés';
     if (target.st !== 'alive') return 'el objetivo está hundido o hundiéndose';
     if (!own || own.st !== 'alive') return 'el atacante está hundido';
-    if (target.k === 'player' && distance(target, PORT) <= SAFE_ZONE_RADIUS) return 'el objetivo está en la zona segura';
+    if (target.k === 'player' && zoneProtected(target, t)) return 'el objetivo está en la zona segura';
     if (target.k === 'player' && target.pu > t) return 'el objetivo está protegido';
-    if (target.k === 'player' && distance(own, PORT) <= SAFE_ZONE_RADIUS) return 'el atacante está en la zona segura';
+    if (target.k === 'player' && zoneProtected(own, t)) return 'el atacante está en la zona segura';
     if (distance(own, target) > ATTACK_MAX_DISTANCE) return 'están a más de 200 m';
     return null;
   }
@@ -415,11 +417,12 @@ export class Bot {
     this.emit(C2S.attack, { targetId: target.id }, this.pending ? null : { kind: 'attack', targetId: target.id });
   }
 
-  // El servidor solo deja atacar a un jugador si los dos están fuera de la zona segura y sin protección (canAttack)
+  // El servidor solo deja atacar a un jugador si ninguno de los dos está protegido por la zona segura (fuera o bajo fuego)
+  // ni por la reaparición (canAttack)
   private canAttackNow(own: ShipSnapshot, target: ShipSnapshot, now: number): boolean {
     if (target.k !== 'player') return true;
     const t = this.serverNow(now);
-    return distance(own, PORT) > SAFE_ZONE_RADIUS && distance(target, PORT) > SAFE_ZONE_RADIUS && own.pu <= t && target.pu <= t;
+    return !zoneProtected(own, t) && !zoneProtected(target, t) && own.pu <= t && target.pu <= t;
   }
 
   private pickTarget(own: ShipSnapshot, now: number): ShipSnapshot | undefined {

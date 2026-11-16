@@ -56,6 +56,7 @@ export interface Ship {
   lastDamagedAt: number;
   damage: DamageEntry[];
   protectedUntil: number;
+  underFireUntil: number; // instante en que caduca la marca de bajo fuego (§11, 1.3); −∞ sin marca. Solo la llevan los jugadores
   ai: NpcAi | null;
   disconnectedAt: number | null;
   accuracyOverride?: number; // solo escenarios de prueba (server/scenarios.ts): precisión fija de sus andanadas
@@ -169,6 +170,7 @@ export interface ShipSnapshot {
   r: boolean; // reparando
   pu: number; // fin de la protección en tiempo de servidor (0 = sin protección); no cambia con el reloj
   lv?: number; // nivel del jugador (§10b), solo en barcos de jugador: cambia al subir de nivel
+  uf?: number; // fin de la marca de bajo fuego en tiempo de servidor (0 = sin marca), solo en barcos de jugador (§11, 1.3): cambia como mucho una vez por andanada
 }
 
 // Al entrar en el área de interés se envía el barco completo; después, solo los campos que cambiaron
