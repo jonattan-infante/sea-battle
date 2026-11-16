@@ -41,6 +41,7 @@
     ".next",
     ".next-e2e",
     "qa-artifacts",
+    "scripts/ux",
     "test-results",
     "playwright-report"
   ]
