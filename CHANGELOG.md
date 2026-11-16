@@ -6,6 +6,28 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-17
+
+### Añadido
+
+- **Dos barcos nuevos: la Goleta y el Navío de línea.** Se compran en el Astillero del puerto. La **Goleta** cuesta 3 000 de oro y pide nivel 5 (Marinero). Es el barco más rápido del juego: 15 m/s, y 18 con las Velas a nivel 3. Tiene 1 100 de vida y 4 cañones por banda, y pasa por los escollos del sureste. Con los Cañones a nivel 3 dispara más lejos que cualquier pirata, y es más rápida que todos ellos. Cuando se ve pequeña, como en el móvil, una franja oscura separa sus dos velas de cangreja, y así no se confunde con el Bergantín. El **Navío de línea** cuesta 12 000 de oro y pide nivel 9 (Contramaestre). Es el final de la progresión: la mayor vida, 3 200, y la mayor potencia de fuego, con 10 cañones por banda, pero también el barco más lento y el que peor gira. No cabe por los escollos, así que un barco pequeño puede escaparle por ahí.
+- **Familias de barcos: la británica y la española.** Una familia cambia cómo se ven tus barcos, nunca cómo navegan ni cómo combaten. La **británica**, al estilo de la flota de Nelson, lleva el casco azul marino con franjas claras y la bandera británica. La **española**, al estilo del galeón, lleva el casco rojo con detalles dorados y la popa labrada. Cada una cuesta 4 000 de oro y no pide nivel. Se compra una sola vez y vale para todos tus barcos, también los que compres después. Al comprarla se pone en uso. Se compran en la pestaña **Familia** del Astillero, que antes de pagar te enseña tu barco con cada aspecto. Los demás jugadores ven tus barcos con tu familia. Tus familias se guardan en tu cuenta, y hundirte no te las quita.
+- **«Sin familia», el aspecto de siempre.** Es como empieza todo jugador, y como siguen tus barcos si ya jugabas: con el aspecto que tenían hasta ahora. La Goleta y el Navío también lo tienen. En el puerto puedes cambiar gratis entre «sin familia» y las familias que tengas, cuando quieras.
+- **Mejorar cualquiera de tus barcos sin navegarlo.** En la pestaña Barcos del Astillero, cada barco tuyo tiene un botón **«Mejoras»** que abre sus Cañones, su Casco y sus Velas, con su nivel y su precio. Puedes mejorar un barco que no navegas: sigues en el tuyo, con la misma vida y el mismo destino, y la mejora se nota cuando cambias a él.
+- **Ves cuándo estás bajo fuego.** Si disparas una andanada o te la disparan, aciertes o no, quedas bajo fuego durante 10 s, y cada andanada nueva vuelve a empezar la cuenta. En cualquier punto del mar, el HUD lo dice con «Bajo fuego», una llama y los segundos que faltan, sobre una franja rayada que se distingue también sin color.
+
+### Cambiado
+
+- **Cada barco tiene ahora sus propias mejoras.** Hasta ahora, las mejoras que comprabas valían para todos tus barcos. Desde esta versión, cada barco tiene sus propios niveles de Cañones, Casco y Velas, y los conserva cuando cambias de barco y cuando te hunden.
+- **Tus barcos conservan las mejoras que tenías.** Si ya jugabas, cada barco que tenías empieza con los niveles que tenías: si tenías los Cañones a nivel 3, los tienen a nivel 3 todos tus barcos. No pierdes nada de lo que pagaste.
+- **Un barco nuevo llega a nivel 1.** El barco que compres desde ahora llega con las 3 mejoras a nivel 1 y la vida llena. Al principio puede disparar menos y llegar menos lejos que el barco mejorado que traes. La tienda te lo avisa antes de comprar, y puedes seguir navegando el de siempre mientras mejoras el nuevo.
+- **Las mejoras cuestan según el barco.** El precio va con los cañones por banda: la mitad que hasta ahora en la Balandra y la Goleta, tres cuartos en el Bergantín, lo mismo en la Fragata y un cuarto más en el Navío de línea. Por ejemplo, los Cañones de nivel 2 cuestan 250 de oro en la Balandra, 375 en el Bergantín, 500 en la Fragata y 625 en el Navío.
+- **La tienda enseña tus barcos.** En la pestaña Barcos, cada barco sale con la imagen de su modelo, con tu familia o sin ella, en lugar del icono de siempre. En los tuyos ves sus 3 niveles, cuál navegas, «Elegir» y «Mejoras».
+- **La zona segura solo te protege si no estás bajo fuego.** Dentro de los 110 m del puerto, y sin estar bajo fuego, nadie puede atacarte, como siempre. Pero si entras bajo fuego, el combate sigue: el aviso de la zona dice «Bajo fuego: la zona aún no te protege», con los segundos que faltan; un pirata que te tenga a tiro sigue disparándote; un jugador que te atacaba puede seguir haciéndolo, y tú puedes responderle. 10 s después de la última andanada, el aviso vuelve a «Zona segura» y la zona te protege. Los piratas siguen sin entrar en el puerto: si te alejas de su alcance dentro de la zona, te sueltan y vuelven a su zona. Si disparas desde dentro, también quedas bajo fuego, y ahora el pirata te responde. Si te hunden dentro, pasa lo mismo que fuera. La protección de 15 s al zarpar tras hundirte no cambia.
+- **El puerto cierra bajo fuego.** Mientras estás bajo fuego no puedes usar la tienda ni cambiar de barco, aunque estés dentro de la zona. El botón Puerto se ve apagado, con los segundos que faltan y una llama, y al pulsarlo te dice «Bajo fuego: el puerto abre tras N s sin disparos». Si tienes la tienda abierta y disparas, se cierra.
+- **El panel de otro jugador dentro de la zona dice si puedes atacarle:** «✕ No atacable» si la zona le protege, y «En alcance» o «Fuera de alcance» si está bajo fuego.
+- **La primera vez que ves barcos con familia, el juego descarga sus modelos.** Las siguientes veces ya los tiene tu navegador. Con una conexión lenta, puedes ver un barco un momento con su aspecto sin familia hasta que llega su modelo. Si el tuyo tiene familia, al entrar el juego lo espera como mucho medio segundo.
+
 ## [1.2.1] - 2026-11-16
 
 ### Cambiado
@@ -234,7 +256,9 @@ Detalle y criterios en `docs/game/BACKLOG.md`, «Conocidos de la 1.0.0».
 - **clerk-js fijada en 5.128.0** (`src/lib/clerk-js.ts`). El navegador carga esa versión y no la última 5.x, así que Clerk no puede cambiar textos ni comportamiento en prod sin un deploy nuestro. Mantenimiento: cada subida de `@clerk/nextjs` o de clerk-js cambia la versión fijada a propósito, en un commit propio, y vuelve a pasar las pruebas de los textos en español del inicio de sesión y el registro (AC-140 c y AD-35 d). Así ningún texto nuevo de Clerk en inglés llega a prod sin que nadie lo vea.
 - **Node 24 en todo**: local, CI y Railway usan la misma versión mayor. La fijan `engines.node` (`24.x`) en `package.json`, `.nvmrc` y la CI, que lee `.nvmrc`. Si `verify` corre con otra versión mayor, falla `server/__tests__/node-runtime.test.ts`.
 
-[Unreleased]: https://github.com/jonattan-infante/sea-battle/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/jonattan-infante/sea-battle/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/jonattan-infante/sea-battle/compare/v1.2.1...v1.3.0
+[1.2.1]: https://github.com/jonattan-infante/sea-battle/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/jonattan-infante/sea-battle/compare/v1.1.4...v1.2.0
 [1.1.4]: https://github.com/jonattan-infante/sea-battle/compare/v1.1.3...v1.1.4
 [1.1.3]: https://github.com/jonattan-infante/sea-battle/compare/v1.1.2...v1.1.3
