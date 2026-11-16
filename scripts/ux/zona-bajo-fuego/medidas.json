@@ -1,0 +1,90 @@
+{
+ "tira": {
+  "DPR 1 · océano #1A5F86 · protected": {
+   "rango_L": 0.0,
+   "cruces": 0,
+   "estado_por_la_regla": "protected",
+   "en_grises": "protected"
+  },
+  "DPR 1 · océano #1A5F86 · under-fire": {
+   "rango_L": 62.0,
+   "cruces": 5,
+   "estado_por_la_regla": "under-fire",
+   "en_grises": "under-fire"
+  },
+  "DPR 1 · arena #E6CF9A · protected": {
+   "rango_L": 0.0,
+   "cruces": 0,
+   "estado_por_la_regla": "protected",
+   "en_grises": "protected"
+  },
+  "DPR 1 · arena #E6CF9A · under-fire": {
+   "rango_L": 62.0,
+   "cruces": 5,
+   "estado_por_la_regla": "under-fire",
+   "en_grises": "under-fire"
+  },
+  "DPR 1 · espuma #EAF6FA · protected": {
+   "rango_L": 0.0,
+   "cruces": 0,
+   "estado_por_la_regla": "protected",
+   "en_grises": "protected"
+  },
+  "DPR 1 · espuma #EAF6FA · under-fire": {
+   "rango_L": 62.0,
+   "cruces": 5,
+   "estado_por_la_regla": "under-fire",
+   "en_grises": "under-fire"
+  },
+  "DPR 2 · océano #1A5F86 · protected": {
+   "rango_L": 0.0,
+   "cruces": 0,
+   "estado_por_la_regla": "protected",
+   "en_grises": "protected"
+  },
+  "DPR 2 · océano #1A5F86 · under-fire": {
+   "rango_L": 62.0,
+   "cruces": 5,
+   "estado_por_la_regla": "under-fire",
+   "en_grises": "under-fire"
+  },
+  "DPR 2 · arena #E6CF9A · protected": {
+   "rango_L": 0.0,
+   "cruces": 0,
+   "estado_por_la_regla": "protected",
+   "en_grises": "protected"
+  },
+  "DPR 2 · arena #E6CF9A · under-fire": {
+   "rango_L": 62.0,
+   "cruces": 5,
+   "estado_por_la_regla": "under-fire",
+   "en_grises": "under-fire"
+  },
+  "DPR 2 · espuma #EAF6FA · protected": {
+   "rango_L": 0.0,
+   "cruces": 0,
+   "estado_por_la_regla": "protected",
+   "en_grises": "protected"
+  },
+  "DPR 2 · espuma #EAF6FA · under-fire": {
+   "rango_L": 62.0,
+   "cruces": 5,
+   "estado_por_la_regla": "under-fire",
+   "en_grises": "under-fire"
+  }
+ },
+ "laminas": {
+  "lamina 1440x900 · aviso": {
+   "rango_L": 62.0,
+   "cruces": 5,
+   "estado_por_la_regla": "under-fire",
+   "en_grises": "under-fire"
+  },
+  "lamina 390x844 · aviso": {
+   "rango_L": 62.0,
+   "cruces": 5,
+   "estado_por_la_regla": "under-fire",
+   "en_grises": "under-fire"
+  }
+ }
+}
