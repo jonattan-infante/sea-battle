@@ -50,3 +50,10 @@ export async function migrate(pool: Pool, log: (msg: string) => void = () => {})
   }
   return applied;
 }
+
+// La versión mayor de schema_migrations (AC-231 c): la lee el arranque una sola vez, después de migrar, para /healthz.
+// 0 con la tabla vacía, que no pasa después de migrate() mientras MIGRATIONS tenga alguna versión
+export async function schemaVersion(pool: Pool): Promise<number> {
+  const { rows } = await pool.query('SELECT coalesce(max(version), 0)::int AS version FROM schema_migrations');
+  return rows[0].version as number;
+}
