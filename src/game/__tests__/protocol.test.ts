@@ -1,10 +1,12 @@
 import {
+  buyPayload,
   parseAttack,
   parseBuy,
   parseEmpty,
   parseJoin,
   parseMoveTo,
   parseRepair,
+  parseSelectFamily,
   parseSelectShip,
   parseShopItem,
   parseViewAt,
@@ -73,12 +75,17 @@ describe('Protocolo — validación estricta de intenciones (AC-05)', () => {
     for (const bad of [1, 'x', [], { a: 1 }]) expect(parseEmpty(bad)).toBeNull();
   });
 
-  test('parseShopItem solo acepta los artículos del catálogo con formato exacto', () => {
-    expect(parseShopItem('cannons:2')).toEqual({ kind: 'upgrade', upgrade: 'cannons', level: 2 });
-    expect(parseShopItem('hull:3')).toEqual({ kind: 'upgrade', upgrade: 'hull', level: 3 });
-    expect(parseShopItem('sails:2')).toEqual({ kind: 'upgrade', upgrade: 'sails', level: 2 });
+  // 1.3 (GDD §13): una mejora nombra su barco (`ship`), un barco o una familia van sin él (AC-213 d, AC-222)
+  test('parseShopItem solo acepta los artículos del catálogo con formato exacto; una mejora, con un barco del jugador', () => {
+    expect(parseShopItem('cannons:2', 'sloop')).toEqual({ kind: 'upgrade', upgrade: 'cannons', level: 2, ship: 'sloop' });
+    expect(parseShopItem('hull:3', 'frigate')).toEqual({ kind: 'upgrade', upgrade: 'hull', level: 3, ship: 'frigate' });
+    expect(parseShopItem('sails:2', 'line')).toEqual({ kind: 'upgrade', upgrade: 'sails', level: 2, ship: 'line' });
     expect(parseShopItem('ship:brig')).toEqual({ kind: 'ship', classId: 'brig' });
+    expect(parseShopItem('ship:schooner')).toEqual({ kind: 'ship', classId: 'schooner' });
     expect(parseShopItem('ship:frigate')).toEqual({ kind: 'ship', classId: 'frigate' });
+    expect(parseShopItem('ship:line')).toEqual({ kind: 'ship', classId: 'line' });
+    expect(parseShopItem('family:gb')).toEqual({ kind: 'family', family: 'gb' });
+    expect(parseShopItem('family:es')).toEqual({ kind: 'family', family: 'es' });
     for (const bad of [
       ...GARBAGE,
       'cannons:1',
@@ -90,30 +97,74 @@ describe('Protocolo — validación estricta de intenciones (AC-05)', () => {
       'ship:sloop',
       'ship:pirate',
       'ship:constructor',
+      'family:none',
+      'family:fr',
+      'family:GB',
+      'family:__proto__',
       '__proto__:2',
       'toString:2',
       'hull',
       ':',
       'a'.repeat(40)
     ]) {
+      expect(parseShopItem(bad, 'sloop')).toBeNull();
       expect(parseShopItem(bad)).toBeNull();
     }
+    // Una mejora sin barco, o con uno que no es una clase del jugador
+    for (const ship of [undefined, null, '', 'pirate', 'brigantine', 'Sloop', 1, {}, ['sloop'], '__proto__']) expect(parseShopItem('cannons:2', ship)).toBeNull();
+    // Un barco o una familia con `ship`
+    for (const id of ['ship:brig', 'family:gb']) expect(parseShopItem(id, 'sloop')).toBeNull();
   });
 
-  test('shopItemId y parseShopItem son inversos', () => {
-    for (const id of ['cannons:2', 'cannons:3', 'hull:2', 'hull:3', 'sails:2', 'sails:3', 'ship:brig', 'ship:frigate']) {
-      expect(shopItemId(parseShopItem(id)!)).toBe(id);
+  test('shopItemId, buyPayload y parseBuy son inversos', () => {
+    for (const ship of ['sloop', 'brig', 'schooner', 'frigate', 'line'] as const) {
+      for (const id of ['cannons:2', 'cannons:3', 'hull:2', 'hull:3', 'sails:2', 'sails:3']) {
+        const item = parseShopItem(id, ship)!;
+        expect(shopItemId(item)).toBe(id);
+        expect(parseBuy(buyPayload(item))).toEqual({ item });
+      }
+    }
+    for (const id of ['ship:brig', 'ship:schooner', 'ship:frigate', 'ship:line', 'family:gb', 'family:es']) {
+      const item = parseShopItem(id)!;
+      expect(shopItemId(item)).toBe(id);
+      expect(buyPayload(item)).toEqual({ itemId: id });
+      expect(parseBuy(buyPayload(item))).toEqual({ item });
     }
   });
 
-  test('parseBuy exige {itemId} válido y sin campos extra', () => {
-    expect(parseBuy({ itemId: 'hull:2' })).toEqual({ item: { kind: 'upgrade', upgrade: 'hull', level: 2 } });
-    for (const bad of [...GARBAGE, {}, { itemId: 'hull:9' }, { itemId: 'hull:2', price: 0 }]) expect(parseBuy(bad)).toBeNull();
+  test('parseBuy exige {itemId, ship} en una mejora y {itemId} en un barco o una familia, sin campos extra', () => {
+    expect(parseBuy({ itemId: 'hull:2', ship: 'brig' })).toEqual({ item: { kind: 'upgrade', upgrade: 'hull', level: 2, ship: 'brig' } });
+    expect(parseBuy({ itemId: 'family:es' })).toEqual({ item: { kind: 'family', family: 'es' } });
+    for (const bad of [
+      ...GARBAGE,
+      {},
+      { itemId: 'hull:2' }, // AC-213 d: una mejora sin el barco
+      { itemId: 'hull:9', ship: 'brig' },
+      { itemId: 'hull:2', ship: 'brig', price: 0 },
+      { itemId: 'hull:2', ship: 'galleon' },
+      { itemId: 'ship:brig', ship: 'brig' },
+      { itemId: 'family:none' }, // AC-222: «sin familia» no se vende
+      { itemId: 'family:gb', ship: 'sloop' },
+      { itemId: 'family:gb', family: 'gb' }
+    ]) {
+      expect(parseBuy(bad)).toBeNull();
+    }
+  });
+
+  test('parseSelectFamily (1.3): «none», «gb» o «es», sin campos extra; si la tiene lo decide el servidor (AC-223)', () => {
+    expect(parseSelectFamily({ family: 'none' })).toEqual({ family: 'none' });
+    expect(parseSelectFamily({ family: 'gb' })).toEqual({ family: 'gb' });
+    expect(parseSelectFamily({ family: 'es' })).toEqual({ family: 'es' });
+    for (const bad of [...GARBAGE, {}, { family: null }, { family: 'fr' }, { family: 'ES' }, { family: '' }, { family: 1 }, { family: ['gb'] }, { family: 'gb', x: 1 }, { classId: 'gb' }]) {
+      expect(parseSelectFamily(bad)).toBeNull();
+    }
   });
 
   test('parseSelectShip solo acepta clases del jugador', () => {
     expect(parseSelectShip({ classId: 'sloop' })).toEqual({ classId: 'sloop' });
     expect(parseSelectShip({ classId: 'frigate' })).toEqual({ classId: 'frigate' });
+    expect(parseSelectShip({ classId: 'schooner' })).toEqual({ classId: 'schooner' });
+    expect(parseSelectShip({ classId: 'line' })).toEqual({ classId: 'line' });
     for (const bad of [...GARBAGE, {}, { classId: 'pirate' }, { classId: 'merchant' }, { classId: 1 }, { classId: 'brig', x: 1 }]) {
       expect(parseSelectShip(bad)).toBeNull();
     }

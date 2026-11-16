@@ -309,8 +309,9 @@ describe('BACKLOG :423-:427: solo se precargan los modelos de los barcos que pue
   const I2_ON = { npcClasses: ['pirate', 'merchant', 'gunboat', 'captain'] };
 
   test('prefetchClasses: las clases del jugador y las de NPC de la bienvenida; sin bienvenida, solo las del jugador', () => {
-    expect(prefetchClasses(null)).toEqual(['sloop', 'brig', 'frigate']);
-    expect(prefetchClasses(I2_ON)).toEqual(['sloop', 'brig', 'frigate', 'pirate', 'merchant', 'gunboat', 'captain']);
+    // Desde la 1.3, las 5 clases del jugador, sin interruptor (AC-226 b y d)
+    expect(prefetchClasses(null)).toEqual(['sloop', 'brig', 'schooner', 'frigate', 'line']);
+    expect(prefetchClasses(I2_ON)).toEqual(['sloop', 'brig', 'schooner', 'frigate', 'line', 'pirate', 'merchant', 'gunboat', 'captain']);
   });
 
   test('con el I2 apagado no se encolan la Cañonera ni el Capitán; encendido, sí, una vez cada uno y detrás del propio', async () => {

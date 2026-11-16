@@ -1,9 +1,12 @@
 // Escenarios deterministas para capturas de QA y UX (ART-DIRECTION §18). Solo se aplican con el modo
 // invitado permitido (nunca en Railway); en producción el mundo es siempre el del GDD.
-import { CANNON_LEVELS, CAPTAIN_CLASS, CAPTAIN_KILLS_TO_SPAWN, GUNBOAT_CLASS, LEVEL_XP, SHIP_CLASSES, WRECK_LIFETIME, navClearance } from '../src/game/constants';
+import { CAPTAIN_CLASS, CAPTAIN_KILLS_TO_SPAWN, GUNBOAT_CLASS, LEVEL_XP, SHIP_CLASSES, STARTING_SHIP, WRECK_LIFETIME, navClearance, upgradePrice } from '../src/game/constants';
 import { Ship, World } from '../src/game/types';
 import { headingTo } from '../src/game/vec';
 import { navigatorOf, spawnCaptain, spawnGunboat, spawnMerchant, spawnPirate } from '../src/game/world';
+
+// Oro de los escenarios que compran Cañones N2 y N3 con la Balandra (endurance, combat-i2): desde la 1.3, su precio por barco
+const SLOOP_CANNONS_2_3 = upgradePrice(STARTING_SHIP, 'cannons', 2) + upgradePrice(STARTING_SHIP, 'cannons', 3);
 
 // Punto de captura en mar abierto, fuera de la zona segura (r 110) y a ≥ 60 m de cualquier isla
 export const SHOWCASE_POINT = { x: 0, z: 200 };
@@ -244,7 +247,7 @@ function placeScenario(world: World, name: ScenarioName): void {
     return;
   }
   if (name === 'endurance') {
-    world.startingGold = CANNON_LEVELS[1].price + CANNON_LEVELS[2].price;
+    world.startingGold = SLOOP_CANNONS_2_3; // Cañones N2 y N3 de la Balandra, con la que se entra (1.3: precio por barco)
     for (let i = 0; i < ENDURANCE_MERCHANTS; i++) {
       const a = (2 * Math.PI * i) / ENDURANCE_MERCHANTS;
       const m = spawnMerchant(world);
@@ -266,7 +269,7 @@ function placeScenario(world: World, name: ScenarioName): void {
     return;
   }
   if (name === 'combat-i2') {
-    world.startingGold = CANNON_LEVELS[1].price + CANNON_LEVELS[2].price;
+    world.startingGold = SLOOP_CANNONS_2_3; // Cañones N2 y N3 de la Balandra, con la que se entra (1.3: precio por barco)
     const { self } = COMBAT_I2;
     for (let i = 0; i < COMBAT_I2.merchants; i++) {
       const a = (2 * Math.PI * i) / COMBAT_I2.merchants;
@@ -322,7 +325,7 @@ function placeScenario(world: World, name: ScenarioName): void {
     return;
   }
   if (name === 'danger') {
-    world.startingGold = CANNON_LEVELS[1].price;
+    world.startingGold = upgradePrice(STARTING_SHIP, 'cannons', 2); // Cañones N2 de la Balandra, con la que se entra
     for (const [ship, at] of [[spawnGunboat(world, 2)!, DANGER.gunboat], [spawnPirate(world, 3), DANGER.pirate]] as const) {
       ship.pos = { ...at };
       ship.heading = Math.PI; // la proa hacia el puerto

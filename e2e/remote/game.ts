@@ -8,6 +8,9 @@ import type { Upgrades } from '../../src/game/types';
 import type { Health } from '../../server/health';
 import { notVerified } from './env';
 
+// Lo que comparan los arneses remotos antes y después de un redeploy. `upgrades` son las mejoras del barco activo: en la
+// 1.2 (y la 1.2.x puente) eran del jugador; desde la 1.3, de cada barco (`ships`). readProgress lee las dos formas, para
+// poder medir tanto el puente como la 1.3 en staging (AC-229)
 export interface Progress {
   gold: number;
   upgrades: Upgrades;
@@ -15,7 +18,8 @@ export interface Progress {
   activeShip: PlayerShipClass;
 }
 
-type ClientView = { client: { welcome: { playerId: string } | null; player: (Progress & { id: string }) | null; moveTo: (x: number, z: number) => void } };
+type ClientPlayer = { id: string; gold: number; activeShip: PlayerShipClass; upgrades?: Upgrades; ownedShips?: PlayerShipClass[]; ships?: Partial<Record<PlayerShipClass, Upgrades>> };
+type ClientView = { client: { welcome: { playerId: string } | null; player: ClientPlayer | null; moveTo: (x: number, z: number) => void } };
 
 // /game con la sesión de .auth/ → puente de depuración → ready(). Sin el puente no se puede medir (NO VERIFICADO); que
 // no llegue a ready() es un fallo del despliegue
@@ -45,7 +49,9 @@ export async function health(url: URL): Promise<Health> {
 export function readProgress(page: Page): Promise<Progress> {
   return page.evaluate(() => {
     const p = (window.__SEA_BATTLE__!.runtime() as unknown as ClientView).client.player!;
-    return { gold: p.gold, upgrades: { ...p.upgrades }, ownedShips: [...p.ownedShips].sort(), activeShip: p.activeShip };
+    const upgrades = p.ships ? p.ships[p.activeShip]! : p.upgrades!;
+    const owned = p.ships ? (Object.keys(p.ships) as PlayerShipClass[]) : p.ownedShips!;
+    return { gold: p.gold, upgrades: { ...upgrades }, ownedShips: [...owned].sort(), activeShip: p.activeShip };
   });
 }
 

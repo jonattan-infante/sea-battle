@@ -1,7 +1,9 @@
-import { IslandDef, Mooring, PirateSectorId, PlayerShipClass, ShipKind, UpgradeId } from './constants';
+import { FamilyChoice, IslandDef, Mooring, PirateSectorId, PlayerShipClass, ShipFamily, ShipKind, UpgradeId } from './constants';
 import { Vec2 } from './vec';
 
 export type Upgrades = Record<UpgradeId, number>; // nivel 1..3
+// Los barcos del jugador, cada uno con sus niveles (1.3; GDD §11, Q34): tener un barco es tener su clave
+export type ShipLevels = Partial<Record<PlayerShipClass, Upgrades>>;
 
 export type ShipState = 'alive' | 'sinking' | 'dead';
 
@@ -76,9 +78,10 @@ export interface Player {
   name: string;
   shipId: string;
   gold: number;
-  upgrades: Upgrades;
-  ownedShips: PlayerShipClass[];
+  ships: ShipLevels; // los barcos que tiene, con sus niveles; siempre con activeShip (1.3; GDD §11)
   activeShip: PlayerShipClass;
+  families: ShipFamily[]; // las familias compradas, en el orden de SHIP_FAMILIES (1.3; GDD §6)
+  family: FamilyChoice; // la que usa: una de families o «sin familia»
   kills: number;
   deaths: number;
   death: DeathInfo | null;
@@ -171,6 +174,7 @@ export interface ShipSnapshot {
   pu: number; // fin de la protección en tiempo de servidor (0 = sin protección); no cambia con el reloj
   lv?: number; // nivel del jugador (§10b), solo en barcos de jugador: cambia al subir de nivel
   uf?: number; // fin de la marca de bajo fuego en tiempo de servidor (0 = sin marca), solo en barcos de jugador (§11, 1.3): cambia como mucho una vez por andanada
+  fa?: FamilyChoice; // familia del jugador (1.3; GDD §6), solo en barcos de jugador y también «none»: viaja al entrar y al cambiar
 }
 
 // Al entrar en el área de interés se envía el barco completo; después, solo los campos que cambiaron
@@ -206,9 +210,10 @@ export interface PlayerView {
   name: string;
   shipId: string;
   gold: number;
-  upgrades: Upgrades;
-  ownedShips: PlayerShipClass[];
+  ships: ShipLevels; // los barcos propios con sus niveles (1.3): viajan al entrar y al cambiar, nunca en reposo
   activeShip: PlayerShipClass;
+  families: ShipFamily[];
+  family: FamilyChoice;
   kills: number;
   deaths: number;
   death: { by: string | null; goldLost: number; respawnAt: number } | null; // respawnAt en tiempo de servidor

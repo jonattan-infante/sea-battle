@@ -18,6 +18,9 @@ import {
   RESPAWN_CLOCK_TOLERANCE,
   DEATH_GOLD_PENALTY,
   DISCONNECT_GRACE,
+  FAMILY_PRICE,
+  FamilyChoice,
+  NO_FAMILY,
   GOLD_CAP,
   GUNBOATS_PER_SECTOR,
   GUNBOAT_CLASS,
@@ -66,6 +69,9 @@ import {
   RESPAWN_RING,
   SAFE_ZONE_RADIUS,
   SHIP_CLASSES,
+  SHIP_FAMILIES,
+  SHIP_MIN_LEVEL,
+  ShipFamily,
   SINKING_TIME,
   SPAWN_PROTECTION,
   STARTING_GOLD,
@@ -76,14 +82,15 @@ import {
   UNDER_FIRE_WINDOW,
   UPGRADE_LEVELS,
   UpgradeId,
+  upgradePrice,
   WRECK_LIFETIME,
   WRECK_PICKUP_RADIUS
 } from './constants';
 import { Navigator, routeTo, segmentPointDistance } from './nav';
 import { NpcAi, Player, PlayerView, Ship, ShipSnapshot, World } from './types';
 import { Vec2, angleDelta, createRng, distance, forward, headingTo, normalizeAngle } from './vec';
-import { maxHpFor } from './stats';
-import { creditNpcXp, creditPvpXp, levelOf, npcXp } from './xp';
+import { BASE_LEVELS, levelsOf, maxHpFor } from './stats';
+import { creditNpcXp, creditPvpXp, levelOf, npcXp, rankLabel, rankOf } from './xp';
 
 export const navigator = new Navigator(MAP_1_0.islands);
 const navigators = new WeakMap<IslandDef[], Navigator>([[MAP_1_0.islands, navigator]]);
@@ -168,13 +175,13 @@ export function playerOf(world: World, ship: Ship): Player | undefined {
 
 export function cannonOf(world: World, ship: Ship): CannonStats | null {
   const player = playerOf(world, ship);
-  if (player) return CANNON_LEVELS[player.upgrades.cannons - 1];
+  if (player) return CANNON_LEVELS[levelsOf(player, ship.classId).cannons - 1]; // los niveles de ese barco (1.3; §11)
   return classOf(ship).cannon;
 }
 
 export function maxSpeedOf(world: World, ship: Ship): number {
   const player = playerOf(world, ship);
-  const mult = player ? UPGRADE_LEVELS.sails.multipliers[player.upgrades.sails - 1] : 1;
+  const mult = player ? UPGRADE_LEVELS.sails.multipliers[levelsOf(player, ship.classId).sails - 1] : 1;
   return classOf(ship).maxSpeed * mult;
 }
 
@@ -452,9 +459,22 @@ function respawnPoint(world: World, classId: string): { pos: Vec2; heading: numb
   return { pos: { ...RESPAWN_FALLBACK }, heading: 0 };
 }
 
-// initial: el progreso guardado de un usuario de Clerk (server/persistence.ts); sin él, el inicial (100 de oro, Balandra y
-// 0 de XP)
-export function addPlayer(world: World, id: string, name: string, initial?: Pick<Player, 'gold' | 'upgrades' | 'ownedShips' | 'activeShip'> & { xp?: number }): Player {
+// Lo que se guarda de un jugador, sin la XP (server/progress.ts): oro, barcos con sus niveles, barco activo y familias
+export type PlayerProgress = Pick<Player, 'gold' | 'ships' | 'activeShip' | 'families' | 'family'>;
+
+// Copia sin referencias compartidas: una compra se aplica primero sobre la copia que se escribe en la BD (AC-130 a)
+export function copyShips(ships: Player['ships']): Player['ships'] {
+  const out: Player['ships'] = {};
+  for (const classId of PLAYER_SHIP_ORDER) {
+    const levels = ships[classId];
+    if (levels) out[classId] = { ...levels };
+  }
+  return out;
+}
+
+// initial: el progreso guardado de un usuario de Clerk (server/persistence.ts); sin él, el inicial (100 de oro, la
+// Balandra a nivel 1, sin familia y 0 de XP)
+export function addPlayer(world: World, id: string, name: string, initial?: PlayerProgress & { xp?: number }): Player {
   const existing = world.players.get(id);
   if (existing) {
     const ship = world.ships.get(existing.shipId);
@@ -470,9 +490,10 @@ export function addPlayer(world: World, id: string, name: string, initial?: Pick
     name,
     shipId: '',
     gold: initial?.gold ?? world.startingGold ?? STARTING_GOLD,
-    upgrades: initial ? { ...initial.upgrades } : { cannons: 1, hull: 1, sails: 1 },
-    ownedShips: initial ? [...initial.ownedShips] : [STARTING_SHIP],
+    ships: initial ? copyShips(initial.ships) : { [STARTING_SHIP]: { ...BASE_LEVELS } },
     activeShip: initial?.activeShip ?? STARTING_SHIP,
+    families: initial ? [...initial.families] : [],
+    family: initial?.family ?? NO_FAMILY,
     kills: 0,
     deaths: 0,
     death: null,
@@ -610,10 +631,16 @@ export function respawn(world: World, playerId: string): ActionResult {
   return { ok: true };
 }
 
-export type ShopItem = { kind: 'upgrade'; upgrade: UpgradeId; level: number } | { kind: 'ship'; classId: PlayerShipClass };
+// Una mejora nombra el barco para el que se compra, el activo o cualquier otro del jugador (1.3; §11, Q34); un barco y una
+// familia van sin él (§13)
+export type ShopItem =
+  | { kind: 'upgrade'; upgrade: UpgradeId; level: number; ship: PlayerShipClass }
+  | { kind: 'ship'; classId: PlayerShipClass }
+  | { kind: 'family'; family: ShipFamily };
 
 export function itemPrice(item: ShopItem): number {
-  return item.kind === 'upgrade' ? UPGRADE_LEVELS[item.upgrade].prices[item.level - 1] ?? Infinity : SHIP_CLASSES[item.classId].price;
+  if (item.kind === 'upgrade') return upgradePrice(item.ship, item.upgrade, item.level);
+  return item.kind === 'ship' ? SHIP_CLASSES[item.classId].price : FAMILY_PRICE;
 }
 
 function switchClass(world: World, ship: Ship, player: Player, classId: PlayerShipClass, keepRatio: boolean): void {
@@ -637,26 +664,46 @@ export function planBuy(world: World, playerId: string, item: ShopItem): BuyPlan
   if (!player || !isAlive(ship)) return fail('Tu barco no está a flote');
   if (!canUsePort(world, ship)) return fail(portClosedReason(ship, 'El astillero solo abre en el puerto'));
   const price = itemPrice(item);
-  if (item.kind === 'upgrade') {
-    if (item.level !== player.upgrades[item.upgrade] + 1 || item.level > MAX_UPGRADE_LEVEL) return fail('Primero necesitas el nivel anterior');
-  } else if (player.ownedShips.includes(item.classId)) {
-    return fail('Ya tienes ese barco');
-  }
+  const reason = itemRefusal(player, item);
+  if (reason) return fail(reason);
   if (player.gold < price) return fail(`Necesitas ${price} de oro`);
   return { ok: true, price };
+}
+
+// Lo que el artículo pide además del puerto y el oro. El nivel de la Goleta y del Navío se dice antes que el oro (AC-162)
+function itemRefusal(player: Player, item: ShopItem): string | null {
+  if (item.kind === 'upgrade') {
+    const levels = player.ships[item.ship];
+    if (!levels) return 'No tienes ese barco';
+    if (item.level !== levels[item.upgrade] + 1 || item.level > MAX_UPGRADE_LEVEL) return 'Primero necesitas el nivel anterior';
+    return null;
+  }
+  if (item.kind === 'family') return player.families.includes(item.family) ? 'Ya tienes esa familia' : null;
+  if (player.ships[item.classId]) return 'Ya tienes ese barco';
+  const minLevel = SHIP_MIN_LEVEL[item.classId];
+  if (minLevel !== undefined && levelOf(player.xp) < minLevel) return `Requiere nivel ${minLevel} (${rankLabel(rankOf(minLevel))})`;
+  return null;
 }
 
 // La compra sobre el progreso (el jugador o una copia que se escribe en la BD). Limitación conocida (P3): entre planBuy
 // y applyBuy pasa la escritura (~20 ms); si en ese rato el jugador pierde oro (muerte), el precio se descuenta con suelo
 // 0 y puede pagar de menos. La compra ya está escrita y confirmada, así que se entrega igualmente
-export function applyPurchase(progress: Pick<Player, 'gold' | 'upgrades' | 'ownedShips' | 'activeShip'>, item: ShopItem, price: number): void {
+export function applyPurchase(progress: PlayerProgress, item: ShopItem, price: number): void {
   progress.gold = Math.max(0, progress.gold - price);
   if (item.kind === 'upgrade') {
-    progress.upgrades[item.upgrade] = item.level;
+    // La mejora queda en el barco elegido; el barco activo no cambia (§11, «Mejorar el barco que no se navega»)
+    const levels = progress.ships[item.ship];
+    if (levels) progress.ships = { ...progress.ships, [item.ship]: { ...levels, [item.upgrade]: item.level } };
     return;
   }
-  if (!progress.ownedShips.includes(item.classId)) progress.ownedShips.push(item.classId);
-  progress.ownedShips.sort((a, b) => PLAYER_SHIP_ORDER.indexOf(a) - PLAYER_SHIP_ORDER.indexOf(b));
+  if (item.kind === 'family') {
+    // Comprar una familia la pone en uso, y vale para todos los barcos (§6, Q33)
+    if (!progress.families.includes(item.family)) progress.families = SHIP_FAMILIES.filter((f) => f === item.family || progress.families.includes(f));
+    progress.family = item.family;
+    return;
+  }
+  // Un barco nuevo llega con los 3 ejes a nivel 1 (AC-215) y pasa a ser el activo (AC-70)
+  if (!progress.ships[item.classId]) progress.ships = copyShips({ ...progress.ships, [item.classId]: { ...BASE_LEVELS } });
   progress.activeShip = item.classId;
 }
 
@@ -670,7 +717,8 @@ export function applyBuy(world: World, playerId: string, item: ShopItem, price: 
   if (item.kind === 'ship') {
     if (afloat) switchClass(world, ship, player, item.classId, false);
     else ship.classId = item.classId; // hundiéndose: Zarpar lo saca con la clase nueva y la vida llena
-  } else if (item.upgrade === 'hull' && afloat) {
+  } else if (item.kind === 'upgrade' && item.upgrade === 'hull' && item.ship === ship.classId && afloat) {
+    // Solo el Casco del barco que se navega cambia su vida, que conserva el porcentaje (AC-69); el de otro barco, no (AC-213 c)
     const ratio = ship.hp / ship.maxHp;
     ship.maxHp = maxHpFor(ship.classId, player);
     ship.hp = Math.round(ship.maxHp * ratio);
@@ -688,7 +736,7 @@ export function planSelectShip(world: World, playerId: string, classId: PlayerSh
   const player = world.players.get(playerId);
   const ship = shipOfPlayer(world, playerId);
   if (!player || !isAlive(ship)) return fail('Tu barco no está a flote');
-  if (!player.ownedShips.includes(classId)) return fail('No tienes ese barco');
+  if (!player.ships[classId]) return fail('No tienes ese barco');
   if (!canUsePort(world, ship)) return fail(portClosedReason(ship, 'Solo puedes cambiar de barco en el puerto'));
   return { ok: true };
 }
@@ -709,6 +757,32 @@ export function selectShip(world: World, playerId: string, classId: PlayerShipCl
   const plan = planSelectShip(world, playerId, classId);
   if (!plan.ok) return plan;
   applySelectShip(world, playerId, classId);
+  return { ok: true };
+}
+
+// Cambiar de aspecto (1.3; GDD §13, AC-223): «sin familia» siempre vale, y una familia, solo si la tiene. Gratis, en el
+// puerto y con el barco a flote, como el resto del Astillero. Como planBuy, valida sin tocar el mundo, para que el servidor
+// escriba el cambio en la BD antes de aplicarlo
+export function planSelectFamily(world: World, playerId: string, family: FamilyChoice): ActionResult {
+  const player = world.players.get(playerId);
+  const ship = shipOfPlayer(world, playerId);
+  if (!player || !isAlive(ship)) return fail('Tu barco no está a flote');
+  if (family !== NO_FAMILY && !player.families.includes(family)) return fail('No tienes esa familia');
+  // E20 (zona segura bajo fuego) cambia esta comprobación, como la de planBuy y planSelectShip, por la suya del puerto
+  if (!canUsePort(world, ship)) return fail(portClosedReason(ship, 'Solo puedes cambiar de familia en el puerto'));
+  return { ok: true };
+}
+
+// Solo el aspecto: la vida, el destino, el ataque y las mejoras no cambian (AC-222 y AC-223)
+export function applySelectFamily(world: World, playerId: string, family: FamilyChoice): void {
+  const player = world.players.get(playerId);
+  if (player) player.family = family;
+}
+
+export function selectFamily(world: World, playerId: string, family: FamilyChoice): ActionResult {
+  const plan = planSelectFamily(world, playerId, family);
+  if (!plan.ok) return plan;
+  applySelectFamily(world, playerId, family);
   return { ok: true };
 }
 
@@ -1398,6 +1472,7 @@ export function shipSnapshot(world: World, s: Ship): ShipSnapshot {
   if (player) {
     snap.lv = levelOf(player.xp); // la placa lleva la insignia del jugador; los NPC no (§10b, §14)
     snap.uf = Math.max(0, s.underFireUntil); // la marca de bajo fuego (§11, 1.3); −∞ viaja como 0
+    snap.fa = player.family; // también «none», explícito (GDD §6): los NPC no tienen familia
   }
   return snap;
 }
@@ -1410,9 +1485,10 @@ export function playerView(world: World, playerId: string): PlayerView | null {
     name: p.name,
     shipId: p.shipId,
     gold: p.gold,
-    upgrades: { ...p.upgrades },
-    ownedShips: [...p.ownedShips],
+    ships: copyShips(p.ships),
     activeShip: p.activeShip,
+    families: [...p.families],
+    family: p.family,
     kills: p.kills,
     deaths: p.deaths,
     death: p.death ? { by: p.death.by, goldLost: p.death.goldLost, respawnAt: p.death.at + DEATH_COUNTDOWN } : null,

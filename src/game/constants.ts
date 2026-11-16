@@ -229,9 +229,21 @@ export const SHIP_CLASSES: Record<string, ShipClassStats> = {
     patrolSpeed: 12, maxSpeed: 12, accel: 3, brake: 5, turnRate: 70 * deg, cannonsPerSide: 6, price: 2000,
     cannon: null, reward: 0, wreck: 0, respawnTime: 0
   },
+  // La Goleta y el Navío de línea (GDD §6): clases de la 1.1 que salen en la 1.3, sin interruptor (Q37, AC-226), con nivel
+  // mínimo para comprarlas (SHIP_MIN_LEVEL)
+  schooner: {
+    id: 'schooner', label: 'Goleta', kind: 'player', length: 22, radius: 6, maxHp: 1100,
+    patrolSpeed: 15, maxSpeed: 15, accel: 4.5, brake: 6, turnRate: 80 * deg, cannonsPerSide: 4, price: 3000,
+    cannon: null, reward: 0, wreck: 0, respawnTime: 0
+  },
   frigate: {
     id: 'frigate', label: 'Fragata', kind: 'player', length: 34, radius: 9, maxHp: 2200,
     patrolSpeed: 10, maxSpeed: 10, accel: 2.5, brake: 4, turnRate: 55 * deg, cannonsPerSide: 8, price: 6000,
+    cannon: null, reward: 0, wreck: 0, respawnTime: 0
+  },
+  line: {
+    id: 'line', label: 'Navío de línea', kind: 'player', length: 42, radius: 11, maxHp: 3200,
+    patrolSpeed: 8.5, maxSpeed: 8.5, accel: 2, brake: 3.5, turnRate: 45 * deg, cannonsPerSide: 10, price: 12000,
     cannon: null, reward: 0, wreck: 0, respawnTime: 0
   },
   pirate: {
@@ -267,9 +279,12 @@ export function navClearance(classId: string): number {
   return SHIP_CLASSES[classId].length / 2 + NAV_CLEARANCE_EXTRA;
 }
 
-export const PLAYER_SHIP_ORDER = ['sloop', 'brig', 'frigate'] as const;
+// El astillero, por precio: el orden de la tabla «Ids de clase de la fila» (GDD §13)
+export const PLAYER_SHIP_ORDER = ['sloop', 'brig', 'schooner', 'frigate', 'line'] as const;
 export type PlayerShipClass = (typeof PLAYER_SHIP_ORDER)[number];
 export const STARTING_SHIP: PlayerShipClass = 'sloop';
+// Nivel mínimo para comprar (GDD §6, Q27; AC-162): solo la Goleta y el Navío
+export const SHIP_MIN_LEVEL: Partial<Record<PlayerShipClass, number>> = { schooner: 5, line: 9 };
 
 export const NPC_POPULATION = { pirate: 12, merchant: 8 } as const;
 export const PIRATES_PER_SECTOR = 3;
@@ -370,6 +385,22 @@ export const UPGRADE_LEVELS: Record<UpgradeId, { label: string; multipliers: num
   sails: { label: 'Velas', multipliers: [1, 1.1, 1.2], prices: [0, 300, 900] }
 };
 export const MAX_UPGRADE_LEVEL = 3;
+// Mejoras por barco (1.3; GDD §11, Q34): cada barco tiene sus niveles, y el precio es la base (los precios de
+// UPGRADE_LEVELS, los de la Fragata) × cañones por banda / UPGRADE_PRICE_BASE_CANNONS. Cada precio sale entero
+export const UPGRADE_PRICE_BASE_CANNONS = 8;
+export function upgradePrice(classId: PlayerShipClass, upgrade: UpgradeId, level: number): number {
+  const base = UPGRADE_LEVELS[upgrade].prices[level - 1];
+  return base === undefined ? Infinity : (base * SHIP_CLASSES[classId].cannonsPerSide) / UPGRADE_PRICE_BASE_CANNONS;
+}
+
+// ---- Familias de barcos (1.3; GDD §6, Q33, Q38 y Q39) ----
+// Solo aspecto. Las dos se compran, una vez cada una y para todos los barcos del jugador; sin familia («none»), los barcos
+// se ven con el modelo procedural. SHIP_FAMILIES va en el orden de §6, el de `families` en la fila (GDD §13)
+export const SHIP_FAMILIES = ['gb', 'es'] as const;
+export type ShipFamily = (typeof SHIP_FAMILIES)[number];
+export const NO_FAMILY = 'none';
+export type FamilyChoice = ShipFamily | typeof NO_FAMILY; // la que usa el jugador: una familia que tiene o «sin familia»
+export const FAMILY_PRICE = 4000;
 
 // ---- Muerte y reaparición (§12) ----
 export const SINKING_TIME = 3;

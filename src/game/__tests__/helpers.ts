@@ -1,6 +1,21 @@
-import { TICK_RATE } from '../constants';
-import { GameEvent, Ship, World } from '../types';
-import { addPlayer, createWorld, drainEvents, shipOfPlayer, spawnCaptain, spawnGunboat, spawnMerchant, spawnPirate, step } from '../world';
+import { NO_FAMILY, PlayerShipClass, TICK_RATE } from '../constants';
+import { GameEvent, Player, Ship, ShipLevels, Upgrades, World } from '../types';
+import { addPlayer, createWorld, drainEvents, PlayerProgress, shipOfPlayer, spawnCaptain, spawnGunboat, spawnMerchant, spawnPirate, step } from '../world';
+
+// Progreso con las mejoras de la 1.2, que eran del jugador: cada barco con los mismos niveles, la regla de la migración de
+// la 1.3 (Q35), y sin familia
+export function sameLevels(gold: number, upgrades: Upgrades, ownedShips: PlayerShipClass[], activeShip: PlayerShipClass): PlayerProgress {
+  const ships: ShipLevels = {};
+  for (const classId of ownedShips) ships[classId] = { ...upgrades };
+  return { gold, ships, activeShip, families: [], family: NO_FAMILY };
+}
+
+// El jugador navega `classId`, que pasa a ser su único barco, con estos niveles (lo que hacían los tests de la 1.2 al fijar
+// upgrades, ownedShips y activeShip)
+export function onlyShip(player: Player, classId: PlayerShipClass, levels: Upgrades): void {
+  player.ships = { [classId]: { ...levels } };
+  player.activeShip = classId;
+}
 
 export const DT = 1 / TICK_RATE;
 

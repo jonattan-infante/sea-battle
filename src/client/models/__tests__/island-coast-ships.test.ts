@@ -27,9 +27,14 @@ const NEAR = 120; // m: una forma con el centro a más de esto del barco no lleg
 // frente a 2 × 26 m), así que el interior del triángulo no es navegable y el destino sale fuera (AC-172 a): la parada no queda
 // en su lado. No se saltan: el test aserta que su parada queda fuera del triángulo de los 3 centros
 const E1_INSIDE: readonly { shape: string; classId: string; k: number }[] = [
+  // El Navío (1.3, AC-226) tampoco pasa por los escollos (GDD §6): las mismas 3 paradas que la Fragata. En el orden del
+  // barrido: por forma y, en cada una, por clase
   { shape: 'E1a', classId: 'frigate', k: 0 },
+  { shape: 'E1a', classId: 'line', k: 0 },
   { shape: 'E1b', classId: 'frigate', k: 3 },
-  { shape: 'E1c', classId: 'frigate', k: 5 }
+  { shape: 'E1b', classId: 'line', k: 3 },
+  { shape: 'E1c', classId: 'frigate', k: 5 },
+  { shape: 'E1c', classId: 'line', k: 5 }
 ];
 
 // La tierra visible de una forma: su consulta rápida, sus segmentos de costa y su centro
@@ -151,7 +156,7 @@ function logRows(map: string, rows: Row[]): void {
 }
 
 describe('«Se ve / se choca» en las 16 formas del mapa de la 1.1 (AC-210; BACKLOG :1720)', () => {
-  test('mapa 1.1: Balandra, Bergantín y Fragata, mandadas contra la costa de cada forma del lado de la salida desde 8 rumbos, se paran sin ningún punto del casco sobre la tierra visible de islands.glb ni de island_port.glb', async () => {
+  test('mapa 1.1: las clases del jugador (desde la 1.3, las 5), mandadas contra la costa de cada forma del lado de la salida desde 8 rumbos, se paran sin ningún punto del casco sobre la tierra visible de islands.glb ni de island_port.glb', async () => {
     const t0 = Date.now();
     // 1.1: todas las raíces de islands.glb (las 15) y la del puerto de island_port.glb, cada una con su matriz de mundo. Todas
     // las del archivo y no PILOT_ROOTS: el barrido mide el archivo frente a la simulación, pinte el cliente las que pinte (eso
@@ -193,11 +198,11 @@ describe('«Se ve / se choca» en las 16 formas del mapa de la 1.1 (AC-210; BACK
     // Medido: los 384 barcos se paran; si no, el test no prueba lo que dice
     expect(rows11.filter((r) => !r.stopped).map((r) => `${r.shape} ${r.classId} rumbo ${r.k}`)).toEqual([]);
     // Y las paradas recorren la costa (O-6 de QA-72; cota de producto, BACKLOG :1941 de r11): en las 48 combinaciones de forma
-    // y clase, los 8 rumbos con la parada a ≤ 45° de su rumbo, visto desde el centro de la forma, salvo las 3 excepciones de
+    // y clase, los 8 rumbos con la parada a ≤ 45° de su rumbo, visto desde el centro de la forma, salvo las excepciones de
     // E1_INSIDE. Con el clic en el centro de la forma, como antes, las 8 acaban en 1 o 2 puntos
     const isException = (r: Row) => E1_INSIDE.some((e) => e.shape === r.shape && e.classId === r.classId && e.k === r.k);
     expect(rows11.filter((r) => r.side > 45 && !isException(r)).map((r) => `${r.shape} ${r.classId} rumbo ${r.k}: parada a ${r.side.toFixed(1)}° de su rumbo`)).toEqual([]);
-    // En las 3 excepciones, la parada fuera del triángulo de los 3 centros de E1 (AC-172 a)
+    // En las excepciones, la parada fuera del triángulo de los 3 centros de E1 (AC-172 a)
     const [e1a, e1b, e1c] = ['E1a', 'E1b', 'E1c'].map((id) => centerOf(MAP_1_1.shapes.find((s) => s.id === id)!));
     const exceptions = rows11.filter(isException);
     expect(exceptions.map((r) => `${r.shape} ${r.classId} rumbo ${r.k}`)).toEqual(E1_INSIDE.map((e) => `${e.shape} ${e.classId} rumbo ${e.k}`));

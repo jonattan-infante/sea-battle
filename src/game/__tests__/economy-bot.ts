@@ -1,27 +1,27 @@
 // Bot "barco primero" de AC-60 (§10), compartido por economy.test.ts (mapa de la 1.0, en `npm test`) y por el arnés de
 // AC-173 (b) con el mapa de la 1.1 y 20 semillas (src/game/__map11__, `npm run test:map11`; producto, r11 d2814e1)
-import { CAPTAIN_CLASS, GUNBOAT_CLASS, MAP_1_0, MapDef, PORT_POSITION, TICK_RATE } from '../constants';
+import { CAPTAIN_CLASS, GUNBOAT_CLASS, MAP_1_0, MapDef, MAX_UPGRADE_LEVEL, PORT_POSITION, TICK_RATE } from '../constants';
 import { Player, Ship } from '../types';
 import { distance } from '../vec';
 import { addPlayer, attack, buy, cannonOf, createWorld, isInSafeZone, itemPrice, moveTo, respawn, setRepair, shipOfPlayer, ShopItem } from '../world';
 import { DT, run } from './helpers';
 
 // Bot "barco primero" (AC-60): ataca al NPC más cercano, repara bajo el 40 %, no compra nada hasta poder
-// pagar el Bergantín y, desde ahí, compra siempre lo más barato disponible (Fragata incluida). Con el Capitán pirata
-// (H-305): no lo ataca, no entra a menos de 200 m de su guarida y, si el capitán lo elige, navega al puerto. Con la
+// pagar el Bergantín y, desde ahí, compra siempre lo más barato entre las mejoras de su barco activo y los barcos de la 1.0
+// que no tiene (1.3; GDD §10, «Cómo encaja la 1.3»). Al comprar la Fragata pasa a ella, y el hito final es la Fragata con sus
+// 6 mejoras: las del Bergantín que no compró antes se quedan sin comprar. No compra familias (solo aspecto). Con el Capitán
+// pirata (H-305): no lo ataca, no entra a menos de 200 m de su guarida y, si el capitán lo elige, navega al puerto. Con la
 // Cañonera (H-306): no la ataca mientras su cañón tenga menos alcance que ella (65 m), es decir, hasta Cañones N2
 const LAIR_AVOID = 200;
 const DUEL_DISTANCE = 40; // el bot se mantiene a ≤ 40 m de su objetivo
-const CATALOG: ShopItem[] = [
-  ...(['cannons', 'hull', 'sails'] as const).flatMap((upgrade) => [2, 3].map((level) => ({ kind: 'upgrade' as const, upgrade, level }))),
-  { kind: 'ship', classId: 'brig' },
-  { kind: 'ship', classId: 'frigate' }
-];
+const BOT_SHIPS = ['brig', 'frigate'] as const;
 function nextItem(p: Player): ShopItem | null {
-  if (!p.ownedShips.includes('brig')) return { kind: 'ship', classId: 'brig' };
-  const available = CATALOG.filter((i) =>
-    i.kind === 'upgrade' ? i.level === p.upgrades[i.upgrade] + 1 : !p.ownedShips.includes(i.classId)
-  );
+  if (!p.ships.brig) return { kind: 'ship', classId: 'brig' };
+  const levels = p.ships[p.activeShip]!;
+  const available: ShopItem[] = [
+    ...(['cannons', 'hull', 'sails'] as const).filter((u) => levels[u] < MAX_UPGRADE_LEVEL).map((upgrade) => ({ kind: 'upgrade' as const, upgrade, level: levels[upgrade] + 1, ship: p.activeShip })),
+    ...BOT_SHIPS.filter((c) => !p.ships[c]).map((classId) => ({ kind: 'ship' as const, classId }))
+  ];
   return available.sort((x, y) => itemPrice(x) - itemPrice(y))[0] ?? null;
 }
 

@@ -13,7 +13,8 @@
 // serían culpa del bot, no del servidor
 import { performance } from 'perf_hooks';
 import { io, Socket } from 'socket.io-client';
-import { ATTACK_MAX_DISTANCE, INTENT_BURST, INTENT_RATE_PER_SECOND, MAX_UPGRADE_LEVEL, PIRATE_SECTORS, PORT_POSITION, SAFE_ZONE_RADIUS, SHIP_CLASSES, UPGRADE_LEVELS, UpgradeId } from '../../src/game/constants';
+import { ATTACK_MAX_DISTANCE, INTENT_BURST, INTENT_RATE_PER_SECOND, MAX_UPGRADE_LEVEL, PIRATE_SECTORS, PlayerShipClass, PORT_POSITION, SAFE_ZONE_RADIUS, SHIP_CLASSES, UPGRADE_LEVELS, UpgradeId, upgradePrice } from '../../src/game/constants';
+import { activeLevels, levelsOf } from '../../src/game/stats';
 import { C2S, S2C } from '../../src/game/protocol';
 import type { Notice, PlayerView, ServerFrame, ShipSnapshot, Welcome } from '../../src/game/types';
 import { createRng, distance, headingTo, Vec2 } from '../../src/game/vec';
@@ -71,28 +72,30 @@ interface Pending {
   at: number;
   targetId?: string;
   repairWas?: boolean;
-  item?: string;
+  item?: ShopChoice;
   cancelReason?: string | null; // attack: lo que mostró el primer frame tras el envío (undefined: aún no llegó)
 }
 
-type ShopChoice = { itemId: string; price: number };
+// Una mejora lleva su barco (1.3; GDD §13): el bot mejora el que navega
+type ShopChoice = { itemId: string; price: number; ship?: PlayerShipClass };
 
-// Lo más barato que puede pagar (mejoras al nivel siguiente y barcos que no tiene)
-export function cheapestAffordable(me: Pick<PlayerView, 'gold' | 'upgrades' | 'ownedShips'>): ShopChoice | null {
+// Lo más barato que puede pagar (mejoras del barco activo al nivel siguiente, con su precio por barco, y barcos que no tiene)
+export function cheapestAffordable(me: Pick<PlayerView, 'gold' | 'ships' | 'activeShip'>): ShopChoice | null {
   const options: ShopChoice[] = [];
+  const levels = activeLevels(me);
   for (const up of Object.keys(UPGRADE_LEVELS) as UpgradeId[]) {
-    const next = me.upgrades[up] + 1;
-    if (next <= MAX_UPGRADE_LEVEL) options.push({ itemId: `${up}:${next}`, price: UPGRADE_LEVELS[up].prices[next - 1] });
+    const next = levels[up] + 1;
+    if (next <= MAX_UPGRADE_LEVEL) options.push({ itemId: `${up}:${next}`, price: upgradePrice(me.activeShip, up, next), ship: me.activeShip });
   }
-  for (const cls of ['brig', 'frigate'] as const) if (!me.ownedShips.includes(cls)) options.push({ itemId: `ship:${cls}`, price: SHIP_CLASSES[cls].price });
+  for (const cls of ['brig', 'frigate'] as const) if (!me.ships[cls]) options.push({ itemId: `ship:${cls}`, price: SHIP_CLASSES[cls].price });
   const affordable = options.filter((o) => o.price <= me.gold).sort((a, b) => a.price - b.price);
   return affordable[0] ?? null;
 }
 
-export function hasItem(me: Pick<PlayerView, 'upgrades' | 'ownedShips'>, itemId: string): boolean {
-  const [kind, value] = itemId.split(':');
-  if (kind === 'ship') return me.ownedShips.includes(value as PlayerView['ownedShips'][number]);
-  return me.upgrades[kind as UpgradeId] >= Number(value);
+export function hasItem(me: Pick<PlayerView, 'ships'>, choice: ShopChoice): boolean {
+  const [kind, value] = choice.itemId.split(':');
+  if (kind === 'ship') return !!me.ships[value as PlayerShipClass];
+  return !!choice.ship && !!me.ships[choice.ship] && levelsOf(me, choice.ship)[kind as UpgradeId] >= Number(value);
 }
 
 export class Bot {
@@ -112,7 +115,7 @@ export class Bot {
   private stopPhase: 'braking' | 'moving' | null = null;
   private stopStartedAt = 0;
   private roamTarget: Vec2 | null = null;
-  private buying: string | null = null;
+  private buying: ShopChoice | null = null;
   homing = false;
   quiet = false; // control de ruido (AC-142): conectado y quieto en el puerto, sin enviar nada
   private tokens = INTENT_BURST;
@@ -392,10 +395,10 @@ export class Bot {
       return;
     }
     // Compras: con ≥ 300 de oro y sin un objetivo atacado, al puerto
-    if (!this.buying && this.me && this.me.gold >= BUY_FROM_GOLD && !own.t) this.buying = cheapestAffordable(this.me)?.itemId ?? null;
+    if (!this.buying && this.me && this.me.gold >= BUY_FROM_GOLD && !own.t) this.buying = cheapestAffordable(this.me);
     if (this.buying) {
       if (distance(own, PORT) <= SAFE_ZONE_RADIUS - 10) {
-        if (!this.pending) this.emit(C2S.buy, { itemId: this.buying }, { kind: 'buy', item: this.buying });
+        if (!this.pending) this.emit(C2S.buy, this.buying.ship ? { itemId: this.buying.itemId, ship: this.buying.ship } : { itemId: this.buying.itemId }, { kind: 'buy', item: this.buying });
         return;
       }
       if (now >= this.nextMoveAt) this.moveTo(towards(PORT, own, 60));

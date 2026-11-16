@@ -1,20 +1,22 @@
-// Registro de progreso (AC-97 y, desde la 1.1, la XP de AC-155): parser estricto, como protocol.ts. Un registro que no
-// pasa no se usa ni se sobrescribe (AC-131): oro entero ≥ 0, niveles entre 1 y 3, y el barco activo entre los que posee.
-// Formato de la fila (GDD §13): la 1.1 lee v: 1 (con 0 de XP) y v: 2, y siempre escribe v: 2 (AC-156); los rechazos
-// nuevos son los de AC-156. Lo que escribe la 1.1 lo tiene que leer la 1.0.3, por si hay que volver atrás (AC-157): se
-// prueba con su lector congelado (fixtures/progress-1.0.3.ts)
+// Registro de progreso (AC-97, la XP de AC-155 y, desde la 1.3, las mejoras de cada barco y las familias): parser estricto,
+// como protocol.ts. Un registro que no pasa no se usa ni se sobrescribe (AC-131).
+// Formato de la fila (GDD §13, «Formato de la fila (1.3)»): la 1.3 lee v: 1 (con 0 de XP), v: 2 y v: 3, y siempre escribe
+// v: 3 (AC-218). Una v: 1 o v: 2 entra con los niveles de su `upgrades` en cada barco y sin familia (AC-219). Los rechazos
+// nuevos son los de GDD §13, «Se rechazan». La vuelta atrás va a la 1.2.x puente (AC-220): la 1.2.0, la 1.0.3 y la 1.0.2,
+// con sus lectores congelados, rechazan lo que escribe la 1.3.
+// *Cambiado a propósito con la 1.3 (AC-226 a):* con las 5 clases jugables, una fila con la Goleta o el Navío entra con
+// ellos y con su barco activo, sin pasar por el mejor de la 1.0 ni dejarlos aparte (antes, «carry»)
 import { GOLD_CAP, XP_CAP } from '../../src/game/constants';
 import { levelOf } from '../../src/game/xp';
-import { NEW_ROW, parseProgress, progressKey, serializeProgress } from '../progress';
+import { parseProgress, progressKey, SavedProgress, serializeProgress } from '../progress';
 import { parseProgress as parseProgress102 } from './fixtures/progress-1.0.2';
-import { parseProgress as parseProgress103, serializeProgress as serializeProgress103 } from './fixtures/progress-1.0.3';
-import { rowV1, v1Shapes } from './fixtures/progress-rows';
+import { parseProgress as parseProgress103 } from './fixtures/progress-1.0.3';
+import { parseProgress as parseProgress120 } from './fixtures/progress-1.2.0';
+import { LegacyProgress, migrated, rowV1, rowV2, v1Shapes } from './fixtures/progress-rows';
 
+const N1 = { cannons: 1, hull: 1, sails: 1 };
 const valid = { v: 1, gold: 750, upgrades: { cannons: 2, hull: 1, sails: 1 }, ownedShips: ['sloop', 'brig'], activeShip: 'brig' };
-const progress = { gold: 750, upgrades: { cannons: 2, hull: 1, sails: 1 }, ownedShips: ['sloop', 'brig'], activeShip: 'brig', xp: 0 };
-// Una fila de la 1.1 con todo: XP, los dos barcos nuevos y el Navío como barco activo. Mientras la simulación no juegue la
-// Goleta ni el Navío (no están en PLAYER_SHIP_ORDER), van aparte y se juega con el mejor barco que sí juega, como en la
-// 1.0.3 (AC-157 b). Cuando dev-npc los añada, estos casos cambian a propósito
+// Una fila de la 1.1 con todo: XP, los dos barcos nuevos y el Navío como barco activo
 const v2 = {
   v: 2,
   gold: 4321,
@@ -23,147 +25,167 @@ const v2 = {
   activeShip: 'line',
   xp: 1234
 };
+// La fila de AC-218: la Balandra a (3, 1, 2), el Bergantín a N1 y activo, 1 234 de oro, 2 500 de XP y las 2 familias, con
+// la española en uso
+const AC218: SavedProgress = {
+  gold: 1234,
+  xp: 2500,
+  ships: { sloop: { cannons: 3, hull: 1, sails: 2 }, brig: { ...N1 } },
+  activeShip: 'brig',
+  families: ['gb', 'es'],
+  family: 'es'
+};
+const v3 = { v: 3, gold: 1234, xp: 2500, ships: { sloop: { cannons: 3, hull: 1, sails: 2 }, brig: { ...N1 } }, activeShip: 'brig', families: ['gb', 'es'], family: 'es' };
 const roundTrip = (row: unknown) => JSON.parse(JSON.stringify(row));
 
-describe('filas v: 1 de la 1.0 (AC-156)', () => {
-  test('un registro válido se lee tal cual, con 0 de XP', () => {
-    expect(parseProgress(valid)).toEqual({ progress, carry: { newShips: [] } });
+describe('AC-219: las filas de la 1.2 entran con sus mejoras en cada barco, sin familia', () => {
+  test('v: 1: cada barco con los niveles de upgrades, 0 de XP, families [] y family «none»', () => {
+    expect(parseProgress(valid)).toEqual({
+      gold: 750,
+      xp: 0,
+      ships: { sloop: { cannons: 2, hull: 1, sails: 1 }, brig: { cannons: 2, hull: 1, sails: 1 } },
+      activeShip: 'brig',
+      families: [],
+      family: 'none'
+    });
   });
 
-  test.each(v1Shapes(GOLD_CAP).map((p) => [`${p.ownedShips.join('+')}, activo ${p.activeShip}, oro ${p.gold}, mejoras ${Object.values(p.upgrades).join('/')}`, rowV1(p)]))(
-    'cada forma que acepta la 1.0.2 entra intacta y con 0 de XP: %s',
-    (_label, row) => {
+  test('el ejemplo de GDD §13: upgrades (3, 2, 1) con la Balandra, el Bergantín y la Fragata dan los 3 barcos a (3, 2, 1)', () => {
+    const row = { v: 2, gold: 10, upgrades: { cannons: 3, hull: 2, sails: 1 }, ownedShips: ['sloop', 'brig', 'frigate'], activeShip: 'frigate', xp: 5 };
+    const levels = { cannons: 3, hull: 2, sails: 1 };
+    expect(parseProgress(row)).toEqual({ gold: 10, xp: 5, ships: { sloop: levels, brig: levels, frigate: levels }, activeShip: 'frigate', families: [], family: 'none' });
+  });
+
+  test.each(v1Shapes(GOLD_CAP).map((p) => [`${p.ownedShips.join('+')}, activo ${p.activeShip}, oro ${p.gold}, mejoras ${Object.values(p.upgrades).join('/')}`, p]))(
+    'cada forma que acepta la 1.0.2 entra con su oro, sus barcos y sus niveles en cada uno: %s',
+    (_label, p) => {
+      const row = rowV1(p as LegacyProgress);
       expect(parseProgress102(row)).not.toBeNull();
-      expect(parseProgress(row)?.progress).toEqual({ ...parseProgress102(row), xp: 0 });
+      expect(parseProgress(row)).toEqual(migrated(p as LegacyProgress));
     }
   );
 
-  test('al escribir pasa a v: 2, con 0 de XP y el resto igual, y se vuelve a leer con el mismo progreso', () => {
-    const read = parseProgress(valid)!;
-    const written = roundTrip(serializeProgress(read.progress, read.carry));
-    expect(written).toEqual({ ...valid, v: 2, xp: 0 });
-    expect(parseProgress(written)).toEqual(read);
-  });
-
-  test('un usuario nuevo se escribe en v: 2 con 0 de XP', () => {
-    expect(NEW_ROW).toEqual({ newShips: [] });
-    expect(serializeProgress({ gold: 100, upgrades: { cannons: 1, hull: 1, sails: 1 }, ownedShips: ['sloop'], activeShip: 'sloop', xp: 0 }, NEW_ROW)).toEqual({
-      v: 2,
-      gold: 100,
-      upgrades: { cannons: 1, hull: 1, sails: 1 },
-      ownedShips: ['sloop'],
-      activeShip: 'sloop',
-      xp: 0
-    });
-  });
-
-  test('los barcos en propiedad se leen en el orden del astillero', () => {
-    expect(parseProgress({ ...valid, ownedShips: ['frigate', 'sloop'], activeShip: 'sloop' })?.progress.ownedShips).toEqual(['sloop', 'frigate']);
-  });
-});
-
-describe('filas v: 2 de la 1.1 (AC-155)', () => {
-  test('se juega con su XP (1 234: nivel 7), el oro, las mejoras y los barcos que la simulación juega; con el Navío activo, con la Fragata', () => {
-    const read = parseProgress(v2);
-    expect(read).toEqual({
-      progress: { gold: 4321, upgrades: { cannons: 3, hull: 2, sails: 1 }, ownedShips: ['sloop', 'brig', 'frigate'], activeShip: 'frigate', xp: 1234 },
-      carry: { newShips: ['schooner', 'line'] }
-    });
-    expect(levelOf(read!.progress.xp)).toBe(7);
+  test('v: 2 con la Goleta y el Navío (AC-226 a): entra con los 5 barcos y con el Navío activo, cada uno con los niveles de upgrades', () => {
+    const read = parseProgress(v2)!;
+    const levels = { cannons: 3, hull: 2, sails: 1 };
+    expect(read).toEqual({ gold: 4321, xp: 1234, ships: { sloop: levels, brig: levels, schooner: levels, frigate: levels, line: levels }, activeShip: 'line', families: [], family: 'none' });
+    expect(levelOf(read.xp)).toBe(7);
   });
 
   test.each([
-    ['la Goleta, con Balandra y Bergantín', ['sloop', 'brig', 'schooner'], 'schooner', 'brig'],
-    ['el Navío, con Balandra y Bergantín', ['sloop', 'brig', 'line'], 'line', 'brig'],
-    ['el Navío, solo con la Balandra', ['sloop', 'line'], 'line', 'sloop'],
-    ['la Goleta, con la Fragata pero sin Bergantín', ['sloop', 'schooner', 'frigate'], 'schooner', 'frigate']
-  ])('si el barco activo es %s, se juega con el mejor que la simulación juega', (_label, ownedShips, activeShip, playing) => {
-    expect(parseProgress({ ...v2, ownedShips, activeShip })?.progress.activeShip).toBe(playing);
+    ['la Goleta, con Balandra y Bergantín', ['sloop', 'brig', 'schooner'], 'schooner'],
+    ['el Navío, solo con la Balandra', ['sloop', 'line'], 'line'],
+    ['el Navío, sin ningún barco de la 1.0', ['line'], 'line']
+  ])('v: 2 con %s como activo: entra con ese barco, sin pasar por el mejor de la 1.0 (AC-226 a)', (_label, ownedShips, activeShip) => {
+    const read = parseProgress({ ...v2, ownedShips, activeShip })!;
+    expect(read.activeShip).toBe(activeShip);
+    expect(Object.keys(read.ships)).toEqual(ownedShips);
   });
 
-  test('si el barco activo es uno que la simulación juega, se juega con él aunque posea uno nuevo mejor', () => {
-    expect(parseProgress({ ...v2, activeShip: 'brig' })?.progress.activeShip).toBe('brig');
-  });
-
-  test('sin ningún barco que la simulación juegue, se juega con la Balandra y, al escribir, se añade a la fila', () => {
-    const read = parseProgress({ ...v2, ownedShips: ['line'], activeShip: 'line', xp: 500 })!;
-    expect(read.progress).toEqual({ gold: 4321, upgrades: { cannons: 3, hull: 2, sails: 1 }, ownedShips: ['sloop'], activeShip: 'sloop', xp: 500 });
-    expect(serializeProgress(read.progress, read.carry)).toEqual({ ...v2, ownedShips: ['sloop', 'line'], activeShip: 'sloop', xp: 500 });
+  test('los barcos se leen en el orden de la tabla de ids', () => {
+    expect(Object.keys(parseProgress({ ...v2, ownedShips: ['line', 'frigate', 'sloop'], activeShip: 'sloop' })!.ships)).toEqual(['sloop', 'frigate', 'line']);
   });
 
   test.each([
     ['0 de XP', 0],
     ['la XP en el tope', XP_CAP]
-  ])('se acepta una fila con %s', (_label, xp) => {
-    expect(parseProgress({ ...v2, xp })?.progress.xp).toBe(xp);
+  ])('se acepta una v: 2 con %s', (_label, xp) => {
+    expect(parseProgress({ ...v2, xp })?.xp).toBe(xp);
   });
 
-  test('se acepta una fila v: 2 sin barcos nuevos', () => {
-    expect(parseProgress({ ...v2, ownedShips: ['sloop', 'brig'], activeShip: 'brig' })).toEqual({
-      progress: { gold: 4321, upgrades: { cannons: 3, hull: 2, sails: 1 }, ownedShips: ['sloop', 'brig'], activeShip: 'brig', xp: 1234 },
-      carry: { newShips: [] }
-    });
-  });
-
-  test('se escribe en v: 2 con la XP de la partida, los barcos nuevos tal cual y como activo el barco con el que juega', () => {
-    const read = parseProgress(v2)!;
-    expect(serializeProgress(read.progress, read.carry)).toEqual({ ...v2, activeShip: 'frigate' });
-    expect(serializeProgress({ ...read.progress, xp: 1300 }, read.carry)).toEqual({ ...v2, activeShip: 'frigate', xp: 1300 });
-  });
-
-  test('un Bergantín comprado va entre los barcos nuevos, en el orden de la tabla de ids', () => {
-    const read = parseProgress({ ...v2, gold: 2500, ownedShips: ['sloop', 'line'], activeShip: 'line' })!;
-    const after = { ...read.progress, gold: 500, ownedShips: [...read.progress.ownedShips, 'brig' as const], activeShip: 'brig' as const };
-    expect(serializeProgress(after, read.carry)).toEqual({ ...v2, gold: 500, ownedShips: ['sloop', 'brig', 'line'], activeShip: 'brig' });
-  });
-
-  test('leer y escribir otra vez da la misma fila', () => {
-    const first = parseProgress(v2)!;
-    const row = roundTrip(serializeProgress(first.progress, first.carry));
-    const second = parseProgress(row)!;
-    expect(second).toEqual(first);
-    expect(roundTrip(serializeProgress(second.progress, second.carry))).toEqual(row);
+  test('al escribir pasan a v: 3 (AC-219), y se vuelven a leer con el mismo progreso', () => {
+    for (const row of [valid, v2, rowV2({ gold: 0, upgrades: N1, ownedShips: ['sloop'], activeShip: 'sloop', xp: 0 })]) {
+      const read = parseProgress(row)!;
+      const written = roundTrip(serializeProgress(read));
+      expect(written.v).toBe(3);
+      expect(written.families).toEqual([]);
+      expect(written.family).toBe('none');
+      expect(parseProgress(written)).toEqual(read);
+    }
   });
 });
 
-describe('volver a la 1.0.3 (AC-157): la 1.0.3 lee lo que escribe la 1.1 y lo conserva', () => {
+describe('AC-218: el formato v: 3', () => {
+  test('la fila de AC-218 se escribe tal cual, con families en el orden de §6 (gb, es)', () => {
+    expect(roundTrip(serializeProgress(AC218))).toEqual(v3);
+    expect(serializeProgress({ ...AC218, families: ['es', 'gb'] }).families).toEqual(['gb', 'es']);
+    expect(JSON.stringify(serializeProgress({ ...AC218, families: ['es', 'gb'] }).families)).toBe('["gb","es"]');
+  });
+
+  test('un jugador nuevo: la Balandra a nivel 1 y activa, families [] y family «none»', () => {
+    const fresh: SavedProgress = { gold: 100, xp: 0, ships: { sloop: { ...N1 } }, activeShip: 'sloop', families: [], family: 'none' };
+    expect(serializeProgress(fresh)).toEqual({ v: 3, gold: 100, xp: 0, ships: { sloop: N1 }, activeShip: 'sloop', families: [], family: 'none' });
+  });
+
+  test('las claves exactas de la fila, en el orden de GDD §13; los barcos, en el de la tabla de ids', () => {
+    const row = serializeProgress({ ...AC218, ships: { line: { ...N1 }, sloop: { ...N1 }, frigate: { ...N1 } }, activeShip: 'line' });
+    expect(Object.keys(row)).toEqual(['v', 'gold', 'xp', 'ships', 'activeShip', 'families', 'family']);
+    expect(Object.keys(row.ships)).toEqual(['sloop', 'frigate', 'line']);
+  });
+
+  test('se lee la v: 3 con lo mismo que se escribió; el orden de families no importa al leer', () => {
+    expect(parseProgress(v3)).toEqual(AC218);
+    expect(parseProgress({ ...v3, families: ['es', 'gb'] })).toEqual(AC218);
+    const first = parseProgress(v3)!;
+    const row = roundTrip(serializeProgress(first));
+    expect(parseProgress(row)).toEqual(first);
+    expect(roundTrip(serializeProgress(parseProgress(row)!))).toEqual(row);
+  });
+
   test.each([
-    ['una fila de la 1.0 tras su primera escritura en la 1.1', valid],
-    ['una fila v: 2 con XP y barcos nuevos', v2],
-    ['una fila v: 2 sin barcos nuevos', { ...v2, ownedShips: ['sloop', 'brig'], activeShip: 'brig' }]
-  ])('%s', (_label, row) => {
-    const read = parseProgress(row)!;
-    const written = roundTrip(serializeProgress(read.progress, read.carry));
-    expect(parseProgress103(written)).not.toBeNull();
-    expect(parseProgress103(written)!.carry).toEqual({ v: 2, xp: read.progress.xp, newShips: read.carry.newShips });
+    ['sin familia, sin ninguna comprada', { families: [], family: 'none' }],
+    ['sin familia, con las 2 compradas', { families: ['gb', 'es'], family: 'none' }],
+    ['la británica, solo con ella', { families: ['gb'], family: 'gb' }],
+    ['la española, solo con ella', { families: ['es'], family: 'es' }]
+  ])('se acepta %s', (_label, f) => {
+    expect(parseProgress({ ...v3, ...f })).toEqual({ ...AC218, ...f });
   });
 
-  test('la 1.1 escribe, la 1.0.3 lee y escribe, la 1.1 lee: la XP y los barcos nuevos son los mismos, y el activo es el de la 1.0.3', () => {
-    const by11 = parseProgress(v2)!;
-    const row11 = roundTrip(serializeProgress({ ...by11.progress, xp: 1300 }, by11.carry));
-    const by103 = parseProgress103(row11)!;
-    const row103 = roundTrip(serializeProgress103({ ...by103.progress, gold: 4400, activeShip: 'brig' }, by103.carry));
-    const back = parseProgress(row103)!;
-    expect(back.progress).toEqual({ ...by11.progress, gold: 4400, activeShip: 'brig', xp: 1300 });
-    expect(back.carry).toEqual(by11.carry);
+  test('se aceptan los 5 barcos, cada nivel en cada eje, oro 0 y el tope, y la XP en el tope', () => {
+    const ships = { sloop: { cannons: 1, hull: 2, sails: 3 }, brig: { cannons: 2, hull: 3, sails: 1 }, schooner: { cannons: 3, hull: 1, sails: 2 }, frigate: { ...N1 }, line: { cannons: 3, hull: 3, sails: 3 } };
+    for (const gold of [0, GOLD_CAP]) expect(parseProgress({ ...v3, gold, xp: XP_CAP, ships, activeShip: 'line' })).toEqual({ ...AC218, gold, xp: XP_CAP, ships, activeShip: 'line' });
   });
 
-  test('la 1.0.2 rechaza todo lo que escribe la 1.1, también una fila de la 1.0 tras su primera escritura: se vuelve a la 1.0.3, no a la 1.0.2', () => {
-    const read = parseProgress(valid)!;
-    expect(parseProgress102(roundTrip(serializeProgress(read.progress, read.carry)))).toBeNull();
-    expect(parseProgress102(v2)).toBeNull();
+  test('la huella no depende del orden de las claves ni del de families, y cambia con cada nivel de cada barco, el barco activo, las familias y la que usa', () => {
+    const a = parseProgress(v3)!;
+    const b = parseProgress({ family: 'es', families: ['es', 'gb'], activeShip: 'brig', ships: { brig: { sails: 1, hull: 1, cannons: 1 }, sloop: { sails: 2, cannons: 3, hull: 1 } }, xp: 2500, gold: 1234, v: 3 })!;
+    expect(progressKey(a)).toBe(progressKey(b));
+    const variants: SavedProgress[] = [
+      { ...a, gold: 1235 },
+      { ...a, xp: 2501 },
+      { ...a, ships: { ...a.ships, brig: { cannons: 2, hull: 1, sails: 1 } } },
+      { ...a, ships: { ...a.ships, sloop: { cannons: 3, hull: 1, sails: 3 } } },
+      { ...a, ships: { ...a.ships, frigate: { ...N1 } } },
+      { ...a, activeShip: 'sloop' },
+      { ...a, families: ['gb'], family: 'gb' },
+      { ...a, family: 'gb' },
+      { ...a, family: 'none' }
+    ];
+    for (const v of variants) expect(progressKey(v)).not.toBe(progressKey(a));
   });
 });
 
-test('la huella no depende del orden de las claves y cambia con la XP (la del coatacante sin oro también se escribe)', () => {
-  const a = parseProgress(v2)!.progress;
-  const b = parseProgress({ xp: 1234, activeShip: 'line', ownedShips: [...v2.ownedShips].reverse(), upgrades: { sails: 1, hull: 2, cannons: 3 }, gold: 4321, v: 2 })!.progress;
-  expect(progressKey(a)).toBe(progressKey(b));
-  expect(progressKey({ ...a, gold: 4322 })).not.toBe(progressKey(a));
-  expect(progressKey({ ...a, xp: 1235 })).not.toBe(progressKey(a));
+describe('vuelta atrás (GDD §13 y Q36): las versiones de prod rechazan lo que escribe la 1.3; se vuelve a la 1.2.x puente', () => {
+  test.each([
+    ['la fila de AC-218', v3],
+    ['un jugador nuevo', { v: 3, gold: 100, xp: 0, ships: { sloop: N1 }, activeShip: 'sloop', families: [], family: 'none' }],
+    ['una fila de la 1.0 tras su primera escritura en la 1.3', roundTrip(serializeProgress(parseProgress(valid)!))],
+    ['una fila v: 2 con la Goleta y el Navío tras su primera escritura en la 1.3', roundTrip(serializeProgress(parseProgress(v2)!))]
+  ])('%s: la 1.2.0, la 1.0.3 y la 1.0.2 la rechazan', (_label, row) => {
+    expect(row.v).toBe(3);
+    expect(parseProgress(row)).not.toBeNull();
+    expect(parseProgress120(row)).toBeNull();
+    expect(parseProgress103(row)).toBeNull();
+    expect(parseProgress102(row)).toBeNull();
+  });
+
+  test('la 1.2.0 sí lee las filas de la 1.2 que la 1.3 aún no ha escrito (no hay migración en bloque)', () => {
+    expect(parseProgress120(valid)).not.toBeNull();
+    expect(parseProgress120(v2)).not.toBeNull();
+  });
 });
 
-// Los rechazos de AC-131, en las dos versiones de la fila
+// Los rechazos de AC-131, en las dos versiones de la fila de la 1.2
 const corrupt = (base: Record<string, unknown>): [string, unknown][] => [
   ['un campo de más', { ...base, hp: 100 }],
   ['oro negativo', { ...base, gold: -1 }],
@@ -183,7 +205,11 @@ const corrupt = (base: Record<string, unknown>): [string, unknown][] => [
   ['un barco de PNJ', { ...base, ownedShips: ['sloop', 'captain'], activeShip: 'sloop' }],
   ['el id de ux del Bergantín', { ...base, ownedShips: ['sloop', 'brigantine'], activeShip: 'sloop' }],
   ['barco activo que no posee', { ...base, ownedShips: ['sloop'], activeShip: 'frigate' }],
-  ['barco activo desconocido', { ...base, activeShip: 'galleon' }]
+  ['barco activo desconocido', { ...base, activeShip: 'galleon' }],
+  // GDD §13 (1.3): una v: 1 o v: 2 con las claves de la v: 3
+  ['ships', { ...base, ships: { sloop: N1 } }],
+  ['families', { ...base, families: [] }],
+  ['family', { ...base, family: 'none' }]
 ];
 
 test.each([
@@ -199,13 +225,14 @@ test.each(corrupt(v2))('se rechaza un registro v: 2 con %s', (_label, raw) => {
   expect(parseProgress(raw)).toBeNull();
 });
 
-// Los rechazos nuevos de AC-156. Los ids de una v: 1 son los de la fila de la 1.0, no los de la simulación: aunque
-// PLAYER_SHIP_ORDER crezca con la Goleta y el Navío, una v: 1 con ellos sigue siendo un registro corrupto
+// Los rechazos de AC-156. Los ids de una v: 1 son los de la fila de la 1.0, no los de la simulación: con la Goleta y el
+// Navío en PLAYER_SHIP_ORDER, una v: 1 con ellos sigue siendo un registro corrupto
 test.each([
   ['sin versión', { ...valid, v: undefined }],
   ['v: 0', { ...valid, v: 0 }],
-  ['v: 3', { ...v2, v: 3 }],
+  ['v: 4', { ...v3, v: 4 }],
   ['v como texto', { ...v2, v: '2' }],
+  ['v: 3 como texto', { ...v3, v: '3' }],
   ['v con decimales', { ...v2, v: 1.5 }],
   ['v: 1 con xp', { ...valid, xp: 0 }],
   ['v: 1 con la Goleta', { ...valid, ownedShips: ['sloop', 'schooner'], activeShip: 'sloop' }],
@@ -218,5 +245,65 @@ test.each([
   ['xp como texto', { ...v2, xp: '1234' }],
   ['xp nula', { ...v2, xp: null }]
 ])('se rechaza un registro con %s', (_label, raw) => {
+  expect(parseProgress(raw)).toBeNull();
+});
+
+// GDD §13, «Lectura y escritura de la fila en la 1.3», punto «Se rechazan» (AC-219): cada caso, sin tocar la fila
+const without = (key: string) => Object.fromEntries(Object.entries(v3).filter(([k]) => k !== key));
+const ownKey = (key: string, value: unknown) => JSON.parse(`{${JSON.stringify(key)}: ${JSON.stringify(value)}}`); // una clave propia, también «__proto__»
+test.each([
+  // claves de la fila
+  ['upgrades', { ...v3, upgrades: N1 }],
+  ['ownedShips', { ...v3, ownedShips: ['sloop', 'brig'] }],
+  ...(['gold', 'xp', 'ships', 'activeShip', 'families', 'family'] as const).map((k): [string, unknown] => [`sin ${k}`, without(k)]),
+  ['una clave de más', { ...v3, hp: 100 }],
+  // oro y XP, como en la v: 2
+  ['oro negativo', { ...v3, gold: -1 }],
+  ['oro por encima del tope', { ...v3, gold: GOLD_CAP + 1 }],
+  ['oro como texto', { ...v3, gold: '1234' }],
+  ['xp con decimales', { ...v3, xp: 2.5 }],
+  ['xp por encima del tope', { ...v3, xp: XP_CAP + 1 }],
+  ['xp nula', { ...v3, xp: null }],
+  // ships
+  ['ships vacío', { ...v3, ships: {} }],
+  ['ships como lista', { ...v3, ships: [{ ...N1 }] }],
+  ['ships nulo', { ...v3, ships: null }],
+  ['un barco desconocido', { ...v3, ships: { ...v3.ships, galleon: N1 } }],
+  ['un barco de PNJ', { ...v3, ships: { ...v3.ships, captain: N1 } }],
+  ['el id de ux del Bergantín', { ...v3, ships: { sloop: N1, brigantine: N1 }, activeShip: 'sloop' }],
+  ['un barco «__proto__»', { ...v3, ships: { ...v3.ships, ...ownKey('__proto__', N1) } }],
+  ['un barco sin un eje', { ...v3, ships: { ...v3.ships, brig: { cannons: 1, hull: 1 } } }],
+  ['un barco con un eje de más', { ...v3, ships: { ...v3.ships, brig: { ...N1, mast: 1 } } }],
+  ['un barco con un eje desconocido en lugar de otro', { ...v3, ships: { ...v3.ships, brig: { cannons: 1, hull: 1, mast: 1 } } }],
+  ['un barco sin niveles', { ...v3, ships: { ...v3.ships, brig: null } }],
+  ['un barco con sus niveles en una lista', { ...v3, ships: { ...v3.ships, brig: [1, 1, 1] } }],
+  ['nivel 0', { ...v3, ships: { ...v3.ships, brig: { ...N1, hull: 0 } } }],
+  ['nivel 4', { ...v3, ships: { ...v3.ships, brig: { ...N1, sails: 4 } } }],
+  ['nivel con decimales', { ...v3, ships: { ...v3.ships, brig: { ...N1, cannons: 1.5 } } }],
+  ['nivel como texto', { ...v3, ships: { ...v3.ships, brig: { ...N1, cannons: '2' } } }],
+  // activeShip
+  ['barco activo que no es clave de ships', { ...v3, activeShip: 'frigate' }],
+  ['barco activo desconocido', { ...v3, activeShip: 'galleon' }],
+  ['barco activo que es una clave del prototipo', { ...v3, activeShip: 'constructor' }],
+  ['barco activo «toString»', { ...v3, activeShip: 'toString' }],
+  ['barco activo que no es texto', { ...v3, activeShip: 1 }],
+  ['barco activo nulo', { ...v3, activeShip: null }],
+  // families
+  ['families que no es lista', { ...v3, families: 'gb' }],
+  ['families como objeto', { ...v3, families: { gb: true } }],
+  ['families nula', { ...v3, families: null }],
+  ['«none» en families', { ...v3, families: ['gb', 'none'], family: 'gb' }],
+  ['una familia desconocida', { ...v3, families: ['gb', 'fr'], family: 'gb' }],
+  ['una familia en mayúsculas', { ...v3, families: ['GB'], family: 'none' }],
+  ['una familia repetida', { ...v3, families: ['gb', 'gb'], family: 'gb' }],
+  ['una familia que no es texto', { ...v3, families: [1], family: 'none' }],
+  // family
+  ['family que no está en families', { ...v3, families: ['gb'], family: 'es' }],
+  ['family sin ninguna comprada', { ...v3, families: [], family: 'gb' }],
+  ['family desconocida', { ...v3, family: 'fr' }],
+  ['family vacía', { ...v3, family: '' }],
+  ['family nula', { ...v3, family: null }],
+  ['family como lista', { ...v3, family: ['es'] }]
+])('se rechaza un registro v: 3 con %s', (_label, raw) => {
   expect(parseProgress(raw)).toBeNull();
 });

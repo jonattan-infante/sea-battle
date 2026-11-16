@@ -6,6 +6,7 @@ import { IslandDef, MAP_1_0, MAP_1_1, MapDef, NAV_LIMIT, navClearance, PLAYER_SH
 import { Navigator } from '../../game/nav';
 import { createRng, distance, Vec2 } from '../../game/vec';
 import { addPlayer, createWorld, moveTo, shipOfPlayer } from '../../game/world';
+import { sameLevels } from '../../game/__tests__/helpers';
 import { markerDestination } from '../click-marker';
 
 const TOLERANCE_M = 0.5; // producto, BACKLOG :1720
@@ -52,7 +53,7 @@ describe('H-1: el marcador de clic del cliente cae donde el servidor fija el des
     for (const classId of PLAYER_SHIP_ORDER)
       test(`mapa ${map.id}, ${classId}`, () => {
         const world = createWorld({ seed: 1720, spawnNpcs: false, map });
-        addPlayer(world, 'p', 'p', { gold: 0, upgrades: { cannons: 1, hull: 1, sails: 1 }, ownedShips: [classId], activeShip: classId });
+        addPlayer(world, 'p', 'p', sameLevels(0, { cannons: 1, hull: 1, sails: 1 }, [classId], classId));
         const ship = shipOfPlayer(world, 'p')!;
         expect(ship.classId).toBe(classId);
         // El navegador del cliente: otra instancia, con los círculos de la bienvenida (los del mundo, game-server.ts)

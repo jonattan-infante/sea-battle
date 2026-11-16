@@ -14,7 +14,7 @@ import {
   TAB_TARGET_RADIUS,
   UNDER_FIRE_WINDOW
 } from '../game/constants';
-import { tooStrong } from '../game/stats';
+import { activeLevels, tooStrong } from '../game/stats';
 import { PlayerView, ShipState } from '../game/types';
 import { Vec2 } from '../game/vec';
 import { levelOf, Rank, rankLabel, rankOf } from '../game/xp';
@@ -31,7 +31,7 @@ export function relationOf(ship: Pick<RenderShip, 'id' | 'kind'>, myShipId: stri
 }
 
 export function cannonFor(player: PlayerView | null) {
-  return CANNON_LEVELS[Math.max(0, Math.min(CANNON_LEVELS.length - 1, (player?.upgrades.cannons ?? 1) - 1))];
+  return CANNON_LEVELS[Math.max(0, Math.min(CANNON_LEVELS.length - 1, (player ? activeLevels(player).cannons : 1) - 1))];
 }
 
 export function classLabel(classId: string): string {
