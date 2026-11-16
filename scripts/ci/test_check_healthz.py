@@ -91,6 +91,66 @@ class Check(unittest.TestCase):
         self.assertEqual(len(check(health(commit='x', migrationsApplied=[1], schemaVersion=7), SHA, [], 1)), 3)
 
 
+# AC-231 (f), precisado por producto el 2026-11-16 (BACKLOG, la nota de (f)): un PR con una migración y varios deploys. En
+# staging vale la lista declarada, o [] si schemaVersion ya es la mayor de MIGRATIONS; en prod, exacta en el 1.er intento
+# del job y, en un re-run del mismo SHA, la regla de staging. Un schemaVersion distinto de la mayor de MIGRATIONS es rojo
+# siempre. Los 3 modos: (lenient, nombre)
+STAGING, PROD_1, PROD_RERUN = (True, 'staging'), (False, 'prod, 1.er intento'), (True, 'prod, re-run')
+MODES = (STAGING, PROD_1, PROD_RERUN)
+
+
+class MigrationsRule(unittest.TestCase):
+    def verdicts(self, applied, schema, declared, version):
+        """Por modo, la lista de errores del paso (solo los de migrationsApplied y schemaVersion: el commit cuadra)."""
+        return {name: check(health(migrationsApplied=applied, schemaVersion=schema), SHA, declared, version, lenient=lenient) for lenient, name in MODES}
+
+    def test_1_declarada_2_con_2_y_esquema_2_verde_en_todos(self):
+        self.assertEqual(self.verdicts([2], 2, [2], 2), {'staging': [], 'prod, 1.er intento': [], 'prod, re-run': []})
+
+    def test_2_declarada_2_con_vacia_y_esquema_2_verde_en_staging_y_en_el_re_run_rojo_en_el_1er_intento_de_prod(self):
+        v = self.verdicts([], 2, [2], 2)
+        self.assertEqual((v['staging'], v['prod, re-run']), ([], []))
+        self.assertEqual(len(v['prod, 1.er intento']), 1)
+        msg = v['prod, 1.er intento'][0]
+        self.assertIn('ya estaban aplicadas antes de este arranque', msg)
+        self.assertIn('la BD de prod se migró fuera de su deploy', msg)
+
+    def test_3_declarada_2_con_vacia_y_esquema_1_rojo_en_todos(self):
+        for name, errors in self.verdicts([], 1, [2], 2).items():
+            with self.subTest(name):
+                self.assertTrue(any('schemaVersion' in e for e in errors), errors)
+                self.assertTrue(any('migrationsApplied' in e for e in errors), errors)
+
+    def test_4_declarada_2_con_3_rojo_en_todos(self):
+        for name, errors in self.verdicts([3], 2, [2], 2).items():
+            with self.subTest(name):
+                self.assertEqual(len(errors), 1)
+                self.assertIn('migrationsApplied es [3]', errors[0])
+
+    def test_5_declarada_vacia_con_vacia_y_esquema_1_verde_en_todos_la_13_no_cambia(self):
+        self.assertEqual(self.verdicts([], 1, [], 1), {'staging': [], 'prod, 1.er intento': [], 'prod, re-run': []})
+
+    def test_6_esquema_2_con_migrations_hasta_la_1_rojo_en_todos(self):
+        # Regla 4: no se relaja, tampoco en staging con una BD que lleva la migración de otro PR que este commit no tiene
+        for name, errors in self.verdicts([], 2, [], 1).items():
+            with self.subTest(name):
+                self.assertEqual(len(errors), 1)
+                self.assertIn('schemaVersion es 2', errors[0])
+
+    def test_la_13_con_vacia_declarada_y_un_arranque_que_aplica_la_1_sigue_en_rojo_en_todos(self):
+        # Lo de hoy no cambia: con '[]' declarado, [1] es rojo, también en staging y en un re-run
+        for name, errors in self.verdicts([1], 1, [], 1).items():
+            with self.subTest(name):
+                self.assertEqual(len(errors), 1)
+                self.assertIn('migrationsApplied es [1], no el esperado []', errors[0])
+
+    def test_sin_bd_no_cuenta_como_ya_aplicadas(self):
+        # null no es []: un despliegue sin BD es rojo en todos los modos
+        for name, errors in self.verdicts(None, None, [2], 2).items():
+            with self.subTest(name):
+                self.assertEqual(len(errors), 2)
+
+
 class Main(unittest.TestCase):
     def run_main(self, args, body):
         with tempfile.NamedTemporaryFile('w', suffix='.ts', delete=False) as f:
@@ -104,15 +164,31 @@ class Main(unittest.TestCase):
             os.unlink(f.name)
 
     def test_verde(self):
-        code, out = self.run_main(['--commit', SHA], health())
+        code, out = self.run_main(['--commit', SHA, '--env', 'production', '--attempt', '1'], health())
         self.assertEqual(code, 0)
         self.assertIn('2026-11-16T15:22:02.000Z', out)
 
     def test_rojo_con_un_sha_falso(self):
         # Lo que hace la corrida forzada en rojo del job: el SHA esperado no es el desplegado
-        code, out = self.run_main(['--commit', 'deadbeef' * 5], health())
+        code, out = self.run_main(['--commit', 'deadbeef' * 5, '--env', 'staging', '--attempt', '1'], health())
         self.assertEqual(code, 1)
         self.assertIn('::error::AC-231: commit', out)
+
+    def test_env_y_attempt_eligen_la_regla(self):
+        # Declarada [1] y el arranque dio [] con el esquema 1 (MIGRATE_1): las migraciones ya estaban aplicadas
+        body = health(migrationsApplied=[], schemaVersion=1)
+        cases = [('staging', '1', 0), ('staging', '3', 0), ('production', '1', 1), ('production', '2', 0)]
+        for env, attempt, expected in cases:
+            with self.subTest(env=env, attempt=attempt):
+                code, out = self.run_main(['--commit', SHA, '--migrations', '[1]', '--env', env, '--attempt', attempt], body)
+                self.assertEqual(code, expected, out)
+                if expected == 0:
+                    self.assertIn('ya estaban aplicadas', out)
+
+    def test_env_es_obligatorio_y_attempt_es_un_entero_positivo(self):
+        for args in (['--commit', SHA], ['--commit', SHA, '--env', 'qa'], ['--commit', SHA, '--env', 'staging', '--attempt', '0'], ['--commit', SHA, '--env', 'staging', '--attempt', 'x']):
+            with self.subTest(args=args), self.assertRaises(SystemExit), redirect_stdout(io.StringIO()), mock.patch('sys.stderr', io.StringIO()):
+                self.run_main(args, health())
 
     def test_solo_la_version(self):
         code, out = self.run_main(['--schema-version'], '')
