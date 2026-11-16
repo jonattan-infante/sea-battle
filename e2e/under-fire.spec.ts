@@ -5,9 +5,10 @@
 // cada frame del navegador (requestAnimationFrame), no con esperas de Playwright.
 // O-157 (QA-79; BACKLOG AC-254 y AC-255): lo que controla el HUD se aserta contado en frames, que es lo que la CI puede
 // comprobar aunque pinte un frame cada ~265 ms: (a) al caducar la marca, el cambio está en el primer frame tras uf; (b) lo que
-// toma el sync de 100 ms del HUD (GameApp.tsx) sale, como mucho, en el primer frame que empieza más de 100 ms después del
-// primer frame que ve el cambio. Los ms van al log, y sus cotas (≤ 200 ms) solo se asertan con la escena a ≥ 30 fps en esa
-// misma muestra (mediana entre frames ≤ 34 ms); si no, quedan NO VERIFICADAS (anotación del test), no en rojo.
+// toma el sync de 100 ms del HUD (GameApp.tsx) sale, como mucho, en el frame siguiente al primero que empieza más de 100 ms
+// después del primer frame que ve el cambio (O-158: 1 frame de margen para el commit de React). Los ms van al log, y sus
+// cotas (≤ 200 ms) solo se asertan con la escena a ≥ 30 fps en esa misma muestra (mediana entre frames ≤ 34 ms); si no,
+// quedan NO VERIFICADAS (anotación del test), no en rojo.
 // E2E_MIN_FRAME_MS frena los frames de la página para comprobarlo (e2e/helpers.ts, slowFrames)
 import fs from 'fs';
 import path from 'path';
@@ -34,10 +35,17 @@ const EXPIRY_MS = 200; // AC-254 y AC-255: el aviso cambia ≤ 200 ms después d
 const SYNC_MS = 100; // el ciclo del sync del HUD (GameApp.tsx): lo que toma de cada snapshot, lo toma cada 100 ms
 const FPS30_MS = 34; // O-157: los ms solo se asertan con la mediana entre frames ≤ 34 ms (≥ 30 fps)
 
-// (b) El índice del primer frame que empieza más de 100 ms después del frame i (o el final de la muestra si no hay ninguno)
+// O-158 (BACKLOG; CI del PR #90, run 43935027066): con 650 ms entre frames, la tienda salió cerrada en el frame 2 y no en el 1.
+// Producto da 1 frame de margen a todo lo de (b), sea cual sea la causa. HIPÓTESIS del lead, sin traza: el sync cambia el
+// store entre 2 frames, pero el DOM cambia en una tarea posterior de React (la tienda se cierra en un useEffect, Shop.tsx) que
+// cae detrás del rAF del frame siguiente. La regla (a) no lleva margen: allí el cambio lo hace el ticker en el frame
+const REACT_COMMIT_FRAMES = 1;
+
+// (b) El índice del frame en que, como mucho, tiene que verse lo que toma el sync a partir del frame i: el primero que empieza
+// más de 100 ms después, más REACT_COMMIT_FRAMES (o el final de la muestra si no hay tantos)
 function syncDue(frames: { p: number }[], i: number): number {
   const j = frames.findIndex((f, k) => k > i && f.p - frames[i].p > SYNC_MS);
-  return j < 0 ? frames.length : j;
+  return j < 0 ? frames.length : Math.min(frames.length, j + REACT_COMMIT_FRAMES);
 }
 
 // La cadencia de una muestra: la mediana, el p90 y el máximo entre frames, en ms
@@ -130,8 +138,8 @@ const expected = (s: Pick<Sample, 't' | 'uf' | 'r'>): Sample['slot'] => {
 
 // ZB-1 a ZB-4 en cada frame: nunca 2 indicadores ni la píldora con el aviso; el estado es el de la regla desde el frame en
 // que el HUD tiene que enseñarlo, contado en frames (O-157): al caducar la marca, ese mismo frame (a); tras cruzar los 110 m,
-// al llegar la marca o al empezar la muestra, el primer frame más de 100 ms después (b). Con la marca, el número es
-// ceil(uf − t) ± 1, está en el texto con «Bajo fuego» y «N s», y sin marca no hay ninguno
+// al llegar la marca o al empezar la muestra, el que da syncDue (b). Con la marca, el número es ceil(uf − t) ± 1, está en
+// el texto con «Bajo fuego» y «N s», y sin marca no hay ninguno
 function checkFrames(samples: Sample[], label: string): void {
   let due = syncDue(samples, 0);
   samples.forEach((s, i) => {
@@ -238,9 +246,10 @@ for (const mobile of [false, true]) {
     expect(cross.uf).toBeGreaterThan(cross.t);
     const insideAt = entering.findIndex((s) => s.slot === 'under-fire');
     expect(insideAt).toBeGreaterThanOrEqual(0);
-    // (b) El cruce lo toma el sync de 100 ms: «no te protege», como mucho en el primer frame que empieza > 100 ms después
+    // (b) El cruce lo toma el sync de 100 ms: «no te protege», como mucho en el frame siguiente al primero que empieza > 100 ms
+    // después (syncDue, con el margen de O-158)
     const insideDue = syncDue(entering, crossAt);
-    expect(insideAt, `«no te protege» en el frame ${insideAt}; cruzó en el ${crossAt} y el primero > 100 ms después es el ${insideDue}`).toBeLessThanOrEqual(insideDue);
+    expect(insideAt, `«no te protege» en el frame ${insideAt}; cruzó en el ${crossAt} y, con ${REACT_COMMIT_FRAMES} de margen tras el primero > 100 ms después, el debido es el ${insideDue}`).toBeLessThanOrEqual(insideDue);
     expect(entering.filter((s) => s.slot === 'protected' && s.uf > s.t + 0.25)).toEqual([]);
     const zoneBack = expiryDelay(entering, 'under-fire', 'protected');
     const insideMs = entering[insideAt].p - cross.p;
@@ -286,11 +295,12 @@ for (const mobile of [false, true]) {
     const closedAt = shopFrames.findIndex((f) => !f.shop);
     expect(markAt, 'el barco trajo la marca').toBeGreaterThanOrEqual(0);
     expect(closedAt, 'la tienda se cerró').toBeGreaterThanOrEqual(0);
-    // (b) La marca la toma el sync de 100 ms del HUD: cerrada, como mucho, en el primer frame que empieza > 100 ms después
+    // (b) La marca la toma el sync de 100 ms del HUD: cerrada, como mucho, en el frame siguiente al primero que empieza > 100 ms
+    // después (syncDue, con el margen de O-158)
     const closeDue = syncDue(shopFrames, markAt);
     const closeMs = Math.max(0, shopFrames[closedAt].p - shopFrames[markAt].p);
     console.log(`AC-253 (${tag.trim()}): la tienda se cierra ${closedAt - markAt} frames y ${closeMs.toFixed(0)} ms después de que el barco trae la marca (debido ≤ ${closeDue - markAt} frames)`);
-    expect(closedAt, `cerrada en el frame ${closedAt}; la marca llegó en el ${markAt} y el primero > 100 ms después es el ${closeDue}`).toBeLessThanOrEqual(closeDue);
+    expect(closedAt, `cerrada en el frame ${closedAt}; la marca llegó en el ${markAt} y, con ${REACT_COMMIT_FRAMES} de margen tras el primero > 100 ms después, el debido es el ${closeDue}`).toBeLessThanOrEqual(closeDue);
     msBound(`AC-253 (${tag.trim()}): la tienda se cierra tras la marca`, closeMs, EXPIRY_MS, cadence(shopFrames));
     await expect(fireToasts(page)).toHaveCount(1);
     await expect(fireToasts(page)).toHaveText(PORT_TEXT(10));
