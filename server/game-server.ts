@@ -21,6 +21,7 @@ import {
   parseJoin,
   parseMoveTo,
   parseRepair,
+  parseSelectFamily,
   parseSelectShip,
   parseViewAt
 } from '../src/game/protocol';
@@ -31,6 +32,7 @@ import {
   addPlayer,
   applyBuy,
   applyPurchase,
+  applySelectFamily,
   applySelectShip,
   attack,
   buy,
@@ -41,10 +43,12 @@ import {
   moveTo,
   npcClasses,
   planBuy,
+  planSelectFamily,
   planSelectShip,
   playerView,
   removePlayer,
   respawn,
+  selectFamily,
   selectShip,
   setRepair,
   shipOfPlayer,
@@ -107,8 +111,9 @@ type Point = { x: number; z: number };
 
 // Margen para que un evento en el borde del área (p. ej. una andanada desde fuera) llegue a quien lo ve
 const EVENT_MARGIN = 60;
-// `uf` (la marca de bajo fuego, §11) es un instante: solo cambia con una andanada que afecta al barco o al zarpar
-const SNAPSHOT_KEYS: (keyof ShipSnapshot)[] = ['k', 'c', 'n', 'o', 'x', 'z', 'h', 's', 'hp', 'mhp', 'st', 't', 'r', 'pu', 'lv', 'uf'];
+// `uf` (la marca de bajo fuego, §11) es un instante: solo cambia con una andanada que afecta al barco o al zarpar.
+// `fa` (1.3): sin él, cambiar de familia no viajaría en el delta (GDD §6, AC-195)
+export const SNAPSHOT_KEYS: (keyof ShipSnapshot)[] = ['k', 'c', 'n', 'o', 'x', 'z', 'h', 's', 'hp', 'mhp', 'st', 't', 'r', 'pu', 'lv', 'uf', 'fa'];
 
 export function createGameServer(io: Server, options: GameServerOptions): GameServer {
   const tickRate = options.tickRate ?? TICK_RATE;
@@ -120,7 +125,7 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
   const clients = new Map<string, ClientState>(); // por userId: una sola pestaña por usuario
   let ticks = 0;
   let pendingEvents: GameEvent[] = [];
-  const purchasing = new Set<string>(); // usuarios con una compra o un cambio de barco esperando a la BD
+  const purchasing = new Set<string>(); // usuarios con una compra o un cambio de barco o de familia esperando a la BD
   const departing = new Set<string>(); // desconectados que salen de la memoria al retirar su barco (AC-129)
   let stopped = false; // apagado (SIGTERM): no entra nadie más
   const metrics = options.metrics ? createServerMetrics({ players: () => clients.size, tickRate, log, intervalMs: options.metricsIntervalMs }) : null;
@@ -148,7 +153,7 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
         log
       })
     : null;
-  // Con la BD caída, la tienda y el cambio de barco se cierran para todos los jugadores con cuenta (AC-132)
+  // Con la BD caída, la tienda y el cambio de barco y de familia se cierran para todos los jugadores con cuenta (AC-132, AC-224 b)
   const shopClosed = (userId: string) => !!persistence?.isDegraded() && persistence.isTracked(userId);
 
   io.use(async (socket, next) => {
@@ -309,6 +314,18 @@ export function createGameServer(io: Server, options: GameServerOptions): GameSe
       const player = world.players.get(userId)!;
       if (player.activeShip === classId) return { ok: true };
       return commit(c, { ...progressOf(player), activeShip: classId }, () => applySelectShip(world, userId, classId), null);
+    });
+    // Cambiar de familia (1.3): como el cambio de barco, se escribe antes de aplicarse (AC-224 a). Elegir la que ya usa no
+    // escribe nada
+    on(C2S.selectFamily, parseSelectFamily, ({ family }, c) => {
+      if (!persisted()) return selectFamily(world, userId, family);
+      if (shopClosed(userId)) return { ok: false, reason: SHOP_UNAVAILABLE_TEXT };
+      if (purchasing.has(userId)) return { ok: false, reason: 'Compra en curso' };
+      const plan = planSelectFamily(world, userId, family);
+      if (!plan.ok) return plan;
+      const player = world.players.get(userId)!;
+      if (player.family === family) return { ok: true };
+      return commit(c, { ...progressOf(player), family }, () => applySelectFamily(world, userId, family), null);
     });
     on(C2S.respawn, parseEmpty, () => respawn(world, userId));
     on(C2S.viewAt, parseViewAt, ({ center }, c) => void (c.viewCenter = center)); // manda el último (≤ 2/s desde el cliente)

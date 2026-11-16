@@ -254,10 +254,10 @@ describe('E20 con el servidor real: el puerto cierra bajo fuego (AC-252)', () =>
     const saves: string[] = [];
     const store: ProgressStore = {
       load: async (userId) => rows.get(userId) ?? null,
-      save: async (userId, progress, revision, carry) => {
+      save: async (userId, progress, revision) => {
         saves.push(userId);
         const next = revision + 1;
-        rows.set(userId, { progress, carry, revision: next });
+        rows.set(userId, { progress, revision: next });
         return next;
       },
       ping: async () => {}
@@ -270,7 +270,7 @@ describe('E20 con el servidor real: el puerto cierra bajo fuego (AC-252)', () =>
     const ship = place(p, 0, 80);
     const player = game.world.players.get('p')!;
     player.gold = 99_999;
-    player.ownedShips.push('frigate');
+    player.ships.frigate = { cannons: 1, hull: 1, sails: 1 }; // las mejoras son de cada barco (1.3, E19)
     const merchant = dummy(30, 80);
     await p.emit(C2S.attack, { targetId: merchant.id });
     await untilVolley(ship);
@@ -278,7 +278,7 @@ describe('E20 con el servidor real: el puerto cierra bajo fuego (AC-252)', () =>
     ship.hp = 500;
     await advance(0.2);
     p.frames.length = 0;
-    const progress = () => JSON.stringify({ g: player.gold, u: player.upgrades, o: player.ownedShips, a: player.activeShip, c: ship.classId, hp: ship.hp });
+    const progress = () => JSON.stringify({ g: player.gold, s: player.ships, a: player.activeShip, c: ship.classId, hp: ship.hp });
     return { p, ship, player, progress };
   }
 
@@ -293,7 +293,7 @@ describe('E20 con el servidor real: el puerto cierra bajo fuego (AC-252)', () =>
     const { p, ship, player, progress } = await underFireInPort();
     const before = progress();
     const savesBefore = mem.saves.length;
-    await p.emit(C2S.buy, { itemId: 'cannons:2' });
+    await p.emit(C2S.buy, { itemId: 'cannons:2', ship: 'sloop' });
     await p.emit(C2S.buy, { itemId: 'ship:brig' });
     await p.emit(C2S.selectShip, { classId: 'frigate' });
     await advance(0.2);
@@ -304,7 +304,7 @@ describe('E20 con el servidor real: el puerto cierra bajo fuego (AC-252)', () =>
     // Fuera de la zona, el motivo de hoy
     p.frames.length = 0;
     place(p, 300, 300);
-    await p.emit(C2S.buy, { itemId: 'cannons:2' });
+    await p.emit(C2S.buy, { itemId: 'cannons:2', ship: 'sloop' });
     await p.emit(C2S.selectShip, { classId: 'frigate' });
     await advance(0.1);
     expect(errorsOf(p.frames)).toEqual(['El astillero solo abre en el puerto', 'Solo puedes cambiar de barco en el puerto']);
@@ -314,12 +314,12 @@ describe('E20 con el servidor real: el puerto cierra bajo fuego (AC-252)', () =>
     await advance(UNDER_FIRE_WINDOW, () => (ship.pos = { x: 0, z: 80 }));
     expect(isUnderFire(game.world, ship)).toBe(false);
     p.frames.length = 0;
-    await p.emit(C2S.buy, { itemId: 'cannons:2' });
+    await p.emit(C2S.buy, { itemId: 'cannons:2', ship: 'sloop' });
     await advance(0.2);
     await p.emit(C2S.selectShip, { classId: 'frigate' });
     await advance(0.2);
     expect(errorsOf(p.frames)).toEqual([]);
-    expect(player.upgrades.cannons).toBe(2);
+    expect(player.ships.sloop?.cannons).toBe(2);
     expect(ship.classId).toBe('frigate');
   });
 });

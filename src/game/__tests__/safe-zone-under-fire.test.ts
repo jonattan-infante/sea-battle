@@ -16,6 +16,7 @@ import {
   isUnderFire,
   isZoneProtected,
   planBuy,
+  planSelectFamily,
   planSelectShip,
   PORT_UNDER_FIRE_TEXT,
   respawn,
@@ -57,8 +58,7 @@ function untilVolley(world: World, from: Ship, to?: Ship, maxSeconds = 10, onTic
 function makeFrigateN3(world: World, id: string, x: number, z: number): Ship {
   addPlayer(world, id, id);
   const player = world.players.get(id)!;
-  player.ownedShips.push('frigate');
-  player.upgrades.cannons = 3;
+  player.ships.frigate = { cannons: 3, hull: 1, sails: 1 }; // las mejoras son de cada barco (1.3, E19)
   const ship = shipOfPlayer(world, id)!;
   expect(selectShip(world, id, 'frigate').ok).toBe(true);
   ship.pos = { x, z };
@@ -572,7 +572,7 @@ describe('H-2003 — Los NPC no entran ni regalan una granja (AC-251)', () => {
 });
 
 describe('H-2004 — El puerto cierra bajo fuego (AC-252)', () => {
-  const cannons2 = { kind: 'upgrade', upgrade: 'cannons', level: 2 } as const;
+  const cannons2 = { kind: 'upgrade', upgrade: 'cannons', level: 2, ship: 'sloop' } as const; // la mejora lleva el barco (1.3, E19)
   const brig = { kind: 'ship', classId: 'brig' } as const;
 
   function inPort() {
@@ -581,12 +581,12 @@ describe('H-2004 — El puerto cierra bajo fuego (AC-252)', () => {
     const player = world.players.get('a')!;
     const ship = shipOfPlayer(world, 'a')!;
     player.gold = 99_999;
-    player.ownedShips.push('frigate');
+    player.ships.frigate = { cannons: 1, hull: 1, sails: 1 };
     ship.pos = { x: 0, z: 80 };
     return { world, player, ship };
   }
   const snapshot = (w: ReturnType<typeof inPort>) =>
-    JSON.stringify({ gold: w.player.gold, upgrades: w.player.upgrades, owned: w.player.ownedShips, active: w.player.activeShip, cls: w.ship.classId, hp: w.ship.hp });
+    JSON.stringify({ gold: w.player.gold, ships: w.player.ships, families: w.player.families, family: w.player.family, active: w.player.activeShip, cls: w.ship.classId, hp: w.ship.hp });
 
   test('planBuy y planSelectShip: fuera, el motivo de hoy; dentro bajo fuego, el de bajo fuego; dentro sin marca, se acepta', () => {
     const w = inPort();
@@ -599,12 +599,15 @@ describe('H-2004 — El puerto cierra bajo fuego (AC-252)', () => {
     expect(planBuy(w.world, 'a', cannons2)).toEqual({ ok: false, reason: PORT_UNDER_FIRE_TEXT });
     expect(planBuy(w.world, 'a', brig)).toEqual({ ok: false, reason: PORT_UNDER_FIRE_TEXT });
     expect(planSelectShip(w.world, 'a', 'frigate')).toEqual({ ok: false, reason: PORT_UNDER_FIRE_TEXT });
+    // Cambiar de familia es del Astillero, como comprar y cambiar de barco (1.3: E19 con E20)
+    expect(planSelectFamily(w.world, 'a', 'none')).toEqual({ ok: false, reason: PORT_UNDER_FIRE_TEXT });
 
     for (const marked of [false, true]) {
       w.ship.underFireUntil = marked ? w.world.time + UNDER_FIRE_WINDOW : -Infinity;
       w.ship.pos = { x: 300, z: 300 };
       expect(planBuy(w.world, 'a', cannons2)).toEqual({ ok: false, reason: 'El astillero solo abre en el puerto' });
       expect(planSelectShip(w.world, 'a', 'frigate')).toEqual({ ok: false, reason: 'Solo puedes cambiar de barco en el puerto' });
+      expect(planSelectFamily(w.world, 'a', 'none')).toEqual({ ok: false, reason: 'Solo puedes cambiar de familia en el puerto' });
       w.ship.pos = { x: 0, z: 80 };
     }
     expect(PORT_UNDER_FIRE_TEXT).not.toBe('El astillero solo abre en el puerto');
@@ -628,7 +631,7 @@ describe('H-2004 — El puerto cierra bajo fuego (AC-252)', () => {
     expect(isUnderFire(w.world, w.ship)).toBe(false);
     expect(buy(w.world, 'a', cannons2)).toEqual({ ok: true });
     expect(selectShip(w.world, 'a', 'frigate')).toEqual({ ok: true });
-    expect(w.player.upgrades.cannons).toBe(2);
+    expect(w.player.ships.sloop?.cannons).toBe(2);
     expect(w.ship.classId).toBe('frigate');
   });
 });

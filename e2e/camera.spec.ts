@@ -11,7 +11,7 @@ const frame = (page: Page) =>
     return { ppm: s.ppm, ppm0: s.ppm0, frameRange: s.frameRange };
   });
 
-// AC-24 con compra real: escenario "shipyard" (2 000 de oro = N2 por 500 + N3 por 1 500). Con la tienda abierta el
+// AC-24 con compra real: escenario "shipyard" (2 000 de oro; con la Balandra, N2 por 250 + N3 por 750 desde la 1.3). Con la tienda abierta el
 // encuadre no cambia; al cerrarla, ease-in-out de 600 ms hacia el ppm₀ de la tabla de §6.2
 async function buyCannonsAndCheckFrame(page: Page, label: string, n1: number, [n2, n3]: [number, number], shop: { open: () => Promise<void>; close: () => Promise<void> }) {
   test.setTimeout(60_000);
@@ -23,7 +23,7 @@ async function buyCannonsAndCheckFrame(page: Page, label: string, n1: number, [n
     const before = await frame(page);
     await shop.open();
     await page.getByTestId(`buy-cannons-${level}`).click();
-    await waitFor(() => page.evaluate(() => (window.__SEA_BATTLE__!.player() as { upgrades: { cannons: number } } | null)?.upgrades.cannons), (c) => c === level, 5000, 50);
+    await waitFor(() => page.evaluate(() => (window.__SEA_BATTLE__!.player() as { ships: Record<string, { cannons: number }>; activeShip: string } | null)), (p) => p?.ships[p.activeShip]?.cannons === level, 5000, 50);
     // Con la tienda abierta el encuadre no cambia
     await page.waitForTimeout(400);
     const open = await frame(page);

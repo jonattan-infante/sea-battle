@@ -255,8 +255,9 @@ export class GameClient {
     const samples = this.entities.get(this.myShipId ?? '')?.samples;
     return samples?.[samples.length - 1]?.snap;
   }
-  buy(itemId: string): void {
-    this.socket.emit(C2S.buy, { itemId });
+  // Una mejora nombra su barco (1.3; GDD §13); un barco o una familia, no
+  buy(itemId: string, ship?: PlayerShipClass): void {
+    this.socket.emit(C2S.buy, ship ? { itemId, ship } : { itemId });
   }
   selectShip(classId: PlayerShipClass): void {
     this.socket.emit(C2S.selectShip, { classId });

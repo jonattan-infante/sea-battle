@@ -16,7 +16,7 @@ import {
   splitReward
 } from '../world';
 import { simulateShipFirst } from './economy-bot';
-import { DT, dummy, emptyWorld, median, placeMerchant, placePirate, placePlayer, run, runUntil } from './helpers';
+import { DT, dummy, emptyWorld, median, onlyShip, placeMerchant, placePirate, placePlayer, run, runUntil } from './helpers';
 
 // Cola de tiradas: cada valor < precisión es un impacto; al vaciarse, todo falla
 function scriptedRng(world: World, rolls: number[]): void {
@@ -185,8 +185,7 @@ describe('E4 — Muerte y reaparición (§10, §12)', () => {
     placePlayer(world, 'K', 300, 300);
     const victim = placePlayer(world, 'V', 300, 340);
     const v = world.players.get('V')!;
-    v.upgrades = { cannons: 2, hull: 3, sails: 2 };
-    v.ownedShips = ['sloop', 'brig'];
+    v.ships = { sloop: { cannons: 1, hull: 1, sails: 1 }, brig: { cannons: 2, hull: 3, sails: 2 } };
     v.activeShip = 'brig';
     victim.classId = 'brig';
     victim.hp = 1;
@@ -200,7 +199,7 @@ describe('E4 — Muerte y reaparición (§10, §12)', () => {
     expect(victim.classId).toBe('brig');
     expect(victim.maxHp).toBe(Math.round(SHIP_CLASSES.brig.maxHp * 1.4));
     expect(victim.hp).toBe(victim.maxHp);
-    expect(v.upgrades).toEqual({ cannons: 2, hull: 3, sails: 2 });
+    expect(v.ships).toEqual({ sloop: { cannons: 1, hull: 1, sails: 1 }, brig: { cannons: 2, hull: 3, sails: 2 } }); // AC-212 (a): sus mismos niveles
   });
 
   test('AC-64: la protección dura 15 s o hasta que ataca; mientras dura, nadie puede atacarlo', () => {
@@ -243,25 +242,33 @@ describe('E4 — Puerto y tienda (§11)', () => {
     player.gold = gold;
     return { world, ship, player };
   }
-  const cannons2: ShopItem = { kind: 'upgrade', upgrade: 'cannons', level: 2 };
+  const cannons2: ShopItem = { kind: 'upgrade', upgrade: 'cannons', level: 2, ship: 'sloop' };
 
-  test('AC-67: con 600 de oro compra Cañones N2 → 100 de oro, daño 38, alcance 70, recarga 3,5; con 400 se rechaza', () => {
+  // Cambiado para la 1.3 (E19): con la Balandra, Cañones N2 cuesta 250 (×0,5); las cifras de 500 son las de la Fragata
+  test('AC-67 (1.3): con 600 de oro, la Balandra compra Cañones N2 → 350 de oro, daño 38, alcance 70, recarga 3,5; con 200 se rechaza; la Fragata, con 600, queda en 100', () => {
     const { world, ship, player } = inPort(600);
     expect(buy(world, 'a', cannons2).ok).toBe(true);
-    expect(player.gold).toBe(100);
+    expect(player.gold).toBe(350);
     expect(cannonOf(world, ship)).toMatchObject({ damage: 38, range: 70, reload: 3.5 });
 
-    const poor = inPort(400);
-    expect(buy(poor.world, 'a', cannons2).ok).toBe(false);
-    expect(poor.player.gold).toBe(400);
-    expect(poor.player.upgrades.cannons).toBe(1);
+    const poor = inPort(200);
+    expect(buy(poor.world, 'a', cannons2)).toEqual({ ok: false, reason: 'Necesitas 250 de oro' });
+    expect(poor.player.gold).toBe(200);
+    expect(poor.player.ships.sloop!.cannons).toBe(1);
+
+    const frigate = inPort(600);
+    onlyShip(frigate.player, 'frigate', { cannons: 1, hull: 1, sails: 1 });
+    frigate.ship.classId = 'frigate';
+    expect(buy(frigate.world, 'a', { kind: 'upgrade', upgrade: 'cannons', level: 2, ship: 'frigate' }).ok).toBe(true);
+    expect(frigate.player.gold).toBe(100);
+    expect(cannonOf(frigate.world, frigate.ship)).toMatchObject({ damage: 38, range: 70, reload: 3.5 });
   });
 
   test('AC-68: compra fuera de la zona, N3 sin N2 o barco ya poseído → rechazo sin cambios', () => {
     const { world, ship, player } = inPort(99_999);
-    const snapshot = () => JSON.stringify({ gold: player.gold, upgrades: player.upgrades, owned: player.ownedShips, active: player.activeShip });
+    const snapshot = () => JSON.stringify({ gold: player.gold, ships: player.ships, active: player.activeShip });
     const before = snapshot();
-    expect(buy(world, 'a', { kind: 'upgrade', upgrade: 'cannons', level: 3 }).ok).toBe(false);
+    expect(buy(world, 'a', { kind: 'upgrade', upgrade: 'cannons', level: 3, ship: 'sloop' }).ok).toBe(false);
     expect(buy(world, 'a', { kind: 'ship', classId: 'sloop' }).ok).toBe(false);
     ship.pos = { x: 300, z: 300 };
     expect(isInSafeZone(ship.pos)).toBe(false);
@@ -273,20 +280,22 @@ describe('E4 — Puerto y tienda (§11)', () => {
   test('AC-69: Balandra con 400/800 compra Casco N2 → 480/960', () => {
     const { world, ship } = inPort(1000);
     ship.hp = 400;
-    expect(buy(world, 'a', { kind: 'upgrade', upgrade: 'hull', level: 2 }).ok).toBe(true);
+    expect(buy(world, 'a', { kind: 'upgrade', upgrade: 'hull', level: 2, ship: 'sloop' }).ok).toBe(true);
     expect(ship.maxHp).toBe(960);
     expect(ship.hp).toBe(480);
   });
 
-  test('AC-70: con 2 000 compra el Bergantín con vida llena; conserva la Balandra; cambiar es gratis en el puerto y se rechaza fuera', () => {
+  // Cambiado para la 1.3 (E19): el Bergantín llega con sus mejoras a nivel 1 (AC-215), así que su vida llena es 1 400 aunque
+  // la Balandra tenga el Casco N2; la Balandra conserva las suyas
+  test('AC-70 (1.3): con 2 000 compra el Bergantín con vida llena (1 400, Casco N1); conserva la Balandra con su Casco N2; cambiar es gratis en el puerto y se rechaza fuera', () => {
     const { world, ship, player } = inPort(2000);
-    player.upgrades.hull = 2;
+    player.ships.sloop!.hull = 2;
     expect(buy(world, 'a', { kind: 'ship', classId: 'brig' }).ok).toBe(true);
     expect(player.gold).toBe(0);
     expect(ship.classId).toBe('brig');
-    expect(ship.maxHp).toBe(Math.round(1400 * 1.2));
+    expect(ship.maxHp).toBe(1400);
     expect(ship.hp).toBe(ship.maxHp);
-    expect(player.ownedShips).toEqual(['sloop', 'brig']);
+    expect(player.ships).toEqual({ sloop: { cannons: 1, hull: 2, sails: 1 }, brig: { cannons: 1, hull: 1, sails: 1 } });
     expect(selectShip(world, 'a', 'sloop').ok).toBe(true);
     expect(ship.classId).toBe('sloop');
     expect(selectShip(world, 'a', 'brig').ok).toBe(true);
@@ -341,7 +350,7 @@ describe('E4 — Curva económica (§10)', () => {
   test.each([
     ['apagado', false],
     ['encendido', true]
-  ] as const)('AC-60 (I2 %s): con el bot "barco primero", la mediana de las semillas 1–5 cumple 500 de oro ≤ 4 min, Bergantín ≤ 20 min y todo en 45–70 min', (mode, i2) => {
+  ] as const)('AC-60 (I2 %s): con el bot "barco primero", la mediana de las semillas 1–5 cumple 500 de oro ≤ 4 min, Bergantín ≤ 20 min y, desde la 1.3, la Fragata con sus 6 mejoras en 45–70 min', (mode, i2) => {
     const runs = [1, 2, 3, 4, 5].map((seed) => simulateShipFirst(seed, i2));
     const min = (v: number) => +(v / 60).toFixed(1);
     const t500 = median(runs.map((r) => r.t500));

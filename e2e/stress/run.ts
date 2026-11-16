@@ -23,7 +23,7 @@ import { Client } from 'pg';
 import { io as ioClient } from 'socket.io-client';
 import { startTempCluster, TempCluster } from '../../server/__tests__/pg/cluster';
 import { MetricsLine, parseMetricsLine } from '../../server/metrics';
-import { parseProgress } from '../../server/progress';
+import { parseProgress, progressKey, progressOf } from '../../server/progress';
 import { MAX_PLAYERS } from '../../src/game/constants';
 import { C2S, S2C } from '../../src/game/protocol';
 import type { PlayerView } from '../../src/game/types';
@@ -300,13 +300,13 @@ async function compareProgress(url: string, lastMe: Map<string, PlayerView | nul
   await db.connect();
   try {
     const { rows } = await db.query('SELECT user_id, state FROM player_progress WHERE user_id = ANY($1)', [[...lastMe.keys()]]);
-    const byUser = new Map(rows.map((r) => [r.user_id as string, parseProgress(r.state)?.progress]));
+    const byUser = new Map(rows.map((r) => [r.user_id as string, parseProgress(r.state)]));
     const mismatches: string[] = [];
     let matched = 0;
     for (const [userId, me] of lastMe) {
       const row = byUser.get(userId);
-      const want = me && { gold: me.gold, upgrades: me.upgrades, ownedShips: me.ownedShips, activeShip: me.activeShip, xp: me.xp };
-      if (row && want && JSON.stringify(row) === JSON.stringify({ gold: want.gold, upgrades: { ...want.upgrades }, ownedShips: [...want.ownedShips], activeShip: want.activeShip, xp: want.xp })) matched++;
+      const want = me && progressOf({ gold: me.gold, xp: me.xp, ships: me.ships, activeShip: me.activeShip, families: me.families, family: me.family });
+      if (row && want && progressKey(row) === progressKey(want)) matched++;
       else mismatches.push(`${userId}: BD ${row ? `${row.gold} de oro, ${row.activeShip}` : 'sin fila'} frente a frame ${want ? `${want.gold} de oro, ${want.activeShip}` : 'sin frame'}`);
     }
     return { matched, total: lastMe.size, mismatches };

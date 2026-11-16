@@ -101,7 +101,7 @@ describe('E3 — Pirata hostil (§9)', () => {
     placePlayer(world, 'a', 300, 300);
     shipOfPlayer(world, 'a')!.protectedUntil = 0;
     const pirate = placePirate(world, 300, 380);
-    world.players.get('a')!.upgrades.cannons = 3; // alcance 80 m
+    world.players.get('a')!.ships.sloop!.cannons = 3; // alcance 80 m
     attack(world, 'a', pirate.id);
     run(world, 1);
     expect(pirate.ai!.state).toBe('combat');

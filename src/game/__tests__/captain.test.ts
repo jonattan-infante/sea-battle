@@ -17,7 +17,7 @@ import {
 import { GameEvent, Ship, Upgrades, World } from '../types';
 import { angleDelta, createRng, distance, headingTo } from '../vec';
 import { addPlayer, attack, createWorld, disconnectPlayer, drainEvents, maxHpFor, moveTo, navigatorOf, respawn, setRepair, shipOfPlayer, spawnCaptain, spawnGunboat, spawnMerchant, spawnPirate, step } from '../world';
-import { DT, i2World, median, placeCaptain, placePlayer, run } from './helpers';
+import { DT, i2World, median, onlyShip, placeCaptain, placePlayer, run, sameLevels } from './helpers';
 
 const PORT = { x: 0, z: 0 };
 const CAPTAIN = HOSTILE_AI[CAPTAIN_CLASS];
@@ -395,7 +395,7 @@ describe('H-305 — El Capitán no gira en el sitio ni se para junto a la costa 
     const world = createWorld({ seed: 1, spawnNpcs: false, i2: true, map });
     const nav = navigatorOf(world);
     const margin = navClearance(CAPTAIN_CLASS);
-    addPlayer(world, 'p', 'P', { gold: 0, upgrades: { cannons: 3, hull: 1, sails: 1 }, ownedShips: ['sloop', 'frigate'], activeShip: 'frigate' });
+    addPlayer(world, 'p', 'P', sameLevels(0, { cannons: 3, hull: 1, sails: 1 }, ['sloop', 'frigate'], 'frigate'));
     const target = shipOfPlayer(world, 'p')!;
     target.pos = { ...targetAt };
     target.protectedUntil = 0;
@@ -525,9 +525,7 @@ describe('H-305 — Balance del capitán (AC-55, 1 000 duelos con semilla)', () 
       const id = `p${i}`;
       const ship = placePlayer(world, id, 260 + (i - (sides.length - 1) / 2) * 20, -380, 0);
       const player = world.players.get(id)!;
-      player.upgrades = { ...side.upgrades };
-      player.ownedShips = [side.classId];
-      player.activeShip = side.classId;
+      onlyShip(player, side.classId, side.upgrades);
       ship.classId = side.classId;
       ship.maxHp = maxHpFor(side.classId, player);
       ship.hp = ship.maxHp;

@@ -10,7 +10,7 @@ import { Navigator } from '../nav';
 import { Ship, World } from '../types';
 import { Vec2, angleDelta, createRng, distance } from '../vec';
 import { addPlayer, attack, createWorld, moveTo, navigatorOf, respawn, setRepair, shipOfPlayer } from '../world';
-import { DT, run } from './helpers';
+import { DT, run, sameLevels } from './helpers';
 
 export const SOAK_SECONDS = 600;
 export const STUCK_SPEED = 0.5; // m/s: por debajo, con destino, cuenta como atasco
@@ -103,7 +103,7 @@ export function runMapSoak(seed: number, map: MapDef): SoakReport {
   const rng = createRng(11);
   for (let i = 0; i < PORT_BOTS; i++) addPlayer(world, `bot${i}`, `Bot ${i}`);
   for (let i = 0; i < HUNTERS; i++) {
-    addPlayer(world, `hunter${i}`, `Cazador ${i}`, { gold: 0, upgrades: { cannons: 3, hull: 1, sails: 1 }, ownedShips: ['sloop', 'frigate'], activeShip: 'frigate' });
+    addPlayer(world, `hunter${i}`, `Cazador ${i}`, sameLevels(0, { cannons: 3, hull: 1, sails: 1 }, ['sloop', 'frigate'], 'frigate'));
   }
   const coastDistance = (p: Vec2) => Math.min(...world.islands.map((i) => distance(p, i) - i.radius));
   const tracks = new Map<string, Track>();

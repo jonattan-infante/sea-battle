@@ -7,10 +7,9 @@ import { C2S } from '../../src/game/protocol';
 import { levelOf } from '../../src/game/xp';
 import { migrate } from '../db/migrate';
 import { createPool } from '../db/pool';
-import { SavedProgress } from '../progress';
 import { GameChild, startGameChild } from './fixtures/game-child';
 import { joinGame, sleep, waitFor } from './fixtures/game-socket';
-import { rowV1, rowV2 } from './fixtures/progress-rows';
+import { LegacyProgress, rowV1, rowV2 } from './fixtures/progress-rows';
 import { createTestDb, TestDb } from './pg/test-db';
 
 jest.setTimeout(90_000);
@@ -41,9 +40,9 @@ async function start(env: Record<string, string> = {}): Promise<GameChild> {
   return child;
 }
 
-const SLOOP_ONLY: SavedProgress = { gold: 100, upgrades: { cannons: 1, hull: 1, sails: 1 }, ownedShips: ['sloop'], activeShip: 'sloop', xp: 0 };
+const SLOOP_ONLY: LegacyProgress = { gold: 100, upgrades: { cannons: 1, hull: 1, sails: 1 }, ownedShips: ['sloop'], activeShip: 'sloop', xp: 0 };
 
-async function seed(userId: string, progress: SavedProgress): Promise<void> {
+async function seed(userId: string, progress: LegacyProgress): Promise<void> {
   await db.admin.query('INSERT INTO player_progress (user_id, state) VALUES ($1, $2)', [userId, progress.xp === 0 ? rowV1(progress) : rowV2(progress)]);
 }
 
@@ -57,8 +56,8 @@ test('AC-130: comprar → kill -9 → arrancar → la compra está', async () =>
 
   const second = await start();
   const again = await joinGame(second.url, { testUser: 'kim' }, undefined, sockets);
-  const { gold, upgrades, ownedShips, activeShip, xp } = again.me();
-  expect({ gold, upgrades, ownedShips, activeShip, xp }).toEqual({ ...SLOOP_ONLY, gold: 100, ownedShips: ['sloop', 'brig'], activeShip: 'brig' });
+  const { gold, ships, activeShip, xp } = again.me();
+  expect({ gold, ships, activeShip, xp }).toEqual({ gold: 100, ships: { sloop: SLOOP_ONLY.upgrades, brig: { cannons: 1, hull: 1, sails: 1 } }, activeShip: 'brig', xp: 0 });
 });
 
 test('AC-130: ganar oro → esperar 5 s → kill -9 → arrancar → el oro está', async () => {

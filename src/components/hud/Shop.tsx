@@ -10,8 +10,10 @@ import {
   SHIP_CLASSES,
   UNDER_FIRE_WINDOW,
   UPGRADE_LEVELS,
-  UpgradeId
+  UpgradeId,
+  upgradePrice
 } from '../../game/constants';
+import { activeLevels, levelsOf } from '../../game/stats';
 import { PORT_FIRE_TOAST_KEY, portBlockReason, portUnderFireText, SHOP_UNAVAILABLE } from '../../client/hud-logic';
 import { useHud } from '../../client/hud-store';
 import type { HudActions } from './Hud';
@@ -44,10 +46,11 @@ function statsLine(upgrade: UpgradeId, level: number, classId: string): React.Re
   return <>{label} {value(level)} → <b>{value(next)}{unit}</b> (×{dec(m[level - 1])} → ×{dec(m[next - 1])})</>;
 }
 
-function UpgradeCard({ upgrade, level, gold, classId, flash, locked, onBuy }: { upgrade: UpgradeId; level: number; gold: number; classId: string; flash: boolean; locked: boolean; onBuy: () => void }) {
+// Transitorio hasta la tienda por barco de la 1.3 (D99 y D103, AC-216 y AC-217): las mejoras del barco activo, con su precio
+function UpgradeCard({ upgrade, level, gold, classId, flash, locked, onBuy }: { upgrade: UpgradeId; level: number; gold: number; classId: PlayerShipClass; flash: boolean; locked: boolean; onBuy: () => void }) {
   const def = UPGRADE_LEVELS[upgrade];
   const maxed = level >= MAX_UPGRADE_LEVEL;
-  const price = maxed ? 0 : def.prices[level];
+  const price = maxed ? 0 : upgradePrice(classId, upgrade, level + 1);
   const missing = price - gold;
   return (
     <article className={`card ${flash ? 'is-bought' : ''}`} data-testid={`shop-${upgrade}`}>
@@ -117,7 +120,7 @@ export default function Shop({ actions }: { actions: HudActions }) {
   const locked = useHud((s) => s.saveWarning);
   const [tab, setTab] = useState<'upgrades' | 'ships'>('upgrades');
   const [flash, setFlash] = useState<UpgradeId | null>(null);
-  const prev = useRef(player?.upgrades);
+  const prev = useRef(player ? { ship: player.activeShip, levels: activeLevels(player) } : undefined);
 
   // La tienda solo existe donde la zona protege: se cierra al salir y al caer bajo fuego dentro. Al caer bajo fuego sale el
   // aviso del puerto con N = 10, el de pulsar Puerto en ese momento (D125)
@@ -131,9 +134,10 @@ export default function Shop({ actions }: { actions: HudActions }) {
   // Borde dorado de 300 ms en la tarjeta recién comprada
   useEffect(() => {
     const before = prev.current;
-    prev.current = player?.upgrades;
-    if (!before || !player) return;
-    const bought = (Object.keys(player.upgrades) as UpgradeId[]).find((k) => player.upgrades[k] > before[k]);
+    const now = player ? { ship: player.activeShip, levels: activeLevels(player) } : undefined;
+    prev.current = now;
+    if (!before || !now || before.ship !== now.ship) return;
+    const bought = (Object.keys(now.levels) as UpgradeId[]).find((k) => now.levels[k] > before.levels[k]);
     if (!bought) return;
     setFlash(bought);
     const id = setTimeout(() => setFlash(null), 300);
@@ -160,22 +164,22 @@ export default function Shop({ actions }: { actions: HudActions }) {
                 <UpgradeCard
                   key={u}
                   upgrade={u}
-                  level={player.upgrades[u]}
+                  level={activeLevels(player)[u]}
                   gold={player.gold}
                   classId={player.activeShip}
                   flash={flash === u}
                   locked={locked}
-                  onBuy={() => actions.buy(`${u}:${player.upgrades[u] + 1}`)}
+                  onBuy={() => actions.buy(`${u}:${activeLevels(player)[u] + 1}`, player.activeShip)}
                 />
               ))
             : PLAYER_SHIP_ORDER.map((c) => (
                 <ShipCard
                   key={c}
                   classId={c}
-                  owned={player.ownedShips.includes(c)}
+                  owned={!!player.ships[c]}
                   active={player.activeShip === c}
                   gold={player.gold}
-                  hullLevel={player.upgrades.hull}
+                  hullLevel={levelsOf(player, c).hull}
                   locked={locked}
                   onBuy={() => actions.buy(`ship:${c}`)}
                   onUse={() => actions.selectShip(c)}

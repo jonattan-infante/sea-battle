@@ -2,9 +2,10 @@ import { PlayerShipClass } from '../constants';
 import { DANGER_COST, marksDanger, soloSinkCost, tooStrong } from '../stats';
 import { Upgrades } from '../types';
 
+// Desde la 1.3, los niveles son del barco activo (AC-212 b)
 const own = (activeShip: PlayerShipClass, upgrades: Partial<Upgrades> = {}) => ({
   activeShip,
-  upgrades: { cannons: 1, hull: 1, sails: 1, ...upgrades }
+  ships: { [activeShip]: { cannons: 1, hull: 1, sails: 1, ...upgrades } }
 });
 
 describe('AC-189: coste de hundir un NPC en solitario y marca de peligro', () => {
@@ -37,5 +38,13 @@ describe('AC-189: coste de hundir un NPC en solitario y marca de peligro', () =>
   test('un NPC sin cañones (el mercante) o de una clase que el cliente no conoce no se marca', () => {
     expect(soloSinkCost('merchant', own('sloop'))).toBe(0);
     expect(tooStrong('galleon', own('sloop'))).toBe(false);
+  });
+});
+
+describe('AC-212 (b): la marca de peligro usa los niveles del barco activo, no los de otro barco del jugador', () => {
+  test('Balandra N1 y Bergantín con Cañones N3: con la Balandra activa, la cañonera se marca (71 %); con el Bergantín, no (11 %)', () => {
+    const ships = { sloop: { cannons: 1, hull: 1, sails: 1 }, brig: { cannons: 3, hull: 1, sails: 1 } };
+    expect([Math.round(soloSinkCost('gunboat', { activeShip: 'sloop', ships }) * 100), tooStrong('gunboat', { activeShip: 'sloop', ships })]).toEqual([71, true]);
+    expect([Math.round(soloSinkCost('gunboat', { activeShip: 'brig', ships }) * 100), tooStrong('gunboat', { activeShip: 'brig', ships })]).toEqual([11, false]);
   });
 });
