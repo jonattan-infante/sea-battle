@@ -2,7 +2,10 @@
 // servidor de juego en este proceso y socket.io real. La 1.1 juega con la XP de la fila (AC-155); los barcos que la
 // simulación todavía no juega (Goleta y Navío) no entran en el mundo ni viajan, y se vuelven a escribir tal cual. La 1.0.3
 // lee y escribe con su lector congelado (fixtures/progress-1.0.3.ts). Reiniciar es un servidor nuevo, con el mundo vacío,
-// sobre la misma BD
+// sobre la misma BD.
+// El puente de la 1.2.x (AC-220), al final: filas v: 3 de la 1.3 (las de fixtures/progress-rows.ts, que son las de su
+// escritor), que el puente lee, juega y vuelve a escribir en v: 3; y la vuelta atrás de la 1.3 al puente y otra vez a la
+// 1.3, con su lector y su escritor congelados (fixtures/progress-1.3.ts)
 import { createServer, Server as HttpServer } from 'http';
 import { AddressInfo } from 'net';
 import { Pool } from 'pg';
@@ -18,8 +21,10 @@ import { createGameServer, GameServer, GameServerOptions } from '../game-server'
 import { createPgStore } from '../persistence';
 import { SavedProgress } from '../progress';
 import { parseProgress as parseProgress103, serializeProgress as serializeProgress103 } from './fixtures/progress-1.0.3';
+import { parseProgress as parseProgress120 } from './fixtures/progress-1.2.0';
+import { parseProgress as parseProgress13, SavedProgress as SavedProgress13, serializeProgress as serializeProgress13 } from './fixtures/progress-1.3';
 import { connectGame, joinGame, Joined, sleep, waitFor } from './fixtures/game-socket';
-import { rowV1 } from './fixtures/progress-rows';
+import { rowV1, V3_AC220, V3_FULL } from './fixtures/progress-rows';
 import { createTestDb, TestDb } from './pg/test-db';
 
 const testAuth = async (auth: unknown) => {
@@ -223,6 +228,22 @@ describe('escritura (AC-155 y AC-156): la 1.1 siempre escribe v: 2, con la XP de
     expect(parseProgress103(state)).toEqual({ progress: { gold: 1244, upgrades: FRIGATE.upgrades, ownedShips: FRIGATE.ownedShips, activeShip: 'frigate' }, carry: { v: 2, xp: 0, newShips: [] } });
   });
 
+  // AC-220 (d), corregido por producto el 2026-11-16: el puente escribe una v: 1 en v: 2, como la 1.2.0, porque una v: 1 no
+  // tiene xp y escribirla en v: 1 perdería la XP ganada. La 1.2.0 la lee, por si hubiera que volver a ella
+  test('v: 1: la XP ganada en el puente se escribe en v: 2; la 1.2.0 la lee y, al volver a entrar, el puente juega con ella', async () => {
+    await seed('u-gil', rowV1(FRIGATE));
+    await startServer();
+    const g = await join('u-gil');
+    expect(g.me().xp).toBe(0);
+    world().players.get('u-gil')!.xp += 66;
+    await game!.flushProgress();
+    const { state, revision } = await rowOf('u-gil');
+    expect({ state, revision }).toEqual({ state: { v: 2, ...FRIGATE, xp: 66 }, revision: 2 });
+    expect(parseProgress120(state)).toEqual({ progress: { ...FRIGATE, xp: 66 }, carry: { newShips: [] } });
+    await restart();
+    expect(fields((await join('u-gil')).me())).toEqual({ ...FRIGATE, xp: 66 });
+  });
+
   test('un usuario nuevo se escribe en v: 2 con 0 de XP, y la 1.0.3 lo lee', async () => {
     await startServer();
     await join('u-hugo');
@@ -297,7 +318,7 @@ function tryJoin(c: ClientSocket): Promise<{ welcome?: Welcome; error?: Notice }
 
 describe('AC-156: se rechazan las demás filas, sin tocarlas', () => {
   test.each([
-    ['v: 3', { ...V2, v: 3 }],
+    ['una v: 3 con las claves de la v: 2', { ...V2, v: 3 }],
     ['una v: 2 sin xp', { ...rowV1(FRIGATE), v: 2 }],
     ['una v: 1 con xp', { ...rowV1(FRIGATE), xp: 10 }],
     ['una v: 1 con el Navío', { ...rowV1(FRIGATE), ownedShips: ['sloop', 'line'], activeShip: 'sloop' }],
@@ -331,5 +352,152 @@ describe('revisión (AC-130): la guarda sigue igual con las filas v: 2', () => {
     await game!.flushProgress();
     expect(await rowOf('u-max')).toEqual({ state: newer, revision: 2 });
     expect((await kicked).text).toBe('Has abierto el juego en otra pestaña');
+  });
+});
+
+// ---- El puente de la 1.2.x: filas v: 3 de la 1.3 (GDD §13, «Lectura y escritura de la fila en la 1.3 y en la 1.2.x
+// puente»; BACKLOG AC-220) ----
+
+const lv = (cannons: number, hull: number, sails: number) => ({ cannons, hull, sails });
+// Lo que no puede viajar al cliente con una v: 3: la Goleta, el Navío y las familias (AC-220 e: nada cambia en lo que se ve)
+const V3_ONLY = /"(schooner|line|families|family)"/;
+
+describe('el puente lee una v: 3 (AC-220 a y b): entra sin «No podemos cargar tu progreso» y juega con lo de la 1.2', () => {
+  test('los dados de AC-220 (la española en uso, niveles distintos en cada barco y el Navío activo): entra con la Fragata, sus niveles, el oro y la XP; nada de la v: 3 viaja', async () => {
+    await seed('u-v3a', V3_FULL);
+    await startServer();
+    const a = await join('u-v3a');
+    expect(fields(a.me())).toEqual({ gold: 4321, upgrades: lv(2, 2, 1), ownedShips: ['sloop', 'brig', 'frigate'], activeShip: 'frigate', xp: 2500 });
+    expect(shipOfPlayer(world(), 'u-v3a')!.classId).toBe('frigate');
+    expect(ownSnapshot(a)?.c).toBe('frigate');
+    a.c.emit(C2S.moveTo, { x: 60, z: 60 });
+    world().players.get('u-v3a')!.gold += 1;
+    await waitFor(() => a.frames.length >= 4 && a.me().gold === 4322, 3000, 'frames con deltas y la vista nueva');
+    expect(wire(a)).not.toMatch(V3_ONLY);
+  });
+
+  test('sin cambios, la fila queda igual byte a byte, con el Navío como activo', async () => {
+    await seed('u-v3b', V3_FULL);
+    const before = await rawRow('u-v3b');
+    await startServer();
+    const b = await join('u-v3b');
+    await sleep(300);
+    b.c.disconnect();
+    await sleep(100);
+    await game!.flushProgress();
+    expect(await rawRow('u-v3b')).toBe(before);
+    expect((await rowOf('u-v3b')).state.activeShip).toBe('line');
+  });
+
+  test.each([
+    ['una v: 3 con upgrades', { ...V3_FULL, upgrades: lv(1, 1, 1) }],
+    ['ships vacío', { ...V3_FULL, ships: {} }],
+    ['un barco fuera de los 5 ids', { ...V3_FULL, ships: { ...V3_FULL.ships, galleon: lv(1, 1, 1) } }],
+    ['un barco con un nivel 4', { ...V3_FULL, ships: { ...V3_FULL.ships, line: lv(4, 1, 1) } }],
+    ['activeShip que no es clave de ships', { ...V3_AC220, activeShip: 'brig' }],
+    ['families con "none"', { ...V3_FULL, families: ['none'], family: 'none' }],
+    ['family que no está en families', { ...V3_FULL, families: ['gb'], family: 'es' }],
+    ['una v: 2 con families', { ...V2, families: [] }]
+  ])('se rechaza %s como la 1.3: «No podemos cargar tu progreso ahora mismo», no entra y la fila queda igual byte a byte', async (_label, corrupt) => {
+    await seed('u-v3c', corrupt);
+    const before = await rawRow('u-v3c');
+    await startServer();
+    const c = connectGame(url, { token: 'u-v3c' });
+    sockets.push(c);
+    await new Promise<void>((resolve) => c.once('connect', () => resolve()));
+    expect((await tryJoin(c)).error?.text).toBe('No podemos cargar tu progreso ahora mismo');
+    await game!.flushProgress();
+    expect(world().players.has('u-v3c')).toBe(false);
+    expect(await rawRow('u-v3c')).toBe(before);
+  });
+});
+
+describe('el puente escribe una v: 3 (AC-220 c): sigue en v: 3, con cada barco como estaba salvo el que juega, y las familias', () => {
+  test('el oro y la XP ganados se escriben en v: 3, con la Fragata como activo y lo demás igual', async () => {
+    await seed('u-v3d', V3_FULL);
+    await startServer();
+    await join('u-v3d');
+    world().players.get('u-v3d')!.gold += 40;
+    world().players.get('u-v3d')!.xp += 66;
+    await game!.flushProgress();
+    expect(await rowOf('u-v3d')).toEqual({ state: { ...V3_FULL, gold: 4361, xp: 2566, activeShip: 'frigate' }, revision: 2 });
+  });
+
+  test('el ejemplo de AC-220: Cañones N3 se escribe antes de confirmarse y la Fragata queda a (3, 2, 2); al cambiar después a la Balandra, la Balandra queda a (3, 2, 2) y la Fragata sigue a (3, 2, 2)', async () => {
+    await seed('u-v3e', V3_AC220);
+    await startServer();
+    const e = await join('u-v3e');
+    expect(fields(e.me())).toEqual({ gold: 5000, upgrades: lv(2, 2, 2), ownedShips: ['sloop', 'frigate'], activeShip: 'frigate', xp: 1500 });
+    e.c.emit(C2S.buy, { itemId: 'cannons:3' });
+    await waitFor(() => texts(e).includes('Compra realizada'), 3000, 'la compra de Cañones N3');
+    expect(await rowOf('u-v3e')).toEqual({ state: { ...V3_AC220, gold: 3500, ships: { sloop: lv(1, 1, 1), frigate: lv(3, 2, 2), line: lv(2, 1, 1) }, activeShip: 'frigate' }, revision: 2 });
+    e.c.emit(C2S.selectShip, { classId: 'sloop' });
+    await waitFor(() => e.me().activeShip === 'sloop', 3000, 'el cambio a la Balandra');
+    expect(await rowOf('u-v3e')).toEqual({ state: { ...V3_AC220, gold: 3500, ships: { sloop: lv(3, 2, 2), frigate: lv(3, 2, 2), line: lv(2, 1, 1) }, activeShip: 'sloop' }, revision: 3 });
+    expect(wire(e)).not.toMatch(V3_ONLY);
+  });
+
+  test('un Bergantín comprado en el puente entra en ships desde el nivel 1, con las mejoras globales, y es el activo', async () => {
+    await seed('u-v3f', V3_AC220);
+    await startServer();
+    const f = await join('u-v3f');
+    f.c.emit(C2S.buy, { itemId: 'ship:brig' });
+    await waitFor(() => texts(f).includes('Compra realizada'), 3000, 'la compra del Bergantín');
+    expect((await rowOf('u-v3f')).state).toEqual({ ...V3_AC220, gold: 3000, ships: { sloop: lv(1, 1, 1), brig: lv(2, 2, 2), frigate: lv(2, 2, 2), line: lv(2, 1, 1) }, activeShip: 'brig' });
+  });
+
+  test('reconectar antes de 10 s (el progreso sigue en memoria) no pierde nada de la v: 3 al escribir', async () => {
+    await seed('u-v3g', V3_FULL);
+    await startServer({ autoStart: false });
+    const g = await join('u-v3g');
+    g.c.disconnect();
+    for (let n = 0; n < Math.round((DISCONNECT_GRACE - 2) * TICK_RATE); n++) game!.tick();
+    const again = await join('u-v3g');
+    expect(again.welcome.shipId).toBe(g.welcome.shipId);
+    world().players.get('u-v3g')!.gold += 5;
+    await game!.flushProgress();
+    expect((await rowOf('u-v3g')).state).toEqual({ ...V3_FULL, gold: 4326, activeShip: 'frigate' });
+  });
+});
+
+describe('AC-220: volver de la 1.3 al puente y otra vez a la 1.3 no pierde los niveles de cada barco, las familias ni la XP', () => {
+  // La 1.3, con su escritor congelado y la misma guarda de revision que createPgStore
+  async function write13(userId: string, progress: SavedProgress13, revision: number): Promise<void> {
+    const { rowCount } = await db.admin.query('UPDATE player_progress SET state = $2, revision = revision + 1 WHERE user_id = $1 AND revision = $3', [userId, serializeProgress13(progress), revision]);
+    expect(rowCount).toBe(1);
+  }
+
+  test('la 1.3 escribe, el puente lee, compra y escribe, la 1.3 lee y escribe, y el puente vuelve a leer', async () => {
+    const by13: SavedProgress13 = { gold: 4321, xp: 2500, ships: { sloop: lv(3, 1, 2), brig: lv(2, 3, 1), schooner: lv(1, 2, 3), frigate: lv(2, 2, 1), line: lv(3, 3, 2) }, activeShip: 'line', families: ['gb', 'es'], family: 'es' };
+    await seed('u-v3h', serializeProgress13(by13));
+
+    // El puente: juega con la Fragata, compra Velas N2 (300) y gana XP
+    await startServer();
+    const h = await join('u-v3h');
+    expect(fields(h.me())).toEqual({ gold: 4321, upgrades: lv(2, 2, 1), ownedShips: ['sloop', 'brig', 'frigate'], activeShip: 'frigate', xp: 2500 });
+    h.c.emit(C2S.buy, { itemId: 'sails:2' });
+    await waitFor(() => texts(h).includes('Compra realizada'), 3000, 'la compra de Velas N2');
+    world().players.get('u-v3h')!.xp += 100;
+    await stopServer();
+
+    // Vuelve la 1.3: lee la fila con su lector, con la Fragata a Velas N2 y todo lo demás como lo dejó
+    const bridgeRow = await rowOf('u-v3h');
+    expect(bridgeRow.revision).toBe(3);
+    const back = parseProgress13(bridgeRow.state)!;
+    expect(back).toEqual({ ...by13, gold: 4021, xp: 2600, ships: { ...by13.ships, frigate: lv(2, 2, 2) }, activeShip: 'frigate' });
+
+    // La 1.3 compra Cañones N2 para la Goleta, cambia a la británica y pone el Navío a navegar
+    const after13: SavedProgress13 = { ...back, gold: 3000, ships: { ...back.ships, schooner: lv(2, 2, 3) }, activeShip: 'line', family: 'gb' };
+    await write13('u-v3h', after13, bridgeRow.revision);
+
+    // Otra vuelta atrás al puente: entra igual, con la Fragata, y una escritura conserva lo de la 1.3
+    await startServer();
+    const again = await join('u-v3h');
+    expect(fields(again.me())).toEqual({ gold: 3000, upgrades: lv(2, 2, 2), ownedShips: ['sloop', 'brig', 'frigate'], activeShip: 'frigate', xp: 2600 });
+    world().players.get('u-v3h')!.gold += 1;
+    await game!.flushProgress();
+    const { state, revision } = await rowOf('u-v3h');
+    expect(revision).toBe(5);
+    expect(parseProgress13(state)).toEqual({ ...after13, gold: 3001, activeShip: 'frigate' });
   });
 });

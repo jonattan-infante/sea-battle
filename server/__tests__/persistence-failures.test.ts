@@ -13,7 +13,7 @@ import { migrate } from '../db/migrate';
 import { createPool } from '../db/pool';
 import { createGameServer, GameServer, GameServerOptions } from '../game-server';
 import { createPersistence, createPgStore, ProgressStore, StoredProgress } from '../persistence';
-import { SavedProgress } from '../progress';
+import { parseProgress, SavedProgress, serializeProgress } from '../progress';
 import { PgProxy, startPgProxy } from './fixtures/pg-proxy';
 import { connectGame, joinGame, Joined, sleep, waitFor } from './fixtures/game-socket';
 import { rowV1 } from './fixtures/progress-rows';
@@ -711,6 +711,45 @@ describe('O-42: tres resultados por escritura, y un intento vencido pero aplicad
     gold = 200;
     await waitFor(() => conflicts.length > 0 || state.row.revision > 3, 2000, 'el guardado periódico');
     expect({ conflicts, gold: state.row.progress.gold, revision: state.row.revision }).toEqual({ conflicts: ['u'], gold: 150, revision: 3 });
+    p.close();
+  });
+
+  // Puente de la 1.2.x (AC-220 c) con una fila v: 3: tras cambiar a un barco con más niveles guardados que las mejoras
+  // globales, la fila escrita le da el mayor de cada eje, así que el progreso que se lee de ella no es el de la memoria. Un
+  // intento que vence pero se aplica se reconoce por la fila que escribió, no por ese progreso: se adopta, sin kicked, y la
+  // siguiente escritura parte de esa fila
+  test('v: 3: un intento vencido pero aplicado tras cambiar a un barco con más niveles guardados se adopta, sin conflicto', async () => {
+    const lv = (cannons: number, hull: number, sails: number) => ({ cannons, hull, sails });
+    const seeded = { v: 3, gold: 100, xp: 40, ships: { sloop: lv(3, 1, 1), frigate: lv(1, 2, 1), line: lv(2, 2, 2) }, activeShip: 'frigate', families: ['es'], family: 'es' };
+    const mem = { row: seeded as unknown, revision: 1, timeoutNext: true };
+    const conflicts: string[] = [];
+    const store: ProgressStore = {
+      load: async () => ({ ...parseProgress(mem.row)!, revision: mem.revision }), // como createPgStore: la fila se vuelve a leer
+      save: async (_userId, progress, revision, carry) => {
+        if (revision !== mem.revision) return null;
+        mem.row = JSON.parse(JSON.stringify(serializeProgress(progress, carry)));
+        mem.revision++;
+        if (mem.timeoutNext) {
+          mem.timeoutNext = false;
+          throw new Error('Query read timeout'); // se aplicó, pero el plazo venció en el cliente
+        }
+        return mem.revision;
+      },
+      ping: async () => {}
+    };
+    const stored = (await store.load('u'))!;
+    expect(stored.progress).toMatchObject({ activeShip: 'frigate', upgrades: lv(1, 2, 1) });
+    let live: SavedProgress = { ...stored.progress, activeShip: 'sloop', gold: 150 }; // cambió a la Balandra: juega con (1, 2, 1)
+    const p = createPersistence({ store, read: () => live, onConflict: (userId) => conflicts.push(userId), saveIntervalMs: 20, probeIntervalMs: 50 });
+    p.track('u', stored);
+    await waitFor(() => p.isDegraded(), 1000, 'el estado degradado');
+    const written = { ...seeded, gold: 150, ships: { sloop: lv(3, 2, 1), frigate: lv(1, 2, 1), line: lv(2, 2, 2) }, activeShip: 'sloop' };
+    expect({ row: mem.row, revision: mem.revision }).toEqual({ row: written, revision: 2 }); // llegó a la BD
+    await waitFor(() => !p.isDegraded() || conflicts.length > 0, 2000, 'el sondeo');
+    expect({ conflicts, row: mem.row, revision: mem.revision }).toEqual({ conflicts: [], row: written, revision: 2 });
+    live = { ...live, gold: 160 };
+    await waitFor(() => mem.revision === 3 || conflicts.length > 0, 2000, 'el guardado periódico');
+    expect({ conflicts, row: mem.row }).toEqual({ conflicts: [], row: { ...written, gold: 160 } });
     p.close();
   });
 
