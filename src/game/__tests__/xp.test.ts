@@ -5,7 +5,7 @@ import { GameEvent, Ship, World } from '../types';
 import { createRng } from '../vec';
 import { addPlayer, attack, buy, canAttack, cancelAttack, drainEvents, moveTo, playerView, removePlayer, respawn, setRepair, shipOfPlayer, shipSnapshot, spawnCaptain, splitReward, step } from '../world';
 import { drainPvpLog, levelFactorPercent, levelOf, openPairs, pairKills, pvpXp, rankLabel, rankOf } from '../xp';
-import { DT, emptyWorld, i2World, placeMerchant, placePlayer, run } from './helpers';
+import { DT, emptyWorld, i2World, placeMerchant, placePlayer, run, sameLevels } from './helpers';
 
 // Tabla «XP por NPC» de GDD §10b, por id de clase (la Cañonera es `gunboat`, el Capitán `captain`, el Galeón `galleon`)
 const GDD_NPC_XP: Record<string, number> = { merchant: 10, pirate: 30, gunboat: 60, captain: 240, galleon: 160 };
@@ -114,7 +114,7 @@ describe('E14 — H-1401 XP por hundir NPC (§10b)', () => {
     expect(lootOf(events)).toEqual([['A', 25, 'wreck']]);
     expect(setRepair(world, 'A', true).ok).toBe(true);
     events.push(...run(world, 5));
-    expect(buy(world, 'A', { kind: 'upgrade', upgrade: 'hull', level: 2 }).ok).toBe(true);
+    expect(buy(world, 'A', { kind: 'upgrade', upgrade: 'hull', level: 2, ship: 'sloop' }).ok).toBe(true);
     expect(moveTo(world, 'A', { x: 0, z: 200 }).ok).toBe(true);
     events.push(...run(world, 10));
     expect(ship.pos.z).toBeGreaterThan(150);
@@ -667,7 +667,7 @@ describe('E14 — H-1403 Niveles e insignias (§10b)', () => {
   test('AC-150: un jugador nuevo empieza con 0 de XP (nivel 1) y uno con progreso guardado, con su XP', () => {
     const world = emptyWorld();
     expect(addPlayer(world, 'nuevo', 'nuevo').xp).toBe(0);
-    const saved = addPlayer(world, 'guardado', 'guardado', { gold: 100, upgrades: { cannons: 1, hull: 1, sails: 1 }, ownedShips: ['sloop'], activeShip: 'sloop', xp: 1234 });
+    const saved = addPlayer(world, 'guardado', 'guardado', { ...sameLevels(100, { cannons: 1, hull: 1, sails: 1 }, ['sloop'], 'sloop'), xp: 1234 });
     expect([saved.xp, levelOf(saved.xp)]).toEqual([1234, 7]);
   });
 });

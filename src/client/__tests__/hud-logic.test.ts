@@ -79,7 +79,7 @@ describe('Alcance en el panel del objetivo (AC-31, 1.1)', () => {
 
 describe('Marca de peligro en el panel del objetivo (AC-189, D77)', () => {
   const player = (activeShip: PlayerShipClass, cannons = 1) =>
-    ({ activeShip, upgrades: { cannons, hull: 1, sails: 1 } }) as PlayerView;
+    ({ activeShip, ships: { [activeShip]: { cannons, hull: 1, sails: 1 } } }) as PlayerView;
   const npc = (classId: string, kind: ShipKind = 'pirate', state: ShipState = 'alive') => ({ kind, classId, state });
 
   test('con la Balandra N1, la cañonera y el Capitán se marcan, y el pirata y el mercante no', () => {

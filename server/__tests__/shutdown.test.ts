@@ -7,14 +7,13 @@ import { Pool } from 'pg';
 import { Socket as ClientSocket } from 'socket.io-client';
 import { migrate } from '../db/migrate';
 import { createPool } from '../db/pool';
-import { SavedProgress } from '../progress';
 import { C2S, S2C } from '../../src/game/protocol';
 import type { GameServer } from '../game-server';
 import type { FlushResult } from '../persistence';
 import { createShutdown, SHUTDOWN_FLUSH_MS } from '../shutdown';
 import { GameChild, startGameChild } from './fixtures/game-child';
 import { connectGame, joinGame, sleep, waitFor } from './fixtures/game-socket';
-import { rowV1 } from './fixtures/progress-rows';
+import { LegacyProgress, rowV1 } from './fixtures/progress-rows';
 import { PgProxy, startPgProxy } from './fixtures/pg-proxy';
 import { createTestDb, TestDb } from './pg/test-db';
 
@@ -54,12 +53,13 @@ async function start(env: Record<string, string> = {}): Promise<GameChild> {
   return child;
 }
 
-const SLOOP_ONLY: SavedProgress = { gold: 100, upgrades: { cannons: 1, hull: 1, sails: 1 }, ownedShips: ['sloop'], activeShip: 'sloop', xp: 0 };
-const seed = (userId: string, progress: SavedProgress) => db.admin.query('INSERT INTO player_progress (user_id, state) VALUES ($1, $2)', [userId, rowV1(progress)]);
+const SLOOP_ONLY: LegacyProgress = { gold: 100, upgrades: { cannons: 1, hull: 1, sails: 1 }, ownedShips: ['sloop'], activeShip: 'sloop', xp: 0 };
+const seed = (userId: string, progress: LegacyProgress) => db.admin.query('INSERT INTO player_progress (user_id, state) VALUES ($1, $2)', [userId, rowV1(progress)]);
 const goldOf = async (userId: string) => (await db.admin.query('SELECT state FROM player_progress WHERE user_id = $1', [userId])).rows[0]?.state.gold;
 const rowOf = async (userId: string) => {
   const { rows } = await db.admin.query('SELECT state, revision FROM player_progress WHERE user_id = $1', [userId]);
-  return { gold: rows[0]?.state.gold, cannons: rows[0]?.state.upgrades.cannons, revision: Number(rows[0]?.revision) };
+  const state = rows[0]?.state; // v: 1 sembrada o v: 3 escrita (las mejoras de la Balandra)
+  return { gold: state?.gold, cannons: state?.upgrades?.cannons ?? state?.ships?.sloop?.cannons, revision: Number(rows[0]?.revision) };
 };
 
 // O-42: si cae una aserción sobre el proceso hijo, se imprime su salida, que dice por qué: la escritura pasó de su plazo
@@ -175,7 +175,7 @@ test('O-42 (c4): una compra vencida pero aplicada y un SIGTERM sin más cambios:
   const kicked: string[] = [];
   e.c.on(S2C.kicked, () => kicked.push('eva'));
   proxy.delayReplies(5000);
-  e.c.emit(C2S.buy, { itemId: 'cannons:2' });
+  e.c.emit(C2S.buy, { itemId: 'cannons:2', ship: 'sloop' });
   await waitFor(() => child.output().includes('La BD no responde'), 8000, 'el fallo de la compra');
   await explain(child, async () => expect(await rowOf('test-eva')).toMatchObject({ cannons: 2, revision: 2 })); // aplicada en la BD
   proxy.delayReplies(0);

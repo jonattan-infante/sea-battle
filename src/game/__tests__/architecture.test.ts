@@ -51,7 +51,7 @@ describe('E0 — Arquitectura de la simulación', () => {
 
   test('maxHpFor vive en stats.ts y world.ts lo reexporta: la vida máxima con el casco de §11 (×1 / ×1,2 / ×1,4)', () => {
     expect(maxHpFor).toBe(statsMaxHpFor);
-    const hull = (h: number) => ({ upgrades: { cannons: 1, hull: h, sails: 1 } });
+    const hull = (h: number) => ({ ships: { sloop: { cannons: 1, hull: h, sails: 1 }, brig: { cannons: 1, hull: h, sails: 1 }, frigate: { cannons: 1, hull: h, sails: 1 } } });
     expect([
       statsMaxHpFor('sloop', undefined),
       statsMaxHpFor('sloop', hull(2)),

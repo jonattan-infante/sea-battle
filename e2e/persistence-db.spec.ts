@@ -10,14 +10,16 @@ import { startPgProxy, PgProxy } from '../server/__tests__/fixtures/pg-proxy';
 import { startTempCluster, TempCluster } from '../server/__tests__/pg/cluster';
 import { migrate } from '../server/db/migrate';
 import { createPool } from '../server/db/pool';
-import { rowV1 } from '../server/__tests__/fixtures/progress-rows';
+import { LegacyProgress, migrated, rowV1, rowV3 } from '../server/__tests__/fixtures/progress-rows';
+import { upgradePrice } from '../src/game/constants';
 import { SavedProgress } from '../server/progress';
 import { trackSocket, waitFor } from './helpers';
 import { OwnServer, startOwnServer } from './own-server';
 
 const SHOTS = path.join(__dirname, '..', 'qa-artifacts', 'persistence');
-const SLOOP_ONLY: SavedProgress = { gold: 2000, upgrades: { cannons: 1, hull: 1, sails: 1 }, ownedShips: ['sloop'], activeShip: 'sloop', xp: 0 };
-const FRIGATE: SavedProgress = { gold: 1234, upgrades: { cannons: 2, hull: 3, sails: 1 }, ownedShips: ['sloop', 'brig', 'frigate'], activeShip: 'frigate', xp: 0 };
+// Filas de la 1.2 que se siembran; lo que la 1.3 juega con ellas es migrated (AC-219)
+const SLOOP_ONLY: LegacyProgress = { gold: 2000, upgrades: { cannons: 1, hull: 1, sails: 1 }, ownedShips: ['sloop'], activeShip: 'sloop', xp: 0 };
+const FRIGATE: LegacyProgress = { gold: 1234, upgrades: { cannons: 2, hull: 3, sails: 1 }, ownedShips: ['sloop', 'brig', 'frigate'], activeShip: 'frigate', xp: 0 };
 
 let cluster: TempCluster;
 let proxy: PgProxy;
@@ -57,7 +59,7 @@ const rawRow = async (userId: string) => JSON.stringify(await sql('SELECT state:
 const progress = (page: Page) =>
   page.evaluate(() => {
     const p = window.__SEA_BATTLE__!.player() as SavedProgress | null;
-    return p ? { gold: p.gold, upgrades: p.upgrades, ownedShips: p.ownedShips, activeShip: p.activeShip, xp: p.xp } : null;
+    return p ? { gold: p.gold, xp: p.xp, ships: p.ships, activeShip: p.activeShip, families: p.families, family: p.family } : null;
   });
 const joins = (sent: string[]) => sent.filter((m) => m.startsWith('42["join"')).length;
 
@@ -90,7 +92,7 @@ test('AC-131: registro corrupto → «Progreso no disponible» sin entrar al mun
   await retry.click();
   await page.waitForFunction(() => window.__SEA_BATTLE__?.ready() === true, null, { timeout: 15_000 });
   await expect(overlay).toHaveCount(0);
-  expect(await progress(page)).toEqual(FRIGATE);
+  expect(await progress(page)).toEqual(migrated(FRIGATE));
 });
 
 test('AC-131: con la BD colgada, 3 clics en Reintentar a 120 ms lanzan 1 intento («Reintentando…»); a los 3 s falla con el detalle nuevo; al volver la BD, entra', async ({ page }) => {
@@ -120,7 +122,7 @@ test('AC-131: con la BD colgada, 3 clics en Reintentar a 120 ms lanzan 1 intento
   proxy.restore();
   await retry.click();
   await page.waitForFunction(() => window.__SEA_BATTLE__?.ready() === true, null, { timeout: 15_000 });
-  expect(await progress(page)).toEqual(FRIGATE);
+  expect(await progress(page)).toEqual(migrated(FRIGATE));
 });
 
 test('AC-131: con la BD parada al entrar sale el mismo overlay; al volver la BD, Reintentar entra con su progreso', async ({ page }) => {
@@ -131,7 +133,7 @@ test('AC-131: con la BD parada al entrar sale el mismo overlay; al volver la BD,
   proxy.restore();
   await page.getByTestId('btn-retry').click();
   await page.waitForFunction(() => window.__SEA_BATTLE__?.ready() === true, null, { timeout: 15_000 });
-  expect(await progress(page)).toEqual(FRIGATE);
+  expect(await progress(page)).toEqual(migrated(FRIGATE));
 });
 
 test('AC-132: con la BD caída en partida, el aviso es el primero de la columna, Puerto se deshabilita y P avisa; al volver la BD, «Progreso guardado»', async ({ page }) => {
@@ -151,7 +153,7 @@ test('AC-132: con la BD caída en partida, el aviso es el primero de la columna,
   await expect(page.getByTestId('toasts')).toContainText('La tienda no está disponible: no podemos guardar');
   await expect(page.getByTestId('shop-unsaved')).toBeVisible();
   await expect(page.getByTestId('buy-hull-2')).toBeDisabled();
-  expect((await progress(page))?.upgrades.cannons).toBe(1);
+  expect((await progress(page))?.ships.sloop?.cannons).toBe(1);
   expect(await page.evaluate(() => document.querySelector('[data-testid="toasts"]')?.firstElementChild?.getAttribute('data-testid'))).toBe('save-warning');
   await page.screenshot({ path: path.join(SHOTS, 'ac132-unsaved-shop.png') });
 
@@ -176,33 +178,32 @@ test('AC-132: con la BD caída en partida, el aviso es el primero de la columna,
   await waitFor(() => page.evaluate(() => (window.__SEA_BATTLE__!.hud() as { saveWarning: boolean }).saveWarning), (u) => u === false, 1000);
 });
 
-test('AC-157 y AC-155: una fila v: 2 (XP, Goleta y Navío como activo) entra con su XP y la Fragata; la tienda y el HUD no muestran la Goleta ni el Navío, que no viajan, y una compra los conserva en la fila', async ({ page }) => {
+// *Cambiado a propósito con la 1.3 (AC-226 a):* hasta la 1.2, la Goleta y el Navío de la fila no entraban en el mundo ni
+// viajaban, y se jugaba con la Fragata; ahora se juegan, y la mejora es del barco activo
+test('AC-219 y AC-226 (a): una fila v: 2 (XP, Goleta y Navío como activo) entra con el Navío y los 5 barcos con sus niveles; la tienda enseña las 5 clases, y una mejora del Navío pasa la fila a v: 3', async ({ page }) => {
   test.setTimeout(90_000);
   const v2 = { v: 2, gold: 4321, upgrades: { cannons: 3, hull: 2, sails: 1 }, ownedShips: ['sloop', 'brig', 'schooner', 'frigate', 'line'], activeShip: 'line', xp: 1234 };
   await seed('test-navio', v2);
-  const socket = trackSocket(page);
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto(`${server.url}/game?testUser=navio`);
   await page.waitForFunction(() => window.__SEA_BATTLE__?.ready() === true, null, { timeout: 30_000 });
   await expect(page.getByTestId('connection-overlay')).toHaveCount(0);
-  expect(await progress(page)).toEqual({ gold: 4321, upgrades: v2.upgrades, ownedShips: ['sloop', 'brig', 'frigate'], activeShip: 'frigate', xp: 1234 });
+  const played = migrated({ gold: 4321, upgrades: v2.upgrades, ownedShips: ['sloop', 'brig', 'schooner', 'frigate', 'line'], activeShip: 'line', xp: 1234 });
+  expect(await progress(page)).toEqual(played);
 
   await page.keyboard.press('KeyP');
   const shop = page.getByTestId('shop');
   await expect(shop).toBeVisible();
   await page.getByTestId('tab-ships').click();
-  await expect(shop.locator('[data-testid^="ship-"]')).toHaveCount(3);
-  await expect(shop.getByTestId('ship-frigate')).toContainText('En uso');
-  await expect(shop).not.toContainText(/Goleta|Navío/);
-  await page.screenshot({ path: path.join(SHOTS, 'ac157-v2-shop.png') });
-  // Mientras la simulación no juegue la Goleta ni el Navío, no se ven ni viajan; la XP sí viaja (AC-155)
-  expect(await page.locator('body').innerText()).not.toMatch(/Goleta|Navío/);
-  expect(socket.received.join('\n')).not.toMatch(/"(schooner|line)"/);
+  await expect(shop.locator('[data-testid^="ship-"]')).toHaveCount(5);
+  await expect(shop.getByTestId('ship-line')).toContainText('En uso');
+  await page.screenshot({ path: path.join(SHOTS, 'ac226-v2-shop.png') });
 
   await page.getByRole('tab', { name: 'Mejoras' }).click();
   await page.getByTestId('buy-hull-3').click();
+  const hull3 = upgradePrice('line', 'hull', 3);
   await expect.poll(async () => (await sql('SELECT state FROM player_progress WHERE user_id = $1', ['test-navio']))[0].state, { timeout: 10_000 })
-    .toEqual({ ...v2, gold: 4321 - 1200, upgrades: { cannons: 3, hull: 3, sails: 1 }, activeShip: 'frigate' });
+    .toEqual(rowV3({ ...played, gold: 4321 - hull3, ships: { ...played.ships, line: { cannons: 3, hull: 3, sails: 1 } } }));
   expect(errors).toEqual([]);
 });

@@ -5,7 +5,7 @@ import { GUNBOAT_CLASS, ISLANDS, MERCHANT_RING, PIRATE_RING, PlayerShipClass, TI
 import { GameEvent, Ship, Upgrades, World } from '../types';
 import { createRng, distance, headingTo } from '../vec';
 import { attack, createWorld, maxHpFor, moveTo, npcClasses, shipOfPlayer, spawnCaptain, spawnGunboat } from '../world';
-import { DT, i2World, median, placeGunboat, placePlayer, run } from './helpers';
+import { DT, i2World, median, onlyShip, placeGunboat, placePlayer, run } from './helpers';
 
 // GDD §9, «IA de la cañonera pirata»: «si la distancia al objetivo es > 64 m, se acerca a velocidad máxima; entre 55 y
 // 64 m, orbita a 62 m a 6 m/s; por debajo de 55 m, se aleja del objetivo a velocidad máxima sin dejar de disparar.
@@ -246,9 +246,7 @@ describe('H-306 — Balance de la cañonera (AC-114, 1 000 duelos con semilla)',
     const me = placePlayer(world, 'a', 260, -380, 0);
     const boat = placeGunboat(world, 260, -330);
     const player = world.players.get('a')!;
-    player.upgrades = { ...upgrades };
-    player.ownedShips = [classId];
-    player.activeShip = classId;
+    onlyShip(player, classId, upgrades);
     me.classId = classId;
     me.maxHp = maxHpFor(classId, player);
     me.hp = me.maxHp;

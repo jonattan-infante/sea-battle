@@ -3,6 +3,7 @@ import path from 'path';
 import { CAMERA, computePpm0, HUD_RESERVE, ZOOM } from '../../src/client/art';
 import {
   CANNON_LEVELS,
+  upgradePrice,
   CAPTAIN_CLASS,
   GAME_MAP,
   GUNBOAT_CLASS,
@@ -268,10 +269,10 @@ describe('escenario "danger" (AC-189), con el I2 encendido', () => {
     const w = createWorld({ seed: 1, spawnNpcs: false, i2: true });
     applyScenario(w, 'danger');
     const p = addPlayer(w, 'u1', 'Ana');
-    expect([p.gold, p.activeShip, p.upgrades.cannons]).toEqual([CANNON_LEVELS[1].price, 'sloop', 1]);
+    expect([p.gold, p.activeShip, p.ships.sloop!.cannons]).toEqual([upgradePrice('sloop', 'cannons', 2), 'sloop', 1]);
     shipOfPlayer(w, 'u1')!.pos = { x: 0, z: 60 };
-    expect(buy(w, 'u1', { kind: 'upgrade', upgrade: 'cannons', level: 2 }).ok).toBe(true);
-    expect([p.gold, p.upgrades.cannons]).toEqual([0, 2]);
+    expect(buy(w, 'u1', { kind: 'upgrade', upgrade: 'cannons', level: 2, ship: 'sloop' }).ok).toBe(true);
+    expect([p.gold, p.ships.sloop!.cannons]).toEqual([0, 2]);
   });
 
   test('con un jugador sin protección en el borde de la zona segura, frente a los dos, nadie se mueve ni dispara en 30 s', () => {
@@ -528,7 +529,7 @@ describe('escenario "endurance" (AC-91)', () => {
     }
     expect(pirates).toHaveLength(1);
     expect(pirates[0].accuracyOverride).toBeLessThan(SHIP_CLASSES.pirate.cannon!.accuracy);
-    expect(addPlayer(world, 'u1', 'Ana').gold).toBe(CANNON_LEVELS[1].price + CANNON_LEVELS[2].price);
+    expect(addPlayer(world, 'u1', 'Ana').gold).toBe(upgradePrice('sloop', 'cannons', 2) + upgradePrice('sloop', 'cannons', 3));
   });
 
   test('el punto queda fuera de la zona segura y nada toca una isla, la exclusión de piratas ni el límite navegable', () => {
@@ -547,7 +548,7 @@ describe('escenario "endurance" (AC-91)', () => {
     const w = createWorld({ seed: 7, spawnNpcs: false });
     applyScenario(w, 'endurance');
     const player = addPlayer(w, 'bot', 'Bot');
-    player.upgrades.cannons = 3;
+    player.ships.sloop!.cannons = 3;
     const ship = shipOfPlayer(w, 'bot')!;
     ship.pos = { ...ENDURANCE_POINT };
     ship.protectedUntil = 0;
@@ -621,7 +622,7 @@ describe('escenario "combat-i2" (AC-90, bloque B-I2), con el I2 encendido', () =
     }
     expect(merchants).toHaveLength(COMBAT_I2.merchants);
     for (const m of merchants) expect([m.ai, m.respawnPos, dist(m.pos, COMBAT_I2.self)]).toEqual([null, m.pos, expect.closeTo(COMBAT_I2.merchantRadius, 6)]);
-    expect(addPlayer(w, 'u1', 'Ana').gold).toBe(CANNON_LEVELS[1].price + CANNON_LEVELS[2].price);
+    expect(addPlayer(w, 'u1', 'Ana').gold).toBe(upgradePrice('sloop', 'cannons', 2) + upgradePrice('sloop', 'cannons', 3));
   });
 
   test('el puesto, fuera de la zona segura y a tiro de los dos; los mercantes, a tiro del N3; los del I2, fuera de la exclusión del puerto; en el marco útil de 1440×900, los dos del I2 a 1,0× y 1,5×, e I5 entera a 1,5×', () => {
@@ -653,7 +654,7 @@ describe('escenario "combat-i2" (AC-90, bloque B-I2), con el I2 encendido', () =
   test.each([1, 2, 3])('semilla %i: 60 s atacando con N3 (≥ 18 andanadas) y 60 s reparando; los dos del I2 disparan en cada tercio, siguen vivos y en su puesto, y el barco propio no se hunde', (seed) => {
     const { w, captain, gunboat, merchants } = setup(seed);
     const player = addPlayer(w, 'bot', 'Bot');
-    player.upgrades.cannons = 3;
+    player.ships.sloop!.cannons = 3;
     const ship = shipOfPlayer(w, 'bot')!;
     ship.pos = { ...COMBAT_I2.self };
     ship.protectedUntil = 0;
@@ -736,7 +737,7 @@ describe('escenarios del Capitán pirata (AC-111), con el I2 encendido (AC-187)'
 // suya de la fila, que gana, como con el oro (así AC-155 no choca)
 describe('escenarios de la XP (AC-151, AC-153)', () => {
   // Progreso guardado de un usuario con cuenta, con la XP de su fila
-  const row = (xp: number): Parameters<typeof addPlayer>[3] => ({ gold: 500, upgrades: { cannons: 1, hull: 1, sails: 1 }, ownedShips: ['sloop'], activeShip: 'sloop', xp });
+  const row = (xp: number): Parameters<typeof addPlayer>[3] => ({ gold: 500, ships: { sloop: { cannons: 1, hull: 1, sails: 1 } }, activeShip: 'sloop', families: [], family: 'none', xp });
   const enter = (name: ScenarioName | null, initial?: Parameters<typeof addPlayer>[3]) => {
     const world = createWorld({ seed: 1, spawnNpcs: false });
     if (name) applyScenario(world, name);

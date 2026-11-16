@@ -20,7 +20,7 @@ import {
 import { Navigator, segmentPointDistance } from '../nav';
 import { Vec2, angleDelta, distance, forward } from '../vec';
 import { addPlayer, createWorld, moveTo, navigatorOf, respawn, shipOfPlayer, spawnMerchant, spawnPirate, step } from '../world';
-import { DT, placeCaptain, placeGunboat, placePlayer, run, runUntil } from './helpers';
+import { DT, placeCaptain, placeGunboat, placePlayer, run, runUntil, sameLevels } from './helpers';
 
 // Mapa de la 1.1 (GDD §4; puesto 5). Las islas de MAP_1_1 son las de D83, aprobada por Jonattan el 2026-10-18, y el puerto,
 // el de D92, aprobado el 2026-10-19 (constants.ts, PORT_SHAPE_1_1 y MOORINGS_1_1). La lógica (uniones de círculos, destino
@@ -452,7 +452,7 @@ describe('E16 — Amarres del puerto de D92 (AC-176, AC-199 d)', () => {
     const at = along(D92[k], d);
     return placePlayer(world, `o${k}-${world.ships.size}`, at.x, at.z, deg(D92[k].psi));
   };
-  const asClass = (classId: string) => ({ gold: 0, upgrades: { cannons: 1, hull: 1, sails: 1 }, ownedShips: ['sloop', 'brig', 'frigate'] as PlayerShipClass[], activeShip: classId as PlayerShipClass });
+  const asClass = (classId: string) => sameLevels(0, { cannons: 1, hull: 1, sails: 1 }, ['sloop', 'brig', 'frigate', classId as PlayerShipClass], classId as PlayerShipClass);
   // El casco atracado en planta: el rectángulo de L × B alineado con ψ y centrado en el centro del barco (puerto_forma.py, hull)
   const hullOf = (m: (typeof D92)[number], length: number, beam: number) => {
     const c = along(m, length / 2 + 2);

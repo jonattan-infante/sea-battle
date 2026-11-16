@@ -312,7 +312,8 @@ test.describe('Muerte', () => {
 });
 
 test.describe('Puerto', () => {
-  test('AC-67: con oro, comprar Cañones N2 por la UI resta 500 y da alcance 70 m y recarga 3,5 s; con 400 de oro el botón está desactivado y no envía nada', async ({ browser }) => {
+  // Cambiado para la 1.3 (E19): con la Balandra, Cañones N2 cuesta 250 y la intención lleva el barco
+  test('AC-67 (1.3): con oro, comprar Cañones N2 de la Balandra por la UI resta 250 y da alcance 70 m y recarga 3,5 s; sin oro para el nivel siguiente el botón está desactivado y no envía nada', async ({ browser }) => {
     test.setTimeout(120_000);
     const ctxA = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const ctxB = await browser.newContext({ viewport: { width: 1440, height: 900 } });
@@ -356,34 +357,35 @@ test.describe('Puerto', () => {
       await expect(buy).toBeEnabled();
       netA.reset();
       await buy.click();
-      await waitFor(() => goldOf(a, 'shop-gold'), (g) => g === 1500, 3000, 50);
-      expect(await goldOf(a, 'player-gold')).toBe(1500);
+      await waitFor(() => goldOf(a, 'shop-gold'), (g) => g === 1750, 3000, 50);
+      expect(await goldOf(a, 'player-gold')).toBe(1750);
       const card = a.getByTestId('shop-cannons');
       await expect(card).toContainText('Nivel 2/3');
       await expect(card).toContainText('Alcance 70 →');
       await expect(card).toContainText('Recarga 3,5 →');
-      expect(intents(netA)).toEqual([{ name: 'buy', data: { itemId: 'cannons:2' } }]);
+      expect(intents(netA)).toEqual([{ name: 'buy', data: { itemId: 'cannons:2', ship: 'sloop' } }]);
       await a.keyboard.press('Escape');
       await expect(a.getByTestId('shop')).toHaveCount(0);
       await waitFor(() => hud(a), (h) => (h.target as { inRange: boolean }).inRange, 3000, 50);
       await expect(a.getByTestId('target-range')).toHaveText('· ✕ No atacable');
-      console.log(`AC-67: B a ${gap.toFixed(1)} m de A · oro 2000 → 1500 · intenciones ${JSON.stringify(intents(netA))}`);
+      console.log(`AC-67: B a ${gap.toFixed(1)} m de A · oro 2000 → 1750 · intenciones ${JSON.stringify(intents(netA))}`);
 
-      // B se queda con 400 (Casco N2 + N3 = 1 600): Cañones N2 cuesta 500
+      // B se queda con 350 (Casco N2 + N3, Velas N2 + N3 y Cañones N2 de la Balandra = 200 + 600 + 150 + 450 + 250 = 1 650):
+      // Cañones N3 cuesta 750
       await b.getByTestId('btn-port').click();
-      await b.getByTestId('buy-hull-2').click();
-      await waitFor(() => goldOf(b, 'shop-gold'), (g) => g === 1600, 3000, 50);
-      await b.getByTestId('buy-hull-3').click();
-      await waitFor(() => goldOf(b, 'shop-gold'), (g) => g === 400, 3000, 50);
-      const blocked = b.getByTestId('buy-cannons-2');
+      for (const [id, left] of [['buy-hull-2', 1800], ['buy-hull-3', 1200], ['buy-sails-2', 1050], ['buy-sails-3', 600], ['buy-cannons-2', 350]] as const) {
+        await b.getByTestId(id).click();
+        await waitFor(() => goldOf(b, 'shop-gold'), (g) => g === left, 3000, 50);
+      }
+      const blocked = b.getByTestId('buy-cannons-3');
       await expect(blocked).toBeDisabled();
-      await expect(b.getByTestId('shop-cannons')).toContainText('Te faltan 100');
+      await expect(b.getByTestId('shop-cannons')).toContainText('Te faltan 400');
       netB.reset();
       await blocked.click({ force: true });
       await b.waitForTimeout(700);
       expect(intents(netB).filter((i) => i.name === 'buy')).toEqual([]);
-      expect(await goldOf(b, 'shop-gold')).toBe(400);
-      await expect(b.getByTestId('shop-cannons')).toContainText('Nivel 1/3');
+      expect(await goldOf(b, 'shop-gold')).toBe(350);
+      await expect(b.getByTestId('shop-cannons')).toContainText('Nivel 2/3');
     } finally {
       await ctxA.close();
       await ctxB.close();

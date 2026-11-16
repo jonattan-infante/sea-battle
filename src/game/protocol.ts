@@ -1,6 +1,6 @@
 // Protocolo cliente ↔ servidor (GDD §13). El cliente solo envía intenciones; el servidor valida forma y campos.
 // Validación estricta: tipos exactos, números finitos y ningún campo extra (AC-05).
-import { MAP_HALF_SIZE, MAX_NAME_LENGTH, MAX_UPGRADE_LEVEL, PLAYER_SHIP_ORDER, PlayerShipClass, UPGRADE_LEVELS, UpgradeId } from './constants';
+import { FamilyChoice, MAP_HALF_SIZE, MAX_NAME_LENGTH, MAX_UPGRADE_LEVEL, NO_FAMILY, PLAYER_SHIP_ORDER, PlayerShipClass, SHIP_FAMILIES, ShipFamily, UPGRADE_LEVELS, UpgradeId } from './constants';
 import { Vec2 } from './vec';
 import type { ShopItem } from './world';
 
@@ -13,6 +13,7 @@ export const C2S = {
   repair: 'repair',
   buy: 'buy',
   selectShip: 'selectShip',
+  selectFamily: 'selectFamily', // 1.3: cambiar de aspecto en el puerto (GDD §13)
   respawn: 'respawn',
   viewAt: 'viewAt' // vista libre (E13): centro de la vista mientras se desplaza, o null al volver al seguimiento
 } as const;
@@ -91,32 +92,51 @@ export function parseRepair(data: unknown): { on: boolean } | null {
   return { on: data.on };
 }
 
-// itemId: "cannons:2" | "hull:3" | "sails:2" | "ship:brig" | "ship:frigate"
-export function parseShopItem(itemId: unknown): ShopItem | null {
+const isPlayerShip = (value: unknown): value is PlayerShipClass => typeof value === 'string' && (PLAYER_SHIP_ORDER as readonly string[]).includes(value);
+const isFamily = (value: unknown): value is ShipFamily => typeof value === 'string' && (SHIP_FAMILIES as readonly string[]).includes(value);
+
+// itemId: "cannons:2" | "hull:3" | "sails:2" (con `ship`) | "ship:brig" | … | "family:gb" | "family:es". Una mejora nombra
+// el barco para el que se compra (1.3; GDD §13): sin `ship`, o con `ship` en un barco o una familia, no es una intención
+// válida. Que el barco sea del jugador lo decide el servidor (AC-213 d)
+export function parseShopItem(itemId: unknown, ship?: unknown): ShopItem | null {
   if (typeof itemId !== 'string' || itemId.length > 32) return null;
   const match = /^([a-z]+):([a-z0-9]+)$/.exec(itemId);
   if (!match) return null;
   const [, kind, value] = match;
-  if (kind === 'ship') {
-    return (PLAYER_SHIP_ORDER as readonly string[]).includes(value) && value !== 'sloop' ? { kind: 'ship', classId: value as PlayerShipClass } : null;
+  if (kind === 'ship' || kind === 'family') {
+    if (ship !== undefined) return null;
+    if (kind === 'family') return isFamily(value) ? { kind: 'family', family: value } : null; // «none» no se vende (AC-222)
+    return isPlayerShip(value) && value !== 'sloop' ? { kind: 'ship', classId: value } : null;
   }
-  if (!Object.prototype.hasOwnProperty.call(UPGRADE_LEVELS, kind) || !/^\d$/.test(value)) return null;
+  if (!Object.prototype.hasOwnProperty.call(UPGRADE_LEVELS, kind) || !/^\d$/.test(value) || !isPlayerShip(ship)) return null;
   const level = Number(value);
   if (level < 2 || level > MAX_UPGRADE_LEVEL) return null;
-  return { kind: 'upgrade', upgrade: kind as UpgradeId, level };
+  return { kind: 'upgrade', upgrade: kind as UpgradeId, level, ship };
 }
 
 export function shopItemId(item: ShopItem): string {
-  return item.kind === 'ship' ? `ship:${item.classId}` : `${item.upgrade}:${item.level}`;
+  if (item.kind === 'ship') return `ship:${item.classId}`;
+  return item.kind === 'family' ? `family:${item.family}` : `${item.upgrade}:${item.level}`;
+}
+
+// La carga útil de `buy` para un artículo: una mejora lleva su barco (GDD §13)
+export function buyPayload(item: ShopItem): { itemId: string; ship?: PlayerShipClass } {
+  return item.kind === 'upgrade' ? { itemId: shopItemId(item), ship: item.ship } : { itemId: shopItemId(item) };
 }
 
 export function parseBuy(data: unknown): { item: ShopItem } | null {
-  if (!isPlainObject(data) || !onlyKeys(data, ['itemId'])) return null;
-  const item = parseShopItem(data.itemId);
+  if (!isPlainObject(data) || !onlyKeys(data, ['itemId', 'ship'])) return null;
+  const item = parseShopItem(data.itemId, data.ship);
   return item ? { item } : null;
 }
 
 export function parseSelectShip(data: unknown): { classId: PlayerShipClass } | null {
   if (!isPlainObject(data) || !onlyKeys(data, ['classId']) || typeof data.classId !== 'string') return null;
-  return (PLAYER_SHIP_ORDER as readonly string[]).includes(data.classId) ? { classId: data.classId as PlayerShipClass } : null;
+  return isPlayerShip(data.classId) ? { classId: data.classId } : null;
+}
+
+// selectFamily (1.3; GDD §13): «none» o una de las 2 familias. Si la tiene lo decide el servidor (AC-223)
+export function parseSelectFamily(data: unknown): { family: FamilyChoice } | null {
+  if (!isPlainObject(data) || !onlyKeys(data, ['family'])) return null;
+  return data.family === NO_FAMILY || isFamily(data.family) ? { family: data.family } : null;
 }

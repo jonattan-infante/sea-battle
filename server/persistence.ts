@@ -6,20 +6,19 @@
 // no se reintenta ninguna escritura: solo un SELECT 1 por segundo, y cuando responde se escribe todo lo pendiente
 import { createHash } from 'crypto';
 import { Pool } from 'pg';
-import { carryAfterWrite, NEW_ROW, parseProgress, progressKey, RowCarry, rowKey, SavedProgress, serializeProgress } from './progress';
+import { parseProgress, progressKey, SavedProgress, serializeProgress } from './progress';
 
 export interface StoredProgress {
   progress: SavedProgress;
-  carry: RowCarry; // lo que la fila trae y no se juega (AC-157; en una v: 3, AC-220): se vuelve a escribir tal cual
   revision: number;
 }
 
 export interface ProgressStore {
   // null: el usuario aún no tiene fila. Lanza si la BD falla o si el registro no pasa la validación (AC-131)
   load(userId: string): Promise<StoredProgress | null>;
-  // Escribe solo si la fila sigue en `revision` (0: aún no existe), con la versión y lo que conserva de la fila que se
-  // leyó (`carry`). Devuelve la revisión nueva, o null si otro proceso escribió antes (y entonces la fila no se toca)
-  save(userId: string, progress: SavedProgress, revision: number, carry: RowCarry): Promise<number | null>;
+  // Escribe solo si la fila sigue en `revision` (0: aún no existe), siempre en v: 3 (AC-218). Devuelve la revisión nueva, o
+  // null si otro proceso escribió antes (y entonces la fila no se toca)
+  save(userId: string, progress: SavedProgress, revision: number): Promise<number | null>;
   ping(): Promise<void>; // ¿responde la BD? (solo mientras está degradada, para saber si volvió)
 }
 
@@ -30,12 +29,12 @@ export function createPgStore(pool: Pool): ProgressStore {
     async load(userId) {
       const { rows } = await pool.query('SELECT state, revision FROM player_progress WHERE user_id = $1', [userId]);
       if (rows.length === 0) return null;
-      const parsed = parseProgress(rows[0].state);
-      if (!parsed) throw new InvalidProgressError(`Registro de progreso no válido (${userId})`);
-      return { ...parsed, revision: Number(rows[0].revision) };
+      const progress = parseProgress(rows[0].state);
+      if (!progress) throw new InvalidProgressError(`Registro de progreso no válido (${userId})`);
+      return { progress, revision: Number(rows[0].revision) };
     },
-    async save(userId, progress, revision, carry) {
-      const state = serializeProgress(progress, carry);
+    async save(userId, progress, revision) {
+      const state = serializeProgress(progress);
       const { rows } =
         revision === 0
           ? await pool.query('INSERT INTO player_progress (user_id, state) VALUES ($1, $2) ON CONFLICT (user_id) DO NOTHING RETURNING revision', [userId, state])
@@ -74,10 +73,8 @@ export interface FlushResult {
   conflicts: number; // jugadores soltados porque otro proceso escribió antes
 }
 
-// Huella corta de la fila de un intento fallido (O-42 b): basta para reconocerlo en la BD, sin guardar el estado entero. Es la
-// de la fila y no la del progreso, porque en una v: 3 el progreso que se lee de la fila escrita puede no ser el de la memoria
-// (el barco con el que se juega se escribe con el mayor de cada eje, AC-220 c)
-const fingerprint = (progress: SavedProgress, carry: RowCarry): string => createHash('sha256').update(rowKey(progress, carry)).digest('base64url').slice(0, 16);
+// Huella corta del progreso de un intento fallido (O-42 b): basta para reconocerlo en la fila, sin guardar el estado entero
+const fingerprint = (progress: SavedProgress): string => createHash('sha256').update(progressKey(progress)).digest('base64url').slice(0, 16);
 
 export interface Persistence {
   load: (userId: string) => Promise<StoredProgress | null>;
@@ -96,12 +93,11 @@ export interface Persistence {
 
 interface Tracked {
   revision: number;
-  carry: RowCarry; // de la fila leída (un usuario nuevo, NEW_ROW) y, tras cada escritura confirmada, de la escrita (AC-220 c)
   savedKey: string | null; // huella de lo último escrito; null: aún no hay fila
   queue: Promise<void>;
   pending: number;
   lost: boolean; // otro proceso ganó: este ya no escribe
-  failed: Map<string, string>; // huella de la fila → huella del progreso de cada intento fallido desde la última escritura confirmada, todos con `revision`: pudieron llegar a la BD
+  failed: Set<string>; // huellas de los intentos fallidos desde la última escritura confirmada, todos con `revision`: pudieron llegar a la BD
   unverified: boolean; // un intento falló y la fila no se ha comprobado desde entonces (c4): el jugador no sale de la memoria
 }
 
@@ -125,9 +121,9 @@ export function createPersistence(options: PersistenceOptions): Persistence {
   // pudo llegar a la BD y aplicarse
   async function save(userId: string, t: Tracked, progress: SavedProgress): Promise<number | null> {
     try {
-      return await store.save(userId, progress, t.revision, t.carry);
+      return await store.save(userId, progress, t.revision);
     } catch (err) {
-      t.failed.set(fingerprint(progress, t.carry), progressKey(progress));
+      t.failed.add(fingerprint(progress));
       t.unverified = true;
       throw err;
     }
@@ -146,12 +142,9 @@ export function createPersistence(options: PersistenceOptions): Persistence {
       if (err instanceof InvalidProgressError) return false; // una fila que no es la nuestra
       throw err;
     }
-    if (!stored || stored.revision !== t.revision + 1) return false;
-    const attempt = t.failed.get(fingerprint(stored.progress, stored.carry));
-    if (attempt === undefined) return false;
+    if (!stored || stored.revision !== t.revision + 1 || !t.failed.has(fingerprint(stored.progress))) return false;
     t.revision = stored.revision;
-    t.savedKey = attempt; // la huella del progreso de ese intento, el de la memoria
-    t.carry = stored.carry; // y lo que conserva la fila, tal como quedó escrita
+    t.savedKey = progressKey(stored.progress);
     t.failed.clear();
     t.unverified = false;
     return true;
@@ -173,7 +166,6 @@ export function createPersistence(options: PersistenceOptions): Persistence {
     if (revision === null) return lose(userId, t);
     t.revision = revision;
     t.savedKey = key;
-    t.carry = carryAfterWrite(progress, t.carry); // la siguiente escritura parte de la fila escrita (AC-220 c)
     t.failed.clear();
     t.unverified = false;
     return true;
@@ -284,7 +276,7 @@ export function createPersistence(options: PersistenceOptions): Persistence {
       return stored;
     },
     track: (userId, stored) => {
-      users.set(userId, { revision: stored?.revision ?? 0, carry: stored?.carry ?? NEW_ROW, savedKey: stored ? progressKey(stored.progress) : null, queue: Promise.resolve(), pending: 0, lost: false, failed: new Map(), unverified: false });
+      users.set(userId, { revision: stored?.revision ?? 0, savedKey: stored ? progressKey(stored.progress) : null, queue: Promise.resolve(), pending: 0, lost: false, failed: new Set(), unverified: false });
     },
     isTracked: (userId) => users.has(userId),
     forget: (userId) => {

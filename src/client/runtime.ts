@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import type { RootState } from '@react-three/fiber';
 import { CANNON_LEVELS, INTERPOLATION_DELAY_MS, MAX_CANNON_RANGE, IslandDef, ISLANDS, navClearance, PORT_POSITION, SHIP_CLASSES, SINKING_TIME } from '../game/constants';
 import { Navigator } from '../game/nav';
+import { activeLevels } from '../game/stats';
 import { GameEvent, PlayerView, Welcome, WreckView } from '../game/types';
 import { CAMERA, computePpm0, DAMAGE_TEXT, DamageTextKind, frameRangeM, LABEL, LIGHTING, MOBILE_MAX_WIDTH, RING_COLORS, ZOOM } from './art';
 import { markerDestination } from './click-marker';
@@ -1771,9 +1772,10 @@ export class GameRuntime implements OverlayHost, ChipHost {
     this.effects.rings.push(r);
   }
 
-  // Nivel de cañón propio: el del jugador; en una escena sintética (sin jugador), el que fije la prueba (QA, D29)
+  // Nivel de cañón propio: el del barco activo (1.3); en una escena sintética (sin jugador), el que fije la prueba (QA, D29)
   private cannonLevel(): number {
-    return this.src.player?.upgrades.cannons ?? this.sceneCannonLevel;
+    const player = this.src.player;
+    return player ? activeLevels(player).cannons : this.sceneCannonLevel;
   }
 
   private cannonRange(): number {

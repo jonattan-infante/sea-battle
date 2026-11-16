@@ -1,7 +1,9 @@
-// Filas v: 2 con el apagado de verdad (AC-155 y AC-157): un redeploy llega como SIGTERM (AC-129) a un proceso hijo real,
-// con el mismo arranque y el mismo apagado que server/index.ts, y Postgres real. Con una fila v: 2, lo que escribe el
-// apagado lleva la XP ganada y conserva los barcos que la simulación todavía no juega; si el jugador no cambió nada, no
-// escribe. persistence-rollback.test.ts prueba lo mismo en el proceso, sin señal.
+// La fila de la 1.3 con el apagado de verdad (AC-218, la verificación ampliada de AC-157): un redeploy llega como SIGTERM
+// (AC-129) a un proceso hijo real, con el mismo arranque y el mismo apagado que server/index.ts, y Postgres real. Con una
+// fila v: 2, lo que escribe el apagado es una v: 3 con la XP ganada y cada barco con sus niveles; con una v: 3, conserva las
+// familias, la que usa y los niveles de cada barco. Si el jugador no cambió nada, no escribe. persistence-rollback.test.ts
+// prueba lo mismo en el proceso, sin señal.
+// *Cambiado a propósito con la 1.3 (AC-226 a):* el Navío activo de la fila se juega; antes se jugaba la Fragata
 // Lo que se aserta solo puede haberlo escrito el apagado, por dos cosas: el proceso no tiene guardado periódico (60 s en
 // vez de 2), y la BD va detrás de un proxy que retrasa 400 ms lo que le llega. La fila se lee cuando el cliente ve la
 // desconexión: el apagado escribe y solo después cierra las conexiones; sin él, la única otra escritura es la de la
@@ -73,12 +75,15 @@ async function rawRow(userId: string): Promise<string> {
   return JSON.stringify(rows);
 }
 
-describe('SIGTERM con una fila v: 2: el apagado escribe la XP ganada y conserva los barcos nuevos', () => {
-  test('(a) con oro y XP ganados, la fila queda antes de salir en v: 2 con la XP y el oro nuevos, los barcos nuevos en el orden de la tabla y la Fragata como activo; sale con 0', async () => {
+const L = V2.upgrades;
+const SHIPS = { sloop: L, schooner: L, frigate: L, line: L };
+
+describe('SIGTERM con una fila de la 1.2 o de la 1.3: el apagado escribe una v: 3 completa', () => {
+  test('(a) v: 2: con oro y XP ganados, la fila queda antes de salir en v: 3 con la XP y el oro nuevos, cada barco con sus niveles, el Navío activo y sin familia; sale con 0', async () => {
     await seed('test-nao', V2);
     const child = await start();
     const n = await joinGame(child.url, { testUser: 'nao' }, undefined, sockets);
-    expect(n.me().activeShip).toBe('frigate');
+    expect(n.me().activeShip).toBe('line');
     expect(await child.addGold('test-nao', 250)).toBe(true);
     expect(await child.addXp('test-nao', 66)).toBe(true);
     expect(await rowOf('test-nao')).toEqual({ state: V2, revision: 1 }); // aún sin escribir
@@ -86,7 +91,7 @@ describe('SIGTERM con una fila v: 2: el apagado escribe la XP ganada y conserva 
     proxy.delay(400); // cada escritura tarda ≥ 400 ms en llegar a la BD
     const atDisconnect = new Promise<{ state: Record<string, unknown>; revision: number }>((resolve) => n.c.once('disconnect', async () => resolve(await rowOf('test-nao'))));
     const exited = child.kill('SIGTERM');
-    const written = { state: { ...V2, gold: 4571, ownedShips: ['sloop', 'schooner', 'frigate', 'line'], activeShip: 'frigate', xp: 1300 }, revision: 2 };
+    const written = { state: { v: 3, gold: 4571, xp: 1300, ships: SHIPS, activeShip: 'line', families: [], family: 'none' }, revision: 2 };
     expect(await atDisconnect).toEqual(written);
     expect(await exited).toEqual({ code: 0, signal: null });
     expect(child.output()).toContain('💾 Progreso guardado');
@@ -98,11 +103,30 @@ describe('SIGTERM con una fila v: 2: el apagado escribe la XP ganada y conserva 
     const before = await rawRow('test-ona');
     const child = await start();
     const o = await joinGame(child.url, { testUser: 'ona' }, undefined, sockets);
-    expect(o.me().activeShip).toBe('frigate');
+    expect(o.me().activeShip).toBe('line');
     expect(await child.kill('SIGTERM')).toEqual({ code: 0, signal: null });
     expect(child.output()).toContain('💾 Progreso guardado');
     expect(await rawRow('test-ona')).toBe(before);
     expect((await rowOf('test-ona')).revision).toBe(1);
+  });
+
+  // Los mutantes que pide AC-220 en el árbol de la 1.3: un apagado que escribe v: 2, que pierde families o family, o que
+  // pisa los niveles de un barco con el que no se jugó, cae por esta aserción
+  test('(c) v: 3 con las 2 familias y la española en uso: el apagado escribe el oro nuevo y conserva families, family y los niveles de cada barco; sale con 0', async () => {
+    const V3 = { v: 3, gold: 900, xp: 2500, ships: { sloop: { cannons: 3, hull: 1, sails: 2 }, brig: { cannons: 1, hull: 2, sails: 3 }, line: { cannons: 2, hull: 2, sails: 1 } }, activeShip: 'brig', families: ['gb', 'es'], family: 'es' };
+    await seed('test-uma', V3);
+    const child = await start();
+    const u = await joinGame(child.url, { testUser: 'uma' }, undefined, sockets);
+    expect([u.me().activeShip, u.me().family, u.me().families]).toEqual(['brig', 'es', ['gb', 'es']]);
+    expect(await child.addGold('test-uma', 100)).toBe(true);
+
+    proxy.delay(400);
+    const atDisconnect = new Promise<{ state: Record<string, unknown>; revision: number }>((resolve) => u.c.once('disconnect', async () => resolve(await rowOf('test-uma'))));
+    const exited = child.kill('SIGTERM');
+    const written = { state: { ...V3, gold: 1000 }, revision: 2 };
+    expect(await atDisconnect).toEqual(written);
+    expect(await exited).toEqual({ code: 0, signal: null });
+    expect(await rowOf('test-uma')).toEqual(written);
   });
 });
 

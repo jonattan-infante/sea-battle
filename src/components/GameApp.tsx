@@ -455,7 +455,7 @@ export default function GameApp({ guest }: { guest: boolean }) {
         if (!death || client.serverTime() < death.respawnAt) return;
         client.respawn();
       },
-      buy: (itemId: string) => client.buy(itemId),
+      buy: (itemId: string, ship?: PlayerShipClass) => client.buy(itemId, ship),
       selectShip: (classId: PlayerShipClass) => client.selectShip(classId),
       retry: () => client.retry(),
       retryLoad: () => client.retryLoad(),

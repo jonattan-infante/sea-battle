@@ -5,9 +5,9 @@
 // como un usuario de Clerk. Servidor propio con su Postgres temporal, nunca la BD de otro ni la de Railway
 import { expect, Page, test } from '@playwright/test';
 import { Client } from 'pg';
-import { UPGRADE_LEVELS } from '../src/game/constants';
+import { upgradePrice } from '../src/game/constants';
 import { levelOf, rankOf } from '../src/game/xp';
-import { rowV1, rowV2 } from '../server/__tests__/fixtures/progress-rows';
+import { LegacyProgress, migrated, rowV1, rowV2, rowV3 } from '../server/__tests__/fixtures/progress-rows';
 import { startTempCluster, TempCluster } from '../server/__tests__/pg/cluster';
 import { migrate } from '../server/db/migrate';
 import { createPool } from '../server/db/pool';
@@ -50,25 +50,25 @@ async function open(page: Page, query: string): Promise<void> {
 const progress = (page: Page) =>
   page.evaluate(() => {
     const p = window.__SEA_BATTLE__!.player() as SavedProgress | null;
-    return p ? { gold: p.gold, upgrades: p.upgrades, ownedShips: p.ownedShips, activeShip: p.activeShip, xp: p.xp } : null;
+    return p ? { gold: p.gold, xp: p.xp, ships: p.ships, activeShip: p.activeShip, families: p.families, family: p.family } : null;
   });
 
 test('AC-97: con 750 de oro, Cañones N2 y un Bergantín, recargar devuelve exactamente eso, también tras reiniciar el servidor', async ({ page }) => {
   test.setTimeout(120_000);
-  const cannons2 = UPGRADE_LEVELS.cannons.prices[1];
-  const seeded: SavedProgress = { gold: 750 + cannons2, upgrades: { cannons: 1, hull: 1, sails: 1 }, ownedShips: ['sloop', 'brig'], activeShip: 'brig', xp: 0 };
+  const cannons2 = upgradePrice('brig', 'cannons', 2); // 1.3: la mejora es del barco activo, el Bergantín (×0,75)
+  const seeded: LegacyProgress = { gold: 750 + cannons2, upgrades: { cannons: 1, hull: 1, sails: 1 }, ownedShips: ['sloop', 'brig'], activeShip: 'brig', xp: 0 };
   await sql('INSERT INTO player_progress (user_id, state) VALUES ($1, $2)', ['test-ana', rowV1(seeded)]);
 
   await open(page, '?testUser=ana');
-  expect(await progress(page)).toEqual(seeded);
+  expect(await progress(page)).toEqual(migrated(seeded));
   // La compra pasa por la tienda de verdad: el servidor la escribe en la BD antes de confirmarla (AC-130 a)
   await page.keyboard.press('KeyP');
   await page.getByTestId('buy-cannons-2').click();
   await expect(page.getByTestId('shop-cannons')).toContainText('Nivel 2/3');
-  const expected: SavedProgress = { gold: 750, upgrades: { cannons: 2, hull: 1, sails: 1 }, ownedShips: ['sloop', 'brig'], activeShip: 'brig', xp: 0 };
+  const expected: SavedProgress = { ...migrated(seeded), gold: 750, ships: { sloop: { cannons: 1, hull: 1, sails: 1 }, brig: { cannons: 2, hull: 1, sails: 1 } } };
   await waitFor(() => progress(page), (p) => JSON.stringify(p) === JSON.stringify(expected), 5000, 50);
   const rows = await sql<{ state: unknown }>('SELECT state FROM player_progress WHERE user_id = $1', ['test-ana']);
-  expect(rows[0].state).toEqual({ v: 2, ...expected }); // la fila de la 1.0 pasa a v: 2 al escribir (AC-156)
+  expect(rows[0].state).toEqual(rowV3(expected)); // la fila de la 1.0 pasa a v: 3 al escribir (AC-219)
 
   // 1) Recargar la página
   await open(page, '?testUser=ana');
@@ -91,8 +91,9 @@ async function expectLevelOnScreen(page: Page, level: number) {
 
 test('AC-155: con 1 234 de XP (nivel 7), recargar y reiniciar el servidor devuelven 1 234 y nivel 7, también en pantalla', async ({ page }) => {
   test.setTimeout(120_000);
-  const seeded: SavedProgress = { gold: 500, upgrades: { cannons: 2, hull: 1, sails: 1 }, ownedShips: ['sloop', 'brig'], activeShip: 'brig', xp: 1234 };
-  await sql('INSERT INTO player_progress (user_id, state) VALUES ($1, $2)', ['test-xia', rowV2(seeded)]);
+  const legacy: LegacyProgress = { gold: 500, upgrades: { cannons: 2, hull: 1, sails: 1 }, ownedShips: ['sloop', 'brig'], activeShip: 'brig', xp: 1234 };
+  await sql('INSERT INTO player_progress (user_id, state) VALUES ($1, $2)', ['test-xia', rowV2(legacy)]);
+  const seeded = migrated(legacy);
 
   await open(page, '?testUser=xia');
   expect(await progress(page)).toEqual(seeded);
