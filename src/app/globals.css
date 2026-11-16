@@ -482,7 +482,7 @@ body {
 .card--family .card__foot { padding-top: 12px; }
 .family__note { margin-top: 16px; font-size: 13px; font-weight: 500; color: var(--ink-soft); }
 /* El aviso dentro del Astillero (O-48): centrado a 16 px del borde de abajo del panel, 360 × 36, una línea */
-.shop__notice { position: absolute; left: 0; right: 0; bottom: 16px; z-index: 1; width: 360px; max-width: calc(100% - 32px); margin: 0 auto; color: var(--ui-text); white-space: nowrap; overflow: hidden; }
+.shop__notice { position: absolute; left: 0; right: 0; bottom: 16px; z-index: 1; width: 360px; max-width: calc(100% - 32px); margin: 0 auto; color: var(--ui-text); white-space: nowrap; overflow: hidden; pointer-events: none; } /* deja pasar el toque a lo que tapa (O-3 de QA-78) */
 
 /* Alto de la ventana < 700 (el apaisado): las imágenes bajan a 104 (familia) y 144 × 91 (vista de mejoras) */
 @media (max-height: 699.98px) {

@@ -272,6 +272,8 @@ test.describe('La tienda por barco (D103; AC-216, AC-217, AC-162)', () => {
         expect(Math.abs(panel.bottom - 16 - (nb.y + nb.height))).toBeLessThanOrEqual(1);
         expect(Math.round(nb.width)).toBe(size === 'portrait' ? Math.round(panel.width) - 32 : 360);
         expect(await notice.evaluate((e) => e.scrollWidth <= e.clientWidth)).toBe(true);
+        // El toque pasa a lo que tapa (O-3 de QA-78): en su centro, el elemento de arriba ya no es el aviso
+        expect(await notice.evaluate((e) => { const r = e.getBoundingClientRect(); return e.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)); })).toBe(false);
         await expect(page.getByTestId('toasts')).not.toContainText('Compra realizada');
         await page.screenshot({ path: path.join(SHOTS, `d103-vista-comprada-${size}.png`) });
 
