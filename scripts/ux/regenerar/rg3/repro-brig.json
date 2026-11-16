@@ -1,0 +1,85 @@
+{
+ "clase": "brig",
+ "esperado": [
+  [
+   "gb/lod0",
+   2159,
+   "4fc34f8:docs/game/ASSET-SPEC.md:843 y :912"
+  ],
+  [
+   "gb/lod1",
+   408,
+   "4fc34f8:docs/game/ASSET-SPEC.md:843 y :912"
+  ],
+  [
+   "gb/caja_casco/eslora",
+   "24.384",
+   "4fc34f8:docs/game/ASSET-SPEC.md:912 (una caja para las 2 familias)"
+  ],
+  [
+   "gb/caja_casco/manga",
+   "6.232",
+   "4fc34f8:docs/game/ASSET-SPEC.md:912"
+  ],
+  [
+   "gb/ktx_B",
+   22449,
+   "4fc34f8:docs/game/ASSET-SPEC.md:843"
+  ],
+  [
+   "gb/resp_B",
+   11522,
+   "4fc34f8:docs/game/ASSET-SPEC.md:843"
+  ],
+  [
+   "gb/entrada_B",
+   44877,
+   "4fc34f8:docs/game/ASSET-SPEC.md:843 («GLB sin la KTX2»: geometría + respaldo, entrada_B)"
+  ],
+  [
+   "gb/total_B",
+   67326,
+   "4fc34f8:docs/game/ASSET-SPEC.md:843"
+  ],
+  [
+   "es/lod0",
+   2543,
+   "4fc34f8:docs/game/ASSET-SPEC.md:843 y :912"
+  ],
+  [
+   "es/lod1",
+   408,
+   "4fc34f8:docs/game/ASSET-SPEC.md:843 y :912"
+  ],
+  [
+   "es/caja_casco/eslora",
+   "24.384",
+   "4fc34f8:docs/game/ASSET-SPEC.md:912 (una caja para las 2 familias)"
+  ],
+  [
+   "es/caja_casco/manga",
+   "6.232",
+   "4fc34f8:docs/game/ASSET-SPEC.md:912"
+  ],
+  [
+   "es/ktx_B",
+   23450,
+   "4fc34f8:docs/game/ASSET-SPEC.md:843"
+  ],
+  [
+   "es/resp_B",
+   12272,
+   "4fc34f8:docs/game/ASSET-SPEC.md:843"
+  ],
+  [
+   "es/entrada_B",
+   48532,
+   "4fc34f8:docs/game/ASSET-SPEC.md:843 («GLB sin la KTX2»: geometría + respaldo, entrada_B)"
+  ],
+  [
+   "es/total_B",
+   71982,
+   "4fc34f8:docs/game/ASSET-SPEC.md:843"
+  ]
+ ]
+}

@@ -170,8 +170,10 @@ def star(ro, ri, color='pirate', n=5):
 def ellipse_arc(cx, cy, rx, ry, a0, a1, n=24):
     return [(cx + rx * math.cos(a0 + (a1 - a0) * i / n), cy + ry * math.sin(a0 + (a1 - a0) * i / n)) for i in range(n + 1)]
 def anchor(size, sw, fg='sand', outline=1.0, ring_r=None):
-    """Ancla de línea (la de icons.tsx, viewBox 24) escalada a `size` px CSS de alto, trazo `sw` px CSS en `fg`,
-    con contorno `outline` px CSS #07121B por fuera del trazo (como los marcadores) o sin contorno si es 0."""
+    """Ancla de línea del minimapa (viewBox 24) escalada a `size` px CSS de alto, trazo `sw` px CSS en `fg`, con contorno
+    `outline` px CSS #07121B por fuera del trazo (como los marcadores) o sin contorno si es 0. Es una variante compacta del
+    Anchor de icons.tsx, no la misma: arco de 7 × 6,5 centrado en y 13 (no 8 × 7 en y 14) y caña hasta y 19,5 (no 21). Es
+    la de la lámina D87; su trazo exacto, como `d` de SVG, está en ART-DIRECTION §4.3."""
     def draw(cv, x, y, d, h):
         s = size / 17.0 * d  # el ancla ocupa y 2,5..19,5 del viewBox (17 unidades)
         ox, oy = x - 12 * s, y - 11 * s

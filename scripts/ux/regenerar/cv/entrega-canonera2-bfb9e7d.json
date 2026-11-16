@@ -1,0 +1,92 @@
+{
+ "npc_pirate_gunboat": {
+  "sb_id": "npc_pirate_gunboat",
+  "glb": "npc_pirate_gunboat.7f0203ae.glb",
+  "ktx2": "npc_pirate_gunboat_atlas.12e7f712.ktx2",
+  "glb_B": 50956,
+  "glb_gzip9_B": 34691,
+  "ktx2_B": 71353,
+  "ktx2_gzip9_B": 70624,
+  "sha256_glb": "7f0203ae9a6ea3014b01f19fd4f9f92a20117aad77a9a5240e75dae941a23202",
+  "sha256_ktx2": "12e7f71291eb81e8ea8041406eb28fd165067e5ef8df2d74fc82501bf829290f",
+  "respaldo_B": 15178,
+  "respaldo_igual_a_la_medida": null,
+  "dentro": {
+   "glb": "dentro/npc_pirate_gunboat.glb",
+   "B": 122332,
+   "gzip9_B": 105279,
+   "sha256": "7912ea8ad65e3efb17fca46dda7ffa378820465bbbe6318452cb459d84817055"
+  },
+  "comprobaciones": {
+   "AS-V02": true,
+   "AS-V06 port": true,
+   "AS-V07 port": 1.0,
+   "AS-V06 stbd": true,
+   "AS-V07 stbd": 1.0,
+   "AS-V08 tris": {
+    "npc_pirate_gunboat_lod0": 1988,
+    "npc_pirate_gunboat_lod1": 465
+   },
+   "AS-V09": {
+    "mallas": 2,
+    "primitivas": [
+     1,
+     1
+    ],
+    "materiales": 1,
+    "atributos": [
+     "COLOR_0",
+     "NORMAL",
+     "POSITION",
+     "TEXCOORD_0",
+     "_RIM_MASK"
+    ]
+   },
+   "AS-V10": {
+    "ktx2": {
+     "lado": [
+      1024,
+      1024
+     ],
+     "niveles": 11,
+     "supercompresion": 1
+    },
+    "respaldo": [
+     [
+      128,
+      128
+     ],
+     "image/png",
+     15178
+    ],
+    "minFilter": 9987,
+    "requeridas": [
+     "EXT_meshopt_compression",
+     "KHR_mesh_quantization"
+    ]
+   },
+   "validate": {
+    "exit": 0,
+    "sin_errores": true
+   },
+   "validate_dentro": {
+    "exit": 0,
+    "sin_errores": true
+   },
+   "AS-V03 casco": {
+    "caja": {
+     "eslora": 28.418,
+     "manga": 10.05
+    },
+    "flotacion": {
+     "eslora": 28.3,
+     "manga": 9.841,
+     "z": [
+      -14.15,
+      14.15
+     ]
+    }
+   }
+  }
+ }
+}
