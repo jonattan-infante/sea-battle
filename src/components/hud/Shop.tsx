@@ -8,10 +8,11 @@ import {
   PLAYER_SHIP_ORDER,
   PlayerShipClass,
   SHIP_CLASSES,
+  UNDER_FIRE_WINDOW,
   UPGRADE_LEVELS,
   UpgradeId
 } from '../../game/constants';
-import { SHOP_UNAVAILABLE } from '../../client/hud-logic';
+import { PORT_FIRE_TOAST_KEY, portBlockReason, portUnderFireText, SHOP_UNAVAILABLE } from '../../client/hud-logic';
 import { useHud } from '../../client/hud-store';
 import type { HudActions } from './Hud';
 import { Close, CloudOff, Coins, Crosshair, Sailboat, Shield } from './icons';
@@ -110,17 +111,22 @@ function ShipCard({ classId, owned, active, gold, hullLevel, locked, onBuy, onUs
 
 export default function Shop({ actions }: { actions: HudActions }) {
   const player = useHud((s) => s.player);
-  const inSafe = useHud((s) => !!s.me?.inSafeZone && s.me.state === 'alive');
+  // Solo abre donde la zona protege: dentro y sin la marca de bajo fuego (GDD §11, AC-253)
+  const canStay = useHud((s) => portBlockReason(s.me, false) === null); // la BD caída no la cierra: bloquea las compras (AC-132)
   const setShopOpen = useHud((s) => s.setShopOpen);
   const locked = useHud((s) => s.saveWarning);
   const [tab, setTab] = useState<'upgrades' | 'ships'>('upgrades');
   const [flash, setFlash] = useState<UpgradeId | null>(null);
   const prev = useRef(player?.upgrades);
 
-  // La tienda solo existe en la zona segura: se cierra al salir
+  // La tienda solo existe donde la zona protege: se cierra al salir y al caer bajo fuego dentro. Al caer bajo fuego sale el
+  // aviso del puerto con N = 10, el de pulsar Puerto en ese momento (D125)
   useEffect(() => {
-    if (!inSafe) setShopOpen(false);
-  }, [inSafe, setShopOpen]);
+    if (canStay) return;
+    const st = useHud.getState();
+    if (portBlockReason(st.me, false) === 'under-fire') st.pushToast('danger', portUnderFireText(UNDER_FIRE_WINDOW), undefined, { key: PORT_FIRE_TOAST_KEY, fire: true });
+    setShopOpen(false);
+  }, [canStay, setShopOpen]);
 
   // Borde dorado de 300 ms en la tarjeta recién comprada
   useEffect(() => {

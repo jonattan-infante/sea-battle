@@ -22,7 +22,7 @@ import {
   TAB_TARGET_RADIUS,
   TICK_RATE
 } from '../../src/game/constants';
-import { addPlayer, attack, buy, cancelAttack, createWorld, drainEvents, setRepair, shipOfPlayer, step } from '../../src/game/world';
+import { addPlayer, attack, buy, cancelAttack, createWorld, drainEvents, isUnderFire, navigatorOf, setRepair, shipOfPlayer, step } from '../../src/game/world';
 import { levelOf, rankOf } from '../../src/game/xp';
 import {
   AMBUSH_POINT,
@@ -44,6 +44,7 @@ import {
   parseScenario,
   REPAIR_START_HULL,
   ScenarioName,
+  UNDER_FIRE,
   strandedShips,
   SCENARIOS,
   SHOWCASE_POINT,
@@ -777,5 +778,39 @@ describe('escenarios de la XP (AC-151, AC-153)', () => {
     expect(c.player.gold).toBe(SHIP_CLASSES.brig.price);
     expect([t.world.ships.size, c.world.ships.size]).toEqual([1, 1]);
     expect([parseScenario('xp'), parseScenario('xp-13'), parseScenario('xp-12')]).toEqual(['xp', 'xp-13', 'xp-12']);
+  });
+});
+
+describe('escenario "under-fire" (E20, H-2005)', () => {
+  const setup = () => {
+    const w = createWorld({ seed: 1, spawnNpcs: false, map: GAME_MAP, i2: true });
+    applyScenario(w, 'under-fire', { requireNavigable: true });
+    return { w, merchant: [...w.ships.values()][0] };
+  };
+
+  test('con el mapa del juego arranca: un mercante quieto, sin IA y que no se hunde, dentro de la zona; un puesto dentro y otro fuera, navegables y a tiro del cañón inicial', () => {
+    const { w, merchant } = setup();
+    expect([...w.ships.values()].map((s) => [s.classId, s.ai, s.hp, s.pos])).toEqual([['merchant', null, UNDER_FIRE.hp, UNDER_FIRE.merchant]]);
+    expect(Math.hypot(UNDER_FIRE.merchant.x, UNDER_FIRE.merchant.z)).toBeLessThan(SAFE_ZONE_RADIUS);
+    expect(Math.hypot(UNDER_FIRE.inside.x, UNDER_FIRE.inside.z)).toBeLessThan(SAFE_ZONE_RADIUS);
+    expect(Math.hypot(UNDER_FIRE.outside.x, UNDER_FIRE.outside.z)).toBeGreaterThan(SAFE_ZONE_RADIUS);
+    for (const post of [UNDER_FIRE.inside, UNDER_FIRE.outside]) {
+      expect(Math.hypot(post.x - merchant.pos.x, post.z - merchant.pos.z)).toBeLessThanOrEqual(CANNON_LEVELS[0].range);
+      expect(navigatorOf(w).navigable(post, navClearance('sloop'))).toBe(true);
+    }
+  });
+
+  test('disparar al mercante desde el puesto de dentro pone bajo fuego, y 30 s de andanadas no lo hunden', () => {
+    const { w, merchant } = setup();
+    addPlayer(w, 'u1', 'Ana');
+    const ship = shipOfPlayer(w, 'u1')!;
+    ship.pos = { ...UNDER_FIRE.inside };
+    expect(attack(w, 'u1', merchant.id).ok).toBe(true);
+    for (let i = 0; i < 30 * TICK_RATE; i++) {
+      step(w, 1 / TICK_RATE);
+      drainEvents(w);
+    }
+    expect(isUnderFire(w, ship)).toBe(true);
+    expect(merchant.state).toBe('alive');
   });
 });
