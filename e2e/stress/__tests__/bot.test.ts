@@ -6,11 +6,14 @@
 //   servidor lo termina sin aviso; si no, es perdido.
 // - Caso (b2), O-27: el barco propio hundido anula un moveTo o un repair, pero no un respawn, que sale con el barco
 //   hundido; si no, un respawn perdido se contaba como anulado.
+// - E20 (QA-80 H-1): el aviso del puerto cerrado bajo fuego responde a un buy; si no, la compra se daba por perdida.
 import { performance } from 'perf_hooks'; // el reloj del bot: el de los temporizadores falsos de Jest es otro
 import { io } from 'socket.io-client';
+import { UNDER_FIRE_WINDOW } from '../../../src/game/constants';
 import { C2S, S2C } from '../../../src/game/protocol';
-import type { ServerFrame, ShipSnapshot } from '../../../src/game/types';
-import { Bot } from '../bot';
+import type { PlayerView, ServerFrame, ShipSnapshot } from '../../../src/game/types';
+import { PORT_UNDER_FIRE_TEXT } from '../../../src/game/world';
+import { Bot, rejectedKinds } from '../bot';
 
 jest.mock('socket.io-client', () => ({ io: jest.fn() }));
 
@@ -190,4 +193,29 @@ test('(b2) no vale para respawn: con el barco propio hundido en los frames, un r
   r.socket.fire(S2C.frame, { t: 100.1, s: [{ id: 'me', st: 'dead' }] }); // sigue hundido y sin zarpar
   expireNow(bot);
   expect(bot.orders.map((o) => [o.kind, o.outcome])).toEqual([['respawn', 'perdida']]);
+});
+
+// E20 (QA-80 H-1): el servidor rechaza el buy bajo fuego con PORT_UNDER_FIRE_TEXT (world.ts). El bot lo sigue con el
+// número de segundos que sea, y solo como respuesta a un buy: el resto de órdenes medidas no lo reciben nunca
+const otherSeconds = PORT_UNDER_FIRE_TEXT.replace(String(UNDER_FIRE_WINDOW), '7');
+
+test('E20: el aviso del puerto bajo fuego, con los segundos del servidor y con otros, responde a buy y a nada más', () => {
+  expect(otherSeconds).not.toBe(PORT_UNDER_FIRE_TEXT);
+  expect(rejectedKinds(PORT_UNDER_FIRE_TEXT)).toEqual(['buy']);
+  expect(rejectedKinds(otherSeconds)).toEqual(['buy']);
+  expect(rejectedKinds(`Aviso: ${PORT_UNDER_FIRE_TEXT}`)).toEqual([]); // anclado: solo el aviso entero
+  expect(rejectedKinds(PORT_UNDER_FIRE_TEXT.replace(String(UNDER_FIRE_WINDOW), 'N'))).toEqual([]);
+});
+
+test('E20: un buy medido en el puerto que recibe el aviso de bajo fuego queda rechazado con él, no perdido', () => {
+  const r = botPve();
+  bot = r.bot;
+  const me = { id: 'u1', name: 'Bot 01', shipId: 'me', gold: 500, ships: { sloop: { cannons: 1, hull: 1, sails: 1 } }, activeShip: 'sloop', families: [], family: 'none', kills: 0, deaths: 0, death: null, xp: 0 } as PlayerView;
+  r.socket.fire(S2C.frame, { t: 100, full: true, s: [ship({ id: 'me', o: 'u1', x: 0, z: 50, uf: 110 })], me });
+  decideNow(bot);
+  expect(r.socket.sent.filter(([e]) => e === C2S.buy)).toHaveLength(1);
+  r.socket.fire(S2C.frame, { t: 100.1, n: [{ kind: 'error', text: PORT_UNDER_FIRE_TEXT }] });
+  expireNow(bot);
+  expect(bot.orders.map((o) => [o.kind, o.outcome, o.reason])).toEqual([['buy', 'rechazada', PORT_UNDER_FIRE_TEXT]]);
+  expect(bot.ruleRejections).toEqual({});
 });
