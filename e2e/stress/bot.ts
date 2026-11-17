@@ -18,6 +18,7 @@ import { activeLevels, levelsOf } from '../../src/game/stats';
 import { C2S, S2C } from '../../src/game/protocol';
 import type { Notice, PlayerView, ServerFrame, ShipSnapshot, Welcome } from '../../src/game/types';
 import { createRng, distance, headingTo, Vec2 } from '../../src/game/vec';
+import { PORT_UNDER_FIRE_TEXT } from '../../src/game/world';
 
 export type Role = 'pvp' | 'pve';
 export type MeasuredKind = 'attack' | 'repair' | 'respawn' | 'buy' | 'moveTo';
@@ -58,14 +59,25 @@ const PORT: Vec2 = PORT_POSITION;
 // Protegido por la zona segura: dentro y sin la marca de bajo fuego (`uf`), como isZoneProtected en world.ts (GDD §11, 1.3)
 const zoneProtected = (s: ShipSnapshot, t: number) => distance(s, PORT) <= SAFE_ZONE_RADIUS && (s.uf ?? 0) <= t;
 
+// El rechazo de buy con el puerto cerrado bajo fuego (E20, 1.3; QA-80 H-1): sale del texto del servidor con cualquier
+// número de segundos, para que el bot siga el texto si cambia
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const PORT_UNDER_FIRE = new RegExp(`^${escapeRegExp(PORT_UNDER_FIRE_TEXT).replace(/\d+/, '\\d+')}$`);
+
 // Avisos de error del servidor (src/game/world.ts, server/game-server.ts) y a qué órdenes medidas responden
 const REJECTIONS: [RegExp, MeasuredKind[]][] = [
   [/^Tu barco no está a flote$/, ['attack', 'repair', 'buy', 'moveTo']],
   [/^No puedes atacar ese objetivo$/, ['attack']],
   [/^El casco ya está intacto$/, ['repair']],
   [/^Aún no puedes zarpar$|^Tu barco está a flote$|^Jugador desconocido$/, ['respawn']],
-  [/^El astillero solo abre en el puerto$|^Primero necesitas el nivel anterior$|^Ya tienes ese barco$|^Necesitas \d+ de oro$|^Compra en curso$|^La tienda no está disponible/, ['buy']]
+  [/^El astillero solo abre en el puerto$|^Primero necesitas el nivel anterior$|^Ya tienes ese barco$|^Necesitas \d+ de oro$|^Compra en curso$|^La tienda no está disponible/, ['buy']],
+  [PORT_UNDER_FIRE, ['buy']]
 ];
+
+// Las órdenes medidas a las que responde un aviso de error; [] si a ninguna (es de una orden de carga)
+export function rejectedKinds(text: string): MeasuredKind[] {
+  return REJECTIONS.find(([re]) => re.test(text))?.[1] ?? [];
+}
 
 interface Pending {
   kind: MeasuredKind;
@@ -295,7 +307,7 @@ export class Bot {
 
   // Con una sola orden medida en vuelo, el aviso es suyo si es de su tipo; si no, es de una orden de carga
   private onError(n: Notice): void {
-    const kinds = REJECTIONS.find(([re]) => re.test(n.text))?.[1] ?? [];
+    const kinds = rejectedKinds(n.text);
     if (this.pending && kinds.includes(this.pending.kind)) {
       const kind = this.pending.kind;
       this.settle('rechazada', performance.now() - this.pending.at, n.text);
